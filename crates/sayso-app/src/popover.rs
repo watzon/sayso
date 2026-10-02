@@ -21,7 +21,17 @@ use std::ffi::c_void;
 use std::time::Duration;
 
 const WIDTH: f32 = 340.;
-const HEIGHT: f32 = 470.;
+/// The Model and Microphone submenus open beside the sheet, in the same window.
+const SUBMENU_W: f32 = 250.;
+const SUBMENU_GAP: f32 = 4.;
+const SUBMENU_MAX_H: f32 = 320.;
+/// The window is wider and taller than the sheet, so a submenu has room at
+/// either side and below the last row. The rest of the window is clear, and a
+/// click there closes the popover.
+const WINDOW_W: f32 = WIDTH + SUBMENU_GAP + SUBMENU_W + SUBMENU_SHADOW;
+/// Room past a submenu for its shadow.
+const SUBMENU_SHADOW: f32 = 16.;
+const WINDOW_H: f32 = 760.;
 
 /// The NSView of a GPUI window, as the pointer the mac helpers take.
 pub fn ns_window(window: &Window) -> Option<*mut c_void> {
@@ -38,17 +48,27 @@ struct Tray {
     _monitor: Option<mac::MonitorToken>,
 }
 
+/// Where the popover window goes for a menu bar icon at `icon`, and the side
+/// of the sheet that has room for a submenu. The sheet sits under the icon.
+/// Submenus open to the right, or to the left when the screen ends too soon.
+fn placement(icon: mac::Rect, screen_right: f64) -> (f64, f64, SubmenuSide) {
+    let sheet_x = (icon.x + icon.width / 2.0 - WIDTH as f64 / 2.0).min(screen_right - WIDTH as f64 - 8.0);
+    let side_room = (SUBMENU_GAP + SUBMENU_W) as f64;
+    // With submenus at the left, the sheet is at the right end of the window.
+    let window_past_sheet = (WINDOW_W - WIDTH) as f64;
+    // Cocoa coordinates: the window's top edge meets the icon's bottom edge.
+    let y = icon.y - WINDOW_H as f64 - 4.0;
+    if sheet_x + WIDTH as f64 + side_room + 8.0 <= screen_right {
+        (sheet_x, y, SubmenuSide::Right)
+    } else {
+        (sheet_x - window_past_sheet, y, SubmenuSide::Left)
+    }
+}
+
 /// Put the popover under the menu bar icon and show it. Runs outside a GPUI update.
-fn place_and_show(ns: *mut c_void, rect: Option<mac::Rect>) {
-    if let Some(r) = rect {
-        // Cocoa coordinates: the popover's top edge meets the icon's bottom edge.
-        let screen_right = mac::screens()
-            .iter()
-            .find(|s| r.x >= s.frame.x && r.x <= s.frame.x + s.frame.width)
-            .map(|s| s.visible_frame.x + s.visible_frame.width)
-            .unwrap_or(f64::MAX);
-        let x = (r.x + r.width / 2.0 - WIDTH as f64 / 2.0).min(screen_right - WIDTH as f64 - 8.0);
-        mac::set_frame_origin(ns, x, r.y - HEIGHT as f64 - 4.0);
+fn place_and_show(ns: *mut c_void, origin: Option<(f64, f64)>) {
+    if let Some((x, y)) = origin {
+        mac::set_frame_origin(ns, x, y);
     }
     mac::show_and_focus(ns);
 }
@@ -161,9 +181,12 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
         Some(h) => h,
         None => {
             let model2 = model.clone();
-            let opened = gpui_kit::open_window(
+            // Plain GPUI, not `gpui_kit::open_window`: the kit's root paints the
+            // theme background over the whole window, and this window is
+            // larger than the sheet.
+            let opened = cx.open_window(
                 WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(Bounds { origin: point(px(0.), px(0.)), size: size(px(WIDTH), px(HEIGHT)) })),
+                    window_bounds: Some(WindowBounds::Windowed(Bounds { origin: point(px(0.), px(0.)), size: size(px(WINDOW_W), px(WINDOW_H)) })),
                     titlebar: None,
                     focus: true,
                     show: false,
@@ -173,11 +196,16 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
                     window_background: WindowBackgroundAppearance::Transparent,
                     ..Default::default()
                 },
-                cx,
                 move |window, cx| cx.new(|cx| PopoverView::new(model2, window, cx)),
             );
             match opened {
-                Ok((h, _)) => {
+                Ok(h) => {
+                    let h: AnyWindowHandle = h.into();
+                    // The sheet draws its own shadow. Without this, the window
+                    // rectangle shows as a frame.
+                    if let Ok(Some(ns)) = h.update(cx, |_, window, _| ns_window(window)) {
+                        crate::app::appkit_later(cx, move || mac::make_clear(ns));
+                    }
                     TRAY.with(|t| {
                         if let Some(t) = t.borrow_mut().as_mut() {
                             t.popover = Some(h);
@@ -193,8 +221,18 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
         }
     };
     let rect = icon_rect();
+    let origin = rect.map(|r| {
+        let screen_right = mac::screens()
+            .iter()
+            .find(|s| r.x >= s.frame.x && r.x <= s.frame.x + s.frame.width)
+            .map(|s| s.visible_frame.x + s.visible_frame.width)
+            .unwrap_or(f64::MAX);
+        let (x, y, side) = placement(r, screen_right);
+        SUBMENU_SIDE.with(|s| s.set(side));
+        (x, y)
+    });
     if let Ok(Some(ns)) = handle.update(cx, |_, window, _| ns_window(window)) {
-        crate::app::appkit_later(cx, move || place_and_show(ns, rect));
+        crate::app::appkit_later(cx, move || place_and_show(ns, origin));
     }
     let monitor = mac::install_global_click_monitor(move |p| {
         // A click on our own icon toggles; let the tray handler do it.
@@ -220,11 +258,37 @@ thread_local! {
     static HIDE_REQUESTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// When the popover last closed because it lost focus.
     static LAST_FOCUS_CLOSE: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+    /// The side of the sheet where submenus open. `show` sets it for each open.
+    static SUBMENU_SIDE: std::cell::Cell<SubmenuSide> = const { std::cell::Cell::new(SubmenuSide::Right) };
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum SubmenuSide {
+    Right,
+    Left,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Submenu {
+    Model,
+    Microphone,
+}
+
+/// What a pick in a submenu does to the app model.
+type OnPick = Box<dyn Fn(&mut AppModel, &mut Context<AppModel>)>;
+
+/// One line of a submenu.
+struct SubmenuItem {
+    label: String,
+    /// Small text at the right, for example "Cloud".
+    note: Option<&'static str>,
+    selected: bool,
+    on_pick: OnPick,
 }
 
 pub struct PopoverView {
     model: Entity<AppModel>,
-    mic_open: bool,
+    submenu: Option<Submenu>,
     _observe: Subscription,
     _activation: Subscription,
 }
@@ -240,6 +304,13 @@ impl PopoverView {
                 hide_popover(cx);
             }
         });
+        // The next open starts with no submenu.
+        cx.observe_window_activation(window, |this: &mut Self, window, cx| {
+            if !window.is_window_active() && this.submenu.take().is_some() {
+                cx.notify();
+            }
+        })
+        .detach();
         // Close when the outside-click monitor asks (it runs outside GPUI).
         cx.spawn(async move |_, cx| {
             loop {
@@ -250,7 +321,7 @@ impl PopoverView {
             }
         })
         .detach();
-        Self { model, mic_open: false, _observe: observe, _activation: activation }
+        Self { model, submenu: None, _observe: observe, _activation: activation }
     }
 
     fn act(&self, cx: &mut App, f: impl FnOnce(&mut AppModel, &mut Context<AppModel>) + 'static) {
@@ -262,6 +333,139 @@ impl PopoverView {
             model.update(cx, f);
         })
         .detach();
+    }
+
+    /// The models that can do a final pass now: local models on disk, and the
+    /// models of the speech providers that are set up.
+    fn model_items(&self, cx: &App) -> Vec<SubmenuItem> {
+        let m = self.model.read(cx);
+        let active = m.active_model().id;
+        m.catalog()
+            .into_iter()
+            .filter(|info| {
+                let status = m.status_of(&info.id);
+                info.final_pass && if info.is_remote() { status.is_usable() } else { status.is_on_disk() }
+            })
+            .map(|info| {
+                let id = info.id.clone();
+                SubmenuItem {
+                    selected: info.id == active,
+                    note: info.is_remote().then_some("Cloud"),
+                    label: info.name,
+                    on_pick: Box::new(move |m, cx| m.set_active_model(id.clone(), cx)),
+                }
+            })
+            .collect()
+    }
+
+    fn microphone_items(&self, cx: &App) -> Vec<SubmenuItem> {
+        let m = self.model.read(cx);
+        let current = m.config.audio.input_device.clone();
+        let mut options: Vec<(Option<String>, String)> = vec![(None, "System default".into())];
+        options.extend(m.input_devices().into_iter().map(|d| (Some(d.id), d.name)));
+        // The config can hold a device name from a hand-edited file.
+        let selected_at = options.iter().position(|(id, name)| match &current {
+            None => id.is_none(),
+            Some(cur) => id.as_ref() == Some(cur) || (id.is_some() && name == cur),
+        });
+        options
+            .into_iter()
+            .enumerate()
+            .map(|(i, (id, label))| SubmenuItem {
+                label,
+                note: None,
+                selected: Some(i) == selected_at,
+                on_pick: Box::new(move |m, cx| {
+                    let id = id.clone();
+                    m.edit_config(cx, |c| c.audio.input_device = id)
+                }),
+            })
+            .collect()
+    }
+
+    /// The floating list of a row. `footer` is a last line that opens the Hub.
+    fn submenu(&self, kind: Submenu, footer: Option<(&'static str, Route)>, cx: &mut Context<Self>) -> impl IntoElement {
+        let c = cx.paper().colors;
+        let (items, empty) = match kind {
+            Submenu::Model => (self.model_items(cx), "No model is downloaded yet."),
+            Submenu::Microphone => (self.microphone_items(cx), "No microphone found."),
+        };
+        let mut rows = div().id("submenu-rows").flex().flex_col().max_h(px(SUBMENU_MAX_H)).overflow_y_scroll();
+        if items.is_empty() {
+            rows = rows.child(div().px(px(10.)).py(px(8.)).child(text::ui(empty, 13., FontWeight::NORMAL, c.graphite)));
+        }
+        for (i, item) in items.into_iter().enumerate() {
+            let SubmenuItem { label, note, selected, on_pick } = item;
+            rows = rows.child(
+                div()
+                    .id(("submenu-item", i))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(8.))
+                    .h(px(30.))
+                    .px(px(8.))
+                    .rounded(px(7.))
+                    .cursor_pointer()
+                    .hover(|s| s.bg(c.deboss))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.submenu = None;
+                        this.model.update(cx, |m, cx| on_pick(m, cx));
+                        cx.notify();
+                    }))
+                    .child(div().flex_none().w(px(14.)).when(selected, |d| d.child(icon(Icon::Check, 12., c.ink))))
+                    .child(text::ui(label, 13., if selected { FontWeight::SEMIBOLD } else { FontWeight::NORMAL }, c.ink).flex_1().truncate())
+                    .when_some(note, |d, note| d.child(text::ui(note, 11., FontWeight::NORMAL, c.graphite).flex_none())),
+            );
+        }
+        let mut list = div()
+            .id("submenu")
+            .flex()
+            .flex_col()
+            .w(px(SUBMENU_W))
+            .p(px(4.))
+            .rounded(px(12.))
+            .bg(c.sheet_raised)
+            .shadow(sayso_ui::paper::floating(&c))
+            .font_family(UI)
+            .occlude()
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                this.submenu = None;
+                cx.notify();
+            }))
+            .child(rows);
+        if let Some((label, route)) = footer {
+            list = list.child(
+                div()
+                    .id("submenu-footer")
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .h(px(30.))
+                    .mt(px(4.))
+                    .pl(px(30.))
+                    .pr(px(8.))
+                    .rounded(px(7.))
+                    .border_t_1()
+                    .border_color(c.rule)
+                    .cursor_pointer()
+                    .hover(|s| s.bg(c.deboss))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.submenu = None;
+                        hide_popover(cx);
+                        this.model.update(cx, |m, cx| m.open_hub(route, cx));
+                    }))
+                    .child(text::ui(label, 13., FontWeight::NORMAL, c.ink)),
+            );
+        }
+        // The row is 12 px from the edge of the sheet. The marker sits at the
+        // near corner of the list, and the list keeps inside the window.
+        let reach = 12. + SUBMENU_GAP;
+        let (marker, anchor) = match SUBMENU_SIDE.with(|s| s.get()) {
+            SubmenuSide::Right => (div().absolute().top(px(-4.)).right(px(-reach)), Anchor::TopLeft),
+            SubmenuSide::Left => (div().absolute().top(px(-4.)).left(px(-reach)), Anchor::TopRight),
+        };
+        marker.child(deferred(anchored().anchor(anchor).snap_to_window_with_margin(px(8.)).child(list)).with_priority(2))
     }
 }
 
@@ -283,12 +487,16 @@ impl Render for PopoverView {
             .collect();
         let model_name = m.active_model().name;
         let devices = m.input_devices();
-        let current_device = m.config.audio.input_device.clone();
-        let device_name = current_device
+        let device_name = m
+            .config
+            .audio
+            .input_device
             .as_ref()
             .and_then(|cur| devices.iter().find(|d| &d.id == cur || &d.name == cur).map(|d| d.name.clone()))
             .or_else(|| devices.iter().find(|d| d.is_default).map(|d| d.name.clone()))
             .unwrap_or_else(|| "System default".into());
+        let side = SUBMENU_SIDE.with(|s| s.get());
+        let open = self.submenu;
 
         let dictate_label = if recording { "Stop dictation" } else { "Start dictation" };
         let mut sheet = div()
@@ -303,6 +511,8 @@ impl Render for PopoverView {
             .bg(c.sheet)
             .shadow(sayso_ui::paper::floating(&c))
             .font_family(UI)
+            // A click on the sheet must not reach the clear part of the window.
+            .occlude()
             .on_key_down(cx.listener(|_, e: &KeyDownEvent, _, cx| {
                 if e.keystroke.key == "escape" {
                     hide(cx);
@@ -420,10 +630,13 @@ impl Render for PopoverView {
             div().flex().flex_col().gap(px(8.)).px(px(6.)).pt(px(10.)).pb(px(4.)).child(text::caps("Style", &c).px(px(4.))).child(chips),
         );
 
-        // Model and microphone rows.
-        let row = |id: &'static str, ic: Icon, label: &'static str, value: String| {
+        // Model and microphone rows. Each opens a submenu beside the sheet, on
+        // hover or on a click, as a native menu does.
+        let row = |kind: Submenu, id: &'static str, ic: Icon, label: &'static str, value: String, cx: &mut Context<Self>| {
+            let active = open == Some(kind);
             div()
                 .id(id)
+                .relative()
                 .flex()
                 .items_center()
                 .gap(px(10.))
@@ -432,53 +645,32 @@ impl Render for PopoverView {
                 .border_t_1()
                 .border_color(c.rule)
                 .cursor_pointer()
+                .when(active, |d| d.bg(c.deboss.opacity(0.5)))
                 .hover(|s| s.bg(c.deboss.opacity(0.5)))
+                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                    if *hovered && this.submenu != Some(kind) {
+                        this.submenu = Some(kind);
+                        cx.notify();
+                    }
+                }))
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.submenu = Some(kind);
+                    cx.notify();
+                }))
+                .when(side == SubmenuSide::Left, |d| d.child(icon(Icon::ChevronLeft, 10., c.pencil)))
                 .child(icon(ic, 15., c.graphite))
                 .child(text::ui(label, 14., FontWeight::NORMAL, c.ink).flex_1())
                 .child(text::ui(value, 13., FontWeight::NORMAL, c.graphite).max_w(px(150.)).truncate())
-                .child(icon(Icon::ChevronRight, 10., c.pencil))
+                .when(side == SubmenuSide::Right, |d| d.child(icon(Icon::ChevronRight, 10., c.pencil)))
         };
-        let mut rows = div()
-            .flex()
-            .flex_col()
-            .px(px(4.))
-            .pt(px(6.))
-            .child(row("model-row", Icon::Models, "Model", model_name).on_click(cx.listener(|this, _, _, cx| {
-                hide_popover(cx);
-                this.model.update(cx, |m, cx| m.open_hub(Route::Models, cx));
-            })))
-            .child(row("mic-row", Icon::Mic, "Microphone", device_name).on_click(cx.listener(|this, _, _, cx| {
-                this.mic_open = !this.mic_open;
-                cx.notify();
-            })));
-        if self.mic_open {
-            let mut list = div().flex().flex_col().pl(px(32.)).pb(px(4.));
-            let mut options: Vec<(Option<String>, String)> = vec![(None, "System default".into())];
-            options.extend(devices.into_iter().map(|d| (Some(d.id.clone()), d.name)));
-            for (i, (value, label)) in options.into_iter().enumerate() {
-                let selected = value == current_device;
-                list = list.child(
-                    div()
-                        .id(("mic", i))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .h(px(30.))
-                        .px(px(8.))
-                        .rounded(px(6.))
-                        .cursor_pointer()
-                        .hover(|s| s.bg(c.deboss.opacity(0.5)))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            let v = value.clone();
-                            this.mic_open = false;
-                            this.model.update(cx, |m, cx| m.edit_config(cx, |c| c.audio.input_device = v));
-                        }))
-                        .child(div().w(px(14.)).when(selected, |d| d.child(icon(Icon::Check, 13., c.ink))))
-                        .child(text::ui(label, 13., if selected { FontWeight::SEMIBOLD } else { FontWeight::NORMAL }, c.ink)),
-                );
-            }
-            rows = rows.child(list);
+        let mut model_row = row(Submenu::Model, "model-row", Icon::Models, "Model", model_name, cx);
+        let mut mic_row = row(Submenu::Microphone, "mic-row", Icon::Mic, "Microphone", device_name, cx);
+        match open {
+            Some(Submenu::Model) => model_row = model_row.child(self.submenu(Submenu::Model, Some(("Manage models…", Route::Models)), cx)),
+            Some(Submenu::Microphone) => mic_row = mic_row.child(self.submenu(Submenu::Microphone, None, cx)),
+            None => {}
         }
+        let rows = div().flex().flex_col().px(px(4.)).pt(px(6.)).child(model_row).child(mic_row);
         sheet = sheet.child(rows);
 
         // Footer.
@@ -499,8 +691,55 @@ impl Render for PopoverView {
                 .child(Button::new("quit", "Quit").ghost().on_click(|_, _, cx| cx.quit())),
         );
 
-        div().size_full().flex().flex_col().items_center().p(px(0.)).child(sheet)
+        // The sheet takes the side of the window under the icon. The other
+        // side is clear and holds the open submenu.
+        div()
+            .size_full()
+            .flex()
+            .items_start()
+            .when(side == SubmenuSide::Left, |d| d.justify_end())
+            .on_mouse_down(MouseButton::Left, |_, _, cx| hide(cx))
+            .child(sheet)
     }
 }
 
 use gpui_kit::prelude::FluentBuilder as _;
+
+#[cfg(test)]
+mod tests {
+    // Not `super::*`: the GPUI glob has its own `test` macro.
+    use super::{SubmenuSide, WIDTH, WINDOW_H, WINDOW_W, mac, placement};
+
+    fn icon_at(x: f64) -> mac::Rect {
+        mac::Rect { x, y: 1000.0, width: 24.0, height: 24.0 }
+    }
+
+    #[test]
+    fn submenus_open_to_the_right_when_the_screen_has_room() {
+        let (x, y, side) = placement(icon_at(800.0), 1728.0);
+        assert_eq!(side, SubmenuSide::Right);
+        // The sheet is centered under the icon, at the left of the window.
+        assert_eq!(x, 800.0 + 12.0 - WIDTH as f64 / 2.0);
+        assert_eq!(y, 1000.0 - WINDOW_H as f64 - 4.0);
+    }
+
+    #[test]
+    fn submenus_open_to_the_left_near_the_right_edge_of_the_screen() {
+        let screen_right = 1728.0;
+        let (x, _, side) = placement(icon_at(1300.0), screen_right);
+        assert_eq!(side, SubmenuSide::Left);
+        // The sheet is at the right of the window, and it stays under the icon.
+        let sheet_x = x + (WINDOW_W - WIDTH) as f64;
+        assert_eq!(sheet_x, 1300.0 + 12.0 - WIDTH as f64 / 2.0);
+        assert!(sheet_x + WIDTH as f64 <= screen_right - 8.0);
+    }
+
+    #[test]
+    fn the_sheet_stays_on_the_screen_under_an_icon_at_the_edge() {
+        let screen_right = 1728.0;
+        let (x, _, side) = placement(icon_at(1700.0), screen_right);
+        assert_eq!(side, SubmenuSide::Left);
+        let sheet_x = x + (WINDOW_W - WIDTH) as f64;
+        assert_eq!(sheet_x + WIDTH as f64, screen_right - 8.0);
+    }
+}
