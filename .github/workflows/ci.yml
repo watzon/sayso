@@ -1,0 +1,51 @@
+name: CI
+
+# A push runs only the dependency-rule check, which needs no build and takes seconds.
+# The test suite builds GPUI and takes minutes, so it runs only when you start it:
+#   gh workflow run ci.yml
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'LICENSE'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-rules:
+    name: Dependency rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # cargo metadata --no-deps reads only the manifests, so the runner's own cargo is enough.
+      - name: Check the dependency rules
+        run: RUSTUP_TOOLCHAIN=stable scripts/check-deps.sh
+
+  test:
+    name: Tests and clippy (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test --workspace
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings

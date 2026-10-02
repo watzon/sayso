@@ -1,0 +1,47 @@
+name: Feature request
+description: Ask for a new feature or a change in Sayso
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem do you have?
+      description: Describe the situation in which Sayso does not do what you need.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: What do you want Sayso to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do now?
+      description: Another app, a workaround, or nothing.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Dictation and insertion
+        - Models
+        - AI styles
+        - Dictionary
+        - History
+        - Overlay and pill
+        - Settings and config file
+        - Windows or Linux
+        - Other
+
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contribution
+      options:
+        - label: I want to build this feature myself

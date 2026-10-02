@@ -4,6 +4,7 @@
 #   scripts/bundle.sh            release build, Developer ID signature
 #   scripts/bundle.sh --debug    debug build (faster), same signature
 #
+# Set SAYSO_BUNDLE_DIR to write the bundle to another folder than build/.
 # A stable Developer ID signature keeps macOS permission grants across rebuilds
 # (spike S4). Set SAYSO_SIGN_IDENTITY to use another identity, or "-" for ad hoc.
 set -euo pipefail
@@ -20,7 +21,7 @@ echo "==> app (cargo, $profile)"
 cargo build -p sayso-app $cargo_flag 2>&1 | grep -E "^(error|warning: unused)" || true
 cargo build -p sayso-app $cargo_flag --quiet
 
-app=build/Sayso.app
+app="${SAYSO_BUNDLE_DIR:-build}/Sayso.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "target/$profile/sayso" "$app/Contents/MacOS/Sayso"

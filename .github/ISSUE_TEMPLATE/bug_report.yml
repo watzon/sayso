@@ -1,0 +1,77 @@
+name: Bug report
+description: Report a problem in Sayso
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a security problem, do not use this form. Follow [SECURITY.md](https://github.com/watzon/sayso/blob/main/SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: Sayso version
+      description: Open the Hub, then Settings › General. The version is in the About group.
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac model
+      placeholder: "macOS 26.1, MacBook Pro M4"
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: Active model and style
+      description: The speech model and the style that were active when the problem occurred.
+      placeholder: "Parakeet Unified EN, Clean"
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Press ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log file
+      description: |
+        Attach `~/Library/Caches/Sayso/logs/sayso.log`. In Finder, select Go › Go to Folder and paste the path.
+        Read the log before you attach it, and remove anything private.
+      placeholder: Drag the log file here. If you cannot attach it, say why.
+
+  - type: checkboxes
+    id: permissions
+    attributes:
+      label: Permissions
+      description: Which permissions does Sayso have in System Settings › Privacy & Security?
+      options:
+        - label: Microphone
+        - label: Accessibility
+        - label: Input Monitoring
