@@ -450,7 +450,7 @@ impl HistoryPage {
         let (can_enhance, engine) = {
             let m = self.model.read(cx);
             let style = m.active_style();
-            (m.provider_for(&style).is_some_and(|p| !p.needs_model()) && style.uses_ai(), m.services.engine.is_some())
+            (m.provider_for(&style).is_some_and(|p| !p.needs_model()) && style.uses_ai(), m.model_ready())
         };
 
         let enhance = {

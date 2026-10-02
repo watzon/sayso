@@ -7,6 +7,7 @@
 use crate::hotkey::Hotkey;
 use crate::ink::Ink;
 use crate::models::{ModelId, default_model};
+use crate::speech::{Speech, SpeechProviderKind};
 use crate::style::DEFAULT_STYLE_ID;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -22,6 +23,8 @@ pub struct Config {
     pub audio: Audio,
     pub sounds: Sounds,
     pub ai: Ai,
+    /// Cloud speech providers for the final pass.
+    pub speech: Speech,
     pub history: History,
     pub appearance: AppearanceConfig,
     pub advanced: Advanced,
@@ -89,8 +92,10 @@ impl Default for Hotkeys {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Dictation {
-    /// Fixed to "en" in v0.1. The setting exists so multilingual needs no migration.
+    /// A language code such as "en" or "de", or "auto" to let the model detect
+    /// the language. A model that does not support the language ignores it.
     pub language: String,
+    /// A local model id, or "<provider id>:<model>" for a speech provider's model.
     pub model: ModelId,
     pub live_preview: bool,
     /// A push-to-talk press shorter than this is ignored as an accident.
@@ -447,6 +452,7 @@ impl Config {
         section!("audio", audio);
         section!("sounds", sounds);
         section!("ai", ai);
+        section!("speech", speech);
         section!("history", history);
         section!("appearance", appearance);
         section!("advanced", advanced);
@@ -470,11 +476,25 @@ impl Config {
             && !self.ai.providers.iter().any(|p| &p.id == id) {
                 issue("ai.default_provider", format!("no provider has the id \"{id}\""));
             }
-        if crate::models::find(&self.dictation.model).is_none() {
+        if crate::models::find_with(&self.speech, &self.dictation.model).is_none() {
             issue("dictation.model", format!("\"{}\" is not a known model", self.dictation.model));
         }
-        if self.dictation.language != "en" {
-            issue("dictation.language", "only \"en\" is supported in this version".into());
+        if !crate::languages::is_valid(&self.dictation.language) {
+            issue("dictation.language", format!("\"{}\" is not a language code Sayso knows. Use \"auto\" or a code such as \"en\"", self.dictation.language));
+        }
+        if self.speech.timeout_ms < 1000 {
+            issue("speech.timeout_ms", "must be at least 1000 ms".into());
+        }
+        for (i, p) in self.speech.providers.iter().enumerate() {
+            if p.id.is_empty() || p.id.contains(':') {
+                issue("speech.providers", format!("the provider id \"{}\" must not be empty or contain a colon", p.id));
+            }
+            if self.speech.providers[..i].iter().any(|q| q.id == p.id) {
+                issue("speech.providers", format!("two providers have the id \"{}\"", p.id));
+            }
+            if p.kind == SpeechProviderKind::OpenAiCompatible && p.base_url().is_none() {
+                issue("speech.providers", format!("the provider \"{}\" needs a base_url", p.id));
+            }
         }
         issues
     }
@@ -609,6 +629,46 @@ mod tests {
         assert!(fields.contains(&"sounds.volume".to_string()));
         assert!(fields.contains(&"ai.default_provider".to_string()));
         assert!(fields.contains(&"hotkeys.push_to_talk".to_string()));
+    }
+
+    #[test]
+    fn language_and_cloud_model_are_validated() {
+        use crate::speech::SpeechProvider;
+        let mut c = Config::default();
+        c.dictation.language = "de".into();
+        assert!(c.validate().is_empty(), "a known language code is fine");
+        c.dictation.language = "auto".into();
+        assert!(c.validate().is_empty());
+        c.dictation.language = "klingon".into();
+        assert_eq!(c.validate()[0].field, "dictation.language");
+
+        let mut c = Config::default();
+        c.dictation.model = ModelId::new("groq:whisper-large-v3-turbo");
+        assert_eq!(c.validate()[0].field, "dictation.model", "no such provider yet");
+        c.speech.providers.push(SpeechProvider {
+            id: "groq".into(),
+            name: "Groq".into(),
+            kind: SpeechProviderKind::Groq,
+            base_url: None,
+            api_key_account: Some("speech.groq".into()),
+            models: vec![],
+        });
+        assert!(c.validate().is_empty(), "{:?}", c.validate());
+        let back = Config::parse(&c.to_toml());
+        assert!(back.issues.is_empty(), "{:?}", back.issues);
+        assert_eq!(back.config, c);
+
+        c.speech.providers.push(SpeechProvider {
+            id: "groq".into(),
+            name: "Mine".into(),
+            kind: SpeechProviderKind::OpenAiCompatible,
+            base_url: None,
+            api_key_account: None,
+            models: vec![],
+        });
+        let messages: Vec<_> = c.validate().into_iter().map(|i| i.message).collect();
+        assert!(messages.iter().any(|m| m.contains("two providers")));
+        assert!(messages.iter().any(|m| m.contains("base_url")));
     }
 
     #[test]

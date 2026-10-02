@@ -68,7 +68,15 @@ final class Output: @unchecked Sendable {
 enum EngineSpec: Equatable {
     case parakeetUnified(streamingTier: String)
     case parakeetEou
+    case parakeetTdt(TdtVersion)
+    case nemotron(chunkMs: Int)
+    case nemotronMultilingual(chunkMs: Int)
+    case cohere
+    case canary
+    case senseVoice
+    case paraformer
     case whisper(variant: String)
+    case appleSpeech
 
     init(json: [String: Any]) throws {
         guard let kind = json["kind"] as? String else { throw EngineError("engine.kind is missing") }
@@ -77,6 +85,25 @@ enum EngineSpec: Equatable {
             self = .parakeetUnified(streamingTier: (json["streaming_tier"] as? String) ?? "70_2_2")
         case "parakeet_eou":
             self = .parakeetEou
+        case "parakeet_tdt":
+            guard let name = json["version"] as? String, let version = TdtVersion(rawValue: name) else {
+                throw EngineError("engine.version is missing or unknown for kind parakeet_tdt")
+            }
+            self = .parakeetTdt(version)
+        case "nemotron":
+            self = .nemotron(chunkMs: try Self.chunkMs(json, allowed: [560, 1120, 2240]))
+        case "nemotron_multilingual":
+            self = .nemotronMultilingual(chunkMs: try Self.chunkMs(json, allowed: [560, 1120, 2240, 4480]))
+        case "cohere":
+            self = .cohere
+        case "canary":
+            self = .canary
+        case "sense_voice":
+            self = .senseVoice
+        case "paraformer":
+            self = .paraformer
+        case "apple_speech":
+            self = .appleSpeech
         case "whisper":
             guard let variant = json["variant"] as? String, !variant.isEmpty else {
                 throw EngineError("engine.variant is missing for kind whisper")
@@ -86,6 +113,19 @@ enum EngineSpec: Equatable {
             throw EngineError("unknown engine kind \(kind)")
         }
     }
+
+    private static func chunkMs(_ json: [String: Any], allowed: [Int]) throws -> Int {
+        let value = (json["chunk_ms"] as? NSNumber)?.intValue ?? 1120
+        guard allowed.contains(value) else { throw EngineError("engine.chunk_ms \(value) is not a known tier") }
+        return value
+    }
+}
+
+/// The Parakeet TDT models. The raw value is the `version` field of the catalog.
+enum TdtVersion: String {
+    case v2, v3, ultra, redux, phonon2
+    case tdtCtc110m = "tdt_ctc_110m"
+    case ja
 }
 
 /// One parsed request line.

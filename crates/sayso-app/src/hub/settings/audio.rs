@@ -84,7 +84,8 @@ impl Render for AudioSettings {
         let mic = m.permission(Permission::Microphone);
         let live_preview = m.config.dictation.live_preview;
         let max_s = m.config.dictation.max_duration_s;
-        let has_preview_model = m.active_model().live_preview || m.status_of(&sayso_core::models::ModelId::new("parakeet-eou-120m")).is_on_disk();
+        // With the setting off, ask what the preview would use if it were on.
+        let has_preview_model = m.active_model().live_preview || m.preview_candidate().is_some();
         let recording = !matches!(m.state(), sayso_core::dictation::State::Idle);
         let default_name = devices.iter().find(|d| d.is_default).map(|d| d.name.clone());
         let meter_name = match &current_id {
@@ -198,7 +199,7 @@ impl Render for AudioSettings {
         let preview_desc = if has_preview_model {
             "Streams your words to the overlay while you speak. Uses a little more power."
         } else {
-            "Your model has no live preview. Download Parakeet EOU in Models to add one."
+            "Your model has no live preview in this language. Download a model that has one in Models, for example Parakeet EOU for English."
         };
 
         let input = group("Input", cx).child(list).child(meter);

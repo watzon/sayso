@@ -17,6 +17,7 @@ sayso-platform-macos.workspace = true
 sayso-engine-client.workspace = true
 sayso-store.workspace = true
 sayso-enhance.workspace = true
+sayso-transcribe.workspace = true
 sayso-ui.workspace = true
 gpui-kit.workspace = true
 anyhow.workspace = true

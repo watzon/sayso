@@ -9,11 +9,11 @@
 //! - **recovery** (after a restart): says hello, refreshes statuses, reloads the
 //!   models that were loaded before the crash, then reports `Restarted`.
 
-use crate::protocol::{self, Message, encode_wav, pcm_base64, request_line, to_pcm16};
+use crate::protocol::{self, Message, pcm_base64, request_line};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use parking_lot::Mutex;
 use sayso_core::models::{self, ModelId, ModelInfo};
-use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript};
+use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript, encode_wav, to_pcm16};
 use sayso_platform::{PlatformError, Result, SttBackend};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -282,7 +282,11 @@ impl SttBackend for EngineClient {
         let Some(preview) = &options.preview_model else {
             return Ok(()); // Live preview is off.
         };
-        let fields = json!({"session": session, "model": preview});
+        let fields = json!({
+            "session": session,
+            "model": preview,
+            "language": language_for(preview, &options.language),
+        });
         self.inner
             .call("stream_start", fields, self.inner.options.request_timeout)?;
         Ok(())
@@ -330,7 +334,7 @@ impl SttBackend for EngineClient {
         let fields = json!({
             "model": options.final_model,
             "path": path.to_string_lossy(),
-            "language": options.language,
+            "language": language_for(&options.final_model, &options.language),
             "vocabulary": options.vocabulary,
         });
         let reply = self
@@ -352,6 +356,12 @@ impl SttBackend for EngineClient {
 
 fn find_model(model: &ModelId) -> Result<ModelInfo> {
     models::find(model).ok_or_else(|| failed(format!("unknown model {model}")))
+}
+
+/// The language to send for a model: the setting, or the nearest value the model
+/// supports. A model that is not in the catalog gets the setting as it is.
+fn language_for(model: &ModelId, setting: &str) -> String {
+    models::find(model).map_or_else(|| setting.to_string(), |info| info.language_for(setting))
 }
 
 /// Deletes a temporary file when it goes out of scope.

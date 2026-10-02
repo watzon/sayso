@@ -73,8 +73,13 @@ impl AppModel {
         self.config.ai.providers.iter().find(|p| p.id == id).map(|p| p.name.clone()).unwrap_or_else(|| id.to_string())
     }
 
+    /// The name of a model in a history entry. The entry can be older than the
+    /// catalog or name a provider that is gone, so an unknown id shows as it is
+    /// (a cloud id without its provider part).
     pub fn model_name(&self, id: &ModelId) -> String {
-        sayso_core::models::find(id).map(|m| m.name).unwrap_or_else(|| id.as_str().to_string())
+        sayso_core::models::find_with(&self.config.speech, id)
+            .map(|m| m.name)
+            .unwrap_or_else(|| sayso_core::speech::split_model_id(id).map_or(id.as_str(), |(_, model)| model).to_string())
     }
 
     /// Where the text of a style goes now.

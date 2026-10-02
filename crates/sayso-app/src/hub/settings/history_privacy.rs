@@ -30,6 +30,8 @@ impl Render for HistorySettings {
         let h = m.config.history.clone();
         let total = m.history_total;
         let ai_on = m.config.ai.enabled;
+        // A server on this Mac keeps the audio here, so only a cloud provider is named.
+        let speech_provider = m.active_speech_provider().filter(|p| p.is_cloud()).map(|p| p.name.clone());
         let providers: Vec<(String, bool)> = m.config.ai.providers.iter().map(|p| (p.name.clone(), p.is_cloud())).collect();
 
         let text_index = TEXT_DAYS.iter().position(|d| *d == h.keep_text_days).unwrap_or(0);
@@ -63,7 +65,12 @@ impl Render for HistorySettings {
 
         let mut leaves = div().flex().flex_col().gap(px(10.)).py(px(14.)).child(
             text::body(
-                "Speech recognition runs on this Mac. Your audio never leaves it. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. Nothing else is sent.",
+                match &speech_provider {
+                    Some(name) => format!(
+                        "Your model is a cloud model. Sayso sends the audio of each dictation and your dictionary words to {name}. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. Nothing else is sent."
+                    ),
+                    None => "Speech recognition runs on this Mac. Your audio never leaves it. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. Nothing else is sent.".to_string(),
+                },
                 &c,
             )
             .max_w(px(640.)),

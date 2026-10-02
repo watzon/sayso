@@ -6,7 +6,7 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use sayso_core::models::ModelId;
-use sayso_core::stt::{ModelStatus, SAMPLE_RATE};
+use sayso_core::stt::ModelStatus;
 use serde_json::{Map, Value, json};
 
 pub(crate) const PROTOCOL_VERSION: u64 = 1;
@@ -93,40 +93,10 @@ pub(crate) fn model_status(message: &Message) -> Option<(ModelId, ModelStatus)> 
     Some((model, status))
 }
 
-/// Samples in -1.0..=1.0 to 16-bit PCM. Values outside the range are clamped.
-pub(crate) fn to_pcm16(samples: &[f32]) -> Vec<i16> {
-    samples
-        .iter()
-        .map(|s| (s.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round() as i16)
-        .collect()
-}
-
 /// Base64 of little-endian 16-bit PCM, the `pcm` field of `stream_audio`.
 pub(crate) fn pcm_base64(pcm: &[i16]) -> String {
     let bytes: Vec<u8> = pcm.iter().flat_map(|s| s.to_le_bytes()).collect();
     STANDARD.encode(bytes)
-}
-
-/// A complete 16 kHz mono 16-bit WAV file.
-pub(crate) fn encode_wav(pcm: &[i16]) -> Vec<u8> {
-    let data_len = (pcm.len() * 2) as u32;
-    let mut out = Vec::with_capacity(44 + pcm.len() * 2);
-    out.extend_from_slice(b"RIFF");
-    out.extend_from_slice(&(36 + data_len).to_le_bytes());
-    out.extend_from_slice(b"WAVEfmt ");
-    out.extend_from_slice(&16u32.to_le_bytes()); // fmt chunk size
-    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
-    out.extend_from_slice(&1u16.to_le_bytes()); // mono
-    out.extend_from_slice(&SAMPLE_RATE.to_le_bytes());
-    out.extend_from_slice(&(SAMPLE_RATE * 2).to_le_bytes()); // byte rate
-    out.extend_from_slice(&2u16.to_le_bytes()); // block align
-    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
-    out.extend_from_slice(b"data");
-    out.extend_from_slice(&data_len.to_le_bytes());
-    for sample in pcm {
-        out.extend_from_slice(&sample.to_le_bytes());
-    }
-    out
 }
 
 #[cfg(test)]
@@ -189,20 +159,8 @@ mod tests {
     }
 
     #[test]
-    fn pcm_clamps_and_round_trips_through_base64() {
-        let pcm = to_pcm16(&[0.0, 1.0, -1.0, 2.0, -2.0, 0.5]);
-        assert_eq!(pcm, vec![0, 32767, -32767, 32767, -32767, 16384]);
+    fn pcm_round_trips_through_base64() {
         let encoded = pcm_base64(&[1, -2]);
         assert_eq!(STANDARD.decode(encoded).unwrap(), vec![1, 0, 0xFE, 0xFF]);
-    }
-
-    #[test]
-    fn wav_header_is_valid() {
-        let wav = encode_wav(&[1, 2, 3]);
-        assert_eq!(&wav[0..4], b"RIFF");
-        assert_eq!(u32::from_le_bytes(wav[4..8].try_into().unwrap()), 36 + 6);
-        assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 16_000);
-        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 6);
-        assert_eq!(wav.len(), 44 + 6);
     }
 }

@@ -1,6 +1,6 @@
 # Sayso
 
-Local dictation for macOS. You press a key, speak, and Sayso writes the text into the app you are using. Speech recognition runs on this Mac on the Neural Engine. Nothing leaves the Mac unless you turn on an AI style with a cloud provider.
+Local dictation for macOS. You press a key, speak, and Sayso writes the text into the app you are using. Speech recognition runs on this Mac on the Neural Engine. Nothing leaves the Mac unless you choose a cloud model or turn on an AI style with a cloud provider.
 
 - Design: Paper file "Sayso — v0.1 Design".
 - Decisions and milestones: [docs/plan.md](docs/plan.md).
@@ -28,7 +28,7 @@ Always start the bundle with `open`. macOS gives permissions to the app that sta
 
 The first start shows onboarding:
 
-1. Choose a model and download it (about 1.3 GB for Parakeet Unified). Onboarding continues when the download is done.
+1. Choose a model and download it (about 1.3 GB for Parakeet Unified). Onboarding continues when the download is done. You can add more local models and cloud models later in Models.
 2. Allow the microphone and Accessibility.
 3. Press Option+Space, speak, and press Option+Space again.
 
@@ -71,6 +71,8 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 scripts/check-deps.sh                     # dependency rules from docs/plan.md §4
 cargo test -p sayso-engine-client -- --ignored   # real engine; needs downloaded models
+SAYSO_REAL_MODELS=whisper-tiny cargo test -p sayso-engine-client --test real_models -- --ignored --nocapture   # download and run catalog models; "all" runs every model
+SAYSO_TEST_GROQ_KEY=... cargo test -p sayso-transcribe --test real -- --ignored --nocapture   # real cloud providers; one variable per provider
 cargo test -p sayso-enhance --test real_cli -- --ignored   # real claude command; needs a login
 ```
 
@@ -82,9 +84,10 @@ cargo test -p sayso-enhance --test real_cli -- --ignored   # real claude command
 | `crates/sayso-platform` | Platform traits: hotkeys, text insertion, context, permissions, audio, speech engine, sounds, login item. |
 | `crates/sayso-platform-macos` | macOS implementations: Carbon hotkeys, listen-only event tap, clipboard paste, AVFoundation permissions, cpal capture, window glue. |
 | `crates/sayso-engine-client` | Rust client for the engine sidecar (NDJSON over stdio, restart on crash). |
-| `native/macos/SaysoEngine` | Swift sidecar: Parakeet (FluidAudio) and Whisper (WhisperKit) on the Neural Engine. |
+| `native/macos/SaysoEngine` | Swift sidecar for the local models: Parakeet, Nemotron, Cohere, Canary, SenseVoice, Paraformer (FluidAudio), Whisper (WhisperKit), and Apple Speech (macOS 26). |
 | `crates/sayso-store` | SQLite history and dictionary, FLAC audio, retention. |
 | `crates/sayso-enhance` | AI styles: OpenAI-compatible HTTP, Claude CLI, Codex CLI. |
+| `crates/sayso-transcribe` | Cloud models: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI, and any OpenAI-compatible server. |
 | `crates/sayso-ui` | The paper design system on GPUI and gpui-kit. |
 | `crates/sayso-app` | The app: model, dictation controller, overlay, popover, Hub, onboarding. |
 | `assets/` | Fonts (OFL), textures, sounds, icons, and the scripts that make them. |

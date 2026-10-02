@@ -12,9 +12,10 @@ use sayso_ui::paper::{self, PaperStyled};
 use sayso_ui::{ActivePaper, Colors, text};
 use std::time::{Duration, Instant};
 
-/// The three models onboarding offers.
+/// The three models onboarding offers: the best for English, for European
+/// languages, and for every other language.
 fn choices() -> [ModelId; 3] {
-    [default_model(), ModelId::new("whisper-large-v3"), ModelId::new("whisper-small")]
+    [default_model(), ModelId::new("parakeet-ultra"), ModelId::new("whisper-large-v3-turbo")]
 }
 
 impl OnboardingView {
@@ -76,7 +77,7 @@ impl OnboardingView {
         for (i, info) in infos.into_iter().enumerate() {
             let selected = info.id == active;
             let id = info.id.clone();
-            let lang = "English";
+            let lang = info.language_label();
             cards = cards.child(
                 div()
                     .id(("model-card", i))

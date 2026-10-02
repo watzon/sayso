@@ -1,4 +1,4 @@
-//! Settings › Dictation: hotkeys, cancel, insertion, sounds, AI timeouts.
+//! Settings › Dictation: language, hotkeys, cancel, insertion, sounds, AI timeouts.
 
 use super::kit::{self, banner, group, row};
 use super::recorder::{self, Recorder, Slot};
@@ -21,6 +21,8 @@ pub struct DictationSettings {
     picker: Option<Vec<AppInfo>>,
     /// Volume while the slider is dragged, so the file is written once.
     volume: Option<f32>,
+    /// The language list is open.
+    language_menu: bool,
 }
 
 fn rec(v: &mut DictationSettings) -> &mut Recorder {
@@ -29,12 +31,63 @@ fn rec(v: &mut DictationSettings) -> &mut Recorder {
 
 impl DictationSettings {
     pub fn new(model: Entity<AppModel>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
-        Self { model, recorder: Recorder::new(cx), picker: None, volume: None }
+        Self { model, recorder: Recorder::new(cx), picker: None, volume: None, language_menu: false }
     }
 
     fn start(&mut self, slot: Slot, window: &mut Window, cx: &mut Context<Self>) {
         let model = self.model.clone();
         recorder::start(rec, self, &model, slot, window, cx);
+    }
+
+    /// The language of the dictation, limited to what the active model understands.
+    fn language_group(&mut self, cx: &mut Context<Self>) -> Div {
+        use sayso_core::languages;
+        let m = self.model.read(cx);
+        let active = m.active_model();
+        let current = active.language_for(&m.config.dictation.language);
+        let description = if active.is_multilingual() {
+            format!("{} understands {}. A language you choose is more reliable than detection.", active.name, active.language_label().to_lowercase())
+        } else {
+            format!("{} understands {} only. Choose another model in Models for more languages.", active.name, languages::display(&current))
+        };
+        let mut codes = active.languages.clone();
+        codes.sort_by_key(|code| languages::display(code));
+        if active.is_multilingual() {
+            codes.insert(0, languages::AUTO.to_string());
+        }
+        let items: Vec<(SharedString, bool)> = codes.iter().map(|code| (languages::display(code).into(), *code == current)).collect();
+
+        let mut control = div().relative().flex_none().child(
+            Button::new("language", languages::display(&current)).trailing_icon(Icon::ChevronDown).disabled(codes.len() < 2).on_click(cx.listener(
+                |this, _, _, cx| {
+                    this.language_menu = !this.language_menu;
+                    cx.notify();
+                },
+            )),
+        );
+        if self.language_menu {
+            let (pick, close) = (cx.entity(), cx.entity());
+            control = control.child(div().absolute().top_full().right_0().w(px(240.)).child(crate::hub::pages::kit::menu(
+                "language-menu",
+                items,
+                move |i, _, cx| {
+                    let Some(code) = codes.get(i).cloned() else { return };
+                    pick.update(cx, |this, cx| {
+                        this.language_menu = false;
+                        this.model.update(cx, |m, cx| m.edit_config(cx, |c| c.dictation.language = code));
+                        cx.notify();
+                    });
+                },
+                move |_, cx| {
+                    close.update(cx, |this, cx| {
+                        this.language_menu = false;
+                        cx.notify();
+                    })
+                },
+                cx,
+            )));
+        }
+        group("Language", cx).child(kit::row_s("Dictation language".into(), description, control, cx))
     }
 
     fn hotkeys_group(&mut self, cx: &mut Context<Self>) -> Div {
@@ -317,6 +370,7 @@ impl DictationSettings {
 impl Render for DictationSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let body = kit::body()
+            .child(self.language_group(cx))
             .child(self.hotkeys_group(cx))
             .child(self.insertion_group(cx))
             .child(self.sounds_group(cx))
@@ -330,6 +384,6 @@ impl Render for DictationSettings {
                     cx.stop_propagation();
                 }
             }))
-            .child(kit::page("dictation-page", "Dictation", "Hotkeys, cancel, and how text goes into your apps.", body, cx))
+            .child(kit::page("dictation-page", "Dictation", "Language, hotkeys, and how text goes into your apps.", body, cx))
     }
 }

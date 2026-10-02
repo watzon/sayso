@@ -15,6 +15,7 @@ use sayso_core::dictionary::{Replacement, Replacer, Word};
 use sayso_core::history::HistoryEntry;
 use sayso_core::hotkey::Hotkey;
 use sayso_core::models::{ModelId, ModelInfo};
+use sayso_core::speech::{SpeechProvider, split_model_id};
 use sayso_core::paths::Paths;
 use sayso_core::stats::{self, Stats};
 use sayso_core::stt::ModelStatus;
@@ -143,6 +144,7 @@ impl AppModel {
         model.reload_dictionary();
         model.reload_history();
         model.refresh_permissions();
+        // Local models only. The status of a cloud model comes from its provider.
         for m in sayso_core::models::catalog() {
             let status = model.services.engine.as_ref().map(|e| e.status(&m.id)).unwrap_or(ModelStatus::NotDownloaded);
             model.model_status.insert(m.id, status);
@@ -214,7 +216,11 @@ impl AppModel {
             && let Err(e) = self.services.platform.login_item.set_enabled(self.config.general.launch_at_login) {
                 log::warn!("launch at login: {e}");
             }
-        if before.dictation.model != self.config.dictation.model {
+        if before.dictation.model != self.config.dictation.model
+            || before.dictation.language != self.config.dictation.language
+            || before.dictation.live_preview != self.config.dictation.live_preview
+        {
+            // The language can change which model gives the live preview.
             self.load_active_models(cx);
         }
         self.machine.timing.min_duration_ms = self.config.dictation.min_duration_ms;
@@ -235,6 +241,11 @@ impl AppModel {
 
     pub fn open_path(path: &std::path::Path) {
         let _ = std::process::Command::new("open").arg(path).spawn();
+    }
+
+    /// Open a web page in the default browser.
+    pub fn open_url(url: &str) {
+        let _ = std::process::Command::new("open").arg(url).spawn();
     }
 
     pub fn register_hotkeys(&mut self) {
@@ -299,35 +310,51 @@ impl AppModel {
     // Models
     // -----------------------------------------------------------------------
 
+    /// Every model this Mac can use: the local models its macOS version runs,
+    /// and the models of the configured speech providers.
     pub fn catalog(&self) -> Vec<ModelInfo> {
-        sayso_core::models::catalog()
+        let os = macos_major();
+        sayso_core::models::catalog_with(&self.config.speech).into_iter().filter(|m| m.min_macos <= os).collect()
     }
 
+    /// A cloud model is ready when its provider is set up. It has no download.
     pub fn status_of(&self, id: &ModelId) -> ModelStatus {
+        if let Some((provider, _)) = split_model_id(id) {
+            return if self.config.speech.provider(provider).is_some() { ModelStatus::Ready } else { ModelStatus::NotDownloaded };
+        }
         self.model_status.get(id).cloned().unwrap_or(ModelStatus::NotDownloaded)
     }
 
     pub fn active_model(&self) -> ModelInfo {
-        sayso_core::models::find(&self.config.dictation.model)
+        sayso_core::models::find_with(&self.config.speech, &self.config.dictation.model)
             .unwrap_or_else(|| sayso_core::models::find(&sayso_core::models::default_model()).expect("default model"))
     }
 
+    /// The provider of the active model, when the active model is a cloud model.
+    pub fn active_speech_provider(&self) -> Option<&SpeechProvider> {
+        let (provider, _) = split_model_id(&self.config.dictation.model)?;
+        self.config.speech.provider(provider)
+    }
+
     /// The model for the live preview, when it is on and usable.
+    ///
+    /// The active model streams its own preview if it can. If not, a streaming
+    /// model that is on disk and understands the dictation language does it:
+    /// the small Parakeet EOU first, then any other.
     pub fn preview_model(&self) -> Option<ModelId> {
-        if !self.config.dictation.live_preview {
-            return None;
-        }
-        let active = self.active_model();
-        if active.live_preview {
-            return Some(active.id);
-        }
-        // A Whisper model can still preview with Parakeet EOU when it is downloaded.
-        let eou = ModelId::new("parakeet-eou-120m");
-        self.status_of(&eou).is_on_disk().then_some(eou)
+        if self.config.dictation.live_preview { self.preview_candidate() } else { None }
+    }
+
+    /// The model the live preview uses when the setting is on.
+    pub fn preview_candidate(&self) -> Option<ModelId> {
+        sayso_core::models::preview_for(&self.active_model(), &self.config.dictation.language, |id| self.status_of(id).is_on_disk())
     }
 
     pub fn download_model(&mut self, id: ModelId, cx: &mut Context<Self>) {
         let Some(engine) = self.services.engine.clone() else { return };
+        if split_model_id(&id).is_some() {
+            return; // A cloud model has no download.
+        }
         self.model_status.insert(id.clone(), ModelStatus::Downloading { fraction: 0.0, bytes_done: 0, bytes_total: 0 });
         cx.notify();
         cx.spawn(async move |this, cx| {
@@ -356,6 +383,8 @@ impl AppModel {
                     Ok(()) => m.model_status.insert(id, ModelStatus::NotDownloaded),
                     Err(e) => m.model_status.insert(id, ModelStatus::Failed { message: e.to_string() }),
                 };
+                // The deleted model may have given the live preview.
+                m.load_active_models(cx);
                 cx.notify();
             });
         })
@@ -366,10 +395,14 @@ impl AppModel {
         self.edit_config(cx, |c| c.dictation.model = id);
     }
 
-    /// Load the final-pass and preview models when they are on disk.
+    /// Load the final-pass and preview models when they are on disk. A cloud
+    /// model needs no load.
     pub fn load_active_models(&mut self, cx: &mut Context<Self>) {
         let Some(engine) = self.services.engine.clone() else { return };
-        let mut ids = vec![self.config.dictation.model.clone()];
+        let mut ids = Vec::new();
+        if !self.active_model().is_remote() {
+            ids.push(self.config.dictation.model.clone());
+        }
         if let Some(p) = self.preview_model()
             && !ids.contains(&p) {
                 ids.push(p);
@@ -396,6 +429,68 @@ impl AppModel {
             .detach();
         }
         cx.notify();
+    }
+
+    // -----------------------------------------------------------------------
+    // Speech providers (cloud models)
+    // -----------------------------------------------------------------------
+
+    /// Add or replace a speech provider. The API key goes to the Keychain.
+    pub fn save_speech_provider(&mut self, provider: SpeechProvider, api_key: Option<String>, cx: &mut Context<Self>) {
+        if let (Some(key), Some(account)) = (&api_key, &provider.api_key_account)
+            && let Err(e) = self.services.secrets.set(account, key) {
+                log::error!("could not store API key: {e:?}");
+            }
+        self.edit_config(cx, move |c| {
+            c.speech.providers.retain(|p| p.id != provider.id);
+            c.speech.providers.push(provider);
+        });
+    }
+
+    /// Remove a speech provider and its key. If its model was active, the
+    /// default local model becomes active.
+    pub fn remove_speech_provider(&mut self, id: &str, cx: &mut Context<Self>) {
+        let id = id.to_string();
+        if let Some(account) = self.config.speech.provider(&id).and_then(|p| p.api_key_account.clone()) {
+            let _ = self.services.secrets.delete(&account);
+        }
+        self.edit_config(cx, move |c| {
+            c.speech.providers.retain(|p| p.id != id);
+            if split_model_id(&c.dictation.model).is_some_and(|(p, _)| p == id) {
+                c.dictation.model = sayso_core::models::default_model();
+            }
+        });
+    }
+
+    /// Check the address and the key of a speech provider. `done` gets the time in ms or a sentence for the user.
+    pub fn test_speech_provider(&mut self, id: &str, cx: &mut Context<Self>, done: impl FnOnce(&mut Self, Result<u64, String>, &mut Context<Self>) + 'static) {
+        let Some(provider) = self.config.speech.provider(id).cloned() else { return };
+        let secrets = self.services.secrets.clone();
+        cx.spawn(async move |this, cx| {
+            let result = cx
+                .background_spawn(async move {
+                    let key = provider.api_key_account.as_deref().and_then(|a| secrets.get(a));
+                    let started = Instant::now();
+                    sayso_transcribe::check(&provider, key.as_deref(), Duration::from_secs(15))
+                        .map(|()| started.elapsed().as_millis() as u64)
+                        .map_err(|e| e.user_message(&provider.name))
+                })
+                .await;
+            let _ = this.update(cx, |m, cx| done(m, result, cx));
+        })
+        .detach();
+    }
+
+    /// A unique speech provider id from a name.
+    pub fn new_speech_provider_id(&self, name: &str) -> String {
+        let base = crate::hub::pages::kit::slug(name);
+        let mut id = base.clone();
+        let mut n = 2;
+        while self.config.speech.provider(&id).is_some() {
+            id = format!("{base}-{n}");
+            n += 1;
+        }
+        id
     }
 
     /// Bytes used by downloaded models, for the Models header.
@@ -765,6 +860,13 @@ impl AppModel {
     /// One-line engine status for the sidebar: (title, detail, color).
     pub fn engine_summary(&self) -> (String, String, fn(&sayso_ui::Colors) -> Hsla) {
         let model = self.active_model();
+        if model.is_remote() {
+            // The engine process plays no part in a cloud final pass.
+            return match self.status_of(&model.id) {
+                ModelStatus::Ready => ("Ready".into(), format!("{} · Cloud", model.name), |c| c.success),
+                _ => ("No model".into(), "Open Models to choose one".into(), |c| c.danger),
+            };
+        }
         if self.services.engine.is_none() || self.engine_down.is_some() {
             return ("Engine stopped".into(), "Restarting…".into(), |c| c.danger);
         }
@@ -780,11 +882,17 @@ impl AppModel {
         }
     }
 
+    /// True when the active model can run a final pass: a cloud model with its
+    /// provider set up, or a local model on disk with the engine running.
+    pub fn model_ready(&self) -> bool {
+        let model = self.active_model();
+        let status = self.status_of(&model.id);
+        if model.is_remote() { status.is_usable() } else { self.services.engine.is_some() && status.is_on_disk() }
+    }
+
     /// True when the app can dictate now.
     pub fn ready_to_dictate(&self) -> bool {
-        self.services.engine.is_some()
-            && self.status_of(&self.config.dictation.model).is_on_disk()
-            && self.permission(Permission::Microphone) == PermissionState::Granted
+        self.model_ready() && self.permission(Permission::Microphone) == PermissionState::Granted
     }
 
     // -----------------------------------------------------------------------
@@ -805,4 +913,19 @@ impl AppModel {
             c.onboarding.step = 6;
         });
     }
+}
+
+/// The major version of macOS ("15" from "15.6.1"). 14, the oldest macOS Sayso
+/// runs on, when the version cannot be read.
+pub fn macos_major() -> u32 {
+    static VERSION: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *VERSION.get_or_init(|| {
+        std::process::Command::new("sw_vers")
+            .arg("-productVersion")
+            .output()
+            .ok()
+            .and_then(|out| String::from_utf8(out.stdout).ok())
+            .and_then(|v| v.trim().split('.').next().and_then(|major| major.parse().ok()))
+            .unwrap_or(14)
+    })
 }

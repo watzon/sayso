@@ -9,8 +9,12 @@ use parking_lot::Mutex;
 use sayso_core::dictation::{Effect, Event, SessionId, Sound, State};
 use sayso_core::dictionary::AppliedReplacement;
 use sayso_core::history::{EnhanceOutcome, HistoryEntry, InsertOutcome, TargetApp, waveform_summary};
+use sayso_core::models::ModelInfo;
 use sayso_core::pipeline::TextPipeline;
-use sayso_core::stt::{EngineEvent, ModelStatus, SAMPLE_RATE, SessionOptions};
+use sayso_core::speech::{SpeechProvider, SpeechRequest, split_model_id};
+use sayso_core::stt::{EngineEvent, ModelStatus, SAMPLE_RATE, SessionOptions, Transcript, encode_wav, to_pcm16};
+use sayso_enhance::SecretStore;
+use sayso_platform::SttBackend;
 use sayso_platform::{
     AppInfo, CaptureHandle, HotkeyEvent, InsertError, InsertMethod, InsertResult, Permission, PermissionState, SoundKind,
 };
@@ -80,11 +84,20 @@ impl AppModel {
                 return false;
             }
         }
+        let model = self.active_model();
+        if model.is_remote() {
+            if !self.status_of(&model.id).is_usable() {
+                self.notice("Set up the cloud provider of your model first".into(), cx);
+                cx.emit(AppEvent::OpenHub(crate::hub::Route::Models));
+                return false;
+            }
+            return true;
+        }
         if self.services.engine.is_none() {
             self.notice("The speech engine is not installed".into(), cx);
             return false;
         }
-        if !self.status_of(&self.config.dictation.model).is_on_disk() {
+        if !self.status_of(&model.id).is_on_disk() {
             self.notice("Download a speech model first".into(), cx);
             cx.emit(AppEvent::OpenHub(crate::hub::Route::Models));
             return false;
@@ -139,7 +152,7 @@ impl AppModel {
 
     fn session_options(&self) -> SessionOptions {
         SessionOptions {
-            final_model: self.config.dictation.model.clone(),
+            final_model: self.active_model().id,
             preview_model: self.preview_model(),
             language: self.config.dictation.language.clone(),
             vocabulary: self.vocabulary(),
@@ -221,43 +234,63 @@ impl AppModel {
         }
     }
 
+    /// How the final pass of the active model runs. None, with the reason, when it cannot run.
+    fn final_pass(&self) -> Result<FinalPass, String> {
+        let info = self.active_model();
+        if let Some((provider, model)) = split_model_id(&info.id) {
+            let provider = self.config.speech.provider(provider).cloned().ok_or("The cloud provider of this model is not set up.")?;
+            // If the provider fails, a local model that is already in memory takes over.
+            let fallback = self
+                .services
+                .engine
+                .clone()
+                .zip(self.preview_model().and_then(|id| sayso_core::models::find(&id)).map(Box::new))
+                .filter(|(_, m)| m.final_pass && self.status_of(&m.id).is_usable());
+            return Ok(FinalPass::Cloud {
+                provider,
+                model: model.to_string(),
+                info: Box::new(info),
+                secrets: self.services.secrets.clone(),
+                timeout: Duration::from_millis(self.config.speech.timeout_ms),
+                fallback,
+            });
+        }
+        let engine = self.services.engine.clone().ok_or("The speech engine is not running.")?;
+        Ok(FinalPass::Local { engine, model: info.id })
+    }
+
     fn transcribe(&mut self, session: SessionId, cx: &mut Context<Self>) {
-        let Some(engine) = self.services.engine.clone() else {
-            self.dispatch(Event::TranscribeFailed { session, message: "The speech engine is not running.".into() }, cx);
-            return;
+        let pass = match self.final_pass() {
+            Ok(pass) => pass,
+            Err(message) => {
+                self.dispatch(Event::TranscribeFailed { session, message }, cx);
+                return;
+            }
         };
         let samples = self.session(session).samples.lock().clone();
         let options = self.session_options();
         let replacer = self.replacer.clone();
-        let model = options.final_model.clone();
-        if !self.status_of(&model).is_usable() {
+        if matches!(pass, FinalPass::Local { .. }) && !self.status_of(&options.final_model).is_usable() {
             self.load_active_models(cx);
         }
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    // Wait for the model: the first load compiles it for the Neural Engine.
-                    let deadline = Instant::now() + Duration::from_secs(300);
-                    loop {
-                        match engine.status(&model) {
-                            ModelStatus::Ready => break,
-                            ModelStatus::Failed { message } => return Err(message),
-                            _ if Instant::now() > deadline => return Err("The model did not load in time.".into()),
-                            _ => std::thread::sleep(Duration::from_millis(150)),
-                        }
-                    }
-                    let t = engine.transcribe(&samples, &options).map_err(|e| e.to_string())?;
+                    let (t, note) = pass.run(&samples, &options)?;
                     let (replaced, applied) = replacer.apply(t.text.trim());
-                    Ok((t, replaced, applied))
+                    Ok::<_, String>((t, replaced, applied, note))
                 })
                 .await;
             let _ = this.update(cx, |m, cx| match result {
-                Ok((t, replaced, applied)) => {
+                Ok((t, replaced, applied, note)) => {
                     let s = m.session(session);
                     s.transcript = Some(t.text.clone());
                     s.transcribe_ms = t.elapsed_ms;
                     s.model = Some(t.model.clone());
                     s.replacements = applied;
+                    if let Some(note) = note {
+                        m.notice(note, cx);
+                    }
                     m.dispatch(Event::Transcribed { session, text: replaced }, cx);
                 }
                 Err(message) => m.dispatch(Event::TranscribeFailed { session, message }, cx),
@@ -440,15 +473,22 @@ impl AppModel {
 
     /// Transcribe a history entry again from its saved audio.
     pub fn retranscribe_entry(&mut self, entry: HistoryEntry, cx: &mut Context<Self>) {
-        let (Some(engine), Some(store), Some(file)) = (self.services.engine.clone(), self.services.store.clone(), entry.audio_file.clone()) else {
+        let (Some(store), Some(file)) = (self.services.store.clone(), entry.audio_file.clone()) else {
             return;
+        };
+        let pass = match self.final_pass() {
+            Ok(pass) => pass,
+            Err(message) => {
+                self.notice(message, cx);
+                return;
+            }
         };
         let options = self.session_options();
         let replacer = self.replacer.clone();
         cx.spawn(async move |this, cx| {
             cx.background_spawn(async move {
                 let samples = store.load_audio(&file).ok()?;
-                let t = engine.transcribe(&samples, &options).ok()?;
+                let (t, _) = pass.run(&samples, &options).inspect_err(|e| log::warn!("transcribe again: {e}")).ok()?;
                 let (text, applied) = replacer.apply(t.text.trim());
                 let mut e = entry;
                 e.transcript = t.text;
@@ -582,6 +622,73 @@ impl AppModel {
         match store.apply_retention(h.keep_text_days, audio_days, chrono::Utc::now()) {
             Ok(r) => log::info!("retention: {r:?}"),
             Err(e) => log::warn!("retention: {e}"),
+        }
+    }
+}
+
+/// The backend for one final pass, with everything a background thread needs.
+enum FinalPass {
+    Local {
+        engine: Arc<dyn SttBackend>,
+        model: sayso_core::models::ModelId,
+    },
+    Cloud {
+        provider: SpeechProvider,
+        /// The provider's model id.
+        model: String,
+        info: Box<ModelInfo>,
+        secrets: Arc<dyn SecretStore>,
+        timeout: Duration,
+        /// A local model that is in memory, with the engine that runs it.
+        fallback: Option<(Arc<dyn SttBackend>, Box<ModelInfo>)>,
+    },
+}
+
+impl FinalPass {
+    /// Run the final pass. Blocks. The second value is a notice for the user,
+    /// set when a local model replaced a cloud provider that failed.
+    fn run(&self, samples: &[f32], options: &SessionOptions) -> Result<(Transcript, Option<String>), String> {
+        match self {
+            FinalPass::Local { engine, model } => {
+                // Wait for the model: the first load compiles it for the Neural Engine.
+                let deadline = Instant::now() + Duration::from_secs(300);
+                loop {
+                    match engine.status(model) {
+                        ModelStatus::Ready => break,
+                        ModelStatus::Failed { message } => return Err(message),
+                        _ if Instant::now() > deadline => return Err("The model did not load in time.".into()),
+                        _ => std::thread::sleep(Duration::from_millis(150)),
+                    }
+                }
+                engine.transcribe(samples, options).map(|t| (t, None)).map_err(|e| e.to_string())
+            }
+            FinalPass::Cloud { provider, model, info, secrets, timeout, fallback } => {
+                let started = Instant::now();
+                let key = provider.api_key_account.as_deref().and_then(|account| secrets.get(account));
+                let language = info.language_for(&options.language);
+                let vocabulary: &[String] = if info.vocabulary { &options.vocabulary } else { &[] };
+                let request = SpeechRequest {
+                    model,
+                    wav: &encode_wav(&to_pcm16(samples)),
+                    language: (language != sayso_core::languages::AUTO).then_some(language.as_str()),
+                    vocabulary,
+                    timeout: *timeout,
+                };
+                match sayso_transcribe::transcribe(provider, key.as_deref(), &request) {
+                    Ok(text) => {
+                        let elapsed_ms = started.elapsed().as_millis() as u64;
+                        Ok((Transcript { text, model: info.id.clone(), elapsed_ms }, None))
+                    }
+                    Err(e) => {
+                        log::warn!("cloud final pass with {} failed: {e}", provider.id);
+                        let message = e.user_message(&provider.name);
+                        let Some((engine, local)) = fallback else { return Err(message) };
+                        let options = SessionOptions { final_model: local.id.clone(), ..options.clone() };
+                        let t = engine.transcribe(samples, &options).map_err(|_| message)?;
+                        Ok((t, Some(format!("{} did not answer. Sayso used {}.", provider.name, local.name))))
+                    }
+                }
+            }
         }
     }
 }

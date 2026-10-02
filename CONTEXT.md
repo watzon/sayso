@@ -20,16 +20,28 @@ The raw text from the speech model, before any changes.
 The fixed steps that turn audio into inserted text: transcribe → apply replacements → apply style → insert.
 
 **Engine**
-The process that runs speech models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. Rust code talks to it through the `SttBackend` trait.
+The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. Rust code talks to it through the `SttBackend` trait. The engine never sees a cloud model.
 
 **Model**
-A speech model that the user downloads, for example "Parakeet Unified EN" or "Whisper large-v3". One model is the active model.
+A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". One model is the active model. A model is a local model or a cloud model.
+
+**Local model**
+A model that the user downloads and that runs on this Mac in the engine. The audio stays on the Mac.
+
+**Cloud model**
+A model that runs on the servers of a speech provider. Sayso sends the audio of the dictation and the dictionary words to the provider. A cloud model does the final pass only. Its id is `<provider id>:<model>`.
+
+**Speech provider**
+A service that runs cloud models: OpenAI, Groq, ElevenLabs, Deepgram, AssemblyAI, Mistral, or a custom endpoint (any server with the OpenAI transcription API, also one on this Mac). The user adds a provider with their own API key. It is not the same as the provider of a style (see Enhancer).
 
 **Final pass**
 The transcription that runs when the dictation stops. Its result is the transcript.
 
 **Live preview**
-Text from the streaming model while the user speaks. It shows only in the overlay and is never inserted.
+Text from a streaming model while the user speaks. It shows only in the overlay and is never inserted. A streaming local model gives the preview, also when the active model is a cloud model.
+
+**Dictation language**
+The language the user speaks: a language code, or "auto" to let the model detect it. Each model gets the nearest value that it supports.
 
 **Dictionary**
 The user's list of words and replacements.

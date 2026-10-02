@@ -1,5 +1,5 @@
 // SaysoEngine: speech sidecar for Sayso. NDJSON requests on stdin, NDJSON events on stdout.
-// Hosts FluidAudio (Parakeet Unified, Parakeet EOU) and WhisperKit.
+// Hosts FluidAudio (Parakeet, Nemotron, Cohere, Canary, SenseVoice, Paraformer) and WhisperKit.
 import Foundation
 
 // Keep the protocol channel clean. Duplicate the real stdout for NDJSON, then point fd 1 at
@@ -65,7 +65,9 @@ func handleStream(_ request: Request) async {
         let session = try request.int("session")
         switch request.type {
         case "stream_start":
-            try await engine.streamStart(session: session, model: try request.string("model"))
+            try await engine.streamStart(
+                session: session, model: try request.string("model"),
+                language: request.optionalString("language") ?? "auto")
             out.ok(id: id)
         case "stream_audio":
             try await engine.streamAudio(session: session, pcm: try request.string("pcm"))

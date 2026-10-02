@@ -7092,6 +7092,7 @@ dependencies = [
  "sayso-platform",
  "sayso-platform-macos",
  "sayso-store",
+ "sayso-transcribe",
  "sayso-ui",
  "serde",
  "serde_json",
@@ -7193,6 +7194,17 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "uuid",
+]
+
+[[package]]
+name = "sayso-transcribe"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "sayso-core",
+ "serde_json",
+ "tiny_http",
+ "ureq",
 ]
 
 [[package]]

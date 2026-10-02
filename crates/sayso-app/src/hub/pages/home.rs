@@ -288,8 +288,8 @@ impl HomePage {
         let ax_ok = m.granted(Permission::Accessibility);
         let active = m.active_model();
         let status = m.status_of(&active.id);
-        let model_ok = status.is_on_disk();
-        let all_ok = mic_ok && ax_ok && model_ok && m.services.engine.is_some();
+        let model_ok = m.model_ready();
+        let all_ok = mic_ok && ax_ok && model_ok;
 
         let fix = |id: &'static str, label: &str, f: Fix| {
             let model = self.model.clone();
@@ -317,6 +317,9 @@ impl HomePage {
             fix("fix-ax", "Allow", Box::new(|m, _| m.fix_permission(Permission::Accessibility))).into_any_element()
         };
         let model_value = match &status {
+            ModelStatus::NotDownloaded if active.is_remote() => {
+                fix("fix-model", "Open Models", Box::new(|m, cx| m.navigate(Route::Models, cx))).into_any_element()
+            }
             ModelStatus::Ready | ModelStatus::Downloaded => plain(active.name.clone()),
             ModelStatus::Optimizing => plain("Optimizing for your Mac".into()),
             ModelStatus::Downloading { fraction, .. } => plain(format!("Downloading {:.0}%", fraction * 100.)),
@@ -342,7 +345,8 @@ impl HomePage {
             .child(row(ax_ok, "Accessibility", ax))
             .child(row(model_ok, "Model", model_value))
             .child(row(true, "Dictionary", dict));
-        if m.services.engine.is_none() || m.engine_down.is_some() {
+        // A cloud model does not need the engine for its final pass.
+        if !active.is_remote() && (m.services.engine.is_none() || m.engine_down.is_some()) {
             list = list.child(row(false, "Engine", plain("Stopped. Restarting".into())));
         }
         list

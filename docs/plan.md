@@ -79,6 +79,17 @@ Settings shows the active path for each kind.
 - The first load compiles each model for the Neural Engine. Show this as its own "Optimizing for your Mac" state.
 - Multilingual models stay possible. The language setting exists and is fixed to English in v0.1.
 
+#### After v0.1: more local models and cloud models (2026-10-02)
+
+- The catalog holds every model that the pinned FluidAudio and WhisperKit versions run: the Parakeet TDT family (v2, v3, Ultra, Redux, Phonon-2, TDT-CTC 110M, Japanese), Nemotron streaming (English and multilingual), Cohere Transcribe, Canary 1B v2, SenseVoice Small, Paraformer, eight Whisper variants, and Apple Speech (SpeechAnalyzer, macOS 26 and later, files managed by macOS). The catalog is in `sayso-core/src/models.rs`.
+- The language setting is live: a language code or "auto". Each model gets the nearest value that it supports.
+- Cloud models are opt-in. A speech provider (OpenAI, Groq, ElevenLabs, Deepgram, AssemblyAI, Mistral, or a custom OpenAI-compatible endpoint) does the final pass with the user's own API key. The key is in the Keychain.
+  - This changes one v0.1 goal. With a cloud model, the audio of each dictation and the dictionary words leave the Mac. The Models page, the add form, and Settings › History and privacy say so.
+  - The live preview stays local. If the provider fails and a local model with a final pass is in memory, that model does the final pass, and the overlay says so.
+- Not added, with the reason:
+  - Qwen3-ASR, Voxtral, Granite Speech, Kyutai: they need MLX, and command-line SwiftPM cannot build the MLX Metal shaders.
+  - Moonshine: its Swift package ships iOS slices only.
+
 ### Dictation flow
 
 | Topic | Decision |

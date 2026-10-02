@@ -15,6 +15,7 @@ sayso-platform-macos = { path = "crates/sayso-platform-macos" }
 sayso-engine-client = { path = "crates/sayso-engine-client" }
 sayso-store = { path = "crates/sayso-store" }
 sayso-enhance = { path = "crates/sayso-enhance" }
+sayso-transcribe = { path = "crates/sayso-transcribe" }
 sayso-ui = { path = "crates/sayso-ui" }
 
 # UI. Exact pins: gpui-pre snapshots break the API between versions.
