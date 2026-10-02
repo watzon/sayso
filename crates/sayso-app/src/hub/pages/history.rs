@@ -8,6 +8,7 @@ use super::player::{self, Playing};
 use crate::hub::{Route, SettingsPage};
 use crate::model::AppModel;
 use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use sayso_core::history::{EnhanceOutcome, HistoryEntry, InsertOutcome};
@@ -36,6 +37,8 @@ pub struct HistoryPage {
     /// (bundle id, name)
     app: Option<(String, String)>,
     app_menu: bool,
+    /// The three-dot menu of the open entry.
+    actions_menu: bool,
     limit: usize,
     entries: Vec<HistoryEntry>,
     matches: usize,
@@ -51,6 +54,10 @@ pub struct HistoryPage {
     copied: bool,
     /// Scroll position of the detail text, so the fade knows when the end shows.
     text_scroll: ScrollHandle,
+    /// The scroll position of the entry list, for its scrollbar and "Back to top".
+    list_scroll: ScrollHandle,
+    /// True when the list is far enough down to show "Back to top".
+    list_scrolled: bool,
     /// The full transcript modal is open.
     transcript_open: bool,
     modal_focus: FocusHandle,
@@ -75,6 +82,7 @@ impl HistoryPage {
             has_audio: false,
             app: None,
             app_menu: false,
+            actions_menu: false,
             limit: PAGE,
             entries: Vec::new(),
             matches: 0,
@@ -88,6 +96,8 @@ impl HistoryPage {
             busy: None,
             copied: false,
             text_scroll: ScrollHandle::new(),
+            list_scroll: ScrollHandle::new(),
+            list_scrolled: false,
             transcript_open: false,
             modal_focus: cx.focus_handle(),
             bar_bounds: Rc::new(Cell::new(None)),
@@ -140,6 +150,7 @@ impl HistoryPage {
             self.stop_audio();
             self.selected = Some(id);
             self.confirm_delete = false;
+            self.actions_menu = false;
             self.notice = None;
             self.copied = false;
             self.transcript_open = false;
@@ -258,8 +269,28 @@ impl HistoryPage {
     // List pane
     // -----------------------------------------------------------------------
 
+    /// Copy text and show "Copied" for a moment.
+    fn copy_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.model.read(cx).copy_text(text);
+        self.copied = true;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(Duration::from_millis(1500)).await;
+            let _ = this.update(cx, |p, cx| {
+                p.copied = false;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// True when the list is about half a screen down.
+    fn list_is_scrolled(&self) -> bool {
+        self.list_scroll.offset().y < px(-300.)
+    }
+
     fn list_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let c = cx.paper().colors;
+        self.list_scrolled = self.list_is_scrolled();
         let total = self.model.read(cx).history_total;
         let filtered = self.filters_active(cx);
         let count = if filtered {
@@ -330,7 +361,48 @@ impl HistoryPage {
             // The scroll area clips to its bounds. It reaches out to the pane edges
             // (with matching padding, so rows stay put) to leave room for the
             // selected row's soft shadow, which the design lets spread past the row.
-            .child(div().id("entries").flex_1().min_h_0().overflow_y_scroll().mx(px(-20.)).px(px(20.)).pb(px(20.)).child(list))
+            .child(
+                div()
+                    .relative()
+                    .flex_1()
+                    .min_h_0()
+                    .mx(px(-20.))
+                    .child(
+                        div()
+                            .id("entries")
+                            .size_full()
+                            .overflow_y_scroll()
+                            .track_scroll(&self.list_scroll)
+                            .on_scroll_wheel(cx.listener(|_, _, _, cx| {
+                                // The handle moves after this event, so read it on the next turn.
+                                let page = cx.entity();
+                                cx.defer(move |cx| {
+                                    page.update(cx, |this, cx| {
+                                        if this.list_is_scrolled() != this.list_scrolled {
+                                            cx.notify();
+                                        }
+                                    })
+                                });
+                            }))
+                            .px(px(20.))
+                            .pb(px(20.))
+                            .child(list),
+                    )
+                    .vertical_scrollbar(&self.list_scroll)
+                    .when(self.list_scrolled, |d| {
+                        d.child(
+                            div().absolute().bottom(px(16.)).left_0().right_0().flex().justify_center().child(
+                                div().rounded(px(9.)).shadow(sayso_ui::paper::floating(&c)).child(
+                                    Button::new("back-to-top", "Back to top").small().on_click(cx.listener(|this, _, _, cx| {
+                                        this.list_scroll.set_offset(point(px(0.), px(0.)));
+                                        this.list_scrolled = false;
+                                        cx.notify();
+                                    })),
+                                ),
+                            ),
+                        )
+                    }),
+            )
     }
 
     fn filters(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -453,39 +525,96 @@ impl HistoryPage {
             (m.provider_for(&style).is_some_and(|p| !p.needs_model()) && style.uses_ai(), m.model_ready())
         };
 
-        let enhance = {
-            let e2 = e.clone();
-            // Says what a click does: a second pass if a style already ran.
-            let again = matches!(e.enhance, EnhanceOutcome::Applied { .. });
-            let label = match (self.busy == Some("enhance"), again) {
-                (true, _) => "Enhancing",
-                (false, true) => "Re-enhance",
-                (false, false) => "Enhance",
-            };
-            Button::new("enhance", label)
-                .disabled(!can_enhance || self.busy.is_some())
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.busy = Some("enhance");
-                    let entry = e2.clone();
-                    this.model.update(cx, |m, cx| m.enhance_entry(entry, cx));
+        // The actions of the entry are in the three-dot menu. A delete asks
+        // first, in the same corner.
+        let actions = if self.confirm_delete {
+            let id = e.id;
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(8.))
+                .child(ui("Delete this dictation and its audio?", 13., 16., FontWeight::MEDIUM, c.ink))
+                .child(Button::new("del-yes", "Delete").small().danger().on_click(cx.listener(move |this, _, _, cx| {
+                    this.stop_audio();
+                    this.confirm_delete = false;
+                    this.model.update(cx, |m, cx| m.delete_entry(id, cx));
+                })))
+                .child(Button::new("del-no", "Cancel").small().ghost().on_click(cx.listener(|this, _, _, cx| {
+                    this.confirm_delete = false;
                     cx.notify();
-                }))
-        };
-        let copy = {
-            let text = e.final_text.clone();
-            Button::new("copy", if self.copied { "Copied" } else { "Copy" }).primary().on_click(cx.listener(move |this, _, _, cx| {
-                this.model.read(cx).copy_text(&text);
-                this.copied = true;
+                })))
+        } else {
+            let status = match (self.busy, self.copied) {
+                (Some("enhance"), _) => Some("Enhancing…"),
+                (Some("retranscribe"), _) => Some("Transcribing…"),
+                (_, true) => Some("Copied"),
+                _ => None,
+            };
+            let open = self.actions_menu;
+            let mut more = div().relative().child(kit::icon_button("entry-more", Icon::More, 16., cx).size(px(30.)).when(open, |d| d.bg(c.deboss)).on_click(cx.listener(|this, _, _, cx| {
+                this.actions_menu = !this.actions_menu;
                 cx.notify();
-                cx.spawn(async move |this, cx| {
-                    cx.background_executor().timer(Duration::from_millis(1500)).await;
-                    let _ = this.update(cx, |p, cx| {
-                        p.copied = false;
-                        cx.notify();
-                    });
-                })
-                .detach();
-            }))
+            })));
+            if self.actions_menu {
+                let mut items = vec![kit::MenuAction::new(Icon::Copy, "Copy")];
+                let mut picks: Vec<&'static str> = vec!["copy"];
+                if can_enhance && self.busy.is_none() {
+                    // Says what a pick does: a second pass if a style already ran.
+                    let again = matches!(e.enhance, EnhanceOutcome::Applied { .. });
+                    items.push(kit::MenuAction::new(Icon::Sparkle, if again { "Re-enhance" } else { "Enhance" }));
+                    picks.push("enhance");
+                }
+                if e.audio_file.is_some() && engine && self.busy.is_none() {
+                    items.push(kit::MenuAction::new(Icon::Undo, "Transcribe again"));
+                    picks.push("retranscribe");
+                }
+                items.push(kit::MenuAction::new(Icon::Trash, "Delete").danger());
+                picks.push("delete");
+                let (pick_page, close_page) = (cx.entity(), cx.entity());
+                let entry = e.clone();
+                // The menu opens at its parent's left edge; a parent as wide as
+                // the menu lines its right edge up with the button.
+                more = more.child(div().absolute().top_full().right_0().w(px(184.)).child(kit::action_menu(
+                    "entry-actions",
+                    items,
+                    move |i, _, cx| {
+                        let pick = picks.get(i).copied();
+                        let entry = entry.clone();
+                        pick_page.update(cx, |this, cx| {
+                            this.actions_menu = false;
+                            match pick {
+                                Some("copy") => this.copy_text(&entry.final_text, cx),
+                                Some("enhance") => {
+                                    this.busy = Some("enhance");
+                                    this.model.update(cx, |m, cx| m.enhance_entry(entry, cx));
+                                }
+                                Some("retranscribe") => {
+                                    this.busy = Some("retranscribe");
+                                    this.model.update(cx, |m, cx| m.retranscribe_entry(entry, cx));
+                                }
+                                Some("delete") => this.confirm_delete = true,
+                                _ => {}
+                            }
+                            cx.notify();
+                        });
+                    },
+                    move |_, cx| {
+                        close_page.update(cx, |this, cx| {
+                            this.actions_menu = false;
+                            cx.notify();
+                        })
+                    },
+                    cx,
+                )));
+            }
+            div()
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(10.))
+                .children(status.map(|text| ui(text, 13., 16., FontWeight::MEDIUM, c.graphite)))
+                .child(more)
         };
 
         let header = div()
@@ -513,7 +642,7 @@ impl HistoryPage {
                         .flex_none(),
                     ),
             )
-            .child(div().flex().flex_none().gap(px(6.)).child(enhance).child(copy));
+            .child(actions);
 
         let content = div()
             .flex()
@@ -526,10 +655,8 @@ impl HistoryPage {
             .px(px(48.))
             .child(self.final_text(&e.final_text, &c))
             .child(div().flex_none().child(self.player(&e, cx)))
-            .child(self.trail(&e, cx))
-            .child(self.actions(&e, engine, cx));
-        // Nothing here scrolls but the text: the player, the trail, and the
-        // actions always show. On a short window the text box gives up height first.
+            .child(self.trail(&e, cx));
+        // Nothing here scrolls but the text: the player and the trail always show. On a short window the text box gives up height first.
         div()
             .flex()
             .flex_col()
@@ -896,46 +1023,6 @@ impl HistoryPage {
                 )
                 .child(ui(last, 13., 16., FontWeight::SEMIBOLD, c.ink)),
         )
-    }
-
-    fn actions(&self, e: &HistoryEntry, engine: bool, cx: &mut Context<Self>) -> impl IntoElement {
-        let id = e.id;
-        let mut row = div().flex().flex_none().items_center().gap(px(8.)).pt(px(4.));
-        if self.confirm_delete {
-            row = row
-                .child(ui("Delete this dictation and its audio?", 13., 16., FontWeight::MEDIUM, cx.paper().colors.ink))
-                .child(Button::new("del-yes", "Delete").small().danger().on_click(cx.listener(move |this, _, _, cx| {
-                    this.stop_audio();
-                    this.confirm_delete = false;
-                    this.model.update(cx, |m, cx| m.delete_entry(id, cx));
-                })))
-                .child(Button::new("del-no", "Cancel").small().ghost().on_click(cx.listener(|this, _, _, cx| {
-                    this.confirm_delete = false;
-                    cx.notify();
-                })));
-        } else {
-            row = row.child(Button::new("delete", "Delete").small().ghost().icon(Icon::Trash).on_click(cx.listener(|this, _, _, cx| {
-                this.confirm_delete = true;
-                cx.notify();
-            })));
-            if e.audio_file.is_some() && engine {
-                let e2 = e.clone();
-                row = row.child(
-                    Button::new("retranscribe", if self.busy == Some("retranscribe") { "Transcribing" } else { "Transcribe again" })
-                        .small()
-                        .ghost()
-                        .icon(Icon::Undo)
-                        .disabled(self.busy.is_some())
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.busy = Some("retranscribe");
-                            let entry = e2.clone();
-                            this.model.update(cx, |m, cx| m.retranscribe_entry(entry, cx));
-                            cx.notify();
-                        })),
-                );
-            }
-        }
-        row
     }
 }
 

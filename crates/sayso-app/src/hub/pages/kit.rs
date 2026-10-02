@@ -385,6 +385,74 @@ where
     deferred(anchored().snap_to_window_with_margin(px(8.)).child(div().mt(px(4.)).child(list))).with_priority(2)
 }
 
+/// One line of an [`action_menu`].
+pub struct MenuAction {
+    pub icon: Icon,
+    pub label: SharedString,
+    /// A destructive action: danger color, below a rule.
+    pub danger: bool,
+}
+
+impl MenuAction {
+    pub fn new(icon: Icon, label: impl Into<SharedString>) -> Self {
+        Self { icon, label: label.into(), danger: false }
+    }
+
+    pub fn danger(mut self) -> Self {
+        self.danger = true;
+        self
+    }
+}
+
+/// A floating menu of actions, each with an icon. Place it inside a
+/// `relative()` parent. For a list with one selected item, use [`menu`].
+pub fn action_menu<F>(id: &'static str, items: Vec<MenuAction>, on_pick: F, on_close: impl Fn(&mut Window, &mut App) + 'static, cx: &App) -> impl IntoElement
+where
+    F: Fn(usize, &mut Window, &mut App) + 'static,
+{
+    let c = cx.paper().colors;
+    let on_pick = std::rc::Rc::new(on_pick);
+    let mut list = div()
+        .id(id)
+        .flex()
+        .flex_col()
+        .gap(px(1.))
+        .min_w(px(184.))
+        .p(px(5.))
+        .rounded(px(12.))
+        .bg(c.sheet_raised)
+        .border_1()
+        .border_color(c.rule)
+        .shadow(paper::floating(&c))
+        .occlude()
+        .on_mouse_down_out(move |_, w, cx| on_close(w, cx));
+    for (i, item) in items.into_iter().enumerate() {
+        let f = on_pick.clone();
+        let (fg, icon_fg, hover) = if item.danger { (c.danger, c.danger, c.danger_wash) } else { (c.ink, c.graphite, c.deboss) };
+        if item.danger && i > 0 {
+            list = list.child(div().flex_none().h(px(1.)).mx(px(6.)).my(px(4.)).bg(c.rule));
+        }
+        list = list.child(
+            div()
+                .id(i)
+                .flex()
+                .flex_none()
+                .items_center()
+                .gap(px(10.))
+                .h(px(32.))
+                .pl(px(10.))
+                .pr(px(14.))
+                .rounded(px(8.))
+                .cursor_pointer()
+                .hover(move |s| s.bg(hover))
+                .on_click(move |_, w, cx| f(i, w, cx))
+                .child(icon(item.icon, 14., icon_fg))
+                .child(ui(item.label, 13., 16., FontWeight::MEDIUM, fg)),
+        );
+    }
+    deferred(anchored().snap_to_window_with_margin(px(8.)).child(div().mt(px(6.)).child(list))).with_priority(2)
+}
+
 /// The circle with a check from the "All set" list, or a warning ring.
 pub fn check_dot(ok: bool, cx: &App) -> Div {
     let c = cx.paper().colors;
