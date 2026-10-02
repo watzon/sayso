@@ -103,7 +103,7 @@ Settings shows the active path for each kind.
 | Conflict detection | For both hotkeys, in onboarding and Settings |
 | Cancel | Double Esc by default. Single Esc is a setting. The overlay shows "Cancelled" with Undo. |
 | Paste last transcript | Ctrl+Cmd+V |
-| Insertion | Paste through the clipboard, then restore the old clipboard only if it still holds our text. Typing is the fallback, and you can force it per app. |
+| Insertion | Paste through the clipboard. The text is published as a promise, so macOS tells Sayso when an app reads it. After the read, restore the old clipboard only if it still holds our text. With no read in 1.5 s, the insertion failed, and the text stays on the clipboard. Sayso does not ask Accessibility which field has focus, because Electron apps give no answer (2026-10-02). Typing is the fallback, and you can force it per app. |
 | Insertion failure | The overlay stays with the text and a Copy action |
 | Pipeline | Transcribe → replacements → style (AI) → insert. Dictionary words also go into the AI prompt. |
 | AI failure or timeout | Insert the transcript. Show "Inserted without enhancement". Keep both texts in History. |

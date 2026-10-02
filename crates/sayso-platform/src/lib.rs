@@ -104,7 +104,8 @@ pub struct AppInfo {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InsertMethod {
-    /// Clipboard plus Cmd+V, then restore the old clipboard if it still holds our text.
+    /// Clipboard plus Cmd+V, then restore the old clipboard if it still holds
+    /// our text. `restore_delay` counts from the last time the app read the text.
     Paste { restore_clipboard: bool, restore_delay: Duration },
     /// Synthetic key events. Slow for long text, but works where paste is blocked.
     Type,
@@ -120,6 +121,9 @@ pub enum InsertResult {
 pub enum InsertError {
     #[error("No text field is focused")]
     NoFocusedField,
+    /// The paste key was sent, but no app read the text.
+    #[error("The app did not take the text")]
+    NotTaken,
     #[error("Sayso needs Accessibility permission to insert text")]
     NotTrusted,
     #[error("A password field is active")]

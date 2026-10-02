@@ -11,6 +11,7 @@ pub mod ffi;
 pub mod hotkeys;
 pub mod inserter;
 pub mod keymap;
+pub mod paste_receipt;
 pub mod login_item;
 pub mod permissions;
 pub mod prefs;

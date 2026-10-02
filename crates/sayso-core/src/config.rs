@@ -114,7 +114,8 @@ impl Default for Dictation {
 #[serde(default)]
 pub struct Insertion {
     pub restore_clipboard: bool,
-    /// Wait this long after Cmd+V before the clipboard is restored.
+    /// Wait this long after the app read the pasted text before the clipboard
+    /// is restored. Some apps read the clipboard more than one time for a paste.
     pub restore_delay_ms: u64,
     /// Bundle ids where Sayso types instead of pasting.
     pub type_in_apps: Vec<String>,

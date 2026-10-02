@@ -180,7 +180,13 @@ impl OverlayView {
         self.hovered || !matches!(self.model.read(cx).state(), State::Idle)
     }
 
-    fn begin_press(&mut self, window: &mut Window) {
+    fn begin_press(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Only the pill takes a click or a drag. A notice has its own buttons,
+        // and a press on "Copy text" must not also count as a click on the
+        // pill that shows after the notice closes.
+        if !is_pill(self.model.read(cx).state()) {
+            return;
+        }
         let mouse = sayso_platform_macos::window::mouse_location();
         let screen_h = placement::main_screen_height();
         self.drag = Some((point(px(mouse.x as f32), px(screen_h - mouse.y as f32)), window.bounds().origin, false));
@@ -202,12 +208,16 @@ impl OverlayView {
 
     /// A click on the card that was not a drag.
     fn click(&mut self, cx: &mut Context<Self>) {
-        let state = self.model.read(cx).state().clone();
-        match state {
-            State::Idle | State::Recording { .. } => self.model.update(cx, |m, cx| m.toggle_dictation(cx)),
-            _ => {}
+        if is_pill(self.model.read(cx).state()) {
+            self.model.update(cx, |m, cx| m.toggle_dictation(cx));
         }
     }
+}
+
+/// True in the states where the overlay is the pill: a click starts or stops
+/// a dictation, and a drag moves it.
+fn is_pill(state: &State) -> bool {
+    matches!(state, State::Idle | State::Recording { .. })
 }
 
 /// The time label "0:07".
@@ -435,7 +445,7 @@ impl Render for OverlayView {
             .child(
                 div()
                     .id("overlay-card")
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, _| this.begin_press(window)))
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.begin_press(window, cx)))
                     .on_mouse_down(MouseButton::Right, cx.listener(|this, _, _, cx| {
                         let model = this.model.clone();
                         crate::popover::toggle(&model, cx);

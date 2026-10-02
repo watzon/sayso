@@ -134,6 +134,7 @@ unsafe extern "C" {
     pub fn AXIsProcessTrusted() -> bool;
     pub fn AXIsProcessTrustedWithOptions(options: CFTypeRef) -> bool;
     pub fn AXUIElementCreateSystemWide() -> CFTypeRef;
+    pub fn AXUIElementCreateApplication(pid: i32) -> CFTypeRef;
     pub fn AXUIElementCopyAttributeValue(element: CFTypeRef, attribute: CFTypeRef, value: *mut CFTypeRef) -> AXError;
 }
 
