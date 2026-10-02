@@ -35,11 +35,21 @@ pub struct General {
     pub launch_at_login: bool,
     /// Show the Dock icon while the Hub is open.
     pub dock_icon_with_hub: bool,
+    /// The name in the Home greeting. None uses the first name of the
+    /// macOS account.
+    pub name: Option<String>,
 }
 
 impl Default for General {
     fn default() -> Self {
-        Self { launch_at_login: false, dock_icon_with_hub: true }
+        Self { launch_at_login: false, dock_icon_with_hub: true, name: None }
+    }
+}
+
+impl General {
+    /// The name the user set, without spaces around it. None when empty.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref().map(str::trim).filter(|n| !n.is_empty())
     }
 }
 
@@ -549,6 +559,15 @@ mod tests {
         let claude = Provider { id: "k".into(), name: "Claude CLI".into(), kind: ProviderKind::ClaudeCli { path: None, model: "haiku".into() } };
         assert_eq!(claude.model(), Some("haiku"));
         assert!(!claude.needs_model());
+    }
+
+    #[test]
+    fn the_greeting_name_is_optional_and_trimmed() {
+        assert_eq!(Config::default().general.name(), None);
+        let set = Config::parse("[general]\nname = \"  Chris \"\n").config;
+        assert_eq!(set.general.name(), Some("Chris"));
+        let blank = Config::parse("[general]\nname = \" \"\n").config;
+        assert_eq!(blank.general.name(), None, "a blank name falls back to the Mac account");
     }
 
     #[test]

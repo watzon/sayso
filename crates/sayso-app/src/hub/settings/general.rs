@@ -1,22 +1,41 @@
-//! Settings › General: launch at login, the Dock icon, config problems, About.
+//! Settings › General: your name, launch at login, the Dock icon, config
+//! problems, About.
 
 use super::kit::{self, group, row};
 use crate::model::AppModel;
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::*;
 use sayso_platform::LoginItemState;
 use sayso_ui::ActivePaper;
 use sayso_ui::components::*;
+use sayso_ui::paper::PaperStyled;
 use sayso_ui::text;
 
 pub struct GeneralSettings {
     model: Entity<AppModel>,
     /// A login item error from the last toggle.
     login_error: Option<String>,
+    name: Entity<InputState>,
+    _name_sub: Subscription,
 }
 
 impl GeneralSettings {
-    pub fn new(model: Entity<AppModel>, _window: &mut Window, _cx: &mut Context<Self>) -> Self {
-        Self { model, login_error: None }
+    pub fn new(model: Entity<AppModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let current = model.read(cx).config.general.name().unwrap_or_default().to_string();
+        // The placeholder shows what Home uses when the field is empty.
+        let placeholder = super::super::pages::kit::first_name().unwrap_or_else(|| "Your name".into());
+        let name = crate::widgets::input_state(&placeholder, &current, window, cx);
+        let sub = cx.subscribe_in(&name, window, |this, state, ev: &InputEvent, _, cx| {
+            if !matches!(ev, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                return;
+            }
+            let value = state.read(cx).value().trim().to_string();
+            let v = (!value.is_empty()).then_some(value);
+            if this.model.read(cx).config.general.name.as_deref().map(str::trim) != v.as_deref() {
+                this.model.update(cx, |m, cx| m.edit_config(cx, |c| c.general.name = v));
+            }
+        });
+        Self { model, login_error: None, name, _name_sub: sub }
     }
 }
 
@@ -69,6 +88,23 @@ impl Render for GeneralSettings {
             sayso_platform_macos::window::set_dock_icon_visible(on);
         });
 
+        let name_field = div()
+            .flex()
+            .items_center()
+            .w(px(220.))
+            .h(px(36.))
+            .px(px(12.))
+            .rounded(px(9.))
+            .debossed(&c)
+            .text_size(px(14.))
+            .child(Input::new(&self.name).appearance(false).w_full());
+        let you = group("You", cx).child(row(
+            "Your name",
+            "Home greets you with it. Leave it empty to use the first name of your Mac account.",
+            name_field,
+            cx,
+        ));
+
         let mut startup = group("Startup", cx)
             .child(row("Launch at login", launch_desc, launch_control, cx))
             .child(row("Show the Dock icon while the Hub is open", "At other times Sayso lives in the menu bar only.", dock_switch, cx));
@@ -76,7 +112,7 @@ impl Render for GeneralSettings {
             startup = startup.child(kit::banner(BannerKind::Warning, e.clone(), cx));
         }
 
-        let mut body = kit::body().child(startup);
+        let mut body = kit::body().child(you).child(startup);
 
         if !issues.is_empty() {
             let mut list = div().flex().flex_col().gap(px(6.));
@@ -135,7 +171,7 @@ impl Render for GeneralSettings {
             .child(row("Config file", &path, div(), cx));
         body = body.child(about);
 
-        kit::page("general-page", "General", "Startup, the Dock icon, and the config file.", body, cx)
+        kit::page("general-page", "General", "Your name, startup, the Dock icon, and the config file.", body, cx)
     }
 }
 

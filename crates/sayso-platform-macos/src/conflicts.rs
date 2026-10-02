@@ -46,11 +46,15 @@ pub struct KnownApp {
 pub enum AppSetting {
     /// A `defaults` value like `"Option-49"`: modifier names and a key code, joined by "-".
     DashedKeycode { domain: &'static str, key: &'static str },
+    /// The ChatGPT app's `keybindings.json` in `$CODEX_HOME` (default `~/.codex`).
+    CodexKeymap,
 }
 
 pub const KNOWN_APPS: &[KnownApp] = &[
-    // The ChatGPT desktop app keeps its shortcut in Electron storage, which Sayso cannot read.
-    KnownApp { bundle_ids: &["com.openai.chat", "com.openai.codex"], name: "ChatGPT", hotkey: "opt+space", setting: None },
+    KnownApp { bundle_ids: &["com.openai.codex"], name: "ChatGPT", hotkey: "opt+space", setting: Some(AppSetting::CodexKeymap) },
+    // The older ChatGPT app keeps its shortcut in its sandbox container. Reading
+    // it makes macOS ask for access to another app's data, so only the default counts.
+    KnownApp { bundle_ids: &["com.openai.chat"], name: "ChatGPT", hotkey: "opt+space", setting: None },
     KnownApp {
         bundle_ids: &["com.raycast.macos"],
         name: "Raycast",
@@ -61,10 +65,10 @@ pub const KNOWN_APPS: &[KnownApp] = &[
 ];
 
 /// What an app's setting says.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettingValue {
-    /// The setting was read: the app uses this hotkey, or none.
-    Known(Option<Hotkey>),
+    /// The setting was read: the app uses these hotkeys. Empty means none.
+    Known(Vec<Hotkey>),
     /// No setting, or it could not be read. Assume the default.
     Unknown,
 }
@@ -73,7 +77,7 @@ pub enum SettingValue {
 pub fn parse_dashed_keycode(value: &str) -> SettingValue {
     let value = value.trim();
     if value.is_empty() {
-        return SettingValue::Known(None);
+        return SettingValue::Known(Vec::new());
     }
     let parts: Vec<&str> = value.split('-').collect();
     let Some((code, mods)) = parts.split_last() else { return SettingValue::Unknown };
@@ -90,7 +94,64 @@ pub fn parse_dashed_keycode(value: &str) -> SettingValue {
             _ => return SettingValue::Unknown,
         }
     }
-    SettingValue::Known(Some(Hotkey::Chord { modifiers, key }))
+    SettingValue::Known(vec![Hotkey::Chord { modifiers, key }])
+}
+
+/// The ChatGPT app's commands with a system-wide shortcut, and the macOS
+/// default of each (from the app's command list). Only "Show Mini" has one.
+const CODEX_GLOBAL_COMMANDS: &[(&str, Option<&str>)] = &[
+    ("openAvatarOverlay", Some("Alt+Space")),
+    ("hotkeyWindow", None),
+    ("globalDictationHold", None),
+    ("globalDictationSingleTap", None),
+    ("realtimeVoice", None),
+];
+
+/// An Electron accelerator such as `"Alt+Space"` or `"CommandOrControl+Shift+K"`.
+/// None for keys Sayso has no name for.
+pub fn parse_accelerator(accelerator: &str) -> Option<Hotkey> {
+    let tokens: Vec<String> = accelerator
+        .split('+')
+        .map(|t| match t.trim().to_ascii_lowercase().as_str() {
+            // On macOS these all mean Command.
+            "commandorcontrol" | "cmdorctrl" | "super" | "meta" => "cmd".to_string(),
+            "return" => "enter".to_string(),
+            other => other.to_string(),
+        })
+        .collect();
+    tokens.join("+").parse().ok()
+}
+
+/// The hotkeys in a ChatGPT `keybindings.json`: a list of `{command, key}`.
+/// An entry for a command replaces its default; `"key": null` turns it off.
+/// A missing file (None) means every command has its default.
+pub fn parse_codex_keymap(text: Option<&str>) -> SettingValue {
+    let entries: Vec<(String, Option<String>)> = match text {
+        None => Vec::new(),
+        Some(text) => {
+            let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(text) else {
+                return SettingValue::Unknown;
+            };
+            items
+                .iter()
+                .filter_map(|i| Some((i.get("command")?.as_str()?.to_string(), i.get("key").and_then(|k| k.as_str()).map(str::to_string))))
+                .collect()
+        }
+    };
+    let mut hotkeys = Vec::new();
+    for (command, default) in CODEX_GLOBAL_COMMANDS {
+        let set: Vec<&Option<String>> = entries.iter().filter(|(c, _)| c == command).map(|(_, k)| k).collect();
+        let keys: Vec<&str> = if set.is_empty() { default.iter().copied().collect() } else { set.iter().filter_map(|k| k.as_deref()).collect() };
+        hotkeys.extend(keys.into_iter().filter_map(parse_accelerator));
+    }
+    SettingValue::Known(hotkeys)
+}
+
+fn codex_keymap_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("CODEX_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| std::path::Path::new(&h).join(".codex")))?;
+    Some(home.join("keybindings.json"))
 }
 
 /// Read an app's hotkey setting from its preferences.
@@ -101,6 +162,14 @@ pub fn read_setting(setting: AppSetting) -> SettingValue {
             match out {
                 Ok(o) if o.status.success() => parse_dashed_keycode(&String::from_utf8_lossy(&o.stdout)),
                 _ => SettingValue::Unknown,
+            }
+        }
+        AppSetting::CodexKeymap => {
+            let Some(path) = codex_keymap_path() else { return SettingValue::Unknown };
+            match std::fs::read_to_string(&path) {
+                Ok(text) => parse_codex_keymap(Some(&text)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => parse_codex_keymap(None),
+                Err(_) => SettingValue::Unknown,
             }
         }
     }
@@ -165,7 +234,7 @@ pub fn match_known_apps(
         };
         let value = app.setting.map(&read).unwrap_or(SettingValue::Unknown);
         let (uses, confirmed) = match value {
-            SettingValue::Known(current) => (current.as_ref() == Some(hotkey), true),
+            SettingValue::Known(current) => (current.contains(hotkey), true),
             SettingValue::Unknown => (app.hotkey.parse::<Hotkey>().ok().as_ref() == Some(hotkey), false),
         };
         if uses {
@@ -309,26 +378,63 @@ mod tests {
         let toggle = Hotkey::toggle_default();
         let running = [app("com.raycast.macos")];
         // Raycast moved to Cmd+Space: no conflict with Option+Space.
-        let moved = |_: AppSetting| SettingValue::Known(Some(hk("cmd+space")));
+        let moved = |_: AppSetting| SettingValue::Known(vec![hk("cmd+space")]);
         assert!(match_known_apps(&toggle, &running, moved).is_empty());
         // Raycast set to Option+Space: a confirmed conflict.
-        let same = |_: AppSetting| SettingValue::Known(Some(hk("opt+space")));
+        let same = |_: AppSetting| SettingValue::Known(vec![hk("opt+space")]);
         assert_eq!(names(&match_known_apps(&toggle, &running, same)), [("Raycast", true)]);
         // Raycast set to the user's other key.
         assert_eq!(names(&match_known_apps(&hk("cmd+space"), &running, moved)), [("Raycast", true)]);
         // Raycast hotkey turned off.
-        let off = |_: AppSetting| SettingValue::Known(None);
+        let off = |_: AppSetting| SettingValue::Known(Vec::new());
         assert!(match_known_apps(&toggle, &running, off).is_empty());
     }
 
     #[test]
     fn dashed_keycodes_parse() {
-        assert_eq!(parse_dashed_keycode("Command-49"), SettingValue::Known(Some(hk("cmd+space"))));
-        assert_eq!(parse_dashed_keycode("Option-49\n"), SettingValue::Known(Some(hk("opt+space"))));
-        assert_eq!(parse_dashed_keycode("Control-Shift-2"), SettingValue::Known(Some(hk("ctrl+shift+d"))));
-        assert_eq!(parse_dashed_keycode(""), SettingValue::Known(None));
+        assert_eq!(parse_dashed_keycode("Command-49"), SettingValue::Known(vec![hk("cmd+space")]));
+        assert_eq!(parse_dashed_keycode("Option-49\n"), SettingValue::Known(vec![hk("opt+space")]));
+        assert_eq!(parse_dashed_keycode("Control-Shift-2"), SettingValue::Known(vec![hk("ctrl+shift+d")]));
+        assert_eq!(parse_dashed_keycode(""), SettingValue::Known(Vec::new()));
         assert_eq!(parse_dashed_keycode("Hyper-49"), SettingValue::Unknown);
         assert_eq!(parse_dashed_keycode("Option-x"), SettingValue::Unknown);
+    }
+
+    #[test]
+    fn electron_accelerators_parse() {
+        assert_eq!(parse_accelerator("Alt+Space"), Some(hk("opt+space")));
+        assert_eq!(parse_accelerator("CommandOrControl+Shift+K"), Some(hk("cmd+shift+k")));
+        assert_eq!(parse_accelerator("Super+Alt+P"), Some(hk("cmd+opt+p")));
+        assert_eq!(parse_accelerator("Ctrl+Option+D"), Some(hk("ctrl+opt+d")));
+        assert_eq!(parse_accelerator("Hyper+Space"), None);
+    }
+
+    #[test]
+    fn codex_keymap_uses_defaults_and_overrides() {
+        // No file: Show Mini has its default.
+        assert_eq!(parse_codex_keymap(None), SettingValue::Known(vec![hk("opt+space")]));
+        // Turned off, as on the Mac this was written on.
+        let off = r#"[{"command": "openAvatarOverlay", "key": null}]"#;
+        assert_eq!(parse_codex_keymap(Some(off)), SettingValue::Known(Vec::new()));
+        // Moved, plus a dictation key, and an entry for an app-only command.
+        let moved = r#"[{"command":"openAvatarOverlay","key":"CmdOrCtrl+Shift+Space"},
+                        {"command":"globalDictationHold","key":"Ctrl+Alt+D"},
+                        {"command":"newTask","key":"Alt+Space"}]"#;
+        assert_eq!(parse_codex_keymap(Some(moved)), SettingValue::Known(vec![hk("cmd+shift+space"), hk("ctrl+opt+d")]));
+        // Keys Sayso cannot name are skipped; a broken file is unknown.
+        let odd = r#"[{"command":"globalDictationHold","key":"Hyper"}]"#;
+        assert_eq!(parse_codex_keymap(Some(odd)), SettingValue::Known(vec![hk("opt+space")]));
+        assert_eq!(parse_codex_keymap(Some("{not json")), SettingValue::Unknown);
+    }
+
+    #[test]
+    fn chatgpt_counts_only_when_its_keymap_says_so() {
+        let toggle = Hotkey::toggle_default();
+        let running = [app("com.openai.codex")];
+        let off = |_: AppSetting| parse_codex_keymap(Some(r#"[{"command":"openAvatarOverlay","key":null}]"#));
+        assert!(match_known_apps(&toggle, &running, off).is_empty());
+        let default = |_: AppSetting| parse_codex_keymap(None);
+        assert_eq!(names(&match_known_apps(&toggle, &running, default)), [("ChatGPT", true)]);
     }
 
     #[test]
@@ -348,5 +454,11 @@ mod tests {
     fn reads_raycast_on_this_mac() {
         let raycast = KNOWN_APPS.iter().find(|a| a.name == "Raycast").unwrap();
         println!("{:?}", read_setting(raycast.setting.unwrap()));
+    }
+
+    #[test]
+    #[ignore = "reads this Mac's ChatGPT keymap"]
+    fn reads_chatgpt_on_this_mac() {
+        println!("{:?}", read_setting(AppSetting::CodexKeymap));
     }
 }

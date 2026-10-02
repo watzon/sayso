@@ -13,6 +13,7 @@ crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true
 thiserror.workspace = true
+serde_json.workspace = true
 
 global-hotkey = "0.8"
 cpal = "0.18.2"

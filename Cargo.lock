@@ -7173,6 +7173,7 @@ dependencies = [
  "rodio",
  "sayso-core",
  "sayso-platform",
+ "serde_json",
  "thiserror 2.0.21",
 ]
 

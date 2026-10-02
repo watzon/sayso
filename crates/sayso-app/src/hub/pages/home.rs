@@ -39,7 +39,9 @@ impl HomePage {
         } else {
             "evening"
         };
-        let greeting = match kit::first_name() {
+        // The name from Settings › General, or the Mac account's first name.
+        let name = m.config.general.name().map(str::to_string).or_else(kit::first_name);
+        let greeting = match name {
             Some(name) => format!("Good {part}, {name}."),
             None => format!("Good {part}."),
         };
