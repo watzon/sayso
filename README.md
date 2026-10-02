@@ -15,6 +15,7 @@ Sayso is written in Rust with [GPUI](https://www.gpui.rs/). The speech engine is
 - **AI styles.** A style rewrites the transcript with a prompt, for example Clean, Polished, Message, Email, or Notes. A style uses an OpenAI-compatible endpoint, the Claude CLI, or the Codex CLI. Raw is the style with no AI. Each style is one TOML file that you can edit.
 - **Dictionary.** Words bias the recognition toward names and terms. Replacements change text after transcription, for example "git hub" to "GitHub".
 - **History.** Sayso stores each dictation with its transcript, its final text, and its audio. Text stays until you delete it. Audio expires after 30 days by default.
+- **Import from Pindrop.** If you used Pindrop on this Mac, Sayso copies your dictations, dictionary, and prompt presets. Find it at the end of onboarding and in Settings › History and privacy.
 - **No lost text.** If the insertion or the AI style fails, the text stays on the screen and in History.
 - **Config as a file.** All settings are in `config.toml`, and Sayso reloads the file when you save it.
 
@@ -56,11 +57,11 @@ With a local model and the Raw style, Sayso sends nothing off the Mac. There is 
 
 The Models page and the Styles page label each cloud destination. Your API keys are in the macOS Keychain.
 
-## Price and license
+## License and price
 
 The source code is free software under the [GNU General Public License, version 3](LICENSE). You can read it, change it, and build it for yourself at no cost.
 
-The official build is the signed and notarized app from the Releases page. It will cost $10, one time, for one person on up to three Macs. The purchase is not open yet, and the builds on the Releases page run without a license key until it opens.
+The official build is the signed and notarized app. It is free, and it needs no license key. Sayso is paid for by the people who use it: the download page at [justsayso.app](https://justsayso.app) asks what you want to pay, and $0 is a valid answer.
 
 The name Sayso and the app icon are not part of the license. If you publish a changed version, give it another name and another icon.
 

@@ -53,9 +53,9 @@ Success for v0.1:
 | Signing | Developer ID (Watzon Ventures LLC) for all builds, including development builds, so permission grants survive rebuilds |
 | Distribution | Notarized download outside the Mac App Store |
 | License (2026-10-02) | GPL-3.0-only. The name Sayso and the app icon stay with Watzon Ventures LLC. |
-| Price (2026-10-02) | The source is free to build. The official signed build costs $10, one time, for one person on up to three Macs. The license key check and the purchase are not built yet. |
+| Price (2026-10-02) | Pay what you want. The official signed build is free and has no license key, no trial, and no license check. The download page at justsayso.app asks for an amount before the download, and $0 is allowed. Payments go through Stripe. |
 | Releases (2026-10-02) | A published GitHub release starts the Release workflow, which builds, signs, notarizes, and attaches the DMG. See [releasing.md](releasing.md). |
-| Pindrop (2026-10-02) | Sayso is a separate product. It does not replace Pindrop through an update. An optional import from Pindrop is planned. |
+| Pindrop (2026-10-02) | Sayso is a separate product. It does not replace Pindrop through an update. The import from Pindrop is optional and only reads: dictations (without audio), dictionary words, replacements, and the user's prompt presets. Notes, meetings, and media stay in Pindrop. |
 
 ### File locations
 
