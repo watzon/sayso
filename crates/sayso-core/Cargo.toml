@@ -1,0 +1,20 @@
+[package]
+name = "sayso-core"
+description = "Sayso domain logic. No platform, engine, or UI imports."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+regex.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

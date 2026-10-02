@@ -1,0 +1,13 @@
+/target
+/build
+/dist
+spikes/*/target
+spikes/engine/.models
+spikes/engine/build
+# Raw spike output; the results are in docs/plan.md §7.
+spikes/engine/runs/*.jsonl
+spikes/engine/runs/*.stderr
+# Swift Package Manager build folders.
+.build/
+.swiftpm/
+.DS_Store

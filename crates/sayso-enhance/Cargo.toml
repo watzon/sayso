@@ -1,0 +1,21 @@
+[package]
+name = "sayso-enhance"
+description = "Sayso AI enhancement providers: OpenAI-compatible HTTP, Claude CLI, Codex CLI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sayso-core.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+tempfile.workspace = true
+ureq = { version = "3", features = ["json"] }
+wait-timeout = "0.2"
+keyring = { version = "4", features = ["apple-native-keyring-store"] }
+
+[dev-dependencies]
+tiny_http = "0.12"

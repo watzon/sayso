@@ -1,0 +1,17 @@
+[warm] engine up, first line at 0.016s
+[warm] load parakeet_unified_batch: wall=1.18s download_ms=1048 load_ms=133 progress_events=1 disk_delta=0.0MB rss=48MB
+[warm]  transcribe short run1: 66 ms
+[warm]  transcribe short run2: 54 ms
+[warm]  transcribe long run1: 197 ms
+[warm]  transcribe long run2: 187 ms
+[warm] load parakeet_unified_stream: wall=1.12s download_ms=1036 load_ms=79 progress_events=1 disk_delta=0.0MB rss=76MB
+[warm]  stream short realtime=False: total_ms=688 finish_ms=14 audio_ms=8147 partials=29 first_partial_at_audio_ms=800 first_partial_since_chunk_ms=14 median_gap_audio_ms=160
+[warm]  stream short realtime=True: total_ms=8168 finish_ms=19 audio_ms=8147 partials=29 first_partial_at_audio_ms=800 first_partial_since_chunk_ms=14 median_gap_audio_ms=160
+[warm]  stream long realtime=False: total_ms=2519 finish_ms=15 audio_ms=29231 partials=108 first_partial_at_audio_ms=800 first_partial_since_chunk_ms=14 median_gap_audio_ms=160
+[warm]  stream long realtime=True: total_ms=29251 finish_ms=15 audio_ms=29231 partials=108 first_partial_at_audio_ms=800 first_partial_since_chunk_ms=14 median_gap_audio_ms=160
+[warm] load whisper: wall=3.25s download_ms=2258 load_ms=997 progress_events=1 disk_delta=0.0MB rss=116MB
+[warm]  transcribe short run1: 788 ms
+[warm]  transcribe short run2: 752 ms
+[warm]  transcribe long run1: 1379 ms
+[warm]  transcribe long run2: 1379 ms
+[warm] done, models dir = 1867.6 MB

@@ -1,0 +1,16 @@
+[package]
+name = "sayso-ui"
+description = "Sayso's tactile paper design system on GPUI and gpui-kit."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sayso-core.workspace = true
+gpui-kit.workspace = true
+anyhow.workspace = true
+log.workspace = true
+image = { version = "0.25", default-features = false, features = ["png"] }
+rust-embed = "8"
+smallvec = "1"

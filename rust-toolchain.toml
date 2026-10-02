@@ -1,0 +1,4 @@
+[toolchain]
+# gpui-pre 0.3.7 needs Rust 1.95 or newer (spike S2).
+channel = "1.98.1"
+components = ["clippy", "rustfmt"]
