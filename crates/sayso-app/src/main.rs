@@ -10,6 +10,7 @@ mod model;
 mod model_picker;
 mod onboarding;
 mod overlay;
+mod pindrop_import;
 mod popover;
 mod services;
 mod widgets;

@@ -61,6 +61,12 @@ const MIGRATIONS: &[&str] = &[
         uses           INTEGER NOT NULL DEFAULT 0
     );
     "#,
+    // Version 2: where an imported entry came from, for example
+    // "pindrop:<record id>". A second import skips the entries it finds here.
+    r#"
+    ALTER TABLE history ADD COLUMN import_id TEXT;
+    CREATE UNIQUE INDEX history_import_id ON history(import_id) WHERE import_id IS NOT NULL;
+    "#,
 ];
 
 /// The newest schema version this build knows.
@@ -96,4 +102,29 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
         log::info!("migrated the database to schema version {}", index + 1);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_version_1_database_keeps_its_history_when_it_migrates() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute(
+            "INSERT INTO history (created_at, duration_ms, transcript, final_text, style_id, model, transcribe_ms, replacements, enhance, insert_result, waveform)
+             VALUES (1, 2, 'raw', 'final', 'clean', 'parakeet', 3, '[]', '{}', '{}', x'')",
+            [],
+        )
+        .unwrap();
+
+        migrate(&mut conn).unwrap();
+
+        assert_eq!(version(&conn).unwrap(), CURRENT_VERSION);
+        let (text, import_id): (String, Option<String>) =
+            conn.query_row("SELECT final_text, import_id FROM history", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!((text.as_str(), import_id), ("final", None), "an entry from before the import column has no import id");
+    }
 }

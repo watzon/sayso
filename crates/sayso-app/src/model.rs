@@ -87,6 +87,9 @@ pub struct AppModel {
     pub icons: crate::icons::AppIcons,
     /// Model lists by provider id (or a draft key during onboarding).
     pub model_lists: HashMap<String, ModelList>,
+    /// True when this Mac has Pindrop data to import.
+    pub pindrop_found: bool,
+    pub pindrop_import: crate::pindrop_import::PindropImport,
 }
 
 impl EventEmitter<AppEvent> for AppModel {}
@@ -139,6 +142,8 @@ impl AppModel {
             system_dark: false,
             icons,
             model_lists: HashMap::new(),
+            pindrop_found: sayso_store::pindrop::found(&crate::pindrop_import::pindrop_dir()),
+            pindrop_import: Default::default(),
         };
         model.system_dark = model.services.platform.prefs.dark_mode();
         model.reload_dictionary();

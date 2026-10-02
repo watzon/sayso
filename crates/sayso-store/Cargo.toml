@@ -18,6 +18,6 @@ parking_lot.workspace = true
 rusqlite = { version = "0.40", features = ["bundled"] }
 flacenc = "0.5"
 claxon = "0.4"
-
-[dev-dependencies]
+# The Pindrop import: a copy of the Pindrop store, and its archived string lists.
 tempfile.workspace = true
+plist = { version = "1", default-features = false }

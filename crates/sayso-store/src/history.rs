@@ -9,7 +9,7 @@ use sayso_core::history::{HistoryEntry, TargetApp};
 use sayso_core::models::ModelId;
 
 /// Columns of `history` in the order [`entry_from_row`] reads them.
-const COLUMNS: &str = "id, created_at, duration_ms, app, transcript, final_text, style_id, model, \
+pub(crate) const COLUMNS: &str = "id, created_at, duration_ms, app, transcript, final_text, style_id, model, \
                        transcribe_ms, replacements, enhance, insert_result, audio_file, waveform";
 
 /// Filters for [`Store::list`] and [`Store::count`]. All filters combine with AND.
@@ -114,7 +114,7 @@ fn entry_from_row(row: &Row) -> rusqlite::Result<HistoryEntry> {
 }
 
 /// The column values of an entry, without the id. Order matches `COLUMNS[1..]`.
-fn entry_values(e: &HistoryEntry) -> Result<Vec<Value>> {
+pub(crate) fn entry_values(e: &HistoryEntry) -> Result<Vec<Value>> {
     let app = match &e.app {
         Some(app) => Value::Text(serde_json::to_string(app)?),
         None => Value::Null,

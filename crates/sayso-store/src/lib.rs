@@ -10,11 +10,13 @@
 //! - `audio`: FLAC encode and decode, audio file paths.
 //! - `dictionary`: words and replacement rules.
 //! - `retention`: the two expiry limits for text and audio.
+//! - `pindrop`: the import from the Pindrop app.
 
 mod audio;
 mod dictionary;
 mod error;
 mod history;
+pub mod pindrop;
 mod retention;
 mod schema;
 

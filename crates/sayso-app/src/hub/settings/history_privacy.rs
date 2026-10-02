@@ -128,13 +128,22 @@ impl Render for HistorySettings {
         } else {
             format!("Deletes all {total} entries and their audio.")
         };
+        // Shown only on a Mac that has Pindrop data.
+        let import = self.model.read(cx).pindrop_found.then(|| {
+            let state = self.model.read(cx).pindrop_import.clone();
+            let running = state == crate::pindrop_import::PindropImport::Running;
+            let button = Button::new("import-pindrop", "Import").small().disabled(running).on_click(cx.listener(|this, _, _, cx| {
+                this.model.update(cx, |m, cx| m.import_pindrop(cx));
+            }));
+            group("Import", cx).child(kit::row_s("Import from Pindrop".into(), state.message(), button, cx))
+        });
         let danger = group("Clear", cx).child(kit::row_s("Clear history".into(), clear_desc, clear_control, cx));
 
         kit::page(
             "history-page",
             "History and privacy",
             "What Sayso keeps, for how long, and what leaves this Mac.",
-            kit::body().child(keep).child(privacy).child(danger),
+            kit::body().child(keep).child(privacy).children(import).child(danger),
             cx,
         )
     }

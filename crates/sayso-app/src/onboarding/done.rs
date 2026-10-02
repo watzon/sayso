@@ -35,6 +35,16 @@ impl OnboardingView {
             (None, None) => "Set a hotkey in Settings › Dictation to dictate in any app. Here is where Sayso lives.".to_string(),
         };
         let paste = m.config.hotkeys.paste_last;
+        // Shown only on a Mac that has Pindrop data.
+        let pindrop = m.pindrop_found.then(|| {
+            let state = m.pindrop_import.clone();
+            let running = state == crate::pindrop_import::PindropImport::Running;
+            let message = match &state {
+                crate::pindrop_import::PindropImport::Idle => "You used Pindrop on this Mac. Sayso can copy your dictations, dictionary, and prompt presets.".to_string(),
+                other => other.message(),
+            };
+            (message, running)
+        });
 
         let pill = div()
             .flex()
@@ -101,6 +111,17 @@ impl OnboardingView {
                     .child(tour_card(menu, "The menu bar", "Switch style, model, or microphone, and copy your last text.", &c))
                     .child(tour_card(keys, "Paste last text", "If text did not land where you wanted, paste it again.", &c)),
             )
+            .children(pindrop.map(|(message, running)| {
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(14.))
+                    .w_full()
+                    .child(text::ui(message, 13., FontWeight::NORMAL, c.graphite).line_height(px(19.)).flex_1())
+                    .child(Button::new("import-pindrop", "Import from Pindrop").small().disabled(running).on_click(cx.listener(|this, _, _, cx| {
+                        this.model.update(cx, |m, cx| m.import_pindrop(cx));
+                    })))
+            }))
             .into_any_element()
     }
 }
