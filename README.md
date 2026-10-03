@@ -98,7 +98,7 @@ open build/Sayso.app
 
 ### Windows
 
-You need the Visual Studio 2022 Build Tools (the "Desktop development with C++" workload and a Windows SDK), CMake, and Rust 1.98.1.
+You need the Visual Studio 2022 Build Tools (the "Desktop development with C++" workload and a Windows SDK), CMake, LLVM (for libclang; set `LIBCLANG_PATH` when it is not on `PATH`), and Rust 1.98.1.
 
 ```powershell
 git clone https://github.com/watzon/sayso.git

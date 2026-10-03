@@ -143,9 +143,12 @@ jobs:
             .
             native/portable
 
-      # whisper.cpp in the speech engine builds with CMake. Inno Setup makes the installer.
+      # whisper.cpp in the speech engine builds with CMake, and its bindings need
+      # libclang (the runner has LLVM). Inno Setup makes the installer.
       - name: Install CMake and Inno Setup
-        run: choco install cmake innosetup --no-progress -y
+        run: |
+          choco install cmake innosetup --no-progress -y
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
       - name: Write the signing certificate
         env:

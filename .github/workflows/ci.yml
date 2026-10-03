@@ -65,7 +65,10 @@ jobs:
             .
             native/portable
       - name: Install CMake
-        run: choco install cmake --no-progress -y
+        shell: pwsh
+        run: |
+          choco install cmake --no-progress -y
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       - name: Test
         run: cargo test --workspace
       - name: Clippy
