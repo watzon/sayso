@@ -64,6 +64,25 @@ Make sure that `op read` printed the key before you trust the secret. `gh secret
 
 **The key is stolen.** Do the same, and also remove the old entry from `keys.rs` in that release. An app that still trusts the old key accepts a manifest from the thief, but only for files on the Releases page of this repository. Tell users on the website and in the release notes to install the new version by hand at once.
 
+### Homebrew tap
+
+The last job of the workflow, **Homebrew cask**, writes `Casks/sayso.rb` in [watzon/homebrew-tap](https://github.com/watzon/homebrew-tap). It makes the cask from `packaging/homebrew/sayso.rb.in` and the DMG of the run (`scripts/homebrew-cask.sh`). The job runs after the release is the latest release, so a failure there does not change the release. Run the job again to publish again.
+
+The job needs one more secret:
+
+| Secret | Contents |
+|---|---|
+| `HOMEBREW_TAP_DEPLOY_KEY` | The private key of a deploy key of `watzon/homebrew-tap` that has write access |
+
+To make a new key:
+
+```sh
+ssh-keygen -t ed25519 -N "" -C "sayso release" -f tap-key
+gh repo deploy-key add tap-key.pub --repo watzon/homebrew-tap --allow-write --title "Sayso release publisher"
+gh secret set HOMEBREW_TAP_DEPLOY_KEY --repo watzon/sayso < tap-key
+rm tap-key tap-key.pub
+```
+
 ### Windows signing (optional)
 
 The Windows job signs the installer and the two exes when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
@@ -108,6 +127,8 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
    - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, `.AppImage`, and `.flatpak`
    - a `.sha256` file for each of the twelve
    - `latest.json`
+
+   The tap `watzon/homebrew-tap` must also have a new commit, `sayso <version>`.
 
    The run also has the artifact `aur-sayso-bin`, with the `PKGBUILD` and the `.SRCINFO` for the AUR. Nothing publishes them yet.
 

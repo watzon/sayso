@@ -406,3 +406,74 @@ jobs:
             echo "::warning::The latest release is $latest, which is not older than $TAG. $TAG becomes a normal release, and $latest stays the latest release."
             gh release edit "$TAG" --prerelease=false --latest=false
           fi
+
+  # Publish the Homebrew cask to watzon/homebrew-tap. This job runs after the
+  # release is the latest release, so a failure here does not change the
+  # release. To publish again, run this job again.
+  homebrew:
+    name: Homebrew cask
+    needs: manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # One push to the tap at a time, for all tags.
+    concurrency:
+      group: homebrew-tap
+      cancel-in-progress: false
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+
+      # The DMG of this run is the file that the manifest job attached.
+      - name: Get the DMG of this run
+        uses: actions/download-artifact@v4
+        with:
+          name: release-macos
+          path: dist
+
+      - name: Make the cask
+        run: scripts/homebrew-cask.sh dist/Sayso-*-macos-arm64.dmg cask/sayso.rb
+
+      - name: Push the cask to the tap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # A deploy key of watzon/homebrew-tap with write access. See docs/releasing.md.
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          if [[ -z "$HOMEBREW_TAP_DEPLOY_KEY" ]]; then
+            echo "::error::The secret HOMEBREW_TAP_DEPLOY_KEY is not set. See docs/releasing.md."
+            exit 1
+          fi
+          version="${TAG#v}"
+          umask 077
+          printf '%s\n' "$HOMEBREW_TAP_DEPLOY_KEY" > "$RUNNER_TEMP/tap-key"
+          gh api meta --jq '.ssh_keys[] | "github.com \(.)"' > "$RUNNER_TEMP/tap-known-hosts"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/tap-key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/tap-known-hosts"
+          trap 'rm -f "$RUNNER_TEMP/tap-key"' EXIT
+
+          # Another project can push to the tap at the same time, so try again with a new clone.
+          for attempt in 1 2 3; do
+            rm -rf tap
+            git clone --depth 1 git@github.com:watzon/homebrew-tap.git tap
+            current=$(sed -n 's/^ *version "\(.*\)"$/\1/p' tap/Casks/sayso.rb 2>/dev/null || true)
+            if [[ -n "$current" && "$current" != "$version" && "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" == "$current" ]]; then
+              echo "::warning::The tap has Sayso $current, which is newer than $version. The cask stays as it is."
+              exit 0
+            fi
+            mkdir -p tap/Casks
+            cp cask/sayso.rb tap/Casks/sayso.rb
+            git -C tap add Casks/sayso.rb
+            if git -C tap diff --cached --quiet; then
+              echo "The tap already has Sayso $version."
+              exit 0
+            fi
+            git -C tap -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit --quiet -m "sayso $version"
+            if git -C tap push origin HEAD; then
+              echo "The tap has Sayso $version."
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::Could not push the cask to the tap."
+          exit 1

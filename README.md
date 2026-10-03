@@ -33,7 +33,7 @@ Select a button to download the file of the newest release. The [Releases page](
 
 | System | Versions | Download |
 |---|---|---|
-| macOS | 14 or later, on Apple Silicon | [![DMG for macOS](https://img.shields.io/badge/DMG-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)][dmg] |
+| macOS | 14 or later, on Apple Silicon | [![DMG for macOS](https://img.shields.io/badge/DMG-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)][dmg]<br>`brew install --cask watzon/tap/sayso` |
 | Windows | 10 (version 1809) or later, and 11, on a 64-bit Intel or AMD processor | [![Installer for Windows](https://img.shields.io/badge/Installer-x64-0078D4?style=for-the-badge)][exe] |
 | Debian, Ubuntu | Debian 12 or later, Ubuntu 22.04 or later | [![.deb for x86_64](https://img.shields.io/badge/.deb-x86__64-A81D33?style=for-the-badge&logo=debian&logoColor=white)][deb-x86_64] [![.deb for aarch64](https://img.shields.io/badge/.deb-aarch64-A81D33?style=for-the-badge&logo=debian&logoColor=white)][deb-aarch64] |
 | Fedora, openSUSE, RHEL family | Fedora, Leap 15.6 or later, Tumbleweed, RHEL 10 | [![.rpm for x86_64](https://img.shields.io/badge/.rpm-x86__64-51A2DA?style=for-the-badge&logo=fedora&logoColor=white)][rpm-x86_64] [![.rpm for aarch64](https://img.shields.io/badge/.rpm-aarch64-51A2DA?style=for-the-badge&logo=fedora&logoColor=white)][rpm-aarch64] |
@@ -57,6 +57,14 @@ Linux runs on X11 and on Wayland. [docs/linux.md](docs/linux.md) lists what work
 [tarball-aarch64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-aarch64.tar.gz
 
 ### macOS
+
+With [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask watzon/tap/sayso
+```
+
+Or by hand:
 
 1. Download `Sayso-<version>-macos-arm64.dmg` with the button above.
 2. Open the DMG and move Sayso to the Applications folder.
