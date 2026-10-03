@@ -356,7 +356,7 @@ impl HistoryPage {
                     .child(sayso_ui::text::title("History", 32., &c).line_height(px(40.)))
                     .child(ui(count, 13., 16., FontWeight::NORMAL, c.graphite).pb(px(6.))),
             )
-            .child(kit::search_well(&self.search, 38., Some(kit::mini_key("⌘F", cx).into_any_element()), cx))
+            .child(kit::search_well(&self.search, 38., Some(kit::mini_key(if cfg!(target_os = "macos") { "⌘F" } else { "Ctrl F" }, cx).into_any_element()), cx))
             .child(self.filters(cx))
             // The scroll area clips to its bounds. It reaches out to the pane edges
             // (with matching padding, so rows stay put) to leave room for the

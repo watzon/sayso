@@ -61,3 +61,53 @@ pub fn open_url(url: &str) {
 pub fn claim_single_instance(on_second_launch: impl Fn() + Send + 'static) -> bool {
     window::claim_single_instance(on_second_launch)
 }
+
+// ---------------------------------------------------------------------------
+// Words for the UI
+// ---------------------------------------------------------------------------
+
+/// What the UI calls this computer: "your Mac", "this PC".
+pub const COMPUTER: &str = if cfg!(target_os = "macos") {
+    "Mac"
+} else if cfg!(windows) {
+    "PC"
+} else {
+    "computer"
+};
+
+pub const OS_NAME: &str = if cfg!(target_os = "macos") {
+    "macOS"
+} else if cfg!(windows) {
+    "Windows"
+} else {
+    "Linux"
+};
+
+/// The app where the user changes system settings.
+pub const SETTINGS_APP: &str = if cfg!(target_os = "macos") { "System Settings" } else { "Settings" };
+
+/// Where Sayso keeps API keys, with its article: "the Keychain".
+pub const SECRET_STORE: &str = if cfg!(target_os = "macos") {
+    "the Keychain"
+} else if cfg!(windows) {
+    "Windows Credential Manager"
+} else {
+    "the system keyring"
+};
+
+/// The settings page of the sound input.
+pub const SOUND_SETTINGS: &str = if cfg!(target_os = "macos") {
+    "System Settings › Sound"
+} else if cfg!(windows) {
+    "Settings › System › Sound"
+} else {
+    "the sound settings"
+};
+
+/// The model status while it loads for the first time. On macOS Core ML
+/// compiles it for the Neural Engine.
+pub const OPTIMIZING: &str = if cfg!(target_os = "macos") { "Optimizing for your Mac" } else { "Loading the model" };
+
+/// macOS asks the user for Accessibility (to paste) and Input Monitoring
+/// (for push to talk). Other platforms have no such grants, so the UI hides them.
+pub const HAS_INPUT_PERMISSIONS: bool = cfg!(target_os = "macos");

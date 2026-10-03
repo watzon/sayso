@@ -286,9 +286,9 @@ impl Render for AppearanceSettings {
             );
 
         let paper_group = group("Paper", cx)
-            .child(row("Appearance", "Auto follows macOS.", theme, cx))
+            .child(row("Appearance", &format!("Auto follows {}.", crate::os::OS_NAME), theme, cx))
             .child(row("Paper texture", "Grain on the window background. Content stays almost clean.", texture, cx))
-            .child(row("Reduce motion", "Ink appears without spreading. Auto follows macOS.", motion, cx));
+            .child(row("Reduce motion", &format!("Ink appears without spreading. Auto follows {}.", crate::os::OS_NAME), motion, cx));
 
         let body = kit::body().child(ink_group).child(paper_group);
         kit::page("appearance-page", "Appearance", "Your ink, light and dark paper, texture, and motion.", body, cx)

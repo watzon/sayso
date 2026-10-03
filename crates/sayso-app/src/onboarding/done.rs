@@ -108,7 +108,7 @@ impl OnboardingView {
                     .w_full()
                     .gap(px(14.))
                     .child(tour_card(pill, "The pill", "Bottom of your screen. Click it, or drag it where you like.", &c))
-                    .child(tour_card(menu, "The menu bar", "Switch style, model, or microphone, and copy your last text.", &c))
+                    .child(tour_card(menu, if cfg!(target_os = "macos") { "The menu bar" } else { "The tray icon" }, "Switch style, model, or microphone, and copy your last text.", &c))
                     .child(tour_card(keys, "Paste last text", "If text did not land where you wanted, paste it again.", &c)),
             )
             .children(pindrop.map(|(message, running)| {

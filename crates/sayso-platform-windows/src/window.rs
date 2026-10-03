@@ -560,6 +560,35 @@ pub fn reveal_in_explorer(path: &Path) {
     let _ = std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", path.display())).spawn();
 }
 
+/// Play a WAV file without waiting, for History playback. A new call or
+/// [`stop_wav`] ends the sound that plays. False when Windows refused it.
+pub fn play_wav(path: &Path) -> bool {
+    use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_FILENAME, SND_NODEFAULT};
+    let path = wide(path.as_os_str());
+    // SAFETY: the path is NUL-terminated; with SND_ASYNC Windows copies what it needs.
+    unsafe { PlaySoundW(PCWSTR(path.as_ptr()), None, SND_FILENAME | SND_ASYNC | SND_NODEFAULT) }.as_bool()
+}
+
+/// Stop the sound of [`play_wav`].
+pub fn stop_wav() {
+    use windows::Win32::Media::Audio::{PlaySoundW, SND_FLAGS};
+    // SAFETY: a null sound stops the current one.
+    unsafe {
+        let _ = PlaySoundW(PCWSTR::null(), None, SND_FLAGS(0));
+    }
+}
+
+/// The user's display name ("Chris Watson"), else the account name.
+pub fn user_display_name() -> Option<String> {
+    use windows::Win32::Security::Authentication::Identity::{GetUserNameExW, NameDisplay};
+    let mut buf = [0u16; 256];
+    let mut len = buf.len() as u32;
+    // SAFETY: `buf` holds `len` units; on success `len` is the count written.
+    let ok = unsafe { GetUserNameExW(NameDisplay, Some(windows::core::PWSTR(buf.as_mut_ptr())), &mut len) };
+    let name = ok.then(|| String::from_utf16_lossy(&buf[..len as usize])).filter(|n| !n.trim().is_empty());
+    name.or_else(|| std::env::var("USERNAME").ok().filter(|n| !n.is_empty()))
+}
+
 // ---------------------------------------------------------------------------
 // Single instance
 // ---------------------------------------------------------------------------

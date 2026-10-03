@@ -186,8 +186,10 @@ impl OnboardingView {
                 .into_any_element(),
             ModelStatus::Optimizing | ModelStatus::Downloaded | ModelStatus::Ready => {
                 let detail = match status {
-                    ModelStatus::Ready => "Downloaded and ready on this Mac.",
-                    ModelStatus::Optimizing => "Downloaded. Sayso is optimizing it for your Mac. This takes a minute the first time.",
+                    ModelStatus::Ready if cfg!(target_os = "macos") => "Downloaded and ready on this Mac.",
+                    ModelStatus::Ready => "Downloaded and ready on this PC.",
+                    ModelStatus::Optimizing if cfg!(target_os = "macos") => "Downloaded. Sayso is optimizing it for your Mac. This takes a minute the first time.",
+                    ModelStatus::Optimizing => "Downloaded. Sayso is loading it.",
                     _ => "Downloaded.",
                 };
                 well()
