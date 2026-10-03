@@ -68,34 +68,23 @@ impl Hotkey {
     pub fn toggle_default() -> Self {
         Hotkey::Chord { modifiers: Modifiers { option: true, ..Default::default() }, key: Key::Space }
     }
+    /// Ctrl+Cmd+V on macOS. Windows uses Ctrl+Win+V for the sound output
+    /// panel, so there it is Alt+Shift+V.
     pub fn paste_last_default() -> Self {
-        Hotkey::Chord {
-            modifiers: Modifiers { control: true, command: true, ..Default::default() },
-            key: Key::Letter('v'),
-        }
+        #[cfg(windows)]
+        let modifiers = Modifiers { option: true, shift: true, ..Default::default() };
+        #[cfg(not(windows))]
+        let modifiers = Modifiers { control: true, command: true, ..Default::default() };
+        Hotkey::Chord { modifiers, key: Key::Letter('v') }
     }
 
-    /// Keycap labels for the UI, for example `["⌥", "Space"]`.
+    /// Keycap labels for the UI, for example `["⌥", "Space"]` on macOS and
+    /// `["Alt", "Space"]` on Windows.
     pub fn keycaps(&self) -> Vec<String> {
         match self {
             Hotkey::Solo(m) => vec![m.label().to_string()],
             Hotkey::Chord { modifiers, key } => {
-                let mut caps = Vec::new();
-                if modifiers.function {
-                    caps.push("fn".to_string());
-                }
-                if modifiers.control {
-                    caps.push("⌃".to_string());
-                }
-                if modifiers.option {
-                    caps.push("⌥".to_string());
-                }
-                if modifiers.shift {
-                    caps.push("⇧".to_string());
-                }
-                if modifiers.command {
-                    caps.push("⌘".to_string());
-                }
+                let mut caps: Vec<String> = modifier_caps(modifiers).into_iter().map(str::to_string).collect();
                 caps.push(key.label());
                 caps
             }
@@ -103,7 +92,48 @@ impl Hotkey {
     }
 }
 
+/// Modifier keycaps in the order the platform writes them: ⌃⌥⇧⌘ on macOS,
+/// Win+Ctrl+Alt+Shift on Windows.
+#[cfg(target_os = "macos")]
+fn modifier_caps(m: &Modifiers) -> Vec<&'static str> {
+    [(m.function, "fn"), (m.control, "⌃"), (m.option, "⌥"), (m.shift, "⇧"), (m.command, "⌘")]
+        .into_iter()
+        .filter_map(|(on, cap)| on.then_some(cap))
+        .collect()
+}
+
+#[cfg(windows)]
+fn modifier_caps(m: &Modifiers) -> Vec<&'static str> {
+    [(m.function, "Fn"), (m.command, "Win"), (m.control, "Ctrl"), (m.option, "Alt"), (m.shift, "Shift")]
+        .into_iter()
+        .filter_map(|(on, cap)| on.then_some(cap))
+        .collect()
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
+fn modifier_caps(m: &Modifiers) -> Vec<&'static str> {
+    [(m.function, "Fn"), (m.command, "Super"), (m.control, "Ctrl"), (m.option, "Alt"), (m.shift, "Shift")]
+        .into_iter()
+        .filter_map(|(on, cap)| on.then_some(cap))
+        .collect()
+}
+
 impl SoloModifier {
+    #[cfg(not(target_os = "macos"))]
+    pub fn label(&self) -> &'static str {
+        match self {
+            SoloModifier::RightOption => "Right Alt",
+            SoloModifier::LeftOption => "Left Alt",
+            #[cfg(windows)]
+            SoloModifier::RightCommand => "Right Win",
+            #[cfg(not(windows))]
+            SoloModifier::RightCommand => "Right Super",
+            SoloModifier::RightControl => "Right Ctrl",
+            SoloModifier::RightShift => "Right Shift",
+            SoloModifier::Fn => "Fn",
+        }
+    }
+    #[cfg(target_os = "macos")]
     pub fn label(&self) -> &'static str {
         match self {
             SoloModifier::RightOption => "Right ⌥",
@@ -199,7 +229,8 @@ impl FromStr for Hotkey {
         let mut key = None;
         for part in s.split('+').map(str::trim) {
             match part.to_ascii_lowercase().as_str() {
-                "cmd" | "command" => modifiers.command = true,
+                // The Windows and Super keys sit where Command does on a Mac keyboard.
+                "cmd" | "command" | "win" | "super" | "meta" => modifiers.command = true,
                 "opt" | "option" | "alt" => modifiers.option = true,
                 "ctrl" | "control" => modifiers.control = true,
                 "shift" => modifiers.shift = true,
@@ -274,7 +305,14 @@ mod tests {
     fn aliases_normalize() {
         let hk: Hotkey = "Option + Space".parse().unwrap();
         assert_eq!(hk, Hotkey::toggle_default());
-        assert_eq!("control+command+V".parse::<Hotkey>().unwrap(), Hotkey::paste_last_default());
+        assert_eq!("control+command+V".parse::<Hotkey>().unwrap().to_string(), "ctrl+cmd+v");
+        assert_eq!("Win+Shift+S".parse::<Hotkey>().unwrap().to_string(), "shift+cmd+s");
+    }
+
+    #[test]
+    fn paste_last_default_round_trips() {
+        let hk = Hotkey::paste_last_default();
+        assert_eq!(hk.to_string().parse::<Hotkey>().unwrap(), hk);
     }
 
     #[test]
@@ -286,9 +324,20 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn keycaps_follow_mac_order() {
         let hk: Hotkey = "cmd+shift+ctrl+opt+k".parse().unwrap();
         assert_eq!(hk.keycaps(), vec!["⌃", "⌥", "⇧", "⌘", "K"]);
         assert_eq!(Hotkey::toggle_default().keycaps(), vec!["⌥", "Space"]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn keycaps_follow_windows_order() {
+        let hk: Hotkey = "cmd+shift+ctrl+opt+k".parse().unwrap();
+        assert_eq!(hk.keycaps(), vec!["Win", "Ctrl", "Alt", "Shift", "K"]);
+        assert_eq!(Hotkey::toggle_default().keycaps(), vec!["Alt", "Space"]);
+        assert_eq!(Hotkey::paste_last_default().to_string(), "opt+shift+v");
+        assert_eq!(Hotkey::Solo(SoloModifier::RightOption).keycaps(), vec!["Right Alt"]);
     }
 }

@@ -1,7 +1,10 @@
 //! The speech model catalog (plan §3, "Models").
 //!
-//! [`catalog`] lists the models that run on this Mac. Cloud models come from
-//! the configured speech providers (see [`crate::speech`]).
+//! [`catalog`] lists the models that run on this computer: the Swift engine's
+//! models on macOS, and the portable engine's models (`portable`) elsewhere.
+//! Cloud models come from the configured speech providers (see [`crate::speech`]).
+
+mod portable;
 
 use crate::languages;
 use crate::speech::Speech;
@@ -53,6 +56,13 @@ pub enum EngineKind {
     Whisper { variant: String },
     /// Apple's SpeechAnalyzer model. macOS downloads and stores its files.
     AppleSpeech,
+    /// Portable engine: whisper.cpp with one GGML file, `file` in
+    /// `ggerganov/whisper.cpp` on Hugging Face.
+    WhisperCpp { file: String },
+    /// Portable engine: an ONNX model through transcribe-rs. `family` is the
+    /// transcribe-rs engine ("parakeet", "moonshine", ...). `repo` is the
+    /// Hugging Face repository with the files.
+    Onnx { family: String, repo: String },
     /// A speech provider's model. Rust sends the audio; the sidecar never sees it.
     Remote { provider: String, model: String },
 }
@@ -70,7 +80,8 @@ impl EngineKind {
     pub fn family(&self) -> Family {
         match self {
             EngineKind::ParakeetUnified { .. } | EngineKind::ParakeetEou | EngineKind::ParakeetTdt { .. } => Family::Parakeet,
-            EngineKind::Whisper { .. } => Family::Whisper,
+            EngineKind::Onnx { family, .. } if family == "parakeet" => Family::Parakeet,
+            EngineKind::Whisper { .. } | EngineKind::WhisperCpp { .. } => Family::Whisper,
             EngineKind::Remote { .. } => Family::Cloud,
             _ => Family::Other,
         }
@@ -82,6 +93,8 @@ impl EngineKind {
             EngineKind::Whisper { .. } => "WhisperKit",
             EngineKind::Remote { .. } => "Cloud",
             EngineKind::AppleSpeech => "macOS",
+            EngineKind::WhisperCpp { .. } => "whisper.cpp",
+            EngineKind::Onnx { .. } => "ONNX Runtime",
             _ => "FluidAudio",
         }
     }
@@ -150,12 +163,12 @@ impl ModelInfo {
 const MB: u64 = 1_000_000;
 
 pub fn default_model() -> ModelId {
-    ModelId::new("parakeet-unified-en")
+    if cfg!(target_os = "macos") { ModelId::new("parakeet-unified-en") } else { ModelId::new(portable::DEFAULT_MODEL) }
 }
 
 /// The small streaming model that gives a live preview to models without one.
 pub fn preview_fallback() -> ModelId {
-    ModelId::new("parakeet-eou-120m")
+    if cfg!(target_os = "macos") { ModelId::new("parakeet-eou-120m") } else { ModelId::new(portable::PREVIEW_FALLBACK) }
 }
 
 struct Entry {
@@ -200,8 +213,13 @@ fn whisper(variant: &str) -> EngineKind {
     EngineKind::Whisper { variant: variant.into() }
 }
 
-/// The models that run on this Mac, in display order.
+/// The models that run on this computer, in display order.
 pub fn catalog() -> Vec<ModelInfo> {
+    if cfg!(target_os = "macos") { apple_catalog() } else { portable::catalog() }
+}
+
+/// The models of the Swift engine (`native/macos/SaysoEngine`).
+fn apple_catalog() -> Vec<ModelInfo> {
     let en = languages::english;
     vec![
         // Parakeet.
@@ -529,7 +547,7 @@ pub fn catalog() -> Vec<ModelInfo> {
     ]
 }
 
-/// A model that runs on this Mac.
+/// A model that runs on this computer.
 pub fn find(id: &ModelId) -> Option<ModelInfo> {
     catalog().into_iter().find(|m| &m.id == id)
 }
@@ -581,6 +599,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn default_model_is_in_catalog_and_recommended() {
         let m = find(&default_model()).unwrap();
         assert!(m.recommended && m.final_pass && m.live_preview);
@@ -606,10 +625,15 @@ mod tests {
             assert!((1..=5).contains(&m.speed));
         }
         let fallback = find(&preview_fallback()).unwrap();
-        assert!(fallback.live_preview && !fallback.final_pass);
+        assert!(fallback.live_preview);
+        #[cfg(target_os = "macos")]
+        assert!(!fallback.final_pass);
+        let default = find(&default_model()).unwrap();
+        assert!(default.recommended && default.final_pass);
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn language_falls_back_to_what_the_model_supports() {
         let unified = find(&default_model()).unwrap();
         assert_eq!(unified.language_for("de"), "en", "an English model stays English");
@@ -645,6 +669,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn preview_comes_from_the_active_model_or_a_streaming_model_on_disk() {
         let model = |id: &str| find(&ModelId::new(id)).unwrap();
         fn on(ids: &[&'static str]) -> impl Fn(&ModelId) -> bool {

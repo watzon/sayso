@@ -16,6 +16,8 @@ mod detect;
 mod models;
 mod openai;
 mod secrets;
+#[cfg(windows)]
+mod win_shim;
 
 pub use claude::ClaudeCli;
 pub use codex::CodexCli;

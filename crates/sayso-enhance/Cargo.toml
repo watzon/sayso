@@ -15,7 +15,16 @@ parking_lot.workspace = true
 tempfile.workspace = true
 ureq = { version = "3", features = ["json"] }
 wait-timeout = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "4", features = ["apple-native-keyring-store"] }
+
+[target.'cfg(windows)'.dependencies]
+# Windows Credential Manager.
+keyring = { version = "4", features = ["windows-native-keyring-store"] }
+
+[target.'cfg(not(any(target_os = "macos", windows)))'.dependencies]
+keyring = "4"
 
 [dev-dependencies]
 tiny_http = "0.12"

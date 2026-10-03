@@ -30,6 +30,23 @@ use std::time::{Duration, Instant};
 /// pass reads the full recording from a file.
 const MAX_QUEUED_AUDIO: usize = 500;
 
+/// The sidecar's file name beside the app executable.
+#[cfg(target_os = "macos")]
+const ENGINE_FILE_NAME: &str = "SaysoEngine";
+#[cfg(not(target_os = "macos"))]
+const ENGINE_FILE_NAME: &str = if cfg!(windows) { "SaysoEngine.exe" } else { "SaysoEngine" };
+
+/// The development build, relative to this crate: the Swift package on macOS,
+/// the portable Rust engine elsewhere.
+#[cfg(target_os = "macos")]
+const DEV_ENGINE_PATH: &str = "../../native/macos/SaysoEngine/.build/release/SaysoEngine";
+#[cfg(not(target_os = "macos"))]
+const DEV_ENGINE_PATH: &str = if cfg!(windows) {
+    "../../native/portable/target/release/SaysoEngine.exe"
+} else {
+    "../../native/portable/target/release/SaysoEngine"
+};
+
 /// Timing knobs. The defaults suit the real sidecar. Tests shorten them.
 #[derive(Debug, Clone)]
 pub struct Options {
@@ -213,13 +230,12 @@ impl EngineClient {
         }
         if let Some(beside) = std::env::current_exe()
             .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join("SaysoEngine")))
+            .and_then(|exe| exe.parent().map(|dir| dir.join(ENGINE_FILE_NAME)))
             .filter(|path| path.exists())
         {
             return beside;
         }
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../native/macos/SaysoEngine/.build/release/SaysoEngine")
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(DEV_ENGINE_PATH)
     }
 
     /// Number of live preview audio frames dropped because the sidecar fell behind.
@@ -537,7 +553,15 @@ impl Inner {
 
     /// Start the sidecar, install its writer queue, and return its stdout for the reader.
     fn launch(&self) -> std::io::Result<ChildStdout> {
-        let mut child = Command::new(&self.engine_path)
+        let mut command = Command::new(&self.engine_path);
+        #[cfg(windows)]
+        {
+            // CREATE_NO_WINDOW: the app is a GUI program, so a console child
+            // would open a console window.
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000);
+        }
+        let mut child = command
             .env("SAYSO_MODELS_DIR", &self.models_dir)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

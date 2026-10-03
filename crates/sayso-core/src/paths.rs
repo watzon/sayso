@@ -18,7 +18,10 @@ impl PathEnv for SystemEnv {
         std::env::var(key).ok().filter(|v| !v.is_empty())
     }
     fn home(&self) -> PathBuf {
-        std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
+        std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/"))
     }
     fn exists(&self, path: &Path) -> bool {
         path.exists()
@@ -45,24 +48,24 @@ pub struct Paths {
 impl Paths {
     pub fn resolve(env: &impl PathEnv) -> Self {
         let home = env.home();
-        let app_support = home.join("Library/Application Support/Sayso");
+        let platform = PlatformDirs::for_env(env, &home);
 
         let (config_dir, config_source) = if let Some(xdg) = env.var("XDG_CONFIG_HOME") {
             (PathBuf::from(xdg).join("sayso"), PathSource::XdgVariable)
         } else if env.exists(&home.join(".config/sayso")) {
             (home.join(".config/sayso"), PathSource::DotConfig)
         } else {
-            (app_support.clone(), PathSource::PlatformDefault)
+            (platform.config, PathSource::PlatformDefault)
         };
 
         let (data_dir, data_source) = match env.var("XDG_DATA_HOME") {
             Some(xdg) => (PathBuf::from(xdg).join("sayso"), PathSource::XdgVariable),
-            None => (app_support, PathSource::PlatformDefault),
+            None => (platform.data, PathSource::PlatformDefault),
         };
 
         let cache_dir = match env.var("XDG_CACHE_HOME") {
             Some(xdg) => PathBuf::from(xdg).join("sayso"),
-            None => home.join("Library/Caches/Sayso"),
+            None => platform.cache,
         };
 
         Self { config_dir, config_source, data_dir, data_source, cache_dir }
@@ -109,9 +112,35 @@ impl Paths {
     /// Replace a leading home directory with `~` for display.
     pub fn display(path: &Path, home: &Path) -> String {
         match path.strip_prefix(home) {
-            Ok(rest) => format!("~/{}", rest.display()),
+            Ok(rest) => format!("~{}{}", std::path::MAIN_SEPARATOR, rest.display()),
             Err(_) => path.display().to_string(),
         }
+    }
+}
+
+/// The directories each platform uses when no XDG variable is set.
+struct PlatformDirs {
+    config: PathBuf,
+    data: PathBuf,
+    cache: PathBuf,
+}
+
+impl PlatformDirs {
+    /// macOS: `~/Library/Application Support/Sayso` and `~/Library/Caches/Sayso`.
+    #[cfg(not(windows))]
+    fn for_env(_env: &impl PathEnv, home: &Path) -> Self {
+        let app_support = home.join("Library/Application Support/Sayso");
+        PlatformDirs { config: app_support.clone(), data: app_support, cache: home.join("Library/Caches/Sayso") }
+    }
+
+    /// Windows: config in `%APPDATA%\Sayso` (it roams with the user), data and
+    /// cache in `%LOCALAPPDATA%\Sayso` (models are large and must not roam).
+    #[cfg(windows)]
+    fn for_env(env: &impl PathEnv, home: &Path) -> Self {
+        let roaming = env.var("APPDATA").map(PathBuf::from).unwrap_or_else(|| home.join("AppData").join("Roaming"));
+        let local = env.var("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| home.join("AppData").join("Local"));
+        let local = local.join("Sayso");
+        PlatformDirs { config: roaming.join("Sayso"), data: local.clone(), cache: local.join("Cache") }
     }
 }
 
@@ -152,6 +181,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn dot_config_used_only_when_it_exists() {
         let with = Paths::resolve(&env(&[], &["/Users/test/.config/sayso"]));
         assert_eq!(with.config_dir, PathBuf::from("/Users/test/.config/sayso"));
@@ -161,6 +191,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn data_and_cache_defaults() {
         let p = Paths::resolve(&env(&[], &[]));
         assert_eq!(p.data_dir, PathBuf::from("/Users/test/Library/Application Support/Sayso"));
@@ -179,6 +210,28 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn windows_defaults_use_appdata() {
+        let p = Paths::resolve(&env(&[("APPDATA", r"C:\Users\test\AppData\Roaming"), ("LOCALAPPDATA", r"C:\L")], &[]));
+        assert_eq!(p.config_dir, PathBuf::from(r"C:\Users\test\AppData\Roaming\Sayso"));
+        assert_eq!(p.config_source, PathSource::PlatformDefault);
+        assert_eq!(p.data_dir, PathBuf::from(r"C:\L\Sayso"));
+        assert_eq!(p.cache_dir, PathBuf::from(r"C:\L\Sayso\Cache"));
+        let x = Paths::resolve(&env(&[("XDG_DATA_HOME", "/d"), ("XDG_CACHE_HOME", "/c")], &[]));
+        assert_eq!(x.data_dir, PathBuf::from("/d/sayso"));
+        assert_eq!(x.cache_dir, PathBuf::from("/c/sayso"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_defaults_without_variables_fall_back_to_the_profile() {
+        let p = Paths::resolve(&env(&[], &[]));
+        assert_eq!(p.config_dir, PathBuf::from("/Users/test").join("AppData").join("Roaming").join("Sayso"));
+        assert_eq!(p.data_dir, PathBuf::from("/Users/test").join("AppData").join("Local").join("Sayso"));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
     fn display_uses_tilde() {
         let s = Paths::display(Path::new("/Users/test/.config/sayso/config.toml"), Path::new("/Users/test"));
         assert_eq!(s, "~/.config/sayso/config.toml");
