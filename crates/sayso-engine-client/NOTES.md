@@ -5,6 +5,10 @@
 Build the sidecar: `cd native/macos/SaysoEngine && swift build -c release`.
 Find it at run time with `EngineClient::default_engine_path()`: env `SAYSO_ENGINE_PATH`, then `SaysoEngine` next to the app executable, then the dev build path.
 
+## Windows and Linux
+
+The sidecar there is the portable Rust engine in `native/portable` (its own Cargo workspace): `cd native/portable && cargo build --release` gives `target/release/SaysoEngine(.exe)`, the dev build path on those platforms. It speaks the same protocol v1 and runs the kinds `onnx` (family `parakeet`) and `whisper_cpp` of the portable catalog with transcribe-rs. Its live preview decodes the growing recording again, so `committed` grows and `tentative` holds the re-decoded tail. On Windows `DirectML.dll` must sit beside `SaysoEngine.exe`. Build steps, runtime files, and measured results are in `native/portable/NOTES.md`.
+
 ## Protocol v1 (NDJSON over stdio)
 
 One JSON object per line. Every message has `"v":1`. The sidecar needs env `SAYSO_MODELS_DIR`. It exits when stdin closes.
