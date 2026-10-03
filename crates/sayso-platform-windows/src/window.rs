@@ -428,12 +428,23 @@ pub fn primary_screen_height() -> f64 {
     primary_height_of(&monitors())
 }
 
-/// The window frame in Cocoa coordinates.
+/// The window's content area in Cocoa coordinates. GPUI draws the content
+/// into the client area, which on macOS fills the whole frame. A resizable
+/// window here also has invisible resize borders outside it.
 pub fn frame(window: *mut c_void) -> Option<Rect> {
+    use windows::Win32::Graphics::Gdi::ClientToScreen;
+    use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
     let hwnd = resolve(window)?;
-    let mut r = RECT::default();
-    // SAFETY: `hwnd` is a window and `r` an out-pointer.
-    unsafe { GetWindowRect(hwnd, &mut r).ok()? };
+    let mut c = RECT::default();
+    let mut origin = POINT::default();
+    // SAFETY: `hwnd` is a window; `c` and `origin` are out-pointers.
+    unsafe {
+        GetClientRect(hwnd, &mut c).ok()?;
+        if !ClientToScreen(hwnd, &mut origin).as_bool() {
+            return None;
+        }
+    }
+    let r = RECT { left: origin.x, top: origin.y, right: origin.x + c.right, bottom: origin.y + c.bottom };
     let scale = window_scale(hwnd);
     let h = primary_screen_height();
     Some(cocoa(h, (f64::from(r.left) / scale, f64::from(r.top) / scale, f64::from(r.right - r.left) / scale, f64::from(r.bottom - r.top) / scale)))
@@ -596,14 +607,24 @@ pub fn user_display_name() -> Option<String> {
 const INSTANCE_MUTEX: &str = "Local\\dev.sayso.Sayso.instance";
 const SHOW_EVENT: &str = "Local\\dev.sayso.Sayso.show";
 
-/// Make this process the only Sayso of the user session.
+/// Make this process the only Sayso of the user session for its data.
 ///
 /// Returns true for the first process. It then waits on a named event, and
 /// calls `on_second_launch` on a helper thread each time a later launch sets
 /// it. A later process sets the event and gets false: it should exit.
-pub fn claim_single_instance(on_second_launch: impl Fn() + Send + 'static) -> bool {
-    let mutex_name = wide(OsStr::new(INSTANCE_MUTEX));
-    let event_name = wide(OsStr::new(SHOW_EVENT));
+///
+/// `scope` is empty for the default data folder, so the installer finds the
+/// mutex by its fixed name. A run with other folders (`XDG_DATA_HOME`, for
+/// development) passes the folder, and runs next to the installed Sayso.
+pub fn claim_single_instance(scope: &str, on_second_launch: impl Fn() + Send + 'static) -> bool {
+    let suffix = if scope.is_empty() {
+        String::new()
+    } else {
+        let units: Vec<u16> = scope.to_lowercase().encode_utf16().collect();
+        format!(".{:08x}", fnv1a(&units))
+    };
+    let mutex_name = wide(OsStr::new(&format!("{INSTANCE_MUTEX}{suffix}")));
+    let event_name = wide(OsStr::new(&format!("{SHOW_EVENT}{suffix}")));
     // SAFETY: the names are NUL-terminated. The mutex handle stays open for
     // the life of the process on purpose: it marks the running instance.
     let event = unsafe {

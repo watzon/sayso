@@ -32,7 +32,7 @@ pub fn open_url(url: &str) {
 
 /// Only one Sayso runs at a time. macOS does this for an app bundle.
 #[cfg(target_os = "macos")]
-pub fn claim_single_instance(_on_second_launch: impl Fn() + Send + 'static) -> bool {
+pub fn claim_single_instance(_paths: &sayso_core::paths::Paths, _on_second_launch: impl Fn() + Send + 'static) -> bool {
     true
 }
 
@@ -54,12 +54,17 @@ pub fn open_url(url: &str) {
     window::shell_open(std::ffi::OsStr::new(url));
 }
 
-/// Only one Sayso runs at a time. Returns false when another one already
-/// runs: it was told to open its Hub, and this process should exit.
-/// `on_second_launch` runs on a helper thread each time a later launch asks.
+/// Only one Sayso runs at a time for the same data folder. Returns false
+/// when another one already runs: it was told to open its Hub, and this
+/// process should exit. `on_second_launch` runs on a helper thread each time
+/// a later launch asks.
 #[cfg(windows)]
-pub fn claim_single_instance(on_second_launch: impl Fn() + Send + 'static) -> bool {
-    window::claim_single_instance(on_second_launch)
+pub fn claim_single_instance(paths: &sayso_core::paths::Paths, on_second_launch: impl Fn() + Send + 'static) -> bool {
+    let scope = match paths.data_source {
+        sayso_core::paths::PathSource::PlatformDefault => String::new(),
+        _ => paths.data_dir.display().to_string(),
+    };
+    window::claim_single_instance(&scope, on_second_launch)
 }
 
 // ---------------------------------------------------------------------------

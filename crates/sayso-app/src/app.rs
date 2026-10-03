@@ -21,15 +21,15 @@ pub struct Windows {
 impl Global for Windows {}
 
 pub fn run() {
+    let paths = Paths::resolve(&SystemEnv);
     // A later launch on Windows asks the running Sayso to open its Hub, then exits.
     let (second_tx, second_rx) = std::sync::mpsc::channel::<()>();
     let second_tx = std::sync::Mutex::new(second_tx);
-    if !crate::os::claim_single_instance(move || {
+    if !crate::os::claim_single_instance(&paths, move || {
         let _ = second_tx.lock().map(|tx| tx.send(()));
     }) {
         return;
     }
-    let paths = Paths::resolve(&SystemEnv);
     if let Err(e) = paths.create_all() {
         eprintln!("sayso: could not create {}: {e}", paths.data_dir.display());
     }

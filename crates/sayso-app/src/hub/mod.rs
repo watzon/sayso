@@ -66,6 +66,9 @@ impl Render for HubView {
         let c = cx.paper().colors;
         let route = self.model.read(cx).route;
         let page = self.pages.view(route, window, cx);
+        // The content sheet starts this far down; the sheets under it peek out
+        // 6 and 3 px below its top edge.
+        let top = crate::caption::top_margin(10.);
         div()
             .relative()
             .size_full()
@@ -83,13 +86,13 @@ impl Render for HubView {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .pt(px(crate::caption::top_margin(10.)))
+                    .pt(px(top))
                     .pr(px(10.))
                     .pb(px(10.))
                     .child(
                         div()
                             .absolute()
-                            .top(px(16.))
+                            .top(px(top + 6.))
                             .right(px(6.))
                             .bottom(px(4.))
                             .left(px(6.))
@@ -100,7 +103,7 @@ impl Render for HubView {
                     .child(
                         div()
                             .absolute()
-                            .top(px(13.))
+                            .top(px(top + 3.))
                             .right(px(8.))
                             .bottom(px(6.))
                             .left(px(2.))
