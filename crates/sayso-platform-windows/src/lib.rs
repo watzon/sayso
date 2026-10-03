@@ -4,10 +4,12 @@
 #![cfg(windows)]
 
 pub mod audio;
+pub mod conflicts;
 pub mod context;
 pub mod esc;
 pub mod hook;
 pub mod hook_logic;
+pub mod hotkeys;
 pub mod input;
 pub mod inserter;
 pub mod keymap;
