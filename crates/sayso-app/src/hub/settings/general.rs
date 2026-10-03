@@ -176,7 +176,13 @@ impl Render for GeneralSettings {
             .child(row("Config file", &path, div(), cx));
         body = body.child(about);
 
-        kit::page("general-page", "General", "Your name, startup, the Dock icon, and the config file.", body, cx)
+        kit::page(
+            "general-page",
+            "General",
+            if cfg!(target_os = "macos") { "Your name, startup, the Dock icon, and the config file." } else { "Your name, startup, and the config file." },
+            body,
+            cx,
+        )
     }
 }
 

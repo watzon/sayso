@@ -1,9 +1,13 @@
 //! `list_provider_models` against a mock server and fake `claude` and `codex` scripts.
-//! No real tool runs and no model is called.
+//! No real tool runs and no model is called. The fake tools are shell
+//! scripts, so their tests run on Unix only.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 
 mod common;
 
-use common::{MockServer, Reply, fake_tool};
+use common::{MockServer, Reply};
+#[cfg(unix)]
+use common::fake_tool;
 use sayso_core::config::{Provider, ProviderKind};
 use sayso_core::enhance::EnhanceError;
 use sayso_enhance::{MemoryStore, SecretStore, list_provider_models};
@@ -47,6 +51,7 @@ fn ids(choices: &[sayso_core::enhance::ModelChoice]) -> Vec<&str> {
 const CLAUDE_REPLY: &str = r#"{"type":"control_response","response":{"subtype":"success","request_id":"sayso-models","response":{"models":[{"value":"default","displayName":"Default"},{"value":"opus","displayName":"Opus 5.5","description":"Complex work"},{"value":"haiku","displayName":"Haiku 4.5"}]}}}"#;
 
 #[test]
+#[cfg(unix)] // The fake tool is a shell script.
 fn claude_models_are_read_and_the_child_is_killed() {
     let dir = tempfile::tempdir().unwrap();
     let seen = dir.path().join("seen");
@@ -90,6 +95,7 @@ fn claude_models_are_read_and_the_child_is_killed() {
 }
 
 #[test]
+#[cfg(unix)] // The fake tool is a shell script.
 fn claude_that_never_answers_times_out_quickly() {
     let dir = tempfile::tempdir().unwrap();
     let path = fake_tool(dir.path(), "claude", "exec sleep 30");
@@ -107,6 +113,7 @@ fn claude_that_never_answers_times_out_quickly() {
 }
 
 #[test]
+#[cfg(unix)] // The fake tool is a shell script.
 fn claude_login_error_is_not_configured() {
     let dir = tempfile::tempdir().unwrap();
     let reply = r#"{"type":"control_response","response":{"subtype":"error","request_id":"sayso-models","error":"Not logged in. Run /login"}}"#;
@@ -122,6 +129,7 @@ fn claude_login_error_is_not_configured() {
 }
 
 #[test]
+#[cfg(unix)] // The fake tool is a shell script.
 fn claude_that_exits_without_answering_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let path = fake_tool(dir.path(), "claude", "exit 1");
@@ -151,6 +159,7 @@ fn missing_binaries_are_not_configured() {
 }
 
 #[test]
+#[cfg(unix)] // The fake tool is a shell script.
 fn codex_models_are_read_across_two_pages() {
     let dir = tempfile::tempdir().unwrap();
     let log = dir.path().join("lines");
@@ -193,6 +202,7 @@ done
 }
 
 #[test]
+#[cfg(unix)] // The fake tool is a shell script.
 fn codex_error_reply_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let script = r#"while IFS= read -r line; do
@@ -209,6 +219,7 @@ done"#;
 }
 
 #[test]
+#[cfg(unix)] // The fake tool is a shell script.
 fn codex_that_never_answers_times_out_quickly() {
     let dir = tempfile::tempdir().unwrap();
     let path = fake_tool(dir.path(), "codex", "exec sleep 30");

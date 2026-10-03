@@ -92,6 +92,13 @@ impl Hotkey {
     }
 }
 
+impl Hotkey {
+    /// The keycaps as one short label: "⌃⌘V" on macOS, "Alt+Shift+V" elsewhere.
+    pub fn compact_label(&self) -> String {
+        self.keycaps().join(if cfg!(target_os = "macos") { "" } else { "+" })
+    }
+}
+
 /// Modifier keycaps in the order the platform writes them: ⌃⌥⇧⌘ on macOS,
 /// Win+Ctrl+Alt+Shift on Windows.
 #[cfg(target_os = "macos")]

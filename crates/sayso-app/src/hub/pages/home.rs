@@ -236,7 +236,7 @@ impl HomePage {
                     .px(px(6.))
                     .rounded(px(5.))
                     .keycap(&c)
-                    .child(mono(hk.keycaps().join(""), 11., c.ink).line_height(px(14.))),
+                    .child(mono(hk.compact_label(), 11., c.ink).line_height(px(14.))),
             )
         });
         let under = c.sheet.blend(c.deboss.opacity(0.5));

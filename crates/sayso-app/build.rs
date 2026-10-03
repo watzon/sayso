@@ -69,10 +69,10 @@ END
 /// `rc.exe` on PATH (a developer prompt), else the newest one in the Windows SDK.
 fn find_rc() -> Option<std::path::PathBuf> {
     use std::path::PathBuf;
-    if let Some(path) = std::env::var_os("PATH") {
-        if let Some(found) = std::env::split_paths(&path).map(|d| d.join("rc.exe")).find(|p| p.is_file()) {
-            return Some(found);
-        }
+    if let Some(path) = std::env::var_os("PATH")
+        && let Some(found) = std::env::split_paths(&path).map(|d| d.join("rc.exe")).find(|p| p.is_file())
+    {
+        return Some(found);
     }
     let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
         Ok("aarch64") => "arm64",

@@ -3,7 +3,9 @@
 
 use serde_json::{Value, json};
 use std::collections::HashMap;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -150,7 +152,9 @@ impl Drop for MockServer {
     }
 }
 
-/// Write an executable shell script into `dir`.
+/// Write an executable shell script into `dir`. The fake tools are shell
+/// scripts, so the tests that use them run on Unix only.
+#[cfg(unix)]
 pub fn fake_tool(dir: &Path, name: &str, script: &str) -> PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();

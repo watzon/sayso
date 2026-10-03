@@ -513,7 +513,7 @@ impl Render for PopoverView {
         let (status, _detail, dot) = m.engine_summary();
         let recording = matches!(m.state(), State::Recording { .. });
         let toggle_caps = m.config.hotkeys.toggle.map(|h| h.keycaps()).unwrap_or_default();
-        let paste_caps = m.config.hotkeys.paste_last.map(|h| h.keycaps().join("")).unwrap_or_default();
+        let paste_caps = m.config.hotkeys.paste_last.map(|h| h.compact_label()).unwrap_or_default();
         let last = m.recent.first().cloned();
         let words_today = sayso_core::stats::format_count(m.stats.words_today);
         let active_style = m.config.ai.active_style.clone();
