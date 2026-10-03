@@ -73,7 +73,13 @@ cargo build --release --manifest-path native\portable\Cargo.toml
 powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1
 ```
 
-Windows ties no permission to the app, so `cargo run -p sayso-app -- <flags>` works for everything, also dictation. It finds the engine in `native\portable\target\release`. The flags and the `XDG_*` variables above work the same:
+For a development run, use `scripts\dev.cmd <flags>` (or `./scripts/dev.sh <flags>` in Git Bash, which hands over to it). It builds the engine and the debug app, quits a Sayso that still runs from `target\debug`, starts Sayso, and shows the log in the terminal. Press Ctrl+C to quit Sayso. It finds CMake, Ninja, and libclang in their usual places (`scripts\windows-env.ps1`).
+
+```powershell
+scripts\dev.cmd --onboarding
+```
+
+Windows ties no permission to the app, so `cargo run -p sayso-app -- <flags>` also works for everything, dictation too. It finds the engine in `native\portable\target\release`. The flags and the `XDG_*` variables above work the same:
 
 ```powershell
 $env:XDG_CONFIG_HOME="$env:TEMP\sayso\c"; $env:XDG_DATA_HOME="$env:TEMP\sayso\d"; $env:XDG_CACHE_HOME="$env:TEMP\sayso\k"
