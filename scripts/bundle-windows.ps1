@@ -29,11 +29,8 @@ function Invoke-Checked([string]$what, [scriptblock]$block) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
 }
 
-# whisper.cpp in the engine needs libclang for its bindings. Use LLVM's when
-# LIBCLANG_PATH is not set.
-if (-not $env:LIBCLANG_PATH -and (Test-Path "$env:ProgramFiles\LLVM\bin\libclang.dll")) {
-    $env:LIBCLANG_PATH = "$env:ProgramFiles\LLVM\bin"
-}
+# CMake, Ninja, and libclang for the speech engine.
+. (Join-Path $PSScriptRoot 'windows-env.ps1')
 Invoke-Checked 'engine (cargo, release)' { cargo build --release --manifest-path native\portable\Cargo.toml }
 if ($Debug) {
     Invoke-Checked 'app (cargo, debug)' { cargo build -p sayso-app }
