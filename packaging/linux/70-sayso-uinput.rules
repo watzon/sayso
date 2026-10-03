@@ -1,0 +1,5 @@
+# Lets the user at the seat use /dev/uinput, so Sayso can send the paste key
+# on Wayland desktops that have no other way (no remote desktop portal and no
+# virtual keyboard protocol). Install to /etc/udev/rules.d/ and run:
+#   sudo udevadm control --reload && sudo udevadm trigger
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

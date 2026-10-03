@@ -184,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "macos"))] // `preview_for` reads the catalog of this platform.
+    #[cfg(windows)] // `preview_for` reads the catalog of this platform.
     fn whisper_borrows_the_parakeet_preview_in_parakeet_languages() {
         use crate::models::{ModelId, preview_for};
         let whisper = model("whisper-small");

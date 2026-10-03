@@ -118,7 +118,7 @@ impl Paths {
     }
 }
 
-/// The directories each platform uses when no XDG variable is set.
+/// The folders each system uses when no XDG variable says otherwise.
 struct PlatformDirs {
     config: PathBuf,
     data: PathBuf,
@@ -127,7 +127,7 @@ struct PlatformDirs {
 
 impl PlatformDirs {
     /// macOS: `~/Library/Application Support/Sayso` and `~/Library/Caches/Sayso`.
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
     fn for_env(_env: &impl PathEnv, home: &Path) -> Self {
         let app_support = home.join("Library/Application Support/Sayso");
         PlatformDirs { config: app_support.clone(), data: app_support, cache: home.join("Library/Caches/Sayso") }
@@ -141,6 +141,12 @@ impl PlatformDirs {
         let local = env.var("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|| home.join("AppData").join("Local"));
         let local = local.join("Sayso");
         PlatformDirs { config: roaming.join("Sayso"), data: local.clone(), cache: local.join("Cache") }
+    }
+
+    /// Other systems: the XDG defaults (`~/.config`, `~/.local/share`, `~/.cache`).
+    #[cfg(not(any(target_os = "macos", windows)))]
+    fn for_env(_env: &impl PathEnv, home: &Path) -> Self {
+        PlatformDirs { config: home.join(".config/sayso"), data: home.join(".local/share/sayso"), cache: home.join(".cache/sayso") }
     }
 }
 
@@ -186,7 +192,8 @@ mod tests {
         let with = Paths::resolve(&env(&[], &["/Users/test/.config/sayso"]));
         assert_eq!(with.config_dir, PathBuf::from("/Users/test/.config/sayso"));
         let without = Paths::resolve(&env(&[], &[]));
-        assert_eq!(without.config_dir, PathBuf::from("/Users/test/Library/Application Support/Sayso"));
+        let config = if cfg!(target_os = "macos") { "/Users/test/Library/Application Support/Sayso" } else { "/Users/test/.config/sayso" };
+        assert_eq!(without.config_dir, PathBuf::from(config));
         assert_eq!(without.config_source, PathSource::PlatformDefault);
     }
 
@@ -194,8 +201,13 @@ mod tests {
     #[cfg(not(windows))]
     fn data_and_cache_defaults() {
         let p = Paths::resolve(&env(&[], &[]));
-        assert_eq!(p.data_dir, PathBuf::from("/Users/test/Library/Application Support/Sayso"));
-        assert_eq!(p.cache_dir, PathBuf::from("/Users/test/Library/Caches/Sayso"));
+        let (data, cache) = if cfg!(target_os = "macos") {
+            ("/Users/test/Library/Application Support/Sayso", "/Users/test/Library/Caches/Sayso")
+        } else {
+            ("/Users/test/.local/share/sayso", "/Users/test/.cache/sayso")
+        };
+        assert_eq!(p.data_dir, PathBuf::from(data));
+        assert_eq!(p.cache_dir, PathBuf::from(cache));
         let x = Paths::resolve(&env(&[("XDG_DATA_HOME", "/d"), ("XDG_CACHE_HOME", "/c")], &[]));
         assert_eq!(x.data_dir, PathBuf::from("/d/sayso"));
         assert_eq!(x.cache_dir, PathBuf::from("/c/sayso"));

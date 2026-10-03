@@ -18,7 +18,7 @@ use sayso_platform::{PlatformError, Result, SttBackend};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
@@ -30,21 +30,25 @@ use std::time::{Duration, Instant};
 /// pass reads the full recording from a file.
 const MAX_QUEUED_AUDIO: usize = 500;
 
-/// The sidecar's file name beside the app executable.
-#[cfg(target_os = "macos")]
-const ENGINE_FILE_NAME: &str = "SaysoEngine";
-#[cfg(not(target_os = "macos"))]
-const ENGINE_FILE_NAME: &str = if cfg!(windows) { "SaysoEngine.exe" } else { "SaysoEngine" };
-
-/// The development build, relative to this crate: the Swift package on macOS,
-/// the portable Rust engine elsewhere.
-#[cfg(target_os = "macos")]
-const DEV_ENGINE_PATH: &str = "../../native/macos/SaysoEngine/.build/release/SaysoEngine";
-#[cfg(not(target_os = "macos"))]
-const DEV_ENGINE_PATH: &str = if cfg!(windows) {
-    "../../native/portable/target/release/SaysoEngine.exe"
+/// The sidecar's file name beside the app executable: the Swift engine on
+/// macOS, the portable engine (`native/portable`) on Windows, and
+/// `sayso-engine` (`crates/sayso-engine`) on other systems.
+const ENGINE_FILE_NAME: &str = if cfg!(target_os = "macos") {
+    "SaysoEngine"
+} else if cfg!(windows) {
+    "SaysoEngine.exe"
 } else {
-    "../../native/portable/target/release/SaysoEngine"
+    "sayso-engine"
+};
+
+/// The development build, relative to this crate. None where the workspace
+/// builds the engine next to the app binary.
+const DEV_ENGINE_PATH: Option<&str> = if cfg!(target_os = "macos") {
+    Some("../../native/macos/SaysoEngine/.build/release/SaysoEngine")
+} else if cfg!(windows) {
+    Some("../../native/portable/target/release/SaysoEngine.exe")
+} else {
+    None
 };
 
 /// Timing knobs. The defaults suit the real sidecar. Tests shorten them.
@@ -221,21 +225,29 @@ impl EngineClient {
         Ok(client)
     }
 
-    /// Find the sidecar binary. In order: env `SAYSO_ENGINE_PATH`, `SaysoEngine` next to
-    /// the running executable (app bundle), then the development build in this workspace.
-    /// If none exists, the development path comes back so the spawn error names it.
+    /// Find the sidecar binary. In order: env `SAYSO_ENGINE_PATH`, the engine next to
+    /// the running executable (app bundle, install folder, or cargo target folder), then
+    /// the development build in this workspace. If none exists, the development path
+    /// comes back so the spawn error names it.
+    ///
+    /// The engine is `SaysoEngine` (Swift) on macOS, `SaysoEngine.exe` (Rust,
+    /// `native/portable`) on Windows, and `sayso-engine` (Rust,
+    /// `crates/sayso-engine`) on other systems.
     pub fn default_engine_path() -> PathBuf {
         if let Some(path) = std::env::var_os("SAYSO_ENGINE_PATH").filter(|p| !p.is_empty()) {
             return PathBuf::from(path);
         }
-        if let Some(beside) = std::env::current_exe()
+        let beside = std::env::current_exe()
             .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join(ENGINE_FILE_NAME)))
-            .filter(|path| path.exists())
-        {
-            return beside;
+            .and_then(|exe| exe.parent().map(|dir| dir.join(ENGINE_FILE_NAME)));
+        if let Some(beside) = beside.as_ref().filter(|path| path.exists()) {
+            return beside.clone();
         }
-        Path::new(env!("CARGO_MANIFEST_DIR")).join(DEV_ENGINE_PATH)
+        match DEV_ENGINE_PATH {
+            Some(dev) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(dev),
+            // `cargo build -p sayso-engine` puts the engine next to the app binary.
+            None => beside.unwrap_or_else(|| PathBuf::from(ENGINE_FILE_NAME)),
+        }
     }
 
     /// Number of live preview audio frames dropped because the sidecar fell behind.

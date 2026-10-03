@@ -6,11 +6,11 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-[dependencies]
+# The crate is empty on other systems, so `cargo test --workspace` works everywhere.
+[target.'cfg(target_os = "macos")'.dependencies]
 sayso-core.workspace = true
 sayso-platform.workspace = true
-
-[target.'cfg(target_os = "macos")'.dependencies]
+sayso-platform-common.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true
@@ -18,8 +18,6 @@ thiserror.workspace = true
 serde_json.workspace = true
 
 global-hotkey = "0.8"
-cpal = "0.18.2"
-rodio = { version = "0.22.2", default-features = false, features = ["playback", "wav"] }
 core-foundation = "0.10"
 objc2 = "0.6"
 objc2-foundation = "0.3"
@@ -28,5 +26,5 @@ objc2-av-foundation = "0.3.2"
 objc2-service-management = "0.3.2"
 block2 = "0.6"
 
-[dev-dependencies]
+[target.'cfg(target_os = "macos")'.dev-dependencies]
 env_logger.workspace = true

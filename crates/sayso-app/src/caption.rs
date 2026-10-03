@@ -1,10 +1,11 @@
-//! Window controls where Sayso draws its own title bar.
+//! Window controls on Windows, where Sayso draws its own title bar.
 //!
-//! On macOS the Hub and onboarding keep the native traffic lights. Elsewhere
-//! GPUI hides the whole title bar for `appears_transparent`, so the window
-//! needs its own drag area and minimize, maximize, and close buttons. GPUI
-//! maps the areas to the native hit-test codes, so Windows still snaps,
-//! shows snap layouts on the maximize button, and double-click maximizes.
+//! On macOS the Hub and onboarding keep the native traffic lights, and on
+//! Linux `chrome` draws the title bar. On Windows GPUI hides the whole title
+//! bar for `appears_transparent`, so the window needs its own drag area and
+//! minimize, maximize, and close buttons. GPUI maps the areas to the native
+//! hit-test codes, so Windows still snaps, shows snap layouts on the maximize
+//! button, and double-click maximizes.
 
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -15,19 +16,19 @@ use sayso_ui::components::icon;
 /// Height of the strip at the top of the window.
 pub const HEIGHT: f32 = 36.;
 
-/// The top margin of a window's main sheet: room for the caption bar where
-/// Sayso draws one, else `mac` (the space the design has above the sheet).
-pub fn top_margin(mac: f32) -> f32 {
-    if cfg!(target_os = "macos") { mac } else { HEIGHT }
+/// The top margin of a window's main sheet: room for the caption bar on
+/// Windows, else `other` (the space the design has above the sheet).
+pub fn top_margin(other: f32) -> f32 {
+    if cfg!(windows) { HEIGHT } else { other }
 }
 const BUTTON_W: f32 = 46.;
 /// The red of a close button under the mouse, as Windows draws it.
 const CLOSE_HOVER: u32 = 0xc42b1c;
 
 /// The drag strip and window buttons across the top of the window, above
-/// its main sheet (see [`top_margin`]). None on macOS.
+/// its main sheet (see [`top_margin`]). None off Windows.
 pub fn caption_bar(resizable: bool, cx: &App) -> Option<AnyElement> {
-    if cfg!(target_os = "macos") {
+    if !cfg!(windows) {
         return None;
     }
     let c = cx.paper().colors;

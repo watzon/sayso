@@ -40,7 +40,7 @@ impl OnboardingView {
             let state = m.pindrop_import.clone();
             let running = state == crate::pindrop_import::PindropImport::Running;
             let message = match &state {
-                crate::pindrop_import::PindropImport::Idle => "You used Pindrop on this Mac. Sayso can copy your dictations, dictionary, and prompt presets.".to_string(),
+                crate::pindrop_import::PindropImport::Idle => "You used Pindrop on this computer. Sayso can copy your dictations, dictionary, and prompt presets.".to_string(),
                 other => other.message(),
             };
             (message, running)
@@ -108,7 +108,7 @@ impl OnboardingView {
                     .w_full()
                     .gap(px(14.))
                     .child(tour_card(pill, "The pill", "Bottom of your screen. Click it, or drag it where you like.", &c))
-                    .child(tour_card(menu, if cfg!(target_os = "macos") { "The menu bar" } else { "The tray icon" }, "Switch style, model, or microphone, and copy your last text.", &c))
+                    .child(tour_card(menu, crate::shell::os_text!("The menu bar", "The tray icon"), "Switch style, model, or microphone, and copy your last text.", &c))
                     .child(tour_card(keys, "Paste last text", "If text did not land where you wanted, paste it again.", &c)),
             )
             .children(pindrop.map(|(message, running)| {

@@ -285,10 +285,27 @@ impl Render for AppearanceSettings {
                     .child(specimen(Appearance::Dark, a.ink, cx)),
             );
 
+        let m3 = self.model.clone();
+        let title_bar = Switch::new("system-title-bar", a.system_title_bar).on_toggle(move |on, window, cx| {
+            m3.update(cx, |m, cx| m.edit_config(cx, |c| c.appearance.system_title_bar = on));
+            // The Hub is open now, so apply the change at once.
+            crate::chrome::apply(&m3.read(cx).config, window);
+        });
+
         let paper_group = group("Paper", cx)
-            .child(row("Appearance", &format!("Auto follows {}.", crate::os::OS_NAME), theme, cx))
+            .child(row("Appearance", crate::shell::os_text!("Auto follows macOS.", "Auto follows Windows.", "Auto follows the system."), theme, cx))
             .child(row("Paper texture", "Grain on the window background. Content stays almost clean.", texture, cx))
-            .child(row("Reduce motion", &format!("Ink appears without spreading. Auto follows {}.", crate::os::OS_NAME), motion, cx));
+            .child(row("Reduce motion", crate::shell::os_text!("Ink appears without spreading. Auto follows macOS.", "Ink appears without spreading. Auto follows Windows.", "Ink appears without spreading. Auto follows the system."), motion, cx));
+
+        // Only Linux lets an app choose who draws the title bar.
+        let paper_group = paper_group.when(cfg!(target_os = "linux"), |g| {
+            g.child(row(
+                "Use the system title bar",
+                "Off: Sayso draws its own title bar and window buttons, and the paper goes to the top edge.",
+                title_bar,
+                cx,
+            ))
+        });
 
         let body = kit::body().child(ink_group).child(paper_group);
         kit::page("appearance-page", "Appearance", "Your ink, light and dark paper, texture, and motion.", body, cx)

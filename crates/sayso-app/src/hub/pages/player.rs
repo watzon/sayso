@@ -1,18 +1,18 @@
 //! Audio playback for History: writes the samples to a temp WAV file and
-//! plays it with `afplay` on macOS, or `PlaySound` on Windows. Pause stops
-//! the sound and keeps the position.
+//! plays it with the system's player (`afplay` on macOS), or `PlaySound` on
+//! Windows. Pause stops the sound and keeps the position.
 
 use std::io::Write;
 use std::path::PathBuf;
-#[cfg(target_os = "macos")]
-use std::process::{Child, Command, Stdio};
+#[cfg(not(windows))]
+use std::process::{Child, Stdio};
 use std::time::Instant;
 
 const RATE: u32 = sayso_core::stt::SAMPLE_RATE;
 
 pub struct Playing {
     pub entry: i64,
-    #[cfg(target_os = "macos")]
+    #[cfg(not(windows))]
     child: Child,
     /// Length of the part that plays. `PlaySound` reports no end.
     #[cfg(windows)]
@@ -32,8 +32,10 @@ impl Playing {
         let slice = samples.get(skip.min(samples.len())..).unwrap_or(&[]);
         let path = temp_path(entry);
         write_wav(&path, slice).map_err(|e| format!("Could not prepare the audio: {e}"))?;
-        #[cfg(target_os = "macos")]
-        let child = Command::new("afplay")
+        #[cfg(not(windows))]
+        let mut player = crate::shell::audio_player().ok_or("No audio player is installed.")?;
+        #[cfg(not(windows))]
+        let child = player
             .arg(&path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -42,12 +44,12 @@ impl Playing {
         #[cfg(windows)]
         let sound = CURRENT_SOUND.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
         #[cfg(windows)]
-        if !crate::os::window::play_wav(&path) {
+        if !crate::shell::play_wav(&path) {
             return Err("Could not play the audio.".into());
         }
         Ok(Playing {
             entry,
-            #[cfg(target_os = "macos")]
+            #[cfg(not(windows))]
             child,
             #[cfg(windows)]
             length_ms: length_ms(slice),
@@ -64,7 +66,7 @@ impl Playing {
     }
 
     /// True when the sound ended by itself.
-    #[cfg(target_os = "macos")]
+    #[cfg(not(windows))]
     pub fn finished(&mut self) -> bool {
         !matches!(self.child.try_wait(), Ok(None))
     }
@@ -77,7 +79,7 @@ impl Playing {
     #[cfg_attr(windows, allow(unused_mut))]
     pub fn stop(mut self) -> u64 {
         let pos = self.position_ms();
-        #[cfg(target_os = "macos")]
+        #[cfg(not(windows))]
         {
             let _ = self.child.kill();
             let _ = self.child.wait();
@@ -88,11 +90,11 @@ impl Playing {
 
 impl Drop for Playing {
     fn drop(&mut self) {
-        #[cfg(target_os = "macos")]
+        #[cfg(not(windows))]
         let _ = self.child.kill();
         #[cfg(windows)]
         if CURRENT_SOUND.load(std::sync::atomic::Ordering::SeqCst) == self.sound {
-            crate::os::window::stop_wav();
+            crate::shell::stop_wav();
         }
     }
 }

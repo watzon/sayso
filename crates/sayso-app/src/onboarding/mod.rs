@@ -191,7 +191,7 @@ impl OnboardingView {
     // Pieces
     // -----------------------------------------------------------------------
 
-    fn top_bar(&self, cx: &mut Context<Self>) -> Div {
+    fn top_bar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let c = cx.paper().colors;
         let mut trail = div().flex().flex_1().items_center().justify_center();
         for i in 0..STEPS {
@@ -211,21 +211,26 @@ impl OnboardingView {
             };
             trail = trail.child(dot);
         }
-        div()
-            .flex()
-            .flex_none()
-            .items_center()
-            .h(px(52.))
-            .px(px(18.))
+        let step = text::ui(format!("Step {} of {STEPS}", self.step + 1), 12., FontWeight::NORMAL, c.graphite).w(px(120.)).flex_none();
+        let header = div().id("onboarding-title").flex().flex_none().items_center().h(px(52.)).px(px(18.));
+        if crate::chrome::is_custom(window) {
+            // The custom title bar (Linux): the header moves the window, and
+            // the window buttons take the place of the step count.
+            return crate::chrome::drag_area(header)
+                .child(step)
+                .child(trail)
+                .child(div().w(px(120.)).flex_none().flex().justify_end().child(crate::chrome::window_controls(window, cx, |window, cx| {
+                    cx.global_mut::<crate::app::Windows>().onboarding = None;
+                    window.remove_window();
+                })))
+                .into_any_element();
+        }
+        header
             // Room for the native traffic lights.
             .child(div().w(px(120.)).flex_none())
             .child(trail)
-            .child(
-                text::ui(format!("Step {} of {STEPS}", self.step + 1), 12., FontWeight::NORMAL, c.graphite)
-                    .w(px(120.))
-                    .flex_none()
-                    .text_right(),
-            )
+            .child(step.text_right())
+            .into_any_element()
     }
 
     fn footer(&self, cx: &mut Context<Self>) -> Div {
@@ -387,7 +392,7 @@ impl Render for OnboardingView {
             5 => self.practice_step(cx),
             _ => self.done_step(cx),
         };
-        let top = self.top_bar(cx);
+        let top = self.top_bar(window, cx);
         let footer = self.footer(cx);
         div()
             .relative()

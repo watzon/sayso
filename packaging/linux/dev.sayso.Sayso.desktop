@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Sayso
+GenericName=Voice Dictation
+Comment=Speak, and Sayso writes the text into the app you use
+Exec=sayso
+Icon=dev.sayso.Sayso
+Terminal=false
+Categories=Utility;Accessibility;AudioVideo;Audio;
+Keywords=dictation;speech;voice;transcription;whisper;parakeet;
+StartupNotify=false
+StartupWMClass=dev.sayso.Sayso
+Actions=Toggle;
+
+[Desktop Action Toggle]
+Name=Start or Stop Dictation
+Exec=sayso --toggle

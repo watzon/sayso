@@ -31,7 +31,7 @@ pub fn settings_url(permission: Permission) -> &'static str {
     }
 }
 
-pub(crate) fn microphone_status() -> PermissionState {
+pub fn microphone_status() -> PermissionState {
     // SAFETY: `AVMediaTypeAudio` is an AVFoundation constant.
     let status = unsafe {
         let Some(media) = AVMediaTypeAudio else { return PermissionState::NotDetermined };

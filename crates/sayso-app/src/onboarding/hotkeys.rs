@@ -153,20 +153,20 @@ impl OnboardingView {
         };
         let im_line: AnyElement = match (ptt.is_some(), im) {
             // Windows needs no permission to hear keys in other apps.
-            _ if !crate::os::HAS_INPUT_PERMISSIONS => {
+            _ if !crate::shell::HAS_INPUT_PERMISSIONS => {
                 text::ui("Works in every app while you hold it.", 13., FontWeight::NORMAL, c.graphite).into_any_element()
             }
-            (true, PermissionState::Granted) => super::check_line("Input Monitoring is on.", &c).into_any_element(),
+            (true, PermissionState::Granted) => super::check_line(crate::shell::os_text!("Input Monitoring is on.", "Keyboard access is on."), &c).into_any_element(),
             (true, _) => div()
                 .flex()
                 .items_center()
                 .gap(px(10.))
-                .child(text::ui("Turn on Sayso in Input Monitoring to use this key.", 13., FontWeight::NORMAL, c.danger).flex_1().min_w_0())
-                .child(Button::new("open-im", "Open System Settings").small().on_click(cx.listener(|this, _, _, cx| {
+                .child(text::ui(crate::shell::os_text!("Turn on Sayso in Input Monitoring to use this key.", "This key needs keyboard access. See the setup guide."), 13., FontWeight::NORMAL, c.danger).flex_1().min_w_0())
+                .child(Button::new("open-im", crate::shell::OPEN_PERMISSION_SETTINGS).small().on_click(cx.listener(|this, _, _, cx| {
                     this.model.update(cx, |m, _| m.open_permission_settings(Permission::InputMonitoring));
                 })))
                 .into_any_element(),
-            (false, _) => text::ui("Needs Input Monitoring. Sayso asks when you set it.", 13., FontWeight::NORMAL, c.graphite).into_any_element(),
+            (false, _) => text::ui(crate::shell::os_text!("Needs Input Monitoring. Sayso asks when you set it.", "Needs keyboard access on some desktops."), 13., FontWeight::NORMAL, c.graphite).into_any_element(),
         };
         let ptt_card = card(&c)
             .gap(px(14.))

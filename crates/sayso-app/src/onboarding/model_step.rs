@@ -15,7 +15,8 @@ use std::time::{Duration, Instant};
 /// The three models onboarding offers: the best for English, for European
 /// languages, and for every other language.
 fn choices() -> [ModelId; 3] {
-    [default_model(), ModelId::new("parakeet-ultra"), ModelId::new("whisper-large-v3-turbo")]
+    let european = crate::shell::os_text!("parakeet-ultra", "parakeet-tdt-v3");
+    [default_model(), ModelId::new(european), ModelId::new("whisper-large-v3-turbo")]
 }
 
 impl OnboardingView {
@@ -186,10 +187,8 @@ impl OnboardingView {
                 .into_any_element(),
             ModelStatus::Optimizing | ModelStatus::Downloaded | ModelStatus::Ready => {
                 let detail = match status {
-                    ModelStatus::Ready if cfg!(target_os = "macos") => "Downloaded and ready on this Mac.",
-                    ModelStatus::Ready => "Downloaded and ready on this PC.",
-                    ModelStatus::Optimizing if cfg!(target_os = "macos") => "Downloaded. Sayso is optimizing it for your Mac. This takes a minute the first time.",
-                    ModelStatus::Optimizing => "Downloaded. Sayso is loading it.",
+                    ModelStatus::Ready => crate::shell::os_text!("Downloaded and ready on this Mac.", "Downloaded and ready on this PC.", "Downloaded and ready."),
+                    ModelStatus::Optimizing => crate::shell::os_text!("Downloaded. Sayso is optimizing it for your Mac. This takes a minute the first time.", "Downloaded. Sayso is loading it."),
                     _ => "Downloaded.",
                 };
                 well()

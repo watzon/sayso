@@ -8,7 +8,7 @@ Sayso is a local-first voice dictation app. You speak, and Sayso puts the text i
 One recording from start to insert. A dictation has a state: idle, recording, processing, inserting, done, cancelled, or failed.
 
 **Toggle hotkey**
-A key that starts a dictation on the first press and stops it on the second press. The default is Option+Space (Alt+Space on Windows).
+A key that starts a dictation on the first press and stops it on the second press. The default is Option+Space on macOS, Alt+Space on Windows, and Ctrl+Alt+Space on Linux.
 
 **Push-to-talk hotkey**
 A key that records while you hold it and stops when you release it. It has no default.
@@ -20,7 +20,7 @@ The raw text from the speech model, before any changes.
 The fixed steps that turn audio into inserted text: transcribe → apply replacements → apply style → insert.
 
 **Engine**
-The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows it is the portable sidecar (`native/portable`, also `SaysoEngine`) with transcribe-rs. Both speak the same protocol. Rust code talks to them through the `SttBackend` trait. The engine never sees a cloud model.
+The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows it is the portable sidecar (`native/portable`, also `SaysoEngine`) with transcribe-rs. On Linux it is the Rust sidecar (`sayso-engine`) with sherpa-onnx. The Windows and Linux engines run on the CPU. All three speak the same protocol. Rust code talks to the engine through the `SttBackend` trait. The engine never sees a cloud model.
 
 **Model**
 A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". One model is the active model. A model is a local model or a cloud model.
@@ -32,7 +32,7 @@ A model that the user downloads and that runs on this computer in the engine. Th
 A model that runs on the servers of a speech provider. Sayso sends the audio of the dictation and the dictionary words to the provider. A cloud model does the final pass only. Its id is `<provider id>:<model>`.
 
 **Speech provider**
-A service that runs cloud models: OpenAI, Groq, ElevenLabs, Deepgram, AssemblyAI, Mistral, or a custom endpoint (any server with the OpenAI transcription API, also one on this Mac). The user adds a provider with their own API key. It is not the same as the provider of a style (see Enhancer).
+A service that runs cloud models: OpenAI, Groq, ElevenLabs, Deepgram, AssemblyAI, Mistral, or a custom endpoint (any server with the OpenAI transcription API, also one on this computer). The user adds a provider with their own API key. It is not the same as the provider of a style (see Enhancer).
 
 **Final pass**
 The transcription that runs when the dictation stops. Its result is the transcript.
@@ -57,6 +57,9 @@ The trait that sends a transcript and a style prompt to an AI provider and retur
 **Insertion**
 The step that puts the final text into the focused app. The default is paste through the clipboard, with a safe restore. Typing is the fallback.
 
+**Shell**
+The app glue that GPUI does not cover, one backend for each system: window placement, the tray, the Dock, and startup (`crates/sayso-app/src/shell`). On Linux it also picks the display server for the UI.
+
 **Overlay**
 The floating window that shows a dictation in progress (ink waveform, timer, live preview, errors).
 
@@ -67,7 +70,7 @@ The small, calm overlay state when no dictation runs. The user can drag it, and 
 The main window. Its sections are Home, History, Dictionary, Styles, Models, and Settings.
 
 **Popover**
-The themed panel that opens from the menu bar icon (the taskbar icon on Windows). It is not a native menu.
+The themed panel that opens from the menu bar icon (the taskbar icon on Windows, the tray icon on Linux). It is not a native menu.
 
 **History entry**
 A stored dictation. It holds the transcript, the final text, the style, the target app, the model, the time, the duration, and (until it expires) the audio.

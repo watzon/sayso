@@ -7,9 +7,8 @@
 use crate::hub::Route;
 use crate::model::AppModel;
 use gpui_kit::*;
-use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use crate::shell::{self as mac, TrayEvent, native as ns_window};
 use sayso_core::dictation::State;
-use crate::os::window as mac;
 use sayso_ui::ActivePaper;
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
@@ -18,7 +17,6 @@ use sayso_ui::paper::PaperStyled;
 use sayso_ui::text;
 use sayso_ui::texture::{Grain, grain};
 use std::cell::RefCell;
-use std::ffi::c_void;
 use std::time::Duration;
 
 const WIDTH: f32 = 340.;
@@ -34,18 +32,8 @@ const WINDOW_W: f32 = WIDTH + SUBMENU_GAP + SUBMENU_W + SUBMENU_SHADOW;
 const SUBMENU_SHADOW: f32 = 16.;
 const WINDOW_H: f32 = 760.;
 
-/// The native handle of a GPUI window, as the pointer the window helpers
-/// take: the NSView on macOS, the HWND on Windows.
-pub fn ns_window(window: &Window) -> Option<*mut c_void> {
-    match HasWindowHandle::window_handle(window).ok()?.as_raw() {
-        RawWindowHandle::AppKit(h) => Some(h.ns_view.as_ptr()),
-        RawWindowHandle::Win32(h) => Some(h.hwnd.get() as *mut c_void),
-        _ => None,
-    }
-}
-
 struct Tray {
-    icon: tray_icon::TrayIcon,
+    icon: mac::Tray,
     popover: Option<AnyWindowHandle>,
     visible: bool,
     _monitor: Option<mac::MonitorToken>,
@@ -74,7 +62,7 @@ fn placement(icon: mac::Rect, screen_right: f64, above: bool) -> (f64, f64, Subm
 ///
 /// The size is set too: the window opens hidden, and on Windows a hidden
 /// window has the system's default size until GPUI shows it itself.
-fn place_and_show(ns: *mut c_void, origin: Option<(f64, f64)>) {
+fn place_and_show(ns: mac::NativeWindow, origin: Option<(f64, f64)>) {
     if let Some((x, y)) = origin {
         mac::set_frame(ns, x, y, WINDOW_W as f64, WINDOW_H as f64);
     }
@@ -85,95 +73,36 @@ thread_local! {
     static TRAY: RefCell<Option<Tray>> = const { RefCell::new(None) };
 }
 
-fn tray_icon_image() -> Option<tray_icon::Icon> {
-    let bytes = sayso_ui::assets::bytes("app/tray.png")?;
-    #[allow(unused_mut)]
-    let mut img = image::load_from_memory(&bytes).ok()?.into_rgba8();
-    // The icon is a black template. macOS tints it; on a dark Windows
-    // taskbar it must be white to show.
-    #[cfg(windows)]
-    if mac::taskbar_is_dark() {
-        for p in img.pixels_mut() {
-            p.0[..3].copy_from_slice(&[255, 255, 255]);
-        }
-    }
-    let (w, h) = img.dimensions();
-    tray_icon::Icon::from_rgba(img.into_raw(), w, h).ok()
-}
-
 pub fn install(model: &Entity<AppModel>, cx: &mut App) {
-    let mut builder = tray_icon::TrayIconBuilder::new().with_tooltip("Sayso");
-    if let Some(icon) = tray_icon_image() {
-        #[cfg(target_os = "macos")]
-        {
-            builder = builder.with_icon_templated(icon);
-        }
-        #[cfg(not(target_os = "macos"))]
-        {
-            builder = builder.with_icon(icon);
-        }
-    } else {
-        builder = builder.with_title("Sayso");
-    }
-    let icon = match builder.build() {
-        Ok(i) => i,
-        Err(e) => {
-            log::error!("could not create the menu bar icon: {e}");
-            return;
-        }
+    let (tx, rx) = std::sync::mpsc::channel::<TrayEvent>();
+    let tx = std::sync::Mutex::new(tx);
+    let Some(icon) = mac::Tray::install(move |event| {
+        let _ = tx.lock().map(|t| t.send(event));
+    }) else {
+        return;
     };
     TRAY.with(|t| *t.borrow_mut() = Some(Tray { icon, popover: None, visible: false, _monitor: None }));
 
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
-    let tx = std::sync::Mutex::new(tx);
-    tray_icon::TrayIconEvent::set_event_handler(Some(move |e: tray_icon::TrayIconEvent| {
-        if let tray_icon::TrayIconEvent::Click { button, button_state, .. } = e
-            && opens_popover(button, button_state)
-        {
-            let _ = tx.lock().map(|t| t.send(()));
-        }
-    }));
     let model = model.clone();
     cx.spawn(async move |cx| {
         loop {
             cx.background_executor().timer(Duration::from_millis(50)).await;
-            while rx.try_recv().is_ok() {
+            while let Ok(event) = rx.try_recv() {
                 let model = model.clone();
-                cx.update(|cx| toggle(&model, cx));
+                cx.update(|cx| match event {
+                    TrayEvent::Click => toggle(&model, cx),
+                    TrayEvent::ToggleDictation => model.update(cx, |m, cx| m.toggle_dictation(cx)),
+                    TrayEvent::OpenHub => crate::app::open_hub(&model, Route::Home, cx),
+                    TrayEvent::Quit => cx.quit(),
+                });
             }
         }
     })
     .detach();
 }
 
-/// macOS opens a menu bar item on the press of the left button. A taskbar
-/// icon opens on the release, and a right click opens it too.
-fn opens_popover(button: tray_icon::MouseButton, state: tray_icon::MouseButtonState) -> bool {
-    use tray_icon::{MouseButton, MouseButtonState};
-    if cfg!(target_os = "macos") {
-        button == MouseButton::Left && state == MouseButtonState::Down
-    } else {
-        matches!(button, MouseButton::Left | MouseButton::Right) && state == MouseButtonState::Up
-    }
-}
-
-#[cfg(target_os = "macos")]
 fn icon_rect() -> Option<mac::Rect> {
-    TRAY.with(|t| {
-        let t = t.borrow();
-        let item = t.as_ref()?.icon.ns_status_item()?;
-        mac::status_item_screen_rect(objc2::rc::Retained::as_ptr(&item) as *mut c_void)
-    })
-}
-
-/// The icon in the notification area. tray-icon gives physical pixels with
-/// the origin at the top left.
-#[cfg(not(target_os = "macos"))]
-fn icon_rect() -> Option<mac::Rect> {
-    TRAY.with(|t| {
-        let r = t.borrow().as_ref()?.icon.rect()?;
-        Some(mac::rect_from_physical(r.position.x, r.position.y, f64::from(r.size.width), f64::from(r.size.height)))
-    })
+    TRAY.with(|t| t.borrow().as_ref()?.icon.icon_rect())
 }
 
 pub fn toggle(model: &Entity<AppModel>, cx: &mut App) {
@@ -196,18 +125,22 @@ pub fn hide(cx: &mut App) {
 /// Close the popover but keep Sayso active: for "Open Sayso", and for a
 /// click into another Sayso window.
 fn hide_popover(cx: &mut App) {
+    let keep = mac::can_hide_windows();
     let handle = TRAY.with(|t| {
         let mut t = t.borrow_mut();
         let t = t.as_mut()?;
         t.visible = false;
         t._monitor = None;
-        t.popover
+        // Where a window cannot be hidden, it is closed and opened again.
+        if keep { t.popover } else { t.popover.take() }
     });
     // Deferred: a click handler in the popover runs inside the popover
     // window's update, and GPUI refuses a nested update of the same window.
     if let Some(h) = handle {
         cx.defer(move |cx| {
-            if let Ok(Some(ns)) = h.update(cx, |_, window, _| ns_window(window)) {
+            if !keep {
+                let _ = h.update(cx, |_, window, _| window.remove_window());
+            } else if let Ok(Some(ns)) = h.update(cx, |_, window, _| ns_window(window)) {
                 crate::app::appkit_later(cx, move || mac::order_out(ns));
             }
         });
@@ -233,7 +166,7 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
                     titlebar: None,
                     focus: true,
                     show: false,
-                    kind: WindowKind::PopUp,
+                    kind: mac::popover_kind(),
                     is_movable: false,
                     is_resizable: false,
                     window_background: WindowBackgroundAppearance::Transparent,
@@ -269,10 +202,12 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
         let screen = screens.iter().find(|s| {
             r.x >= s.frame.x && r.x <= s.frame.x + s.frame.width && r.y >= s.frame.y && r.y <= s.frame.y + s.frame.height
         });
-        let screen_right = screen.map(|s| s.visible_frame.x + s.visible_frame.width).unwrap_or(f64::MAX);
-        // An icon in the lower half of its screen sits in a taskbar at the bottom.
+        let screen_right = screen.map_or(f64::MAX, |s| s.visible_frame.x + s.visible_frame.width);
+        // An icon in the lower half of its screen sits in a taskbar or panel at the bottom.
         let above = screen.is_some_and(|s| r.y + r.height / 2.0 < s.frame.y + s.frame.height / 2.0);
         let (x, y, side) = placement(r, screen_right, above);
+        // Keep the window on the screen.
+        let y = screen.map_or(y, |s| y.max(s.visible_frame.y));
         SUBMENU_SIDE.with(|s| s.set(side));
         OPENS_ABOVE.with(|a| a.set(above));
         (x, y)

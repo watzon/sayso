@@ -11,18 +11,16 @@
 //! fetch ends.
 
 use crate::model::{AppModel, ModelList};
-use crate::popover::ns_window;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use crate::os::window as mac;
+use crate::shell::{self as mac, native as ns_window};
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
 use sayso_ui::paper::PaperStyled;
 use sayso_ui::{ActivePaper, text};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::ffi::c_void;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
@@ -51,7 +49,11 @@ struct Anchor {
     top: f64,
     bottom: f64,
     /// The window the trigger is in. The list becomes its child window.
-    window: *mut c_void,
+    window: mac::NativeWindow,
+    /// The same window for GPUI, and the trigger in its coordinates, for a
+    /// system that places the list itself (Wayland).
+    handle: AnyWindowHandle,
+    local: Bounds<Pixels>,
 }
 
 thread_local! {
@@ -89,13 +91,16 @@ pub fn anchor(key: impl Into<String>) -> impl IntoElement {
         move |bounds, window, _| {
             // The content view fills the window frame (full-size content).
             let Some(ns) = ns_window(window) else { return };
-            let Some(frame) = mac::frame(ns) else { return };
+            // No frame where the system places windows itself; the list then opens as a popup.
+            let frame = mac::frame(ns).unwrap_or(mac::Rect { x: 0., y: 0., width: 0., height: 0. });
             let window_top = frame.y + frame.height;
             let anchor = Anchor {
                 left: frame.x + bounds.left().as_f32() as f64,
                 top: window_top - bounds.top().as_f32() as f64,
                 bottom: window_top - bounds.bottom().as_f32() as f64,
                 window: ns,
+                handle: window.window_handle(),
+                local: bounds,
             };
             ANCHORS.with(|a| a.borrow_mut().insert(key, anchor));
         },
@@ -138,6 +143,9 @@ pub fn open(model: &Entity<AppModel>, req: Request, cx: &mut App) {
         return;
     }
     let Some(anchor) = ANCHORS.with(|a| a.borrow().get(&req.key).copied()) else { return };
+    if let Some(kind) = mac::popup_kind(anchor.handle, anchor.local, point(px(-SIDE), px(GAP as f32 - TOP))) {
+        return open_popup(model, req, anchor, kind, cx);
+    }
 
     // Below the trigger, or above it when the screen has more room there.
     let screens = mac::screens();
@@ -164,7 +172,7 @@ pub fn open(model: &Entity<AppModel>, req: Request, cx: &mut App) {
     let model = model.clone();
     // The window measures its sheet in its first frame and then takes its
     // size. Windows draws only a shown window, so there the list opens shown,
-    // at its place with a first guess of the height; macOS opens it hidden.
+    // at its place with a first guess of the height; other systems open it hidden.
     const FIRST_H: f32 = 160.;
     let cocoa_top = if place.flipped { place.edge + FIRST_H as f64 } else { place.edge };
     let origin = point(px(place.left as f32), px((mac::primary_screen_height() - cocoa_top) as f32));
@@ -175,8 +183,36 @@ pub fn open(model: &Entity<AppModel>, req: Request, cx: &mut App) {
             window_bounds: Some(WindowBounds::Windowed(Bounds { origin, size: size(px(SHEET_W + SIDE * 2.), px(FIRST_H)) })),
             titlebar: None,
             focus: true,
-            show: !cfg!(target_os = "macos"),
+            show: cfg!(windows),
             kind: WindowKind::PopUp,
+            is_movable: false,
+            is_resizable: false,
+            window_background: WindowBackgroundAppearance::Transparent,
+            ..Default::default()
+        },
+        move |window, cx| cx.new(|cx| PickerWindow::new(model, req, place, window, cx)),
+    );
+    match opened {
+        Ok(handle) => OPEN.with(|o| *o.borrow_mut() = Some((key, handle.into()))),
+        Err(e) => log::error!("could not open the model list: {e:#}"),
+    }
+}
+
+/// Open the list as a popup that the system places under the trigger.
+fn open_popup(model: &Entity<AppModel>, req: Request, anchor: Anchor, kind: WindowKind, cx: &mut App) {
+    let place = Place { parent: anchor.window, left: 0., edge: 0., flipped: false };
+    let key = req.key.clone();
+    let model = model.clone();
+    let opened = cx.open_window(
+        WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: point(px(0.), px(0.)),
+                size: size(px(SHEET_W + SIDE * 2.), px(MAX_SHEET_H + TOP + BOTTOM)),
+            })),
+            titlebar: None,
+            focus: true,
+            show: true,
+            kind,
             is_movable: false,
             is_resizable: false,
             window_background: WindowBackgroundAppearance::Transparent,
@@ -205,7 +241,7 @@ fn close_open(cx: &mut App) -> Option<String> {
 /// (below the trigger) or its bottom (above it, `flipped`).
 #[derive(Clone, Copy)]
 struct Place {
-    parent: *mut c_void,
+    parent: mac::NativeWindow,
     left: f64,
     edge: f64,
     flipped: bool,
@@ -216,7 +252,7 @@ struct PickerWindow {
     req: Request,
     place: Place,
     filter: Entity<InputState>,
-    ns: Option<*mut c_void>,
+    ns: Option<mac::NativeWindow>,
     /// The window height last set, and the sheet height measured in prepaint.
     height: f32,
     measured: Rc<Cell<f32>>,

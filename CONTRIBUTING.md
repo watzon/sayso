@@ -12,6 +12,7 @@ This file tells you how to build Sayso, run it during development, check a chang
 ## Requirements
 
 - macOS 14 or later on Apple Silicon, with Xcode 16 or later (Swift 6 toolchain) for the speech engine.
+- Or Linux (x86_64 or aarch64) with the packages in `scripts/linux-deps.sh` (Debian and Ubuntu names).
 - Or Windows 10 or 11 (x64), with the Visual Studio 2022 Build Tools ("Desktop development with C++" and a Windows SDK), and CMake and libclang for the speech engine (`LIBCLANG_PATH`; see [native/portable/NOTES.md](native/portable/NOTES.md)).
 - Rust 1.98.1. `rust-toolchain.toml` selects it.
 
@@ -57,6 +58,17 @@ cargo run -p sayso-app -- --seed-demo --route=history --dark
 | `--popover` | Open the menu bar popover after launch. |
 | `--dark`, `--light` | Force the appearance. |
 | `--seed-demo` | Fill an empty database with the sample content from the design. |
+
+### Linux
+
+```sh
+scripts/linux-deps.sh                          # once, on Debian or Ubuntu
+cargo build -p sayso-app -p sayso-engine       # the app finds the engine next to it
+cargo run -p sayso-app -- --hub
+scripts/bundle-linux.sh                        # build/sayso-<version>-linux-<arch>.tar.gz
+```
+
+On Linux the permissions are capabilities, not grants, so a terminal run behaves like an installed app. [docs/linux.md](docs/linux.md) explains the desktops, the permissions, and the `sayso --toggle` command. `SAYSO_UI_BACKEND=x11` or `=wayland` forces the display server of the UI.
 
 `SAYSO_FAKE_MIC=/path/to/16k-mono.wav` replaces the microphone with a WAV file played in real time, for end-to-end tests without a microphone grant. `SAYSO_ENGINE_PATH` selects another engine binary.
 
@@ -119,7 +131,7 @@ cargo test -p sayso-enhance --test real_cli -- --ignored   # real claude command
 
 ### What CI runs
 
-CI runs `scripts/check-deps.sh` on each push to `main` and on each pull request. It does not run the tests or clippy, because a GPUI build takes minutes. A maintainer starts the test jobs (macOS and Windows) by hand with `gh workflow run ci.yml`. So run the checks above on your computer, and say in the pull request which checks you ran, and on which platform.
+CI runs `scripts/check-deps.sh` on each push to `main` and on each pull request. It does not run the tests or clippy, because a GPUI build takes minutes. A maintainer starts the test jobs (macOS, Linux, and Windows) by hand with `gh workflow run ci.yml`. So run the checks above on your computer, and say in the pull request which checks you ran, and on which platform.
 
 ## Layout
 
@@ -127,16 +139,19 @@ CI runs `scripts/check-deps.sh` on each push to `main` and on each pull request.
 |---|---|
 | `crates/sayso-core` | Domain logic: config, paths, dictation state machine, pipeline, styles, dictionary, inks, model catalog, stats. No platform or UI code. |
 | `crates/sayso-platform` | Platform traits: hotkeys, text insertion, context, permissions, audio, speech engine, sounds, login item. |
-| `crates/sayso-platform-macos` | macOS implementations: Carbon hotkeys, listen-only event tap, clipboard paste, AVFoundation permissions, cpal capture, window glue. |
+| `crates/sayso-platform-common` | The portable parts of the platform crates: cpal capture, the resampler, rodio sounds, the Esc detector, the paste receipt rules. |
+| `crates/sayso-platform-macos` | macOS implementations: Carbon hotkeys, listen-only event tap, clipboard paste, AVFoundation permissions, window glue. |
+| `crates/sayso-platform-linux` | Linux implementations for X11 and Wayland: key grabs, the shortcuts portal, evdev, clipboard paste, key injection, the tray icon, window glue. |
 | `crates/sayso-platform-windows` | Windows implementations: RegisterHotKey chords, low-level keyboard hook, clipboard paste with delayed rendering, privacy settings, cpal capture, Win32 window glue. |
 | `crates/sayso-engine-client` | Rust client for the engine sidecar (NDJSON over stdio, restart on crash). |
-| `native/macos/SaysoEngine` | Swift sidecar for the local models: Parakeet, Nemotron, Cohere, Canary, SenseVoice, Paraformer (FluidAudio), Whisper (WhisperKit), and Apple Speech (macOS 26). |
-| `native/portable` | Rust sidecar for the local models on Windows (and Linux): Parakeet (ONNX Runtime) and Whisper (whisper.cpp) through transcribe-rs. Same protocol as the Swift sidecar. |
+| `native/macos/SaysoEngine` | Swift sidecar for the local models on macOS: Parakeet, Nemotron, Cohere, Canary, SenseVoice, Paraformer (FluidAudio), Whisper (WhisperKit), and Apple Speech (macOS 26). |
+| `crates/sayso-engine` | Rust sidecar for the local models on Linux: Parakeet, Whisper, SenseVoice, Moonshine, and a streaming Zipformer, on sherpa-onnx. |
+| `native/portable` | Rust sidecar for the local models on Windows: Parakeet (ONNX Runtime) and Whisper (whisper.cpp) through transcribe-rs. Same protocol as the Swift sidecar. |
 | `crates/sayso-store` | SQLite history and dictionary, FLAC audio, retention. |
 | `crates/sayso-enhance` | AI styles: OpenAI-compatible HTTP, Claude CLI, Codex CLI. |
 | `crates/sayso-transcribe` | Cloud models: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI, and any OpenAI-compatible server. |
 | `crates/sayso-ui` | The paper design system on GPUI and gpui-kit. |
-| `crates/sayso-app` | The app: model, dictation controller, overlay, popover, Hub, onboarding. |
+| `crates/sayso-app` | The app: model, dictation controller, overlay, popover, Hub, onboarding. `src/shell` holds the glue for each system. |
 | `assets/` | Fonts (OFL), textures, sounds, icons, and the scripts that make them. |
 | `spikes/` | The throwaway prototypes from M0. |
 
