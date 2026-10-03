@@ -4,18 +4,19 @@ This page describes how Sayso works on Linux: which desktops it supports, the pe
 
 ## Packages
 
-Each release has four files for x86_64 and four for aarch64. All of them hold the same two binaries, `sayso` and `sayso-engine`.
+Each release has five files for x86_64 and five for aarch64. All of them hold the same two binaries, `sayso` and `sayso-engine`.
 
 | File | Installs to | Notes |
 |---|---|---|
 | `.deb` | `/usr/lib/sayso`, with the link `/usr/bin/sayso` | `apt` installs the libraries that Sayso needs. |
 | `.rpm` | `/usr/lib/sayso`, with the link `/usr/bin/sayso` | It names libraries, not packages, so one file works with `dnf` and `zypper`. The file is not signed: `zypper` needs `--allow-unsigned-rpm`. |
+| `.flatpak` | The Flatpak folder of your user (`--user`) or of the system | It brings its libraries with the runtime `org.freedesktop.Platform` from Flathub. See "Flatpak". |
 | `.AppImage` | Nothing | It uses the libraries of your system, the same ones as the tarball. It cannot install the udev rule for `/dev/uinput` (see "Paste access"). |
 | `.tar.gz` | `~/.local`, or `/usr/local` with `--system` | `./install.sh --uninstall` removes a user install. |
 
 The `.deb`, the `.rpm`, and the AUR package also install the udev rule for `/dev/uinput`.
 
-The binaries need glibc 2.35 and the libstdc++ of GCC 12, or later versions. These distributions have them:
+Without the Flatpak, the binaries need glibc 2.35 and the libstdc++ of GCC 12, or later versions. These distributions have them:
 
 | Distribution | Works from |
 |---|---|
@@ -31,6 +32,33 @@ The install was tested in a container of each of these, except Tumbleweed and Ar
 Without a `.deb` or `.rpm`, your system must have these libraries: ALSA (`libasound`), `libxcb`, `libxkbcommon`, `libxkbcommon-x11`, fontconfig, FreeType, and the Vulkan loader (`libvulkan`) or EGL. A Wayland session also needs `libwayland-client`.
 
 No package updates by itself. Sayso shows a new version and opens the download page.
+
+### Flatpak
+
+```sh
+flatpak install --user ./sayso-<version>-linux-<arch>.flatpak
+flatpak run dev.sayso.Sayso
+```
+
+The install gets the runtime from Flathub, so your system must have the Flathub remote.
+
+Sayso must send keys to other apps, read the keyboard, and start tools of your system. So its Flatpak has wide permissions, and the sandbox protects little:
+
+| Permission | Why |
+|---|---|
+| X11 and Wayland | The windows, the overlay, key grabs, and the paste key on X11 |
+| All devices | `/dev/uinput` for the paste key and `/dev/input` for keyboard access. The udev rule and the `input` group of "Permissions" apply as they do without Flatpak. The Flatpak cannot install the udev rule. |
+| Host commands (`org.freedesktop.Flatpak`) | The `claude` and `codex` tools of your system, for AI styles, and `gsettings`, for the GNOME custom shortcuts |
+| `~/.config/autostart` | **Launch at login** |
+| Secret Service, the tray, audio, network | API keys, the tray icon, the microphone, model downloads, and cloud providers |
+
+Differences from the other packages:
+
+- The files are in `~/.var/app/dev.sayso.Sayso` (`config`, `data`, `cache`), not in `~/.config/sayso` and `~/.local/share/sayso`.
+- The commands for desktop shortcuts are `flatpak run dev.sayso.Sayso --toggle`, and the same for the other flags.
+- Sayso finds `claude` and `codex` with the `PATH` of your desktop session, then in the usual install folders.
+- Sayso cannot read the desktop files of your system. On X11, History can show less about the focused app.
+- A bundle has no update source. To update, install the newer file.
 
 ### NixOS
 
@@ -61,7 +89,7 @@ Without the module, use the package `sayso.packages.${system}.default`, or the o
 
 To get a new version, run `nix flake update sayso` and build your system again.
 
-**Start at login** and the GNOME custom shortcuts store the path of Sayso in the Nix store. That path changes with each version, and the garbage collector can delete the old one. After an update, turn **Start at login** off and on again.
+**Launch at login** and the GNOME custom shortcuts store the path of Sayso in the Nix store. That path changes with each version, and the garbage collector can delete the old one. After an update, turn **Launch at login** off and on again.
 
 ## Desktop support
 

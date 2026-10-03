@@ -63,11 +63,9 @@ fn collect(rx: Receiver<Vec<u8>>) -> String {
 fn spawn(inv: &Invocation, piped_stdin: bool, quiet_stderr: bool) -> Result<Child, EnhanceError> {
     let mut attempts = 0;
     loop {
-        let mut command = new_command(inv.program);
+        let mut command = new_command(inv);
         command
             .args(&inv.args)
-            .envs(inv.envs.iter().copied())
-            .current_dir(inv.cwd)
             .stdin(if piped_stdin { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::piped())
             .stderr(if quiet_stderr { Stdio::null() } else { Stdio::piped() });
@@ -92,15 +90,29 @@ fn spawn(inv: &Invocation, piped_stdin: bool, quiet_stderr: bool) -> Result<Chil
     }
 }
 
+/// The command with its environment and folder. In a Flatpak the tool is a
+/// program of the host (see `sayso_core::flatpak`).
 #[cfg(not(windows))]
-fn new_command(program: &Path) -> Command {
-    Command::new(program)
+fn new_command(inv: &Invocation) -> Command {
+    sayso_core::flatpak::host_command(inv.program, &inv.envs, Some(inv.cwd))
 }
 
 /// No console window, and npm `.cmd` shims run through node (see `win_shim`).
 #[cfg(windows)]
-fn new_command(program: &Path) -> Command {
-    crate::win_shim::command(program)
+fn new_command(inv: &Invocation) -> Command {
+    let mut command = crate::win_shim::command(inv.program);
+    command.envs(inv.envs.iter().copied()).current_dir(inv.cwd);
+    command
+}
+
+/// An empty folder for one tool run. In a Flatpak it is in a place that the
+/// host can see, because the tool runs there.
+pub(crate) fn workdir() -> Result<tempfile::TempDir, EnhanceError> {
+    match sayso_core::flatpak::shared_temp_root() {
+        Some(root) => tempfile::tempdir_in(root),
+        None => tempfile::tempdir(),
+    }
+    .map_err(|e| EnhanceError::Cli(format!("no temporary folder: {e}")))
 }
 
 /// Run the tool and collect its output. When the deadline passes, the tool is

@@ -66,7 +66,7 @@ scripts/linux-deps.sh                          # once, on Debian or Ubuntu
 cargo build -p sayso-app -p sayso-engine       # the app finds the engine next to it
 cargo run -p sayso-app -- --hub
 scripts/bundle-linux.sh                        # build/sayso-<version>-linux-<arch>.tar.gz
-scripts/package-linux.sh build/sayso-*.tar.gz  # the .deb, the .rpm, and the AppImage, from the tarball
+scripts/package-linux.sh build/sayso-*.tar.gz  # the .deb, the .rpm, the AppImage, and the Flatpak, from the tarball
 ```
 
 On Linux the permissions are capabilities, not grants, so a terminal run behaves like an installed app. [docs/linux.md](docs/linux.md) explains the desktops, the permissions, and the `sayso --toggle` command. `SAYSO_UI_BACKEND=x11` or `=wayland` forces the display server of the UI.

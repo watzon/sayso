@@ -142,7 +142,7 @@ fn gnome_shortcuts(values: HashMap<(String, String), Vec<String>>) -> Table {
 fn read_gsettings() -> HashMap<(String, String), Vec<String>> {
     let mut values = HashMap::new();
     for schema in [WM, SHELL, MEDIA] {
-        let output = std::process::Command::new("gsettings").args(["list-recursively", schema]).output();
+        let output = super::gnome::host_gsettings().args(["list-recursively", schema]).output();
         match output {
             Ok(o) if o.status.success() => values.extend(parse_list_recursively(&String::from_utf8_lossy(&o.stdout))),
             Ok(o) => log::debug!("gsettings cannot read {schema}: {}", String::from_utf8_lossy(&o.stderr).trim()),

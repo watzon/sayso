@@ -84,7 +84,7 @@ impl Enhancer for ClaudeCli {
             .ok_or_else(|| EnhanceError::NotConfigured("the claude command was not found".into()))?;
         let timeout = if request.timeout.is_zero() { self.default_timeout } else { request.timeout };
         let model = request.model.clone().unwrap_or_else(|| self.model.clone());
-        let workdir = tempfile::tempdir().map_err(|e| EnhanceError::Cli(format!("no temporary folder: {e}")))?;
+        let workdir = cli::workdir()?;
         let started = Instant::now();
         let output = cli::run(&Invocation {
             program,

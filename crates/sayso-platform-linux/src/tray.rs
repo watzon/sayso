@@ -96,7 +96,8 @@ impl Tray {
             data: rgba_to_argb(&data),
         });
         let tray = SaysoTray { icon, on_event: Box::new(on_event) };
-        match tray.spawn() {
+        // A sandbox cannot own the bus name of a tray item, and the item works without it.
+        match tray.disable_dbus_name(sayso_core::flatpak::app_id().is_some()).spawn() {
             Ok(handle) => Some(Tray { _handle: handle }),
             Err(e) => {
                 log::warn!("no tray icon: {e}");

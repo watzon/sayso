@@ -104,9 +104,9 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 5. Open the release and make sure that it is the latest release and has these files:
    - `Sayso-<version>-macos-arm64.dmg`
    - `Sayso-<version>-windows-x64-setup.exe`
-   - `sayso-<version>-linux-x86_64.tar.gz`, `.deb`, `.rpm`, and `.AppImage`
-   - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, and `.AppImage`
-   - a `.sha256` file for each of the ten
+   - `sayso-<version>-linux-x86_64.tar.gz`, `.deb`, `.rpm`, `.AppImage`, and `.flatpak`
+   - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, `.AppImage`, and `.flatpak`
+   - a `.sha256` file for each of the twelve
    - `latest.json`
 
    The run also has the artifact `aur-sayso-bin`, with the `PKGBUILD` and the `.SRCINFO` for the AUR. Nothing publishes them yet.
@@ -157,7 +157,7 @@ powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
 The Linux jobs are in their own workflow, `linux.yml`, which the Release workflow calls. It has two jobs for each architecture:
 
 1. **Build** compiles the two binaries one time, in an Ubuntu 22.04 container, and makes the tarball (`scripts/bundle-linux.sh`). The container sets the oldest glibc that Sayso runs on: 2.35.
-2. **Packages** makes the `.deb`, the `.rpm`, and the AppImage from the tarball (`scripts/package-linux.sh`), with no compiler. It then installs the `.deb` on Ubuntu 22.04 and starts Sayso on a virtual display.
+2. **Packages** makes the `.deb`, the `.rpm`, the AppImage, and the Flatpak from the tarball (`scripts/package-linux.sh`), with no compiler. It then installs the `.deb` on Ubuntu 22.04 and starts Sayso on a virtual display.
 
 `linux.yml` does not touch a release, so you can test a packaging change without one. A pull request that changes the packaging runs it. You can also start it by hand, and then download the files from the run:
 
@@ -168,6 +168,8 @@ gh workflow run linux.yml --ref <branch>
 `packaging/linux/nfpm.yaml` has the layout and the dependencies of the `.deb` and the `.rpm`. It also declares the glibc and libstdc++ versions. `package-linux.sh` stops when a binary needs a newer version, so change the numbers there when you change the build container.
 
 `package-linux.sh` downloads nfpm, appimagetool, and the AppImage runtime at fixed versions and checks their SHA-256. To use a newer version, change the URL and the hash in the script for both architectures.
+
+The Flatpak is a one-file bundle, not a Flathub app: Flathub builds each app from source with no network, and the Sayso build downloads the sherpa-onnx library. `package-linux.sh` has the runtime version (`flatpak_runtime`) and the permissions. The workflow does not start the Flatpak, because a start needs the runtime and a sandbox that the job does not have. Test a change to it on a desktop.
 
 `scripts/aur-pkgbuild.sh` makes the AUR files of `sayso-bin` from `packaging/linux/aur/PKGBUILD.in` and the two tarballs of the run.
 

@@ -12,6 +12,7 @@ pub mod context;
 pub mod hotkeys;
 pub mod inserter;
 pub mod ipc;
+pub mod launch;
 pub mod login_item;
 pub mod permissions;
 pub mod prefs;

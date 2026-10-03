@@ -76,11 +76,22 @@ impl Command {
 }
 
 /// `$XDG_RUNTIME_DIR/sayso.sock`, or a per-user file in the temp folder.
+///
+/// In a Flatpak each start of Sayso has its own sandbox with its own
+/// `$XDG_RUNTIME_DIR`. All of them share `$XDG_RUNTIME_DIR/app/<app id>`, so
+/// the socket is there, and `flatpak run <app id> --toggle` reaches the
+/// running Sayso.
 pub fn socket_path() -> PathBuf {
-    match std::env::var_os("XDG_RUNTIME_DIR").filter(|v| !v.is_empty()) {
-        Some(dir) => PathBuf::from(dir).join("sayso.sock"),
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR").filter(|v| !v.is_empty()).map(PathBuf::from);
+    socket_path_from(runtime, sayso_core::flatpak::app_id())
+}
+
+fn socket_path_from(runtime: Option<PathBuf>, flatpak_id: Option<String>) -> PathBuf {
+    match (runtime, flatpak_id) {
+        (Some(dir), Some(id)) => dir.join("app").join(id).join("sayso.sock"),
+        (Some(dir), None) => dir.join("sayso.sock"),
         // SAFETY: getuid has no failure mode.
-        None => std::env::temp_dir().join(format!("sayso-{}.sock", unsafe { libc::getuid() })),
+        (None, _) => std::env::temp_dir().join(format!("sayso-{}.sock", unsafe { libc::getuid() })),
     }
 }
 
@@ -170,6 +181,16 @@ fn dispatch(command: Command) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_socket_of_a_flatpak_is_in_the_folder_that_its_sandboxes_share() {
+        let runtime = || Some(PathBuf::from("/run/user/1000"));
+        assert_eq!(socket_path_from(runtime(), None), PathBuf::from("/run/user/1000/sayso.sock"));
+        assert_eq!(
+            socket_path_from(runtime(), Some("dev.sayso.Sayso".into())),
+            PathBuf::from("/run/user/1000/app/dev.sayso.Sayso/sayso.sock")
+        );
+    }
 
     #[test]
     fn words_round_trip_and_flags_parse() {

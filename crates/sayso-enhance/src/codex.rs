@@ -60,7 +60,7 @@ impl Enhancer for CodexCli {
             .ok_or_else(|| EnhanceError::NotConfigured("the codex command was not found".into()))?;
         let timeout = if request.timeout.is_zero() { self.default_timeout } else { request.timeout };
         let model = request.model.clone().or_else(|| self.model.clone());
-        let workdir = tempfile::tempdir().map_err(|e| EnhanceError::Cli(format!("no temporary folder: {e}")))?;
+        let workdir = cli::workdir()?;
         let schema_file = workdir.path().join("schema.json");
         let output_file = workdir.path().join("answer.json");
         std::fs::write(&schema_file, output_schema().to_string())

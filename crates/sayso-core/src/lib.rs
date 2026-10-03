@@ -7,6 +7,7 @@ pub mod config;
 pub mod dictation;
 pub mod dictionary;
 pub mod enhance;
+pub mod flatpak;
 pub mod history;
 pub mod hotkey;
 pub mod ink;

@@ -64,12 +64,13 @@ If the installer is not signed, Windows SmartScreen asks first. Select **More in
    | `.deb` | Debian 12 or later, Ubuntu 22.04 or later | `sudo apt install ./sayso-<version>-linux-<arch>.deb` |
    | `.rpm` | Fedora, openSUSE, and the RHEL 10 family | `sudo dnf install ./sayso-<version>-linux-<arch>.rpm` (openSUSE: `sudo zypper install`) |
    | Nix flake | NixOS, and Nix on other distributions | `nix run github:watzon/sayso`. [docs/linux.md](docs/linux.md) has the NixOS configuration. |
+   | `.flatpak` | Any distribution with Flatpak | `flatpak install --user ./sayso-<version>-linux-<arch>.flatpak` |
    | `.AppImage` | Other distributions, no install | `chmod +x` the file, then start it |
    | `.tar.gz` | Other distributions | Unpack it and run `./install.sh`. Sayso goes to `~/.local`. `sudo ./install.sh --system` installs it for all users, with the udev rule for Wayland key input. |
 
 2. Open Sayso from your app menu, or start the AppImage. Onboarding starts.
 
-The four files need glibc 2.35 or later. [docs/linux.md](docs/linux.md) lists the tested distributions and has the details for each desktop.
+The `.deb`, the `.rpm`, the AppImage, and the tarball need glibc 2.35 or later. The Flatpak brings its own libraries. [docs/linux.md](docs/linux.md) lists the tested distributions and has the details for each desktop.
 
 ## First start
 
@@ -137,7 +138,7 @@ scripts/linux-deps.sh
 scripts/bundle-linux.sh
 ```
 
-The script makes `build/sayso-<version>-linux-<arch>.tar.gz`. Unpack it and run `./install.sh`. To make the `.deb`, the `.rpm`, and the AppImage from that tarball, run `scripts/package-linux.sh build/sayso-<version>-linux-<arch>.tar.gz`.
+The script makes `build/sayso-<version>-linux-<arch>.tar.gz`. Unpack it and run `./install.sh`. To make the `.deb`, the `.rpm`, the AppImage, and the Flatpak from that tarball, run `scripts/package-linux.sh build/sayso-<version>-linux-<arch>.tar.gz`.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the development commands, the checks, and the layout of the code.
 
