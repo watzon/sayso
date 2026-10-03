@@ -182,6 +182,19 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # sherpa-onnx-sys downloads its native library to target/sherpa-onnx-prebuilt
+      # and links from there. The cache keeps the record that its build script
+      # ran, but not that folder. When the folder is missing, clean the crate,
+      # so the build script runs again. Without this, a change to Cargo.lock
+      # fails with "could not find native static library sherpa-onnx-c-api".
+      - name: Get the sherpa-onnx library again when the cache does not have it
+        shell: bash
+        run: |
+          if [[ ! -d target/sherpa-onnx-prebuilt ]]; then
+            cargo clean -p sherpa-onnx-sys
+            cargo clean -p sherpa-onnx-sys --release
+          fi
+
       - name: Build the tarball
         run: SAYSO_BUNDLE_DIR=dist scripts/bundle-linux.sh
 
