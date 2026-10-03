@@ -19,7 +19,7 @@ impl PermissionSettings {
 impl Render for PermissionSettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let m = self.model.read(cx);
-        let rows = [
+        let mut rows = vec![
             (Permission::Microphone, "Microphone", "Lets Sayso hear you while you dictate. Required."),
             (Permission::Accessibility, crate::shell::permission_name(Permission::Accessibility), "Lets Sayso paste text into the app you are using. Required."),
             (
@@ -28,6 +28,9 @@ impl Render for PermissionSettings {
                 "Needed for push to talk, for Esc to cancel, and to record keys in other apps.",
             ),
         ];
+        if !crate::shell::HAS_INPUT_PERMISSIONS {
+            rows.retain(|(p, _, _)| *p == Permission::Microphone);
+        }
         let states: Vec<PermissionState> = rows.iter().map(|(p, _, _)| m.permission(*p)).collect();
         let mut g = group("Permissions", cx);
         if !crate::dev::running_from_bundle() {
@@ -52,8 +55,9 @@ impl Render for PermissionSettings {
             BannerKind::Info,
             crate::shell::os_text!(
                 "This page updates by itself when you change a permission in System Settings. If a permission stays off after you turn it on, quit Sayso and open it again.",
+                "This page updates by itself when you change a permission in Settings. If a permission stays off after you turn it on, quit Sayso and open it again.",
                 "This page updates by itself when a permission changes. After you join the input group, log out and log in again.",
             ), cx));
-        kit::page("permissions-page", "Permissions", crate::shell::os_text!("What Sayso can do on this Mac, and why.", "What Sayso can do on this computer, and why."), kit::body().child(g), cx)
+        kit::page("permissions-page", "Permissions", crate::shell::os_text!("What Sayso can do on this Mac, and why.", "What Sayso can do on this PC, and why.", "What Sayso can do on this computer, and why."), kit::body().child(g), cx)
     }
 }

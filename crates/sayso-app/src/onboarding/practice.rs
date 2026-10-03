@@ -14,6 +14,7 @@ use sayso_ui::{ActivePaper, Colors, text};
 
 pub const SENTENCE: &str = crate::shell::os_text!(
     "Sayso writes what I say, in any app on my Mac, and nothing leaves this computer.",
+    "Sayso writes what I say, in any app on my PC, and nothing leaves this computer.",
     "Sayso writes what I say, in any app I use, and nothing leaves this computer.",
 );
 
@@ -110,8 +111,8 @@ impl OnboardingView {
             (Some(_), _) => ("Live preview loading".to_string(), c.accent),
         };
         let (opt_label, opt_color) = match &status {
-            ModelStatus::Ready => (crate::shell::os_text!("Optimized for this Mac", "Ready on this computer").to_string(), c.success),
-            ModelStatus::Optimizing => (crate::shell::os_text!("Optimizing for this Mac…", "Preparing the model…").to_string(), c.accent),
+            ModelStatus::Ready => (crate::shell::os_text!("Optimized for this Mac", "Ready", "Ready on this computer").to_string(), c.success),
+            ModelStatus::Optimizing => (crate::shell::os_text!("Optimizing for this Mac…", "Loading the model…", "Preparing the model…").to_string(), c.accent),
             ModelStatus::Downloaded => ("Loading the model…".to_string(), c.accent),
             _ => ("Optimizes after the download".to_string(), c.pencil),
         };
@@ -150,7 +151,11 @@ impl OnboardingView {
                     _ => String::new(),
                 };
                 text::ui(
-                    format!("Sayso heard you, but could not paste: {reason}. Check Accessibility in the previous steps."),
+                    if crate::shell::HAS_INPUT_PERMISSIONS {
+                        format!("Sayso heard you, but could not paste: {reason}. Check Accessibility in the previous steps.")
+                    } else {
+                        format!("Sayso heard you, but could not paste: {reason}.")
+                    },
                     13.,
                     FontWeight::NORMAL,
                     c.danger,

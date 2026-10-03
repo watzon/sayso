@@ -36,6 +36,7 @@ impl OnboardingView {
             .child(text::ui(
                 match mic {
                     PermissionState::Granted => "Say something. The ink should move with your voice.",
+                    PermissionState::Denied if cfg!(windows) => "Microphone access is off. In Settings › Privacy & security › Microphone, turn on microphone access and \"Let desktop apps access your microphone\".",
                     PermissionState::Denied => "Microphone access is off for Sayso. Turn on Sayso in Privacy and Security › Microphone.",
                     PermissionState::NotDetermined => crate::shell::os_text!("Sayso records only while you dictate. macOS asks you once.", "Sayso records only while you dictate."),
                 },
@@ -166,22 +167,28 @@ impl OnboardingView {
             .pt(px(28.))
             .px(px(72.))
             .pb(px(24.))
-            .child(heading(
-                "Two permissions",
-                "Sayso needs to hear you and to type into other apps. This page updates by itself when you allow each one.",
-                &c,
-            ))
+            .child(if crate::shell::HAS_INPUT_PERMISSIONS {
+                heading(
+                    "Two permissions",
+                    "Sayso needs to hear you and to type into other apps. This page updates by itself when you allow each one.",
+                    &c,
+                )
+            } else {
+                heading("Your microphone", "Sayso needs to hear you. Check that the ink moves when you speak.", &c)
+            })
             .when(!crate::dev::running_from_bundle(), |d| {
                 d.child(crate::hub::settings::kit::notice(BannerKind::Warning, crate::dev::UNBUNDLED_NOTE, cx))
             })
-            .child(div().flex().items_start().gap(px(14.)).child(mic_card).child(ax_card))
+            .child(div().flex().items_start().gap(px(14.)).child(mic_card).when(crate::shell::HAS_INPUT_PERMISSIONS, |d| d.child(ax_card)))
             .child(download)
-            .child(crate::hub::settings::kit::notice(
-                BannerKind::Info,
-                crate::shell::os_text!(
-                "A push-to-talk key needs one more permission, Input Monitoring. Sayso asks for it only if you set one in the next step.",
-                "A push-to-talk key held alone, and Esc to cancel, need keyboard access. The next step tells you if your desktop needs it.",
-            ), cx))
+            .when(crate::shell::HAS_INPUT_PERMISSIONS, |d| {
+                d.child(crate::hub::settings::kit::notice(
+                    BannerKind::Info,
+                    crate::shell::os_text!(
+                        "A push-to-talk key needs one more permission, Input Monitoring. Sayso asks for it only if you set one in the next step.",
+                        "A push-to-talk key held alone, and Esc to cancel, need keyboard access. The next step tells you if your desktop needs it.",
+                    ), cx))
+            })
             .into_any_element()
     }
 }

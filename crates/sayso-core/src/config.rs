@@ -528,7 +528,13 @@ mod tests {
     #[test]
     fn defaults_match_the_plan() {
         let c = Config::default();
-        let (toggle, paste_last) = if cfg!(target_os = "macos") { ("opt+space", "ctrl+cmd+v") } else { ("ctrl+alt+space", "ctrl+alt+v") };
+        let (toggle, paste_last) = if cfg!(target_os = "macos") {
+            ("opt+space", "ctrl+cmd+v")
+        } else if cfg!(windows) {
+            ("alt+space", "alt+shift+v")
+        } else {
+            ("ctrl+alt+space", "ctrl+alt+v")
+        };
         assert_eq!(c.hotkeys.toggle.unwrap().to_string(), toggle);
         assert_eq!(c.hotkeys.push_to_talk, None);
         assert_eq!(c.hotkeys.cancel, CancelMode::DoubleEscape);

@@ -66,6 +66,7 @@ impl OnboardingView {
                         text::ui(
                             crate::shell::os_text!(
                                 "Dictate into any app on your Mac. Speech recognition runs on this Mac, so your voice never leaves it.",
+                                "Dictate into any app on your PC. Speech recognition runs on this PC, so your voice never leaves it.",
                                 "Dictate into any app. Speech recognition runs on this computer, so your voice never leaves it.",
                             ),
                             17.,
@@ -82,7 +83,7 @@ impl OnboardingView {
                     .flex()
                     .gap(px(28.))
                     .pt(px(8.))
-                    .child(fact(crate::shell::os_text!("Runs on the Neural Engine", "Runs on this computer")))
+                    .child(fact(crate::shell::os_text!("Runs on the Neural Engine", "Runs on this PC", "Runs on this computer")))
                     .child(fact("Works in every app"))
                     .child(fact("Setup takes about 3 minutes")),
             )

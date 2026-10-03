@@ -293,9 +293,9 @@ impl Render for AppearanceSettings {
         });
 
         let paper_group = group("Paper", cx)
-            .child(row("Appearance", crate::shell::os_text!("Auto follows macOS.", "Auto follows the system."), theme, cx))
+            .child(row("Appearance", crate::shell::os_text!("Auto follows macOS.", "Auto follows Windows.", "Auto follows the system."), theme, cx))
             .child(row("Paper texture", "Grain on the window background. Content stays almost clean.", texture, cx))
-            .child(row("Reduce motion", crate::shell::os_text!("Ink appears without spreading. Auto follows macOS.", "Ink appears without spreading. Auto follows the system."), motion, cx));
+            .child(row("Reduce motion", crate::shell::os_text!("Ink appears without spreading. Auto follows macOS.", "Ink appears without spreading. Auto follows Windows.", "Ink appears without spreading. Auto follows the system."), motion, cx));
 
         // Only Linux lets an app choose who draws the title bar.
         let paper_group = paper_group.when(cfg!(target_os = "linux"), |g| {

@@ -66,8 +66,11 @@ impl Render for GeneralSettings {
                 this.model.update(cx, |m, cx| m.edit_config(cx, |c| c.general.launch_at_login = on));
                 let now = this.model.read(cx).login_item_state();
                 this.login_error = match (on, now) {
-                    (true, LoginItemState::Disabled) => {
+                    (true, LoginItemState::Disabled) if cfg!(target_os = "macos") => {
                         Some("macOS did not add Sayso to the login items. Move Sayso to the Applications folder, then try again.".into())
+                    }
+                    (true, LoginItemState::Disabled) => {
+                        Some("Windows did not add Sayso to the startup apps. Check Settings › Apps › Startup.".into())
                     }
                     _ => None,
                 };
@@ -76,7 +79,7 @@ impl Render for GeneralSettings {
             }}));
         let launch_desc = match (launch, state) {
             (true, LoginItemState::RequiresApproval) => "macOS needs your approval in Login Items before Sayso can start at login.",
-            _ => crate::shell::os_text!("Start Sayso in the menu bar when you log in.", "Start Sayso in the background when you log in."),
+            _ => crate::shell::os_text!("Start Sayso in the menu bar when you log in.", "Start Sayso in the taskbar when you sign in.", "Start Sayso in the background when you log in."),
         };
 
         let model = self.model.clone();
@@ -98,7 +101,7 @@ impl Render for GeneralSettings {
             .child(Input::new(&self.name).appearance(false).w_full());
         let you = group("You", cx).child(row(
             "Your name",
-            crate::shell::os_text!("Home greets you with it. Leave it empty to use the first name of your Mac account.", "Home greets you with it. Leave it empty to use the name of your user account."),
+            crate::shell::os_text!("Home greets you with it. Leave it empty to use the first name of your Mac account.", "Home greets you with it. Leave it empty to use the first name of your Windows account.", "Home greets you with it. Leave it empty to use the name of your user account."),
             name_field,
             cx,
         ));
@@ -155,7 +158,7 @@ impl Render for GeneralSettings {
             .child(row(
                 "Sayso",
                 &format!("Version {}", env!("CARGO_PKG_VERSION")),
-                text::ui(crate::shell::os_text!("Local dictation for macOS", "Local dictation for Linux"), 13., FontWeight::NORMAL, c.graphite),
+                text::ui(format!("Local dictation for {}", crate::shell::OS_NAME), 13., FontWeight::NORMAL, c.graphite),
                 cx,
             ))
             .child(row(

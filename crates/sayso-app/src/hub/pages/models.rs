@@ -72,7 +72,7 @@ impl ModelsPage {
             ModelStatus::Ready => (c.success, "In use".to_string()),
             ModelStatus::NotDownloaded if remote => (c.danger, "Provider not set up".to_string()),
             ModelStatus::Downloaded => (c.accent, "Loading".to_string()),
-            ModelStatus::Optimizing => (c.accent, crate::shell::os_text!("Optimizing for your Mac", "Preparing the model").to_string()),
+            ModelStatus::Optimizing => (c.accent, crate::shell::OPTIMIZING.to_string()),
             ModelStatus::Downloading { fraction, .. } => (c.accent, format!("Downloading {:.0}%", fraction * 100.)),
             ModelStatus::NotDownloaded => (c.danger, "Not downloaded".to_string()),
             ModelStatus::Failed { .. } => (c.danger, "Model error".to_string()),
@@ -152,7 +152,17 @@ impl ModelsPage {
                     .into_any_element(),
             ),
             ModelStatus::Optimizing => Some(
-                ui(crate::shell::os_text!("The first start compiles the model for the Neural Engine. This takes a minute or two.", "The first start loads the model into memory. This takes a few seconds."), 13., 18., FontWeight::NORMAL, c.graphite)
+                ui(
+                    crate::shell::os_text!(
+                        "The first start compiles the model for the Neural Engine. This takes a minute or two.",
+                        "Sayso loads the model into memory. This takes a few seconds.",
+                        "The first start loads the model into memory. This takes a few seconds.",
+                    ),
+                    13.,
+                    18.,
+                    FontWeight::NORMAL,
+                    c.graphite,
+                )
                     .into_any_element(),
             ),
             _ => None,
@@ -456,7 +466,7 @@ impl ModelsPage {
         let name = cx.new(|cx| InputState::new(window, cx).placeholder("For example, My server"));
         let url = cx.new(|cx| InputState::new(window, cx).placeholder("http://localhost:8000/v1"));
         let model_id = cx.new(|cx| InputState::new(window, cx).placeholder("For example, Systran/faster-whisper-large-v3"));
-        let key = cx.new(|cx| InputState::new(window, cx).placeholder(crate::shell::os_text!("Stored in your Keychain", "Stored in your system keyring")).masked(true));
+        let key = cx.new(|cx| InputState::new(window, cx).placeholder(crate::shell::os_text!("Stored in your Keychain", "Stored in Windows Credential Manager", "Stored in your system keyring")).masked(true));
         self._subs.push(cx.subscribe_in(&url, window, |_, _, _: &InputEvent, _, cx| cx.notify()));
         key.update(cx, |s, cx| s.focus(window, cx));
         self.add = Some(AddProvider { kind: SpeechProviderKind::OpenAi, name, url, model_id, key, error: None });
@@ -535,7 +545,7 @@ impl ModelsPage {
                         ),
                 )
                 .child(kit::field("Model", kit::input_well(&add.model_id, cx), None, cx))
-                .child(kit::field("API key", kit::input_well(&add.key, cx), Some(crate::shell::os_text!("Not needed for a server on this Mac.", "Not needed for a server on this computer.")), cx));
+                .child(kit::field("API key", kit::input_well(&add.key, cx), Some(&format!("Not needed for a server on this {}.", crate::shell::COMPUTER)), cx));
         } else {
             let names: Vec<&str> = add.kind.known_models().iter().map(|m| m.name).collect();
             let key_link = add.kind.key_url().map(|url| {
@@ -550,7 +560,7 @@ impl ModelsPage {
         if cloud {
             body = body.child(Banner::new(
                 BannerKind::Info,
-                "This is a cloud provider. When you use one of its models, Sayso sends the audio of each dictation and your dictionary words to it. The live preview still runs on this computer.",
+                format!("This is a cloud provider. When you use one of its models, Sayso sends the audio of each dictation and your dictionary words to it. The live preview still runs on your {}.", crate::shell::COMPUTER),
             ));
         }
         let panel = div()
@@ -581,7 +591,7 @@ impl ModelsPage {
     fn cloud(&mut self, active: &sayso_core::models::ModelId, cx: &mut Context<Self>) -> Div {
         let c = cx.paper().colors;
         let providers = self.model.read(cx).config.speech.providers.clone();
-        let note = ui(crate::shell::os_text!("Opt-in. Your audio leaves this Mac.", "Opt-in. Your audio leaves this computer."), 13., 16., FontWeight::NORMAL, c.graphite).into_any_element();
+        let note = ui(format!("Opt-in. Your audio leaves this {}.", crate::shell::COMPUTER), 13., 16., FontWeight::NORMAL, c.graphite).into_any_element();
         let mut col = div().flex().flex_col().child(kit::section_head("Cloud models", Some(note), cx));
         if providers.is_empty() && self.add.is_none() {
             col = col.child(
@@ -642,6 +652,7 @@ impl Render for ModelsPage {
             Some(kit::intro(
                 crate::shell::os_text!(
                     "Local models run on your Mac’s Neural Engine and send nothing anywhere. Cloud models are opt-in and send your audio to the provider you choose.",
+                    "Local models run on this PC and send nothing anywhere. Cloud models are opt-in and send your audio to the provider you choose.",
                     "Local models run on this computer and send nothing anywhere. Cloud models are opt-in and send your audio to the provider you choose.",
                 ),
                 600.,

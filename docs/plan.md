@@ -69,7 +69,7 @@ Success for v0.1:
 | Permissions | Capabilities, not grants: Accessibility is "Paste access" (a key injection method works), and Input Monitoring is "Keyboard access" (evdev is readable). |
 | Secrets | The Secret Service, through the same `keyring` crate. |
 | Distribution | A tarball with an install script, a desktop entry, icons, and a udev rule for `/dev/uinput`. The Release workflow builds it for x86_64 and aarch64. |
-| Code layout | Portable platform code is in `sayso-platform-common`. The app reaches the system only through `sayso-app/src/shell` (one backend per system, plus a no-op fallback). |
+| Code layout | Portable platform code is in `sayso-platform-common`. The app reaches the system only through `sayso-app/src/shell` (one backend for macOS, Windows, and Linux, plus a no-op fallback). |
 
 ### File locations
 
@@ -394,7 +394,27 @@ Details, evidence, and the remaining human checks are in `spikes/*/RESULT.md`.
 | S4 signing | Pass for signing and hardened runtime. Not notarized, because that needs approval. | The grant-survives-rebuild test needs a human. Record audio in the Rust app and send it to the engine, so the mic grant stays on the app. |
 | S5 hotkeys | Pass with synthetic events. Use `global-hotkey` (Carbon) for the toggle chord, and our own listen-only CGEventTap for push-to-talk and double Esc. | Carbon cannot detect another app that uses the same chord. Use `CopySymbolicHotKeys` for system shortcuts, plus a list of known apps (for example ChatGPT and Option+Space) that we check against running apps. Push-to-talk needs Input Monitoring. |
 
-## 8. Build status (2026-10-01)
+## 8. Windows port (2026-10-02)
+
+The design kept room for Windows (§2), and Windows now builds from the same workspace. [porting.md](porting.md) lists the seams.
+
+| Topic | Decision |
+|---|---|
+| OS and hardware | Windows 10 (1809) or later, x64 |
+| UI | The same GPUI and gpui-kit pins. GPUI hides the title bar for `appears_transparent`, so the Hub and onboarding draw their own window buttons (`caption.rs`). |
+| Platform crate | `sayso-platform-windows`: RegisterHotKey chords through `global-hotkey`, a listen-only low-level keyboard hook for push to talk, Esc, and the key recorder, and Win32 window glue with the macOS `window` API. |
+| Speech engine | The portable Rust sidecar `native/portable` with transcribe-rs: Parakeet TDT v2 and v3 through ONNX Runtime, Whisper through whisper.cpp, on the CPU. It speaks the same NDJSON protocol, so `sayso-engine-client` is unchanged. Its own Cargo workspace keeps ONNX Runtime and whisper.cpp out of the main build. Linux can use it as it is. |
+| Live preview | Parakeet has no streaming export for ONNX, so the engine decodes the growing recording again about every 600 ms, and commits the older text of long dictations. |
+| Models | Default: Parakeet TDT v3 (25 languages). Ids match the macOS catalog where the model is the same. Downloads come from Hugging Face only. |
+| Toggle hotkey | Alt+Space, like Option+Space. It replaces the window menu shortcut of Windows. Conflict detection names it, PowerToys Run, Copilot, and ChatGPT, and probes RegisterHotKey for any other app. |
+| Paste last transcript | Alt+Shift+V. Ctrl+Win+V opens the sound panel on Windows 11. |
+| Insertion | Paste through the clipboard with delayed rendering: Windows asks Sayso for the text when an app reads it, which is the read receipt. The entry is hidden from clipboard history and cloud clipboard. Typing (SendInput Unicode) is the fallback. An app that runs as administrator cannot get synthetic keys from Sayso, and the overlay says so. |
+| Permissions | Only the microphone (Settings › Privacy & security). Accessibility and Input Monitoring do not exist on Windows, and the UI hides them. |
+| Secrets | Windows Credential Manager through `keyring`. |
+| Files | Config in `%APPDATA%\Sayso`, data and cache in `%LOCALAPPDATA%\Sayso`. XDG variables still win. |
+| Distribution | A per-user Inno Setup installer (`Sayso-<version>-windows-x64-setup.exe`) from the Release workflow. Signed when the release has a certificate. |
+
+## 9. Build status (2026-10-01)
 
 M1 to M6 are built, and M7 is partly done. Run `scripts/bundle.sh`, then `open build/Sayso.app`.
 

@@ -1,8 +1,11 @@
 //! The speech model catalog (plan §3, "Models").
 //!
-//! [`catalog`] lists the local models of this system: the macOS catalog
-//! below, or [`crate::models_onnx`] on Linux and Windows. Cloud models come
-//! from the configured speech providers (see [`crate::speech`]).
+//! [`catalog`] lists the local models of this system: the Swift engine's
+//! models on macOS, the portable engine's models (`portable`) on Windows, and
+//! the sherpa-onnx models ([`crate::models_onnx`]) on Linux. Cloud models
+//! come from the configured speech providers (see [`crate::speech`]).
+
+mod portable;
 
 use crate::languages;
 use crate::speech::Speech;
@@ -54,9 +57,16 @@ pub enum EngineKind {
     Whisper { variant: String },
     /// Apple's SpeechAnalyzer model. macOS downloads and stores its files.
     AppleSpeech,
+    /// Portable engine: whisper.cpp with one GGML file, `file` in
+    /// `ggerganov/whisper.cpp` on Hugging Face.
+    WhisperCpp { file: String },
+    /// Portable engine: an ONNX model through transcribe-rs. `family` is the
+    /// transcribe-rs engine ("parakeet", "moonshine", ...). `repo` is the
+    /// Hugging Face repository with the files.
+    Onnx { family: String, repo: String },
     /// A speech provider's model. Rust sends the audio; the sidecar never sees it.
     Remote { provider: String, model: String },
-    /// A sherpa-onnx model in the Rust engine (Linux and Windows). `archive`
+    /// A sherpa-onnx model in the Rust engine `sayso-engine` (Linux). `archive`
     /// is the file name, without `.tar.bz2`, in the sherpa-onnx `asr-models`
     /// release. `recipe` tells the engine how to load it: "parakeet_tdt",
     /// "parakeet_tdt_ctc", "zipformer_streaming", "whisper", "sense_voice", or
@@ -78,7 +88,8 @@ impl EngineKind {
     pub fn family(&self) -> Family {
         match self {
             EngineKind::ParakeetUnified { .. } | EngineKind::ParakeetEou | EngineKind::ParakeetTdt { .. } => Family::Parakeet,
-            EngineKind::Whisper { .. } => Family::Whisper,
+            EngineKind::Onnx { family, .. } if family == "parakeet" => Family::Parakeet,
+            EngineKind::Whisper { .. } | EngineKind::WhisperCpp { .. } => Family::Whisper,
             EngineKind::Sherpa { recipe, .. } if recipe.starts_with("parakeet") => Family::Parakeet,
             EngineKind::Sherpa { recipe, .. } if recipe == "whisper" => Family::Whisper,
             EngineKind::Remote { .. } => Family::Cloud,
@@ -92,6 +103,8 @@ impl EngineKind {
             EngineKind::Whisper { .. } => "WhisperKit",
             EngineKind::Remote { .. } => "Cloud",
             EngineKind::AppleSpeech => "macOS",
+            EngineKind::WhisperCpp { .. } => "whisper.cpp",
+            EngineKind::Onnx { .. } => "ONNX Runtime",
             EngineKind::Sherpa { .. } => "sherpa-onnx",
             _ => "FluidAudio",
         }
@@ -161,18 +174,24 @@ impl ModelInfo {
 const MB: u64 = 1_000_000;
 
 pub fn default_model() -> ModelId {
-    #[cfg(target_os = "macos")]
-    return ModelId::new("parakeet-unified-en");
-    #[cfg(not(target_os = "macos"))]
-    return crate::models_onnx::default_model();
+    if cfg!(target_os = "macos") {
+        ModelId::new("parakeet-unified-en")
+    } else if cfg!(windows) {
+        ModelId::new(portable::DEFAULT_MODEL)
+    } else {
+        crate::models_onnx::default_model()
+    }
 }
 
 /// The small streaming model that gives a live preview to models without one.
 pub fn preview_fallback() -> ModelId {
-    #[cfg(target_os = "macos")]
-    return ModelId::new("parakeet-eou-120m");
-    #[cfg(not(target_os = "macos"))]
-    return crate::models_onnx::preview_fallback();
+    if cfg!(target_os = "macos") {
+        ModelId::new("parakeet-eou-120m")
+    } else if cfg!(windows) {
+        ModelId::new(portable::PREVIEW_FALLBACK)
+    } else {
+        crate::models_onnx::preview_fallback()
+    }
 }
 
 struct Entry {
@@ -219,14 +238,16 @@ fn whisper(variant: &str) -> EngineKind {
 
 /// The local models of this system, in display order.
 pub fn catalog() -> Vec<ModelInfo> {
-    #[cfg(target_os = "macos")]
-    return apple_catalog();
-    #[cfg(not(target_os = "macos"))]
-    return crate::models_onnx::catalog();
+    if cfg!(target_os = "macos") {
+        apple_catalog()
+    } else if cfg!(windows) {
+        portable::catalog()
+    } else {
+        crate::models_onnx::catalog()
+    }
 }
 
-/// The models that the Swift engine runs on a Mac, in display order.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+/// The models that the Swift engine (`native/macos/SaysoEngine`) runs on a Mac, in display order.
 fn apple_catalog() -> Vec<ModelInfo> {
     let en = languages::english;
     vec![
@@ -607,6 +628,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(target_os = "macos")]
     fn default_model_is_in_catalog_and_recommended() {
         let m = find(&default_model()).unwrap();
         assert!(m.recommended && m.final_pass && m.live_preview);
@@ -632,7 +654,11 @@ mod tests {
             assert!((1..=5).contains(&m.speed));
         }
         let fallback = find(&preview_fallback()).unwrap();
-        assert!(fallback.live_preview && !fallback.final_pass);
+        assert!(fallback.live_preview);
+        #[cfg(target_os = "macos")]
+        assert!(!fallback.final_pass);
+        let default = find(&default_model()).unwrap();
+        assert!(default.recommended && default.final_pass);
     }
 
     #[test]

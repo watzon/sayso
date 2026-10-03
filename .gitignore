@@ -11,3 +11,6 @@ spikes/engine/runs/*.stderr
 .build/
 .swiftpm/
 .DS_Store
+
+# The portable speech engine is its own Cargo workspace.
+native/portable/target

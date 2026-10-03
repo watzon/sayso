@@ -323,12 +323,21 @@ fn dropping_the_client_stops_the_engine() {
     let f = fixture();
     let pid_file = f.models.path().join("pid");
     let pid = std::fs::read_to_string(&pid_file).unwrap();
+    #[cfg(unix)]
     let alive = |pid: &str| {
         std::process::Command::new("kill")
             .args(["-0", pid])
             .stderr(std::process::Stdio::null())
             .status()
             .map(|s| s.success())
+            .unwrap_or(false)
+    };
+    #[cfg(windows)]
+    let alive = |pid: &str| {
+        std::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().any(|w| w == pid.trim()))
             .unwrap_or(false)
     };
     assert!(alive(&pid));
@@ -361,7 +370,13 @@ fn push_audio_does_not_wait_for_the_engine() {
 fn default_engine_path_names_the_sidecar() {
     // Without SAYSO_ENGINE_PATH the dev path or a bundled copy comes back.
     if std::env::var_os("SAYSO_ENGINE_PATH").is_none() {
-        let name = if cfg!(target_os = "macos") { "SaysoEngine" } else { "sayso-engine" };
+        let name = if cfg!(target_os = "macos") {
+            "SaysoEngine"
+        } else if cfg!(windows) {
+            "SaysoEngine.exe"
+        } else {
+            "sayso-engine"
+        };
         assert!(EngineClient::default_engine_path().ends_with(name));
     }
 }

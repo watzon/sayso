@@ -69,7 +69,7 @@ impl Render for HistorySettings {
                     Some(name) => format!(
                         "Your model is a cloud model. Sayso sends the audio of each dictation and your dictionary words to {name}. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. Nothing else is sent."
                     ),
-                    None => "Speech recognition runs on this computer. Your audio never leaves it. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. Nothing else is sent.".to_string(),
+                    None => format!("Speech recognition runs on this {}. Your audio never leaves it. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. Nothing else is sent.", crate::shell::COMPUTER),
                 },
                 &c,
             )
@@ -82,7 +82,7 @@ impl Render for HistorySettings {
                     .items_center()
                     .gap(px(8.))
                     .child(kit::halo_dot(7., c.success, 3., 0.16))
-                    .child(text::ui(crate::shell::os_text!("AI is off. No text leaves this Mac.", "AI is off. No text leaves this computer."), 13., FontWeight::MEDIUM, c.ink)),
+                    .child(text::ui(format!("AI is off. No text leaves this {}.", crate::shell::COMPUTER), 13., FontWeight::MEDIUM, c.ink)),
             );
         } else {
             for (name, cloud) in providers {
@@ -92,11 +92,11 @@ impl Render for HistorySettings {
                         .items_center()
                         .gap(px(10.))
                         .child(text::ui(name, 13., FontWeight::SEMIBOLD, c.ink))
-                        .child(if cloud { Badge::new("Cloud", BadgeTone::Accent) } else { Badge::new(crate::shell::os_text!("This Mac", "This computer"), BadgeTone::Muted) }),
+                        .child(if cloud { Badge::new("Cloud", BadgeTone::Accent) } else { Badge::new(format!("This {}", crate::shell::COMPUTER), BadgeTone::Muted) }),
                 );
             }
         }
-        let privacy = group(crate::shell::os_text!("What leaves this Mac", "What leaves this computer"), cx).child(leaves.border_b_1().border_color(c.rule));
+        let privacy = group(&format!("What leaves this {}", crate::shell::COMPUTER), cx).child(leaves.border_b_1().border_color(c.rule));
 
         let clear_control = if self.confirm_clear {
             div()
@@ -142,7 +142,7 @@ impl Render for HistorySettings {
         kit::page(
             "history-page",
             "History and privacy",
-            crate::shell::os_text!("What Sayso keeps, for how long, and what leaves this Mac.", "What Sayso keeps, for how long, and what leaves this computer."),
+            crate::shell::os_text!("What Sayso keeps, for how long, and what leaves this Mac.", "What Sayso keeps, for how long, and what leaves this PC.", "What Sayso keeps, for how long, and what leaves this computer."),
             kit::body().child(keep).child(privacy).children(import).child(danger),
             cx,
         )

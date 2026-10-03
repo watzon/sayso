@@ -1,21 +1,21 @@
 # Sayso
 
-Sayso is a dictation app for macOS and Linux. You press a key, speak, and Sayso writes the text into the app you are using. Speech recognition runs on your computer: on the Neural Engine of a Mac, and on the CPU on Linux. Nothing leaves the computer unless you choose a cloud model or turn on an AI style with a cloud provider.
+Sayso is a dictation app for macOS, Windows, and Linux. You press a key, speak, and Sayso writes the text into the app you are using. Speech recognition runs on your computer: on the Neural Engine of a Mac, and on the processor of a Windows or Linux computer. Nothing leaves the computer unless you choose a cloud model or turn on an AI style with a cloud provider.
 
 ![The Sayso Hub in the light theme](docs/images/hub-home.png)
 
-Sayso is written in Rust with [GPUI](https://www.gpui.rs/). On macOS the speech engine is a Swift program that uses [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) and [FluidAudio](https://github.com/FluidInference/FluidAudio). On Linux it is a Rust program that uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). The same developer made [Pindrop](https://github.com/watzon/pindrop).
+Sayso is written in Rust with [GPUI](https://www.gpui.rs/). On macOS the speech engine is a Swift program that uses [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) and [FluidAudio](https://github.com/FluidInference/FluidAudio). On Windows it is a Rust program that uses [transcribe-rs](https://github.com/cjpais/transcribe-rs) (ONNX Runtime and whisper.cpp). On Linux it is a Rust program that uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). The same developer made [Pindrop](https://github.com/watzon/pindrop).
 
 ## What Sayso does
 
-- **Dictation into any app.** Option+Space starts a dictation, and Option+Space stops it (Ctrl+Alt+Space on Linux). You can also set a push-to-talk key. Sayso pastes the text into the focused app and then restores your clipboard.
+- **Dictation into any app.** Option+Space (Alt+Space on Windows, Ctrl+Alt+Space on Linux) starts a dictation, and the same key stops it. You can also set a push-to-talk key. Sayso pastes the text into the focused app and then restores your clipboard.
 - **Live preview.** An overlay shows a waveform, a timer, and the words while you speak.
-- **Local models.** Parakeet, Nemotron, Cohere Transcribe, Canary, SenseVoice, Paraformer, eight Whisper variants, and Apple Speech on macOS 26. You download the models that you want in the Models page.
+- **Local models.** On macOS: Parakeet, Nemotron, Cohere Transcribe, Canary, SenseVoice, Paraformer, eight Whisper variants, and Apple Speech on macOS 26. On Windows: Parakeet TDT v2 and v3, and six Whisper variants. On Linux: Parakeet, Whisper, SenseVoice, Moonshine, and a streaming Zipformer. You download the models that you want in the Models page.
 - **Cloud models, if you want them.** OpenAI, Groq, ElevenLabs, Deepgram, AssemblyAI, Mistral, or any server with the OpenAI transcription API. You use your own API key.
 - **AI styles.** A style rewrites the transcript with a prompt, for example Clean, Polished, Message, Email, or Notes. A style uses an OpenAI-compatible endpoint, the Claude CLI, or the Codex CLI. Raw is the style with no AI. Each style is one TOML file that you can edit.
 - **Dictionary.** Words bias the recognition toward names and terms. Replacements change text after transcription, for example "git hub" to "GitHub".
 - **History.** Sayso stores each dictation with its transcript, its final text, and its audio. Text stays until you delete it. Audio expires after 30 days by default.
-- **Import from Pindrop.** If you used Pindrop on this Mac, Sayso copies your dictations, dictionary, and prompt presets. Find it at the end of onboarding and in Settings › History and privacy.
+- **Import from Pindrop.** If you used Pindrop on your Mac, Sayso copies your dictations, dictionary, and prompt presets. Find it at the end of onboarding and in Settings › History and privacy.
 - **No lost text.** If the insertion or the AI style fails, the text stays on the screen and in History.
 - **Config as a file.** All settings are in `config.toml`, and Sayso reloads the file when you save it.
 
@@ -24,9 +24,8 @@ Sayso is written in Rust with [GPUI](https://www.gpui.rs/). On macOS the speech 
 ## Requirements
 
 - macOS 14 or later on a Mac with Apple Silicon.
+- Or Windows 10 (version 1809) or later, or Windows 11, on a 64-bit Intel or AMD processor.
 - Or Linux on x86_64 or aarch64, with X11 or Wayland. [docs/linux.md](docs/linux.md) lists what works on each desktop.
-
-A Windows version is planned.
 
 ## Install
 
@@ -42,6 +41,20 @@ The DMG is signed with the Developer ID of Watzon Ventures LLC and notarized by 
 shasum -a 256 -c Sayso-<version>-macos-arm64.dmg.sha256
 ```
 
+### Windows
+
+1. Download `Sayso-<version>-windows-x64-setup.exe` from the [Releases page](https://github.com/watzon/sayso/releases).
+2. Open it. It installs Sayso for your user account, without administrator rights.
+3. Sayso starts after the install. Onboarding starts.
+
+To check your download, compare the hash with the `.sha256` file:
+
+```powershell
+(Get-FileHash Sayso-<version>-windows-x64-setup.exe).Hash
+```
+
+If the installer is not signed, Windows SmartScreen asks first. Select **More info › Run anyway**.
+
 ### Linux
 
 1. Download `sayso-<version>-linux-<arch>.tar.gz` from the [Releases page](https://github.com/watzon/sayso/releases).
@@ -53,8 +66,8 @@ shasum -a 256 -c Sayso-<version>-macos-arm64.dmg.sha256
 ## First start
 
 1. Choose a model and download it. The default, Parakeet Unified, is about 1.3 GB.
-2. Allow the microphone and Accessibility. Sayso needs Accessibility to paste text into other apps.
-3. Press Option+Space (Ctrl+Alt+Space on Linux), speak, and press it again.
+2. Allow the microphone and, on macOS, Accessibility. Sayso needs Accessibility to paste text into other apps. Windows needs no extra permission. On Linux, [docs/linux.md](docs/linux.md) lists the permissions for each desktop.
+3. Press Option+Space (Alt+Space on Windows, Ctrl+Alt+Space on Linux), speak, and press the key again.
 
 ## Privacy
 
@@ -65,7 +78,7 @@ With a local model and the Raw style, Sayso sends nothing off the computer. Ther
 | A cloud model | The audio of each dictation and your dictionary words | The speech provider that you added |
 | An AI style | The transcript, the style prompt, and your dictionary words | The AI provider of that style |
 
-The Models page and the Styles page label each cloud destination. Your API keys are in the macOS Keychain.
+The Models page and the Styles page label each cloud destination. Your API keys are in the macOS Keychain, in Windows Credential Manager, or in the Secret Service keyring on Linux.
 
 ## License and price
 
@@ -76,6 +89,8 @@ The official build is the signed and notarized app. It is free, and it needs no 
 The name Sayso and the app icon are not part of the license. If you publish a changed version, give it another name and another icon.
 
 ## Build from source
+
+### macOS
 
 You need Xcode 16 or later and Rust 1.98.1. `rust-toolchain.toml` selects the Rust version.
 
@@ -88,17 +103,45 @@ open build/Sayso.app
 
 `SAYSO_SIGN_IDENTITY=-` makes an ad hoc signature, which needs no Apple developer account. With an ad hoc signature, macOS asks for the microphone and Accessibility again after each rebuild. To keep the grants, set `SAYSO_SIGN_IDENTITY` to the name of your own signing certificate.
 
+### Windows
+
+You need the Visual Studio 2022 Build Tools (the "Desktop development with C++" workload and a Windows SDK), CMake, LLVM (for libclang; set `LIBCLANG_PATH` when it is not on `PATH`), and Rust 1.98.1.
+
+```powershell
+git clone https://github.com/watzon/sayso.git
+cd sayso
+powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1
+build\windows\Sayso\Sayso.exe
+```
+
+Add `-Installer` to also make the installer in `dist\`. That needs [Inno Setup 6](https://jrsoftware.org/isinfo.php).
+
+### Linux
+
+You need the packages in `scripts/linux-deps.sh` (Debian and Ubuntu names) and Rust 1.98.1.
+
+```sh
+git clone https://github.com/watzon/sayso.git
+cd sayso
+scripts/linux-deps.sh
+scripts/bundle-linux.sh
+```
+
+The script makes `build/sayso-<version>-linux-<arch>.tar.gz`. Unpack it and run `./install.sh`.
+
 [CONTRIBUTING.md](CONTRIBUTING.md) has the development commands, the checks, and the layout of the code.
 
 ## Files on disk
 
-| Kind | Default location |
-|---|---|
-| Config (`config.toml`, `styles/`) | macOS: `~/Library/Application Support/Sayso`, or `~/.config/sayso` when it exists. Linux: `~/.config/sayso`. `$XDG_CONFIG_HOME/sayso` on both. |
-| History, audio, models | macOS: `~/Library/Application Support/Sayso`. Linux: `~/.local/share/sayso`. `$XDG_DATA_HOME/sayso` on both. |
-| Logs | macOS: `~/Library/Caches/Sayso/logs/sayso.log`. Linux: `~/.cache/sayso/logs/sayso.log`. `$XDG_CACHE_HOME/sayso/logs` on both. |
+| Kind | macOS | Windows | Linux |
+|---|---|---|---|
+| Config (`config.toml`, `styles/`) | `~/Library/Application Support/Sayso` | `%APPDATA%\Sayso` | `~/.config/sayso` |
+| History, audio, models | `~/Library/Application Support/Sayso` | `%LOCALAPPDATA%\Sayso` | `~/.local/share/sayso` |
+| Logs | `~/Library/Caches/Sayso/logs/sayso.log` | `%LOCALAPPDATA%\Sayso\Cache\logs\sayso.log` | `~/.cache/sayso/logs/sayso.log` |
 
-API keys are in the Keychain (macOS) or the Secret Service keyring (Linux) under `dev.sayso.Sayso`.
+On all three, `~/.config/sayso` wins for the config when it exists, and `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_CACHE_HOME` win over all of them.
+
+API keys are in the Keychain (macOS), in Windows Credential Manager, or in the Secret Service keyring (Linux), under `dev.sayso.Sayso`. The Windows uninstaller keeps your history, models, and settings. To remove them too, delete the two `Sayso` folders above.
 
 ## Help and contributions
 
@@ -111,3 +154,5 @@ API keys are in the Keychain (macOS) or the Secret Service keyring (Linux) under
 - [docs/plan.md](docs/plan.md): decisions and milestones.
 - [docs/research.md](docs/research.md): research and sources.
 - [docs/releasing.md](docs/releasing.md): how to make a release.
+- [docs/linux.md](docs/linux.md): Sayso on each Linux desktop.
+- [docs/porting.md](docs/porting.md): the platform seams, for the next ports.

@@ -199,7 +199,7 @@ impl OnboardingView {
                     return Err("Enter the base URL of the API, for example https://openrouter.ai/api/v1.".into());
                 }
                 if key.is_empty() && !is_local_url(&url) {
-                    return Err(crate::shell::os_text!("Enter your API key. Sayso keeps it in the Keychain.", "Enter your API key. Sayso keeps it in the system keyring.").into());
+                    return Err(format!("Enter your API key. Sayso keeps it in {}.", crate::shell::SECRET_STORE));
                 }
                 let model = self.ai.model.clone().ok_or("Choose a model from the provider's list.")?;
                 let (label, id, preset_url) = PRESETS[self.ai.preset];
@@ -304,7 +304,7 @@ impl OnboardingView {
 
         let mut rows = div().flex().flex_col().gap(px(8.));
         if !d.done {
-            rows = rows.child(text::ui(crate::shell::os_text!("Looking for AI tools on this Mac…", "Looking for AI tools on this computer…"), 13., FontWeight::NORMAL, c.graphite).px(px(4.)));
+            rows = rows.child(text::ui(format!("Looking for AI tools on this {}…", crate::shell::COMPUTER), 13., FontWeight::NORMAL, c.graphite).px(px(4.)));
         }
         if let Some(models) = d.ollama.clone().filter(|l| !l.is_empty()) {
             let current = self.ai.local_model.clone().unwrap_or_else(|| models[0].clone());
@@ -360,7 +360,7 @@ impl OnboardingView {
                 AiChoice::Local,
                 choice,
                 "Local model",
-                crate::shell::os_text!("Ollama is running on this Mac. Text stays on this Mac.", "Ollama is running on this computer. Text stays on this computer.").into(),
+                format!("Ollama is running on this {0}. Text stays on this {0}.", crate::shell::COMPUTER),
                 Some(picker.into_any_element()),
                 extra,
                 &c,
@@ -372,7 +372,7 @@ impl OnboardingView {
             AiChoice::Cloud,
             choice,
             "Cloud API",
-            crate::shell::os_text!("OpenRouter, OpenAI, or any OpenAI-compatible URL. Your key is stored in the Keychain.", "OpenRouter, OpenAI, or any OpenAI-compatible URL. Your key is stored in the system keyring.").into(),
+            format!("OpenRouter, OpenAI, or any OpenAI-compatible URL. Your key is stored in {}.", crate::shell::SECRET_STORE),
             Some(Badge::new("Cloud", BadgeTone::Accent).into_any_element()),
             cloud_extra,
             &c,

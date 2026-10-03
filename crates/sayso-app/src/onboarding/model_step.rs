@@ -187,7 +187,7 @@ impl OnboardingView {
                 .into_any_element(),
             ModelStatus::Optimizing | ModelStatus::Downloaded | ModelStatus::Ready => {
                 let detail = match status {
-                    ModelStatus::Ready => crate::shell::os_text!("Downloaded and ready on this Mac.", "Downloaded and ready."),
+                    ModelStatus::Ready => crate::shell::os_text!("Downloaded and ready on this Mac.", "Downloaded and ready on this PC.", "Downloaded and ready."),
                     ModelStatus::Optimizing => crate::shell::os_text!("Downloaded. Sayso is optimizing it for your Mac. This takes a minute the first time.", "Downloaded. Sayso is loading it."),
                     _ => "Downloaded.",
                 };

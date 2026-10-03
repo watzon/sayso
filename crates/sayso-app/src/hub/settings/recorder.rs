@@ -258,6 +258,7 @@ pub fn conflict_text(c: &HotkeyConflict, open_app: bool) -> String {
                 "{name}{open} uses {keys} by default. If you did not change it in {name}, both apps will react. Choose another key, or change the shortcut in {name}."
             )
         }
+        ConflictSource::System { name, .. } if cfg!(windows) => format!("Windows uses {keys} for {name}. Choose another key."),
         ConflictSource::System { name, .. } => format!(
             "{system} uses {keys} for {name}. Choose another key, or turn the shortcut off in {settings}.",
             system = crate::shell::os_text!("macOS", "Your desktop"),

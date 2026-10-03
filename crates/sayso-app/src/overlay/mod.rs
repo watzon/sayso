@@ -357,7 +357,7 @@ impl Render for OverlayView {
                 }
                 State::Processing { stage, .. } => {
                     let label = match (stage, &model_status) {
-                        (_, ModelStatus::Optimizing | ModelStatus::Downloaded) => crate::shell::os_text!("Optimizing for your Mac", "Preparing the model"),
+                        (_, ModelStatus::Optimizing | ModelStatus::Downloaded) => crate::shell::OPTIMIZING,
                         (Stage::Enhancing, _) => "Applying style",
                         (Stage::Inserting, _) => "Inserting",
                         _ => "Transcribing",

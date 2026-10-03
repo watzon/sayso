@@ -1,6 +1,6 @@
 [package]
 name = "sayso-app"
-description = "Sayso: local dictation for macOS and Linux."
+description = "Sayso: local dictation."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -40,8 +40,12 @@ objc2 = "0.6"
 sayso-platform-linux.workspace = true
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+sayso-platform-windows.workspace = true
+tray-icon = "0.26"
+
 # Systems without their own backend yet (see src/shell/fallback.rs).
-[target.'cfg(not(any(target_os = "macos", target_os = "linux")))'.dependencies]
+[target.'cfg(not(any(target_os = "macos", target_os = "linux", windows)))'.dependencies]
 sayso-platform-common.workspace = true
 
 [dev-dependencies]

@@ -68,9 +68,11 @@ impl Render for HubView {
         let route = self.model.read(cx).route;
         let page = self.pages.view(route, window, cx);
         // The custom title bar (Linux): a strip across the top that moves the
-        // window and holds the window buttons.
+        // window and holds the window buttons. On Windows the caption bar
+        // takes the same room. The content sheet starts this far down; the
+        // sheets under it peek out 6 and 3 px below its top edge.
         let custom = crate::chrome::is_custom(window);
-        let top = if custom { 36. } else { 10. };
+        let top = if custom { 36. } else { crate::caption::top_margin(10.) };
         div()
             .relative()
             .size_full()
@@ -138,5 +140,6 @@ impl Render for HubView {
                         })),
                 )
             })
+            .children(crate::caption::caption_bar(true, cx))
     }
 }

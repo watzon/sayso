@@ -132,7 +132,7 @@ impl Render for AudioSettings {
             );
         }
         if devices.is_empty() {
-            list = list.child(kit::banner(BannerKind::Warning, crate::shell::os_text!("Sayso found no microphone. Connect one, or check System Settings › Sound.", "Sayso found no microphone. Connect one, or check the sound settings."), cx));
+            list = list.child(kit::banner(BannerKind::Warning, format!("Sayso found no microphone. Connect one, or check {}.", crate::shell::SOUND_SETTINGS), cx));
         }
 
         // Level meter.
@@ -156,7 +156,7 @@ impl Render for AudioSettings {
                 ))
                 .into_any_element()
         } else if let Some(e) = &self.meter_error {
-            kit::banner(BannerKind::Warning, format!("The microphone did not start: {e}. Choose another input, or check {}.", crate::shell::os_text!("System Settings › Sound", "the sound settings")), cx).into_any_element()
+            kit::banner(BannerKind::Warning, format!("The microphone did not start: {e}. Choose another input, or check {}.", crate::shell::SOUND_SETTINGS), cx).into_any_element()
         } else if recording {
             kit::banner(BannerKind::Info, "The test pauses while you dictate.", cx).into_any_element()
         } else {

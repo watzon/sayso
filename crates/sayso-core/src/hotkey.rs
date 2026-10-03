@@ -69,20 +69,24 @@ pub enum HotkeyParseError {
 }
 
 impl Hotkey {
-    /// Option+Space on macOS. Ctrl+Alt+Space elsewhere, because Alt+Space
-    /// opens the window menu on Linux and Windows.
+    /// Option+Space on macOS, and Alt+Space on Windows, where it replaces
+    /// the window menu shortcut. Ctrl+Alt+Space on Linux, because Alt+Space
+    /// opens the window menu there.
     pub fn toggle_default() -> Self {
-        let modifiers = if cfg!(target_os = "macos") {
+        let modifiers = if cfg!(any(target_os = "macos", windows)) {
             Modifiers { option: true, ..Default::default() }
         } else {
             Modifiers { control: true, option: true, ..Default::default() }
         };
         Hotkey::Chord { modifiers, key: Key::Space }
     }
-    /// Ctrl+Cmd+V on macOS, Ctrl+Alt+V elsewhere.
+    /// Ctrl+Cmd+V on macOS. Windows uses Ctrl+Win+V for the sound output
+    /// panel, so there it is Alt+Shift+V. Ctrl+Alt+V on Linux.
     pub fn paste_last_default() -> Self {
         let modifiers = if cfg!(target_os = "macos") {
             Modifiers { control: true, command: true, ..Default::default() }
+        } else if cfg!(windows) {
+            Modifiers { option: true, shift: true, ..Default::default() }
         } else {
             Modifiers { control: true, option: true, ..Default::default() }
         };
@@ -129,6 +133,13 @@ impl Hotkey {
                 caps
             }
         }
+    }
+}
+
+impl Hotkey {
+    /// The keycaps as one short label: "⌃⌘V" on macOS, "Alt+Shift+V" elsewhere.
+    pub fn compact_label(&self) -> String {
+        self.keycaps().join(if cfg!(target_os = "macos") { "" } else { "+" })
     }
 }
 
@@ -265,6 +276,7 @@ impl FromStr for Hotkey {
         let mut key = None;
         for part in s.split('+').map(str::trim) {
             match part.to_ascii_lowercase().as_str() {
+                // The Windows and Super keys sit where Command does on a Mac keyboard.
                 "cmd" | "command" | "super" | "win" | "meta" | "logo" => modifiers.command = true,
                 "opt" | "option" | "alt" => modifiers.option = true,
                 "ctrl" | "control" => modifiers.control = true,
@@ -333,7 +345,7 @@ mod tests {
         let list: &[&str] = if cfg!(target_os = "macos") {
             &["opt+space", "ctrl+cmd+v", "right_option", "fn", "ctrl+shift+d", "cmd+f5"]
         } else if cfg!(target_os = "windows") {
-            &["ctrl+alt+space", "ctrl+win+v", "right_option", "ctrl+shift+d", "win+f5"]
+            &["alt+space", "ctrl+win+v", "right_option", "ctrl+shift+d", "win+f5"]
         } else {
             &["ctrl+alt+space", "ctrl+super+v", "right_option", "ctrl+shift+d", "super+f5"]
         };
@@ -383,6 +395,16 @@ mod tests {
         let hk: Hotkey = "cmd+shift+ctrl+opt+k".parse().unwrap();
         assert_eq!(hk.keycaps(), vec!["Super", "Ctrl", "Alt", "Shift", "K"]);
         assert_eq!(Hotkey::toggle_default().keycaps(), vec!["Ctrl", "Alt", "Space"]);
+        assert_eq!(Hotkey::Solo(SoloModifier::RightOption).keycaps(), vec!["Right Alt"]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn keycaps_follow_windows_order() {
+        let hk: Hotkey = "cmd+shift+ctrl+opt+k".parse().unwrap();
+        assert_eq!(hk.keycaps(), vec!["Win", "Ctrl", "Alt", "Shift", "K"]);
+        assert_eq!(Hotkey::toggle_default().keycaps(), vec!["Alt", "Space"]);
+        assert_eq!(Hotkey::paste_last_default().to_string(), "alt+shift+v");
         assert_eq!(Hotkey::Solo(SoloModifier::RightOption).keycaps(), vec!["Right Alt"]);
     }
 }
