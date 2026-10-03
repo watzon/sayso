@@ -4,6 +4,7 @@
 #![cfg(windows)]
 
 pub mod audio;
+pub mod context;
 pub mod esc;
 pub mod login_item;
 pub mod paste_receipt;
