@@ -54,6 +54,10 @@ pub fn run() {
     gpui_kit::application().with_assets(sayso_ui::assets::Assets).run(move |cx| {
         gpui_kit::init(cx);
         sayso_ui::init(cx);
+        // The Insertion sends Shift+Insert on Linux, and the text fields bind
+        // only Ctrl+V. Without this, a dictation into Sayso's own fields fails.
+        #[cfg(target_os = "linux")]
+        cx.bind_keys([KeyBinding::new("shift-insert", gpui_kit::base::input::Paste, Some("Input"))]);
         crate::shell::become_accessory();
 
         let services = start_services(&paths, &loaded.config, updates);
