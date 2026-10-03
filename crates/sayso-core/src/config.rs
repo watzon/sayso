@@ -67,13 +67,39 @@ pub enum CancelMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Hotkeys {
+    #[serde(with = "optional_hotkey")]
     pub toggle: Option<Hotkey>,
+    #[serde(with = "optional_hotkey")]
     pub push_to_talk: Option<Hotkey>,
     pub cancel: CancelMode,
     /// Two Esc presses within this window cancel.
     pub double_escape_ms: u64,
+    #[serde(with = "optional_hotkey")]
     pub paste_last: Option<Hotkey>,
+    #[serde(with = "optional_hotkey")]
     pub cycle_style: Option<Hotkey>,
+}
+
+/// A hotkey with no key is the empty string in the file. TOML has no null, and
+/// a missing line means the default, so a cleared hotkey needs its own value.
+mod optional_hotkey {
+    use super::Hotkey;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(hotkey: &Option<Hotkey>, s: S) -> Result<S::Ok, S::Error> {
+        match hotkey {
+            Some(hk) => s.collect_str(hk),
+            None => s.serialize_str(""),
+        }
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Option<Hotkey>, D::Error> {
+        let s = String::deserialize(d)?;
+        if s.trim().is_empty() {
+            return Ok(None);
+        }
+        s.parse().map(Some).map_err(serde::de::Error::custom)
+    }
 }
 
 impl Default for Hotkeys {
@@ -526,12 +552,32 @@ mod tests {
     }
 
     #[test]
+    fn a_cleared_hotkey_stays_cleared() {
+        let mut c = Config::default();
+        c.hotkeys.toggle = None;
+        c.hotkeys.paste_last = None;
+        let text = c.to_toml();
+        assert!(text.contains("toggle = \"\""), "{text}");
+        let loaded = Config::parse(&text);
+        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert_eq!(loaded.config, c);
+    }
+
+    #[test]
+    fn a_missing_hotkey_line_gives_the_default() {
+        let loaded = Config::parse("[hotkeys]\npush_to_talk = \"right_option\"\n");
+        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert_eq!(loaded.config.hotkeys.toggle, Some(Hotkey::toggle_default()));
+        assert_eq!(loaded.config.hotkeys.push_to_talk, Some("right_option".parse().unwrap()));
+    }
+
+    #[test]
     fn defaults_match_the_plan() {
         let c = Config::default();
         let (toggle, paste_last) = if cfg!(target_os = "macos") {
             ("opt+space", "ctrl+cmd+v")
         } else if cfg!(windows) {
-            ("alt+space", "alt+shift+v")
+            ("ctrl+space", "alt+shift+v")
         } else {
             ("ctrl+alt+space", "ctrl+alt+v")
         };

@@ -237,7 +237,7 @@ mod tests {
 
     #[test]
     fn alt_space_is_the_window_menu() {
-        assert_eq!(match_system(&Hotkey::toggle_default()), vec![system("Window menu")]);
+        assert_eq!(match_system(&hk("opt+space")), vec![system("Window menu")]);
     }
 
     #[test]
@@ -273,6 +273,7 @@ mod tests {
     #[test]
     fn free_chords_and_solo_modifiers_have_no_system_conflict() {
         assert!(match_system(&hk("ctrl+opt+d")).is_empty());
+        assert!(match_system(&Hotkey::toggle_default()).is_empty(), "the toggle default is free");
         assert!(match_system(&hk("opt+shift+v")).is_empty(), "the paste-last default is free");
         assert!(match_system(&hk("right_option")).is_empty());
         assert!(match_system(&hk("f11")).is_empty());
@@ -280,7 +281,7 @@ mod tests {
 
     #[test]
     fn known_apps_match_only_when_running() {
-        let toggle = Hotkey::toggle_default();
+        let toggle = hk("opt+space");
         assert!(match_known_apps(&toggle, &["explorer.exe".into()]).is_empty());
         let running = ["explorer.exe".to_string(), "powertoys.powerlauncher.exe".into(), "chatgpt.exe".into()];
         assert_eq!(
@@ -299,7 +300,7 @@ mod tests {
 
     #[test]
     fn copilot_is_found_under_either_exe_name() {
-        let hits = match_known_apps(&Hotkey::toggle_default(), &["microsoft.copilot.exe".into()]);
+        let hits = match_known_apps(&hk("opt+space"), &["microsoft.copilot.exe".into()]);
         assert_eq!(hits, vec![app("Microsoft Copilot", "microsoft.copilot.exe", false)]);
     }
 

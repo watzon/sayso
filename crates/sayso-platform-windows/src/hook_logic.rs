@@ -534,12 +534,12 @@ mod tests {
         let mut l = logic();
         l.set_capturing(true);
         let now = Instant::now();
-        l.handle(down(VK_LMENU, &[]), now);
-        let out = l.handle(down(VK_SPACE, &[VK_LMENU]), now);
+        l.handle(down(VK_LCONTROL, &[]), now);
+        let out = l.handle(down(VK_SPACE, &[VK_LCONTROL]), now);
         assert_eq!(out.captured, Some(Hotkey::toggle_default()));
         assert!(!l.is_needed(), "capture ends after one result");
         // Not delivered twice.
-        assert_eq!(l.handle(down(VK_SPACE, &[VK_LMENU]), now).captured, None);
+        assert_eq!(l.handle(down(VK_SPACE, &[VK_LCONTROL]), now).captured, None);
     }
 
     #[test]

@@ -8,7 +8,7 @@ Sayso is a local-first voice dictation app. You speak, and Sayso puts the text i
 One recording from start to insert. A dictation has a state: idle, recording, processing, inserting, done, cancelled, or failed.
 
 **Toggle hotkey**
-A key that starts a dictation on the first press and stops it on the second press. The default is Option+Space on macOS, Alt+Space on Windows, and Ctrl+Alt+Space on Linux.
+A key that starts a dictation on the first press and stops it on the second press. The default is Option+Space on macOS, Ctrl+Space on Windows, and Ctrl+Alt+Space on Linux.
 
 **Push-to-talk hotkey**
 A key that records while you hold it and stops when you release it. It has no default.

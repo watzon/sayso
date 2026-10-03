@@ -8,7 +8,7 @@ Sayso is written in Rust with [GPUI](https://www.gpui.rs/). On macOS the speech 
 
 ## What Sayso does
 
-- **Dictation into any app.** Option+Space (Alt+Space on Windows, Ctrl+Alt+Space on Linux) starts a dictation, and the same key stops it. You can also set a push-to-talk key. Sayso pastes the text into the focused app and then restores your clipboard.
+- **Dictation into any app.** Option+Space (Ctrl+Space on Windows, Ctrl+Alt+Space on Linux) starts a dictation, and the same key stops it. You can also set a push-to-talk key. Sayso pastes the text into the focused app and then restores your clipboard.
 - **Live preview.** An overlay shows a waveform, a timer, and the words while you speak.
 - **Local models.** On macOS: Parakeet, Nemotron, Cohere Transcribe, Canary, SenseVoice, Paraformer, eight Whisper variants, and Apple Speech on macOS 26. On Windows: Parakeet TDT v2 and v3, and six Whisper variants. On Linux: Parakeet, Whisper, SenseVoice, Moonshine, and a streaming Zipformer. You download the models that you want in the Models page.
 - **Cloud models, if you want them.** OpenAI, Groq, ElevenLabs, Deepgram, AssemblyAI, Mistral, or any server with the OpenAI transcription API. You use your own API key.
@@ -67,7 +67,7 @@ If the installer is not signed, Windows SmartScreen asks first. Select **More in
 
 1. Choose a model and download it. The default, Parakeet Unified, is about 1.3 GB.
 2. Allow the microphone and, on macOS, Accessibility. Sayso needs Accessibility to paste text into other apps. Windows needs no extra permission. On Linux, [docs/linux.md](docs/linux.md) lists the permissions for each desktop.
-3. Press Option+Space (Alt+Space on Windows, Ctrl+Alt+Space on Linux), speak, and press the key again.
+3. Press Option+Space (Ctrl+Space on Windows, Ctrl+Alt+Space on Linux), speak, and press the key again.
 
 ## Privacy
 

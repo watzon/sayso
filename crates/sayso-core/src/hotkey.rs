@@ -69,12 +69,14 @@ pub enum HotkeyParseError {
 }
 
 impl Hotkey {
-    /// Option+Space on macOS, and Alt+Space on Windows, where it replaces
-    /// the window menu shortcut. Ctrl+Alt+Space on Linux, because Alt+Space
-    /// opens the window menu there.
+    /// Option+Space on macOS. Ctrl+Space on Windows, where Alt+Space opens
+    /// the window menu and is the default of the common launchers.
+    /// Ctrl+Alt+Space on Linux, because Alt+Space opens the window menu there.
     pub fn toggle_default() -> Self {
-        let modifiers = if cfg!(any(target_os = "macos", windows)) {
+        let modifiers = if cfg!(target_os = "macos") {
             Modifiers { option: true, ..Default::default() }
+        } else if cfg!(windows) {
+            Modifiers { control: true, ..Default::default() }
         } else {
             Modifiers { control: true, option: true, ..Default::default() }
         };
@@ -403,7 +405,7 @@ mod tests {
     fn keycaps_follow_windows_order() {
         let hk: Hotkey = "cmd+shift+ctrl+opt+k".parse().unwrap();
         assert_eq!(hk.keycaps(), vec!["Win", "Ctrl", "Alt", "Shift", "K"]);
-        assert_eq!(Hotkey::toggle_default().keycaps(), vec!["Alt", "Space"]);
+        assert_eq!(Hotkey::toggle_default().keycaps(), vec!["Ctrl", "Space"]);
         assert_eq!(Hotkey::paste_last_default().to_string(), "alt+shift+v");
         assert_eq!(Hotkey::Solo(SoloModifier::RightOption).keycaps(), vec!["Right Alt"]);
     }

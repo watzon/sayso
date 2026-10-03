@@ -311,6 +311,8 @@ mod tests {
         let Hotkey::Chord { modifiers, .. } = chord("ctrl+cmd+v") else { unreachable!() };
         assert_eq!(hotkey_mods(modifiers), MOD_CONTROL | MOD_WIN);
         let Hotkey::Chord { modifiers, .. } = Hotkey::toggle_default() else { unreachable!() };
+        assert_eq!(hotkey_mods(modifiers), MOD_CONTROL);
+        let Hotkey::Chord { modifiers, .. } = chord("opt+space") else { unreachable!() };
         assert_eq!(hotkey_mods(modifiers), MOD_ALT);
         let Hotkey::Chord { modifiers, .. } = chord("fn+shift+f5") else { unreachable!() };
         assert_eq!(hotkey_mods(modifiers), MOD_SHIFT, "Windows has no Fn flag");
@@ -376,7 +378,7 @@ mod tests {
     #[test]
     fn maps_chords_to_global_hotkey() {
         let hk = to_global_hotkey(&Hotkey::toggle_default()).unwrap();
-        assert_eq!(hk, HotKey::new(Some(GhModifiers::ALT), Code::Space));
+        assert_eq!(hk, HotKey::new(Some(GhModifiers::CONTROL), Code::Space));
         let hk = to_global_hotkey(&Hotkey::paste_last_default()).unwrap();
         assert_eq!(hk, HotKey::new(Some(GhModifiers::ALT | GhModifiers::SHIFT), Code::KeyV));
         let hk = to_global_hotkey(&chord("ctrl+cmd+v")).unwrap();
