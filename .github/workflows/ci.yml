@@ -63,14 +63,18 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
       # sherpa-onnx-sys downloads its native library to target/sherpa-onnx-prebuilt
-      # and links from there. The cache keeps the record that its build script
-      # ran, but not that folder. When the folder is missing, clean the crate,
-      # so the build script runs again. Without this, a change to Cargo.lock
-      # fails with "could not find native static library sherpa-onnx-c-api".
+      # and links from there. The cache keeps the folders in that path, but
+      # deletes the files in them, and the build script does not download when
+      # the lib folder is there. When no library file is there, remove the
+      # folder and clean the crate, so the build script downloads again.
+      # Without this, a change to Cargo.lock fails with "could not find native
+      # static library sherpa-onnx-c-api".
       - name: Get the sherpa-onnx library again when the cache does not have it
         shell: bash
         run: |
-          if [[ ! -d target/sherpa-onnx-prebuilt ]]; then
+          libs=$(find target/sherpa-onnx-prebuilt -type f \( -name '*.a' -o -name '*.lib' \) 2>/dev/null | head -n 1 || true)
+          if [[ -z "$libs" ]]; then
+            rm -rf target/sherpa-onnx-prebuilt
             cargo clean -p sherpa-onnx-sys
             cargo clean -p sherpa-onnx-sys --release
           fi
@@ -99,14 +103,18 @@ jobs:
           choco install cmake --no-progress -y
           "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       # sherpa-onnx-sys downloads its native library to target/sherpa-onnx-prebuilt
-      # and links from there. The cache keeps the record that its build script
-      # ran, but not that folder. When the folder is missing, clean the crate,
-      # so the build script runs again. Without this, a change to Cargo.lock
-      # fails with "could not find native static library sherpa-onnx-c-api".
+      # and links from there. The cache keeps the folders in that path, but
+      # deletes the files in them, and the build script does not download when
+      # the lib folder is there. When no library file is there, remove the
+      # folder and clean the crate, so the build script downloads again.
+      # Without this, a change to Cargo.lock fails with "could not find native
+      # static library sherpa-onnx-c-api".
       - name: Get the sherpa-onnx library again when the cache does not have it
         shell: bash
         run: |
-          if [[ ! -d target/sherpa-onnx-prebuilt ]]; then
+          libs=$(find target/sherpa-onnx-prebuilt -type f \( -name '*.a' -o -name '*.lib' \) 2>/dev/null | head -n 1 || true)
+          if [[ -z "$libs" ]]; then
+            rm -rf target/sherpa-onnx-prebuilt
             cargo clean -p sherpa-onnx-sys
             cargo clean -p sherpa-onnx-sys --release
           fi
