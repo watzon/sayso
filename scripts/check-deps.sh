@@ -19,6 +19,7 @@ for c in sayso-store sayso-enhance sayso-engine-client sayso-ui; do
 done
 check sayso-ui '^sayso-(store|enhance|engine-client)' "UI gets data through the app"
 check sayso-platform-common '^(sayso-(platform-(macos|linux|windows)|engine|store|enhance|ui|app)|gpui)' "portable platform code only"
+check sayso-update '^(sayso-(platform|engine|store|enhance|transcribe|ui|app)|gpui)' "the updater has no UI and no platform code"
 check sayso-engine '^(sayso-(platform|store|enhance|ui|app)|gpui)' "the engine is a separate process"
 [ $fail -eq 0 ] && echo "dependency rules: ok"
 exit $fail

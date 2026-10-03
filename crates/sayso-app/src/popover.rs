@@ -656,6 +656,11 @@ impl Render for PopoverView {
         let rows = div().flex().flex_col().px(px(4.)).pt(px(6.)).child(model_row).child(mic_row);
         sheet = sheet.child(rows);
 
+        // The update line, above the footer.
+        if let Some(line) = crate::update_ui::popover_line(&self.model, hide_popover, cx) {
+            sheet = sheet.child(line);
+        }
+
         // Footer.
         sheet = sheet.child(
             div()

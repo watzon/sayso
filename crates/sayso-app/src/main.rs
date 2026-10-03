@@ -19,6 +19,7 @@ mod pindrop_import;
 mod popover;
 mod services;
 mod shell;
+mod update_ui;
 mod widgets;
 
 fn main() {

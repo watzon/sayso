@@ -75,6 +75,15 @@ The themed panel that opens from the menu bar icon (the taskbar icon on Windows,
 **History entry**
 A stored dictation. It holds the transcript, the final text, the style, the target app, the model, the time, the duration, and (until it expires) the audio.
 
+**Update manifest**
+The signed file `latest.json` on a GitHub release. It names the version and, for each system, the release file with its size and hash.
+
+**Update check**
+One request for the update manifest. Sayso compares the version in the manifest with its own version. [docs/updates.md](docs/updates.md) has the design.
+
+**Official build**
+A build from the Release workflow. Only an official build looks for updates.
+
 **Ink**
 The user's chosen base color (Sumi, Indigo, Iron Gall, Sepia, Verdigris, Oxblood, or custom). The theme generates the accent and recording colors from the ink.
 

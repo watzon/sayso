@@ -27,6 +27,7 @@ pub struct Config {
     pub speech: Speech,
     pub history: History,
     pub appearance: AppearanceConfig,
+    pub updates: Updates,
     pub advanced: Advanced,
     /// Set when onboarding finished. Onboarding resumes from `onboarding_step` otherwise.
     pub onboarding: Onboarding,
@@ -383,6 +384,23 @@ impl Default for AppearanceConfig {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Updates {
+    /// Look for a new version when Sayso starts and one time each day.
+    /// "Check for updates" in Settings works also when this is off.
+    pub check: bool,
+    /// Download and prepare a new version without a question. It takes the
+    /// place of this version at the next start of Sayso.
+    pub automatic: bool,
+}
+
+impl Default for Updates {
+    fn default() -> Self {
+        Self { check: true, automatic: false }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Advanced {
@@ -484,6 +502,7 @@ impl Config {
         section!("speech", speech);
         section!("history", history);
         section!("appearance", appearance);
+        section!("updates", updates);
         section!("advanced", advanced);
         section!("onboarding", onboarding);
         cfg
@@ -574,6 +593,8 @@ mod tests {
     #[test]
     fn defaults_match_the_plan() {
         let c = Config::default();
+        assert!(c.updates.check);
+        assert!(!c.updates.automatic);
         let (toggle, paste_last) = if cfg!(target_os = "macos") {
             ("opt+space", "ctrl+cmd+v")
         } else if cfg!(windows) {

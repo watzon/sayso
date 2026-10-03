@@ -90,6 +90,12 @@ pub struct AppModel {
     /// True when this Mac has Pindrop data to import.
     pub pindrop_found: bool,
     pub pindrop_import: crate::pindrop_import::PindropImport,
+    /// What the UI shows about updates.
+    pub update: sayso_update::Status,
+    /// None when this build does not look for updates (a build from source).
+    pub(crate) updater: Option<sayso_update::Updater>,
+    /// The version of the last update, until the user saw "Sayso is now X".
+    pub update_notice: Option<sayso_update::manifest::Version>,
 }
 
 impl EventEmitter<AppEvent> for AppModel {}
@@ -144,6 +150,9 @@ impl AppModel {
             model_lists: HashMap::new(),
             pindrop_found: sayso_store::pindrop::found(&crate::pindrop_import::pindrop_dir()),
             pindrop_import: Default::default(),
+            update: sayso_update::Status::Idle { last_check: None },
+            updater: None,
+            update_notice: None,
         };
         model.system_dark = model.services.platform.prefs.dark_mode();
         model.reload_dictionary();
@@ -157,6 +166,7 @@ impl AppModel {
         let hotkeys = model.services.platform.hotkeys.events();
         let engine_events = model.services.engine.as_ref().map(|e| e.subscribe());
         crate::dictation::start_background_loops(hotkeys, engine_events, cx);
+        model.start_updater(cx);
         model.detect_providers(cx);
         model.load_active_models(cx);
         // Model names for the provider cards and style lines. The CLIs answer
@@ -189,6 +199,123 @@ impl AppModel {
     }
 
     // -----------------------------------------------------------------------
+    // Updates
+    // -----------------------------------------------------------------------
+
+    /// Start the updater thread, when this build looks for updates.
+    fn start_updater(&mut self, cx: &mut Context<Self>) {
+        use sayso_update::{AtStart, Status};
+        let Some((options, found)) = self.services.updates.take() else { return };
+        let state = sayso_update::state::UpdateState::load(&options.context.state_path);
+        self.update_notice = state.notice;
+        self.update = match &found {
+            AtStart::Ready(version) => Status::Ready { version: version.clone() },
+            AtStart::Failed(message) => Status::Failed { message: message.clone() },
+            AtStart::Nothing | AtStart::Updated(_) | AtStart::Relaunching | AtStart::Stale => Status::Idle { last_check: state.last_check },
+        };
+        let (tx, statuses) = async_channel::unbounded();
+        self.updater = Some(sayso_update::Updater::spawn(options, move |status| {
+            let _ = tx.send_blocking(status);
+        }));
+        cx.spawn(async move |this, cx| {
+            while let Ok(status) = statuses.recv().await {
+                let updated = this.update(cx, |m, cx| {
+                    m.update = status;
+                    cx.notify();
+                });
+                if updated.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+        if matches!(found, AtStart::Updated(_)) {
+            self.confirm_update_when_running(cx);
+        }
+    }
+
+    /// This is the first start after an update. Keep the old version until
+    /// this one ran for 30 seconds with a working engine, then delete it.
+    fn confirm_update_when_running(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_secs(30)).await;
+                let done = this.update(cx, |m, cx| {
+                    if m.services.engine.is_none() || m.engine_down.is_some() {
+                        return false;
+                    }
+                    // Not yet, when another Sayso uses this install.
+                    let Some(updater) = m.updater.as_ref().filter(|u| u.confirm()) else { return false };
+                    m.update_notice = updater.notice();
+                    cx.notify();
+                    true
+                });
+                if !matches!(done, Ok(false)) {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// True when this build looks for updates.
+    pub fn updates_enabled(&self) -> bool {
+        self.updater.is_some()
+    }
+
+    /// "Check for updates" and "Try again" in Settings.
+    pub fn check_for_updates(&self) {
+        if let Some(updater) = &self.updater {
+            updater.check_now();
+        }
+    }
+
+    /// "Update now": download the new version and prepare it.
+    pub fn install_update(&self) {
+        if let Some(updater) = &self.updater {
+            updater.install();
+        }
+    }
+
+    pub fn cancel_update(&self) {
+        if let Some(updater) = &self.updater {
+            updater.cancel();
+        }
+    }
+
+    /// "Restart to update": put the new version in place and start it. Does
+    /// nothing during a dictation. The button is off then.
+    pub fn restart_to_update(&mut self, cx: &mut Context<Self>) {
+        if !self.can_restart_to_update() {
+            return;
+        }
+        let Some(updater) = &self.updater else { return };
+        match updater.swap() {
+            // The installed app is the new version now. Quit, and it starts.
+            Ok(()) => cx.quit(),
+            Err(sayso_update::SwapError::Busy) => {
+                self.update = sayso_update::Status::Failed { message: "Another Sayso runs from this app. Quit it, then try again.".into() };
+            }
+            Err(sayso_update::SwapError::Failed(message)) => self.update = sayso_update::Status::Failed { message },
+        }
+        cx.notify();
+    }
+
+    /// False during a dictation: a restart would lose it.
+    pub fn can_restart_to_update(&self) -> bool {
+        matches!(self.machine.state, State::Idle)
+    }
+
+    /// The user saw "Sayso is now X".
+    pub fn dismiss_update_notice(&mut self, cx: &mut Context<Self>) {
+        if let Some(updater) = &self.updater {
+            updater.dismiss_notice();
+        }
+        self.update_notice = None;
+        cx.notify();
+    }
+
+    // -----------------------------------------------------------------------
     // Config
     // -----------------------------------------------------------------------
 
@@ -216,6 +343,16 @@ impl AppModel {
         }
         if before.hotkeys != self.config.hotkeys {
             self.register_hotkeys();
+        }
+        if before.updates.check != self.config.updates.check
+            && let Some(updater) = &self.updater
+        {
+            updater.set_auto_check(self.config.updates.check);
+        }
+        if before.updates.automatic != self.config.updates.automatic
+            && let Some(updater) = &self.updater
+        {
+            updater.set_automatic(self.config.updates.automatic);
         }
         if before.general.launch_at_login != self.config.general.launch_at_login
             && let Err(e) = self.services.platform.login_item.set_enabled(self.config.general.launch_at_login) {

@@ -12,4 +12,7 @@ pub struct Services {
     /// None when the database cannot be opened. History is then off.
     pub store: Option<Arc<Store>>,
     pub secrets: Arc<dyn SecretStore>,
+    /// None when this build does not look for updates (a build from source).
+    /// The model takes it when it starts the updater.
+    pub updates: Option<(sayso_update::Options, sayso_update::AtStart)>,
 }

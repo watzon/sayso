@@ -37,13 +37,26 @@ pub fn run() {
     if loaded.created {
         let _ = loaded.config.save(&paths.config_file());
     }
+    // A staged update takes the place of this version now, before the engine starts.
+    let updates = sayso_update::Options::for_this_build(&paths.data_dir, &paths.cache_dir, loaded.config.updates.check, loaded.config.updates.automatic)
+        .map(|options| {
+            let found = options.at_start();
+            if matches!(found, sayso_update::AtStart::Relaunching | sayso_update::AtStart::Stale) {
+                log::info!("update: the new version starts");
+                std::process::exit(0);
+            }
+            if let sayso_update::AtStart::Failed(message) = &found {
+                log::warn!("update: {message}");
+            }
+            (options, found)
+        });
 
     gpui_kit::application().with_assets(sayso_ui::assets::Assets).run(move |cx| {
         gpui_kit::init(cx);
         sayso_ui::init(cx);
         crate::shell::become_accessory();
 
-        let services = start_services(&paths, &loaded.config);
+        let services = start_services(&paths, &loaded.config, updates);
         apply_theme(&loaded.config, &services, cx);
         cx.set_global(Windows::default());
 
@@ -105,7 +118,7 @@ fn init_logging(paths: &Paths, level: Option<&str>) {
     let _ = builder.try_init();
 }
 
-fn start_services(paths: &Paths, config: &Config) -> Services {
+fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update::Options, sayso_update::AtStart)>) -> Services {
     // Sounds are embedded; write them where the player can read them.
     let sounds_dir = paths.cache_dir.join("sounds");
     let _ = std::fs::create_dir_all(&sounds_dir);
@@ -144,7 +157,7 @@ fn start_services(paths: &Paths, config: &Config) -> Services {
         }
     };
 
-    Services { platform, engine, store, secrets: Arc::new(sayso_enhance::KeychainStore) }
+    Services { platform, engine, store, secrets: Arc::new(sayso_enhance::KeychainStore), updates }
 }
 
 /// Build the paper theme from config and the system appearance.

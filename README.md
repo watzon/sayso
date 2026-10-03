@@ -71,12 +71,14 @@ If the installer is not signed, Windows SmartScreen asks first. Select **More in
 
 ## Privacy
 
-With a local model and the Raw style, Sayso sends nothing off the computer. There is no telemetry.
+With a local model and the Raw style, your speech and your text stay on the computer. There is no telemetry.
 
 | You turn on | What leaves the computer | Where it goes |
 |---|---|---|
 | A cloud model | The audio of each dictation and your dictionary words | The speech provider that you added |
 | An AI style | The transcript, the style prompt, and your dictionary words | The AI provider of that style |
+
+The official build also looks for a new version when it starts and one time each day. It gets one file from the Releases page of this repository on GitHub. The request names your Sayso version and your system (for example `Sayso/0.3.0 (macos; aarch64)`), and GitHub sees your IP address. It has no identifier of you or your computer. To stop these checks, turn off **Settings › General › Check for updates**. A build from source makes no such request.
 
 The Models page and the Styles page label each cloud destination. Your API keys are in the macOS Keychain, in Windows Credential Manager, or in the Secret Service keyring on Linux.
 

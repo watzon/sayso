@@ -18,6 +18,7 @@ sayso-store.workspace = true
 sayso-enhance.workspace = true
 sayso-transcribe.workspace = true
 sayso-ui.workspace = true
+sayso-update.workspace = true
 gpui-kit.workspace = true
 anyhow.workspace = true
 log.workspace = true

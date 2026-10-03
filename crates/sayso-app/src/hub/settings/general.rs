@@ -1,5 +1,5 @@
-//! Settings › General: your name, launch at login, the Dock icon, config
-//! problems, About.
+//! Settings › General: your name, launch at login, the Dock icon, updates,
+//! config problems, About.
 
 use super::kit::{self, group, row};
 use crate::model::AppModel;
@@ -36,6 +36,118 @@ impl GeneralSettings {
             }
         });
         Self { model, login_error: None, name, _name_sub: sub }
+    }
+}
+
+impl GeneralSettings {
+    /// The Updates group: the status row and the two switches.
+    fn updates(&self, cx: &mut Context<Self>) -> Div {
+        use crate::update_ui::{Action, Tone};
+        let c = cx.paper().colors;
+        let m = self.model.read(cx);
+        if !m.updates_enabled() {
+            return group("Updates", cx).child(row(
+                "This build does not update itself",
+                &format!("Version {}, built from source.", sayso_update::VERSION),
+                div(),
+                cx,
+            ));
+        }
+        let v = crate::update_ui::view(&m.update);
+        let (check, automatic) = (m.config.updates.check, m.config.updates.automatic);
+        let checking = m.update == sayso_update::Status::Checking;
+        let can_restart = m.can_restart_to_update();
+        let dot = match v.tone {
+            Tone::Accent => Some(c.accent),
+            Tone::Danger => Some(c.danger),
+            Tone::Plain => None,
+        };
+        let mut control = div().flex().flex_none().items_center().gap(px(12.));
+        if let Some(progress) = v.progress {
+            control = control.child(div().w(px(180.)).child(Progress::new(progress)));
+        }
+        if checking {
+            control = control.child(Button::new("update-action", "Checking…").small().disabled(true));
+        }
+        if let Some((label, action)) = v.action {
+            let model = self.model.clone();
+            let button = Button::new("update-action", label).small().on_click(move |_, _, cx| crate::update_ui::perform(action, &model, cx));
+            control = control.child(match action {
+                Action::Install => button.primary(),
+                Action::Restart => button.primary().disabled(!can_restart),
+                Action::Cancel => button.ghost(),
+                _ => button,
+            });
+        }
+        let detail = if v.action.is_some_and(|(_, a)| a == Action::Restart) && !can_restart {
+            "Finish the dictation first. Then Sayso closes and opens again.".to_string()
+        } else {
+            v.detail
+        };
+        let status_row = div()
+            .flex()
+            .items_center()
+            .w_full()
+            .gap(px(24.))
+            .py(px(14.))
+            .border_b_1()
+            .border_color(c.rule)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .flex_1()
+                    .min_w_0()
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .when_some(dot, |d, color| d.child(kit::halo_dot(8., color, 3., 0.16)))
+                            .child(text::ui(v.title, 15., FontWeight::SEMIBOLD, c.ink).line_height(px(18.))),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(6.))
+                            .child(text::ui(detail, 13., FontWeight::NORMAL, c.graphite).line_height(px(16.)))
+                            .when_some(v.notes_url, |d, url| {
+                                d.child(
+                                    div()
+                                        .id("update-notes")
+                                        .cursor_pointer()
+                                        .on_click(move |_, _, _| crate::shell::open(&url))
+                                        .child(text::ui("See what is new", 13., FontWeight::SEMIBOLD, c.accent).line_height(px(16.))),
+                                )
+                            }),
+                    ),
+            )
+            .child(control);
+        let model = self.model.clone();
+        let check_switch = Switch::new("update-check-switch", check)
+            .on_toggle(move |on, _, cx| model.update(cx, |m, cx| m.edit_config(cx, |c| c.updates.check = on)));
+        let model = self.model.clone();
+        let automatic_switch = Switch::new("update-automatic-switch", automatic)
+            .on_toggle(move |on, _, cx| model.update(cx, |m, cx| m.edit_config(cx, |c| c.updates.automatic = on)));
+        group("Updates", cx)
+            .child(status_row)
+            .child(row(
+                "Check for updates",
+                "When Sayso starts, and one time each day. The check sends no data about you.",
+                check_switch,
+                cx,
+            ))
+            // Only macOS installs an update by itself now.
+            .when(cfg!(target_os = "macos"), |g| {
+                g.child(row(
+                    "Install updates automatically",
+                    "Sayso downloads each new version and installs it the next time Sayso starts.",
+                    automatic_switch,
+                    cx,
+                ))
+            })
     }
 }
 
@@ -154,6 +266,8 @@ impl Render for GeneralSettings {
             );
         }
 
+        body = body.child(self.updates(cx));
+
         let about = group("About", cx)
             .child(row(
                 "Sayso",
@@ -178,7 +292,7 @@ impl Render for GeneralSettings {
         kit::page(
             "general-page",
             "General",
-            crate::shell::os_text!("Your name, startup, the Dock icon, and the config file.", "Your name, startup, and the config file."),
+            crate::shell::os_text!("Your name, startup, the Dock icon, updates, and the config file.", "Your name, startup, updates, and the config file."),
             body,
             cx,
         )

@@ -1,13 +1,14 @@
 # How to release Sayso
 
-A release is a GitHub release with a tag `vX.Y.Z`. When you publish it, the Release workflow builds the app, signs it, notarizes it, and attaches the files to the release.
+A release is a GitHub release with a tag `vX.Y.Z`. You publish it as a prerelease. The Release workflow then builds the app, signs it, notarizes it, attaches the files, signs the update manifest (`latest.json`), and makes the release the latest release. From that last step on, each installed Sayso sees the new version. [updates.md](updates.md) has the design of the updater.
 
 ## Set up signing (one time)
 
-The workflow needs five repository secrets.
+The workflow needs six repository secrets.
 
 | Secret | Contents |
 |---|---|
+| `SAYSO_UPDATE_SIGNING_KEY` | The private key that signs the update manifest: 32 bytes in base64 |
 | `MACOS_CERTIFICATE_P12` | The Developer ID Application certificate with its private key, as a base64 `.p12` file |
 | `MACOS_CERTIFICATE_PASSWORD` | The password of the `.p12` file |
 | `APPLE_API_KEY_P8` | The text of an App Store Connect API key (`AuthKey_<key id>.p8`) |
@@ -40,6 +41,29 @@ The script asks for the `.p12` password and stores the five secrets with `gh sec
 
 If the certificate is not `Developer ID Application: Watzon Ventures LLc (MB5789APU7)`, also set the repository variable `SAYSO_SIGN_IDENTITY` to its name.
 
+### The update signing key
+
+The key pair exists. The private key is the secret `SAYSO_UPDATE_SIGNING_KEY` and the 1Password item "Sayso update signing key (Ed25519, key id 2026-10)". The public key is in `crates/sayso-update/src/keys.rs`, and its id is `SAYSO_UPDATE_KEY_ID` in `.github/workflows/release.yml`.
+
+To set the secret again from 1Password:
+
+```sh
+op read "op://Personal/<item id>/private key" | gh secret set SAYSO_UPDATE_SIGNING_KEY
+```
+
+Make sure that `op read` printed the key before you trust the secret. `gh secret set` also accepts empty input.
+
+**Change the key.** Do this when you want a new key and the old key is still safe.
+
+1. Make a key pair: `cargo run -p sayso-update --example update_tool -- keygen <new id>`. The entry for `keys.rs` goes to stdout, and the private key goes to stderr.
+2. Add the entry to `keys.rs`. Keep the old entry.
+3. Ship releases that still sign with the old key. Each app that updates in this period learns the new key.
+4. Set the secret to the new key and `SAYSO_UPDATE_KEY_ID` to the new id. An app that never updated in the period shows "A newer Sayso is available" with a link to the download page.
+
+**The key is lost.** Do the steps above, without the period: the next release signs with the new key. All apps with only the old key show the link to the download page. Tell users on the website.
+
+**The key is stolen.** Do the same, and also remove the old entry from `keys.rs` in that release. An app that still trusts the old key accepts a manifest from the thief, but only for files on the Releases page of this repository. Tell users on the website and in the release notes to install the new version by hand at once.
+
 ### Windows signing (optional)
 
 The Windows job signs the installer and the two exes when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
@@ -65,38 +89,49 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
    scripts/check-deps.sh
    ```
 
-3. Publish the release. The tag must be `v` plus the version in `Cargo.toml`, or the workflow stops.
+3. Publish the release as a prerelease. The tag must be `v` plus the version in `Cargo.toml`, or the workflow stops. `--notes-start-tag` names the release before this one, because GitHub does not use a prerelease as the start of the notes by itself.
 
    ```sh
-   gh release create v0.1.0 --target main --title "Sayso 0.1.0" --generate-notes
+   gh release create v0.3.0 --target main --title "Sayso 0.3.0" --prerelease --generate-notes --notes-start-tag v0.2.0
    ```
 
-4. Wait for the workflow. It takes about 20 minutes without a build cache.
+4. Wait for the workflow. It takes about 25 minutes without a build cache. The last job, **Update manifest**, removes the prerelease mark.
 
    ```sh
    gh run watch
    ```
 
-5. Open the release and make sure that it has these four files:
+5. Open the release and make sure that it is the latest release and has these files:
    - `Sayso-<version>-macos-arm64.dmg`
-   - `Sayso-<version>-macos-arm64.dmg.sha256`
    - `Sayso-<version>-windows-x64-setup.exe`
-   - `Sayso-<version>-windows-x64-setup.exe.sha256`
+   - `sayso-<version>-linux-x86_64.tar.gz`
+   - `sayso-<version>-linux-aarch64.tar.gz`
+   - a `.sha256` file for each of the four
+   - `latest.json`
 
-If the workflow fails, correct the cause and run it again for the same tag. It replaces files that are already attached.
+If a job fails, the release stays a prerelease, and no installed Sayso sees it. Correct the cause and run the workflow again for the same tag. It replaces files that are already attached.
 
 ```sh
-gh workflow run release.yml -f tag=v0.1.0
+gh workflow run release.yml -f tag=v0.3.0
 ```
+
+If only the last step of **Update manifest** fails, run that job again.
+
+The workflow does not change a release that users already get: each job stops when the release is not a prerelease. To correct such a release, make a new version.
 
 ## Build the release files on your Mac
 
-`scripts/release.sh` does the same steps as the workflow and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`).
+`scripts/release.sh` does the same steps as the macOS job and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`).
 
 ```sh
 scripts/release.sh --skip-notarize   # bundle and DMG only. Nothing goes to Apple.
-scripts/release.sh                   # also notarize and staple
+scripts/release.sh                   # also notarize and staple the app and the DMG
+scripts/release.sh --debug           # a debug app, for a test of the updater
 ```
+
+The script notarizes two times: the app, then the DMG. The updater copies the app out of the DMG and asks macOS to check it, and an app with its own stapled ticket passes without a network.
+
+A build on your Mac is not an official build, so it does not look for updates. Set `SAYSO_OFFICIAL_BUILD=1` for the build to turn the updater on.
 
 For notarization, the script uses the keychain profile `notarytool-password`, the same profile that the Pindrop release uses. Set `SAYSO_NOTARY_PROFILE` to use another profile.
 
@@ -110,9 +145,10 @@ powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
 
 ## Add a platform
 
-The Release workflow has one job for each platform: `macos` and `windows`. To add Linux, add a job next to them that builds the files for that platform and runs `gh release upload "$TAG" <files> --clobber`. Name the files `Sayso-<version>-<os>-<arch>.<ext>`.
+The Release workflow has one job for each platform, and the `manifest` job that needs all of them. For a new platform, add a job that builds the files, runs `gh release upload "$TAG" <files> --clobber`, and keeps the files with `actions/upload-artifact` under a name that starts with `release-`. Name the files `Sayso-<version>-<os>-<arch>.<ext>`. Then add the job to `needs` of the `manifest` job and the file to its list of files.
 
 ## Limits
 
-- Sayso has no automatic update. A user downloads each new version from the Releases page.
+- Only macOS installs an update by itself. On Windows and Linux, Sayso shows the new version and opens the download page.
+- Versions 0.2.0 and older have no updater. Their users get each new version from the download page.
 - The workflow does not run the tests. Step 2 above is the only test run before a release.

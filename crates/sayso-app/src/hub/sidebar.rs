@@ -87,6 +87,7 @@ fn main_footer(model: &Entity<AppModel>, cx: &App) -> impl IntoElement {
         ThemeMode::Light => 1,
         ThemeMode::Dark => 2,
     };
+    let update = crate::update_ui::sidebar_slip(model, cx);
     let model = model.clone();
     div()
         .flex()
@@ -109,6 +110,7 @@ fn main_footer(model: &Entity<AppModel>, cx: &App) -> impl IntoElement {
                         .child(text::ui(detail, 12., FontWeight::NORMAL, c.graphite)),
                 ),
         )
+        .children(update)
         .child(
             Segmented::new("theme", ["Auto", "Light", "Dark"], selected)
                 .with_icons([Icon::Display, Icon::Sun, Icon::Moon])

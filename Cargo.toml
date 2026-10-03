@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "GPL-3.0-only"
 publish = false
@@ -20,6 +20,7 @@ sayso-store = { path = "crates/sayso-store" }
 sayso-enhance = { path = "crates/sayso-enhance" }
 sayso-transcribe = { path = "crates/sayso-transcribe" }
 sayso-ui = { path = "crates/sayso-ui" }
+sayso-update = { path = "crates/sayso-update" }
 
 # UI. Exact pins: gpui-pre snapshots break the API between versions.
 gpui-kit = "=0.7.0"
