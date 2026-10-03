@@ -1,6 +1,6 @@
 //! Hardware smoke test for the Windows platform layer.
 //!
-//! Run: `cargo run -p sayso-platform-windows --example smoke`
+//! Run: `cargo run -p sayso-platform-windows --example smoke_windows`
 //!
 //! It reads state, registers and releases the hotkeys, records 2 s from the
 //! default microphone, and plays each sound once. It never changes system

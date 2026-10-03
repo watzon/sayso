@@ -29,7 +29,7 @@ dependency sits under `[target.'cfg(windows)'.dependencies]`).
 
 The app-shell window glue (`window`) is not part of this crate yet.
 
-`examples/smoke.rs` prints the state of every service, probes a few chords,
+`examples/smoke_windows.rs` prints the state of every service, probes a few chords,
 records from each input device, and plays the sounds.
 
 ## Verified on hardware (this PC, Windows 11 Pro 26200, terminal host)
