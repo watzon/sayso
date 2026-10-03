@@ -85,7 +85,7 @@ impl Render for GeneralSettings {
         let dock_switch = Switch::new("dock-icon", dock).on_toggle(move |on, _, cx| {
             model.update(cx, |m, cx| m.edit_config(cx, |c| c.general.dock_icon_with_hub = on));
             // The Hub is open now, so apply the change at once.
-            sayso_platform_macos::window::set_dock_icon_visible(on);
+            crate::os::window::set_dock_icon_visible(on);
         });
 
         let name_field = div()

@@ -7112,6 +7112,7 @@ dependencies = [
  "sayso-enhance",
  "sayso-platform",
  "sayso-platform-macos",
+ "sayso-platform-windows",
  "sayso-store",
  "sayso-transcribe",
  "sayso-ui",
@@ -7197,6 +7198,17 @@ dependencies = [
  "sayso-platform",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "sayso-platform-windows"
+version = "0.2.0"
+dependencies = [
+ "crossbeam-channel",
+ "log",
+ "sayso-core",
+ "sayso-platform",
+ "windows 0.62.2",
 ]
 
 [[package]]

@@ -395,6 +395,7 @@ impl Render for OnboardingView {
             .flex()
             .flex_col()
             .p(px(10.))
+            .pt(px(crate::caption::top_margin(10.)))
             .bg(c.ground)
             .font_family(sayso_ui::fonts::UI)
             .text_color(c.ink)
@@ -430,5 +431,6 @@ impl Render for OnboardingView {
                     )
                     .child(footer),
             )
+            .children(crate::caption::caption_bar(false, cx))
     }
 }

@@ -15,7 +15,7 @@ use crate::popover::ns_window;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use sayso_platform_macos::window as mac;
+use crate::os::window as mac;
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
 use sayso_ui::paper::PaperStyled;

@@ -7,7 +7,7 @@ use gpui_kit::*;
 use sayso_core::config::{Config, ThemeMode};
 use sayso_core::ink::Appearance;
 use sayso_core::paths::{Paths, SystemEnv};
-use sayso_platform_macos::window as mac;
+use crate::os::window as mac;
 use sayso_ui::PaperTheme;
 use std::sync::Arc;
 
@@ -21,6 +21,14 @@ pub struct Windows {
 impl Global for Windows {}
 
 pub fn run() {
+    // A later launch on Windows asks the running Sayso to open its Hub, then exits.
+    let (second_tx, second_rx) = std::sync::mpsc::channel::<()>();
+    let second_tx = std::sync::Mutex::new(second_tx);
+    if !crate::os::claim_single_instance(move || {
+        let _ = second_tx.lock().map(|tx| tx.send(()));
+    }) {
+        return;
+    }
     let paths = Paths::resolve(&SystemEnv);
     if let Err(e) = paths.create_all() {
         eprintln!("sayso: could not create {}: {e}", paths.data_dir.display());
@@ -54,6 +62,18 @@ pub fn run() {
         cx.subscribe(&model, |model, event, cx| match event {
             AppEvent::OpenHub(route) => open_hub(&model, *route, cx),
             AppEvent::ThemeChanged => {}
+        })
+        .detach();
+
+        // Later launches open the Hub.
+        let m = model.clone();
+        cx.spawn(async move |cx| {
+            loop {
+                cx.background_executor().timer(std::time::Duration::from_millis(250)).await;
+                if second_rx.try_recv().is_ok() {
+                    cx.update(|cx| open_hub(&m, Route::Home, cx));
+                }
+            }
         })
         .detach();
 
@@ -100,7 +120,7 @@ fn start_services(paths: &Paths, config: &Config) -> Services {
             let _ = std::fs::write(sounds_dir.join(format!("{name}.wav")), bytes);
         }
     }
-    let platform = sayso_platform_macos::MacPlatform::new(sounds_dir);
+    let platform = crate::os::NativePlatform::new(sounds_dir);
 
     let engine_path = config
         .advanced

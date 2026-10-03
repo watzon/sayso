@@ -1,14 +1,15 @@
 //! The menu bar icon and its themed popover (Paper page "Menu bar").
 //!
-//! The status item has no NSMenu. A click shows our own panel under the icon;
-//! a click outside it, a second icon click, or Esc closes it.
+//! The status item has no NSMenu. A click shows our own panel under the icon
+//! (or above it, for a taskbar icon at the bottom of the screen); a click
+//! outside it, a second icon click, or Esc closes it.
 
 use crate::hub::Route;
 use crate::model::AppModel;
 use gpui_kit::*;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use sayso_core::dictation::State;
-use sayso_platform_macos::window as mac;
+use crate::os::window as mac;
 use sayso_ui::ActivePaper;
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
@@ -33,10 +34,12 @@ const WINDOW_W: f32 = WIDTH + SUBMENU_GAP + SUBMENU_W + SUBMENU_SHADOW;
 const SUBMENU_SHADOW: f32 = 16.;
 const WINDOW_H: f32 = 760.;
 
-/// The NSView of a GPUI window, as the pointer the mac helpers take.
+/// The native handle of a GPUI window, as the pointer the window helpers
+/// take: the NSView on macOS, the HWND on Windows.
 pub fn ns_window(window: &Window) -> Option<*mut c_void> {
     match HasWindowHandle::window_handle(window).ok()?.as_raw() {
         RawWindowHandle::AppKit(h) => Some(h.ns_view.as_ptr()),
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get() as *mut c_void),
         _ => None,
     }
 }
@@ -49,15 +52,17 @@ struct Tray {
 }
 
 /// Where the popover window goes for a menu bar icon at `icon`, and the side
-/// of the sheet that has room for a submenu. The sheet sits under the icon.
+/// of the sheet that has room for a submenu. The sheet sits under the icon,
+/// or above it when `above` (a taskbar at the bottom of the screen).
 /// Submenus open to the right, or to the left when the screen ends too soon.
-fn placement(icon: mac::Rect, screen_right: f64) -> (f64, f64, SubmenuSide) {
+fn placement(icon: mac::Rect, screen_right: f64, above: bool) -> (f64, f64, SubmenuSide) {
     let sheet_x = (icon.x + icon.width / 2.0 - WIDTH as f64 / 2.0).min(screen_right - WIDTH as f64 - 8.0);
     let side_room = (SUBMENU_GAP + SUBMENU_W) as f64;
     // With submenus at the left, the sheet is at the right end of the window.
     let window_past_sheet = (WINDOW_W - WIDTH) as f64;
-    // Cocoa coordinates: the window's top edge meets the icon's bottom edge.
-    let y = icon.y - WINDOW_H as f64 - 4.0;
+    // Cocoa coordinates: the window's top edge meets the icon's bottom edge,
+    // or its bottom edge meets the icon's top edge.
+    let y = if above { icon.y + icon.height + 4.0 } else { icon.y - WINDOW_H as f64 - 4.0 };
     if sheet_x + WIDTH as f64 + side_room + 8.0 <= screen_right {
         (sheet_x, y, SubmenuSide::Right)
     } else {
@@ -79,7 +84,16 @@ thread_local! {
 
 fn tray_icon_image() -> Option<tray_icon::Icon> {
     let bytes = sayso_ui::assets::bytes("app/tray.png")?;
-    let img = image::load_from_memory(&bytes).ok()?.into_rgba8();
+    #[allow(unused_mut)]
+    let mut img = image::load_from_memory(&bytes).ok()?.into_rgba8();
+    // The icon is a black template. macOS tints it; on a dark Windows
+    // taskbar it must be white to show.
+    #[cfg(windows)]
+    if mac::taskbar_is_dark() {
+        for p in img.pixels_mut() {
+            p.0[..3].copy_from_slice(&[255, 255, 255]);
+        }
+    }
     let (w, h) = img.dimensions();
     tray_icon::Icon::from_rgba(img.into_raw(), w, h).ok()
 }
@@ -87,7 +101,14 @@ fn tray_icon_image() -> Option<tray_icon::Icon> {
 pub fn install(model: &Entity<AppModel>, cx: &mut App) {
     let mut builder = tray_icon::TrayIconBuilder::new().with_tooltip("Sayso");
     if let Some(icon) = tray_icon_image() {
-        builder = builder.with_icon_templated(icon);
+        #[cfg(target_os = "macos")]
+        {
+            builder = builder.with_icon_templated(icon);
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            builder = builder.with_icon(icon);
+        }
     } else {
         builder = builder.with_title("Sayso");
     }
@@ -125,11 +146,22 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
     .detach();
 }
 
+#[cfg(target_os = "macos")]
 fn icon_rect() -> Option<mac::Rect> {
     TRAY.with(|t| {
         let t = t.borrow();
         let item = t.as_ref()?.icon.ns_status_item()?;
         mac::status_item_screen_rect(objc2::rc::Retained::as_ptr(&item) as *mut c_void)
+    })
+}
+
+/// The icon in the notification area. tray-icon gives physical pixels with
+/// the origin at the top left.
+#[cfg(not(target_os = "macos"))]
+fn icon_rect() -> Option<mac::Rect> {
+    TRAY.with(|t| {
+        let r = t.borrow().as_ref()?.icon.rect()?;
+        Some(mac::rect_from_physical(r.position.x, r.position.y, f64::from(r.size.width), f64::from(r.size.height)))
     })
 }
 
@@ -222,13 +254,16 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
     };
     let rect = icon_rect();
     let origin = rect.map(|r| {
-        let screen_right = mac::screens()
-            .iter()
-            .find(|s| r.x >= s.frame.x && r.x <= s.frame.x + s.frame.width)
-            .map(|s| s.visible_frame.x + s.visible_frame.width)
-            .unwrap_or(f64::MAX);
-        let (x, y, side) = placement(r, screen_right);
+        let screens = mac::screens();
+        let screen = screens.iter().find(|s| {
+            r.x >= s.frame.x && r.x <= s.frame.x + s.frame.width && r.y >= s.frame.y && r.y <= s.frame.y + s.frame.height
+        });
+        let screen_right = screen.map(|s| s.visible_frame.x + s.visible_frame.width).unwrap_or(f64::MAX);
+        // An icon in the lower half of its screen sits in a taskbar at the bottom.
+        let above = screen.is_some_and(|s| r.y + r.height / 2.0 < s.frame.y + s.frame.height / 2.0);
+        let (x, y, side) = placement(r, screen_right, above);
         SUBMENU_SIDE.with(|s| s.set(side));
+        OPENS_ABOVE.with(|a| a.set(above));
         (x, y)
     });
     if let Ok(Some(ns)) = handle.update(cx, |_, window, _| ns_window(window)) {
@@ -260,6 +295,8 @@ thread_local! {
     static LAST_FOCUS_CLOSE: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
     /// The side of the sheet where submenus open. `show` sets it for each open.
     static SUBMENU_SIDE: std::cell::Cell<SubmenuSide> = const { std::cell::Cell::new(SubmenuSide::Right) };
+    /// The sheet opens above the icon, so it sits at the bottom of the window.
+    static OPENS_ABOVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -696,7 +733,7 @@ impl Render for PopoverView {
         div()
             .size_full()
             .flex()
-            .items_start()
+            .map(|d| if OPENS_ABOVE.with(|a| a.get()) { d.items_end() } else { d.items_start() })
             .when(side == SubmenuSide::Left, |d| d.justify_end())
             .on_mouse_down(MouseButton::Left, |_, _, cx| hide(cx))
             .child(sheet)
@@ -716,7 +753,7 @@ mod tests {
 
     #[test]
     fn submenus_open_to_the_right_when_the_screen_has_room() {
-        let (x, y, side) = placement(icon_at(800.0), 1728.0);
+        let (x, y, side) = placement(icon_at(800.0), 1728.0, false);
         assert_eq!(side, SubmenuSide::Right);
         // The sheet is centered under the icon, at the left of the window.
         assert_eq!(x, 800.0 + 12.0 - WIDTH as f64 / 2.0);
@@ -724,9 +761,18 @@ mod tests {
     }
 
     #[test]
+    fn a_taskbar_icon_at_the_bottom_opens_the_sheet_above_it() {
+        let (x, y, side) = placement(icon_at(800.0), 1728.0, true);
+        assert_eq!(side, SubmenuSide::Right);
+        assert_eq!(x, 800.0 + 12.0 - WIDTH as f64 / 2.0);
+        // Cocoa y: the window's bottom edge is 4 points above the icon's top edge.
+        assert_eq!(y, 1000.0 + 24.0 + 4.0);
+    }
+
+    #[test]
     fn submenus_open_to_the_left_near_the_right_edge_of_the_screen() {
         let screen_right = 1728.0;
-        let (x, _, side) = placement(icon_at(1300.0), screen_right);
+        let (x, _, side) = placement(icon_at(1300.0), screen_right, false);
         assert_eq!(side, SubmenuSide::Left);
         // The sheet is at the right of the window, and it stays under the icon.
         let sheet_x = x + (WINDOW_W - WIDTH) as f64;
@@ -737,7 +783,7 @@ mod tests {
     #[test]
     fn the_sheet_stays_on_the_screen_under_an_icon_at_the_edge() {
         let screen_right = 1728.0;
-        let (x, _, side) = placement(icon_at(1700.0), screen_right);
+        let (x, _, side) = placement(icon_at(1700.0), screen_right, false);
         assert_eq!(side, SubmenuSide::Left);
         let sheet_x = x + (WINDOW_W - WIDTH) as f64;
         assert_eq!(sheet_x + WIDTH as f64, screen_right - 8.0);

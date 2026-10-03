@@ -83,7 +83,7 @@ impl Render for HubView {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .pt(px(10.))
+                    .pt(px(crate::caption::top_margin(10.)))
                     .pr(px(10.))
                     .pb(px(10.))
                     .child(
@@ -120,5 +120,6 @@ impl Render for HubView {
                             .child(div().relative().size_full().child(page)),
                     ),
             )
+            .children(crate::caption::caption_bar(true, cx))
     }
 }

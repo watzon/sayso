@@ -122,11 +122,11 @@ impl OverlayView {
     fn track(&mut self, window: &mut Window, check_fullscreen: bool, cx: &mut Context<Self>) -> bool {
         let Some(ns) = crate::popover::ns_window(window) else { return false };
         if !self.configured {
-            sayso_platform_macos::window::configure_overlay(ns);
-            sayso_platform_macos::window::make_never_key(ns);
+            crate::os::window::configure_overlay(ns);
+            crate::os::window::make_never_key(ns);
             self.configured = true;
         }
-        let mouse = sayso_platform_macos::window::mouse_location();
+        let mouse = crate::os::window::mouse_location();
         let frame = window.bounds();
         // Window bounds are top-left based in GPUI; the mouse is Cocoa (bottom-left).
         let screen_h = placement::main_screen_height();
@@ -142,9 +142,9 @@ impl OverlayView {
             if moved {
                 let origin = start_origin + delta;
                 let (x, y) = (origin.x.as_f32() as f64, (screen_h - origin.y.as_f32() - HEIGHT) as f64);
-                crate::app::appkit_later(cx, move || sayso_platform_macos::window::set_frame_origin(ns, x, y));
+                crate::app::appkit_later(cx, move || crate::os::window::set_frame_origin(ns, x, y));
             }
-            if !sayso_platform_macos::window::mouse_button_down() {
+            if !crate::os::window::mouse_button_down() {
                 self.end_drag(window, cx);
             }
             return true;
@@ -154,27 +154,27 @@ impl OverlayView {
             self.hovered = inside;
             cx.notify();
         }
-        sayso_platform_macos::window::set_ignores_mouse(ns, !inside);
+        crate::os::window::set_ignores_mouse(ns, !inside);
 
         if check_fullscreen {
             let m = self.model.read(cx);
             let idle = matches!(m.state(), State::Idle) && m.blocked_notice.is_none();
             let hide = idle
                 && (!m.config.overlay.idle_pill
-                    || (m.config.overlay.hide_in_fullscreen && sayso_platform_macos::window::frontmost_app_is_fullscreen()));
+                    || (m.config.overlay.hide_in_fullscreen && crate::os::window::frontmost_app_is_fullscreen()));
             if hide != self.hidden {
                 self.hidden = hide;
                 if hide {
-                    crate::app::appkit_later(cx, move || sayso_platform_macos::window::order_out(ns));
+                    crate::app::appkit_later(cx, move || crate::os::window::order_out(ns));
                 } else {
-                    crate::app::appkit_later(cx, move || sayso_platform_macos::window::order_front_without_activating(ns));
+                    crate::app::appkit_later(cx, move || crate::os::window::order_front_without_activating(ns));
                 }
             }
         } else if self.hidden {
             let m = self.model.read(cx);
             if !matches!(m.state(), State::Idle) || m.blocked_notice.is_some() {
                 self.hidden = false;
-                crate::app::appkit_later(cx, move || sayso_platform_macos::window::order_front_without_activating(ns));
+                crate::app::appkit_later(cx, move || crate::os::window::order_front_without_activating(ns));
             }
         }
         self.hovered || !matches!(self.model.read(cx).state(), State::Idle)
@@ -187,7 +187,7 @@ impl OverlayView {
         if !is_pill(self.model.read(cx).state()) {
             return;
         }
-        let mouse = sayso_platform_macos::window::mouse_location();
+        let mouse = crate::os::window::mouse_location();
         let screen_h = placement::main_screen_height();
         self.drag = Some((point(px(mouse.x as f32), px(screen_h - mouse.y as f32)), window.bounds().origin, false));
     }
@@ -200,7 +200,7 @@ impl OverlayView {
             let snapped = self.placement.snap_and_save(window.bounds(), cx);
             let screen_h = placement::main_screen_height();
             let (x, y) = (snapped.x.as_f32() as f64, (screen_h - snapped.y.as_f32() - HEIGHT) as f64);
-            crate::app::appkit_later(cx, move || sayso_platform_macos::window::set_frame_origin(ns, x, y));
+            crate::app::appkit_later(cx, move || crate::os::window::set_frame_origin(ns, x, y));
         } else {
             self.click(cx);
         }

@@ -52,7 +52,9 @@ pub fn route() -> Option<Route> {
 /// started from a terminal the terminal's permissions, and it does not show
 /// the microphone prompt for a binary without a usage description.
 pub fn running_from_bundle() -> bool {
-    std::env::current_exe().is_ok_and(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
+    // Only macOS ties permissions to an app bundle.
+    !cfg!(target_os = "macos")
+        || std::env::current_exe().is_ok_and(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
 }
 
 /// Shown on the permission screens when Sayso does not run from a bundle.
