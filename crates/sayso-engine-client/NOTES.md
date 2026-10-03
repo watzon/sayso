@@ -22,6 +22,7 @@ Every request with an `id` gets exactly one **reply**: `hello`, `ok`, `final`, o
 | `download` | `model, engine, size_bytes?` | `model_state downloading` and `download_progress {fraction, bytes_done, bytes_total}` (at most 8 per second), `model_state downloaded`, `ok` |
 | `delete` | `model, engine?` | `model_state not_downloaded`, `ok` |
 | `load` | `model, engine` | `model_state optimizing`, `model_state ready {load_ms}`, `ok` |
+| `unload` | `model, keep_preview?` | `model_state downloaded` (with `preview: true` when the live preview stayed) when the model was in memory, then `ok` |
 | `stream_start` | `session, model, language?` | `ok`, then `partial {session, committed, tentative}` events |
 | `stream_audio` | `session, pcm` (base64 of 16 kHz mono little-endian i16), no `id` | none (errors have no `id`) |
 | `stream_end` | `session` | last `partial` if the text changed, `ok {text}` |
@@ -34,6 +35,14 @@ Other events: `log {level, message}`. Errors: `error {message}` with the request
 Engine kinds (`engine.kind`, with their fields): `parakeet_unified {streaming_tier}`, `parakeet_eou`, `parakeet_tdt {version}` (`v2`, `v3`, `ultra`, `redux`, `phonon2`, `tdt_ctc_110m`, `ja`), `nemotron {chunk_ms}`, `nemotron_multilingual {chunk_ms}`, `cohere`, `canary`, `sense_voice`, `paraformer`, `whisper {variant}`, `apple_speech`. The kind `remote` (a cloud model) never reaches the sidecar: `sayso-app` sends that audio with `sayso-transcribe`.
 
 `language` is a code such as `en`, or `auto`. The client sends each model the nearest value the model supports (`ModelInfo::language_for`).
+
+`unload` takes a model out of memory and keeps its files. The three engines run it in arrival order (not on a thread or task of its own), so a `load` of the same model that follows starts a new load. The Swift engine and the portable engine end the live preview sessions of the model. In the Linux engine a stream or a final pass that runs keeps its part of the model until it ends. A model with a download, a load, or a delete in progress is `busy`. The Linux engine then calls `malloc_trim` (glibc), so the freed memory goes back to the system. The request is an addition to protocol v1: an engine without it answers `error`, which the client only logs.
+
+`keep_preview: true` is for a model that does the final pass and the live preview. The Linux engine holds such a model (for example `parakeet-tdt-v2`) as two parts. It then drops only the final pass and reports `model_state downloaded` with `preview: true`, also in `list_models`. In that state `stream_start` works, `transcribe` answers `model ... is not loaded`, and `load` loads only the final pass. A model with only a final pass leaves whole, and a model with only a live preview stays as it is. The Swift engine and the portable engine ignore the field and unload the whole model: the portable engine has one model for both passes. The Swift engine has two parts for Parakeet Unified (the batch manager and the streaming manager), but it does not split them yet.
+
+The client keeps the `preview: true` models in a set behind `SttBackend::preview_ready`. Any other `model_state` of the model, and an engine crash, clear the entry. The status stays `Downloaded`.
+
+The engines never unload a model by themselves. `sayso-app` does it (`crates/sayso-app/src/memory.rs`): it keeps the active model and the live-preview model in memory, unloads every other model, and unloads the active model after the idle time of `dictation.keep_model_minutes`. When the active model also gives the live preview, that unload has `keep_preview: true`.
 
 Notes for the sidecar side:
 
@@ -55,14 +64,14 @@ Notes for the sidecar side:
 ## Client behavior
 
 - Blocking calls (`load`, `transcribe`, `delete`, `start_stream`) wait on a per-request channel. Defaults: 15 s for quick calls, 600 s for `load` and `transcribe` (`Options`).
-- `download` and `end_stream` return at once. Progress arrives as `EngineEvent::ModelStatus`. The cache behind `status()` updates from `model_state` and `download_progress`.
+- `download`, `unload`, and `end_stream` return at once. Progress arrives as `EngineEvent::ModelStatus`. `unload` changes a `Ready` status to `Downloaded` at once, and the recovery thread does not load that model again. The cache behind `status()` updates from `model_state` and `download_progress`.
 - `push_audio` converts to i16 and queues the frame. A writer thread encodes and writes it. After 500 queued frames it drops new ones (see `dropped_audio_frames()`).
 - Crash: pending calls fail at once. `Crashed` goes out, `Ready` and `Optimizing` models show as `Downloaded`, and the sidecar restarts after 0.5, 1, 2, 4, then 5 s. A recovery thread says hello, refreshes statuses, loads again the models that a caller loaded, then sends `Restarted`. Calls made while the sidecar is down fail at once.
 - Live preview sessions do not survive a crash. The app must start a new session. Final transcription of kept audio still works.
 
 ## Tests
 
-- `cargo test -p sayso-engine-client`: unit tests for the protocol code, and `tests/fake_engine.rs` against `sayso-fake-engine` (`src/bin/fake_engine.rs`). They cover reply matching with out-of-order replies, temp WAV cleanup, broadcast to two subscribers, the status cache from `download_progress`, crash then `Crashed`, restart, model reload and `Restarted`, fast failure of a pending call, fast failure while the sidecar is down, shutdown on drop, and a non-blocking `push_audio`.
+- `cargo test -p sayso-engine-client`: unit tests for the protocol code, and `tests/fake_engine.rs` against `sayso-fake-engine` (`src/bin/fake_engine.rs`). They cover reply matching with out-of-order replies, temp WAV cleanup, broadcast to two subscribers, the status cache from `download_progress`, crash then `Crashed`, restart, model reload and `Restarted`, `unload` (status at once, no reload after a restart), fast failure of a pending call, fast failure while the sidecar is down, shutdown on drop, and a non-blocking `push_audio`.
 - `cargo test -p sayso-engine-client --test real_engine -- --ignored --nocapture`: the real sidecar and the spike models (linked read-only into `target/engine-it-models`). It downloads the CTC helper once (about 100 MB). It lists, loads, transcribes with and without vocabulary, and streams `short.wav` in 160 ms chunks.
 
 - `SAYSO_REAL_MODELS=<ids or all> cargo test -p sayso-engine-client --test real_models -- --ignored --nocapture`: for each model, download into `target/engine-it-models`, load, final pass on `short.wav` and `long30.wav`, and a stream plus a final pass for the streaming models. English models must hear a known word in each clip. The other models must return without an error.

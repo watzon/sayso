@@ -14,10 +14,25 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Loads the fake models. It checks that the folders exist.
 struct FakeLoader {
+    /// Loads of a whole model.
     loads: AtomicUsize,
+    /// Loads of a final pass only.
+    final_loads: AtomicUsize,
 }
 
 impl Loader for FakeLoader {
+    fn load_final_pass(
+        &self,
+        spec: &ModelSpec,
+        _dirs: &ModelDirs,
+    ) -> Result<Option<Arc<dyn FinalPass>>> {
+        self.final_loads.fetch_add(1, Ordering::SeqCst);
+        Ok(spec
+            .recipe
+            .final_pass()
+            .then(|| Arc::new(FakeFinal) as Arc<dyn FinalPass>))
+    }
+
     fn load(&self, spec: &ModelSpec, dirs: &ModelDirs) -> Result<Loaded> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         if !dirs.main.is_dir() {
@@ -166,6 +181,7 @@ fn harness(base_url: &str) -> Harness {
     let out = Arc::new(Output::new(Box::new(captured.clone())));
     let loader = Arc::new(FakeLoader {
         loads: AtomicUsize::new(0),
+        final_loads: AtomicUsize::new(0),
     });
     let config = Config {
         models_dir: dir.path().join("models"),
@@ -414,6 +430,176 @@ fn install(h: &Harness, model: &str, spec: &Value) {
         std::fs::create_dir_all(h.engine.store.archive_dir(model, archive).unwrap()).unwrap();
     }
     h.engine.store.mark_downloaded(model, &spec).unwrap();
+}
+
+#[test]
+fn unload_takes_a_model_out_of_memory_and_keeps_the_files() {
+    let h = harness("http://unused");
+    let whisper = spec_json("whisper", "w", None);
+    let streaming = spec_json("zipformer_streaming", "stream", None);
+    install(&h, "w", &whisper);
+    install(&h, "s", &streaming);
+    let list = json!({"v": 1, "type": "list_models", "id": "l1", "models": [{"id": "w", "engine": whisper}, {"id": "s", "engine": streaming}]});
+    h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "w", "engine": whisper}));
+    h.call(json!({"v": 1, "type": "load", "id": "o2", "model": "s", "engine": streaming}));
+    assert_eq!(states(&h.call(list.clone())), ["ready", "ready"]);
+
+    // Only the named model leaves memory. Its files stay.
+    let reply = h.call(json!({"v": 1, "type": "unload", "id": "u1", "model": "w"}));
+    assert_eq!(
+        reply,
+        [
+            json!({"v": 1, "type": "model_state", "id": "u1", "model": "w", "state": "downloaded"}),
+            json!({"v": 1, "type": "ok", "id": "u1"}),
+        ]
+    );
+    assert_eq!(states(&h.call(list.clone())), ["downloaded", "ready"]);
+    assert!(h.engine.store.archive_dir("w", "w").unwrap().is_dir());
+
+    // A final pass needs a new load.
+    let wav = h.models_dir().join("clip.wav");
+    write_wav(&wav, &[1000; 1600]);
+    let transcribe = json!({"v": 1, "type": "transcribe", "id": "t1", "model": "w", "path": wav, "language": "en"});
+    assert_eq!(
+        h.call(transcribe.clone())[0]["message"],
+        "model w is not loaded"
+    );
+    let reply =
+        h.call(json!({"v": 1, "type": "load", "id": "o3", "model": "w", "engine": whisper}));
+    assert_eq!(states(&reply), ["optimizing", "ready"]);
+    assert_eq!(h.loader.loads.load(Ordering::SeqCst), 3);
+    assert_eq!(h.call(transcribe)[0]["type"], "final");
+
+    // A model that is not in memory: `ok`, and no state change.
+    h.call(json!({"v": 1, "type": "unload", "id": "u2", "model": "w"}));
+    let reply = h.call(json!({"v": 1, "type": "unload", "id": "u3", "model": "w"}));
+    assert_eq!(reply, [json!({"v": 1, "type": "ok", "id": "u3"})]);
+    let reply = h.call(json!({"v": 1, "type": "unload", "id": "u4"}));
+    assert_eq!(reply[0]["message"], "missing string field model");
+}
+
+#[test]
+fn unload_with_keep_preview_drops_only_the_final_pass() {
+    let h = harness("http://unused");
+    // One model with a final pass and a live preview of its own.
+    let both = spec_json("parakeet_tdt", "main", Some("stream"));
+    install(&h, "p", &both);
+    let list =
+        json!({"v": 1, "type": "list_models", "id": "l", "models": [{"id": "p", "engine": both}]});
+    let load = json!({"v": 1, "type": "load", "id": "o", "model": "p", "engine": both});
+    h.call(load.clone());
+    let wav = h.models_dir().join("clip.wav");
+    write_wav(&wav, &[1000; 1600]);
+    let transcribe = json!({"v": 1, "type": "transcribe", "id": "t", "model": "p", "path": wav, "language": "en"});
+
+    let reply =
+        h.call(json!({"v": 1, "type": "unload", "id": "u1", "model": "p", "keep_preview": true}));
+    assert_eq!(
+        reply,
+        [
+            json!({"v": 1, "type": "model_state", "id": "u1", "model": "p", "state": "downloaded", "preview": true}),
+            json!({"v": 1, "type": "ok", "id": "u1"}),
+        ]
+    );
+    let reply = h.call(list.clone());
+    assert_eq!(states(&reply), ["downloaded"]);
+    assert_eq!(reply[0]["preview"], true);
+    // A second request changes nothing.
+    let reply =
+        h.call(json!({"v": 1, "type": "unload", "id": "u2", "model": "p", "keep_preview": true}));
+    assert_eq!(reply, [json!({"v": 1, "type": "ok", "id": "u2"})]);
+
+    // The final pass is out: an error, not a crash.
+    assert_eq!(
+        h.call(transcribe.clone())[0]["message"],
+        "model p is not loaded"
+    );
+    // A stream starts and runs while the final pass is out.
+    let mut worker = StreamWorker::new(Arc::clone(&h.engine));
+    let reply = h.stream(&mut worker, json!({"v": 1, "type": "stream_start", "id": "s", "session": 3, "model": "p", "language": "en"}));
+    assert_eq!(reply, [json!({"v": 1, "type": "ok", "id": "s"})]);
+    let audio = json!({"v": 1, "type": "stream_audio", "session": 3, "pcm": pcm(&[1000; 320])});
+    assert_eq!(h.stream(&mut worker, audio.clone())[0]["tentative"], "w0");
+
+    // The load brings back the final pass only. The stream keeps its text.
+    let reply = h.call(load.clone());
+    assert_eq!(states(&reply), ["optimizing", "ready"]);
+    assert!(reply[1].get("preview").is_none());
+    assert_eq!(
+        h.loader.loads.load(Ordering::SeqCst),
+        1,
+        "the live preview did not load again"
+    );
+    assert_eq!(h.loader.final_loads.load(Ordering::SeqCst), 1);
+    assert_eq!(h.stream(&mut worker, audio)[0]["tentative"], "w0 w1");
+    assert_eq!(states(&h.call(list.clone())), ["ready"]);
+    assert_eq!(h.call(transcribe)[0]["type"], "final");
+    assert_eq!(states(&h.call(load)), ["ready"]);
+
+    // Without `keep_preview` the whole model leaves.
+    let reply = h.call(json!({"v": 1, "type": "unload", "id": "u3", "model": "p"}));
+    assert_eq!(states(&reply), ["downloaded"]);
+    assert!(reply[0].get("preview").is_none());
+    let start = json!({"v": 1, "type": "stream_start", "id": "s2", "session": 4, "model": "p"});
+    assert_eq!(
+        h.stream(&mut worker, start)[0]["message"],
+        "model p is not loaded"
+    );
+
+    // A partial unload, then a full unload.
+    h.call(json!({"v": 1, "type": "load", "id": "o2", "model": "p", "engine": both}));
+    h.call(json!({"v": 1, "type": "unload", "id": "u4", "model": "p", "keep_preview": true}));
+    let reply = h.call(json!({"v": 1, "type": "unload", "id": "u5", "model": "p"}));
+    assert_eq!(states(&reply), ["downloaded"]);
+    let reply = h.call(list);
+    assert!(reply[0].get("preview").is_none());
+}
+
+#[test]
+fn keep_preview_changes_nothing_for_a_model_with_one_part() {
+    let h = harness("http://unused");
+    // A final pass only: a full unload.
+    let whisper = spec_json("whisper", "w", None);
+    install(&h, "w", &whisper);
+    h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "w", "engine": whisper}));
+    let reply =
+        h.call(json!({"v": 1, "type": "unload", "id": "u1", "model": "w", "keep_preview": true}));
+    assert_eq!(states(&reply), ["downloaded"]);
+    assert!(reply[0].get("preview").is_none());
+    // A live preview only: it stays in memory.
+    let streaming = spec_json("zipformer_streaming", "stream", None);
+    install(&h, "s", &streaming);
+    h.call(json!({"v": 1, "type": "load", "id": "o2", "model": "s", "engine": streaming}));
+    let reply =
+        h.call(json!({"v": 1, "type": "unload", "id": "u2", "model": "s", "keep_preview": true}));
+    assert_eq!(reply, [json!({"v": 1, "type": "ok", "id": "u2"})]);
+    let reply = h.call(json!({"v": 1, "type": "list_models", "id": "l", "models": [{"id": "s", "engine": streaming}]}));
+    assert_eq!(states(&reply), ["ready"]);
+}
+
+#[test]
+fn serve_runs_unload_before_the_load_that_follows() {
+    let h = harness("http://unused");
+    let whisper = spec_json("whisper", "w", None);
+    install(&h, "w", &whisper);
+    h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "w", "engine": whisper}));
+    h.captured.clear();
+    let input = [
+        json!({"v": 1, "type": "unload", "id": "u", "model": "w"}).to_string(),
+        json!({"v": 1, "type": "load", "id": "o", "model": "w", "engine": whisper}).to_string(),
+    ]
+    .join("\n");
+    serve(std::io::Cursor::new(input), Arc::clone(&h.engine));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let done = |messages: &[Value]| messages.iter().any(|m| m["id"] == "o" && m["type"] == "ok");
+    while !done(&h.captured.messages()) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let messages = h.captured.messages();
+    assert!(done(&messages), "{messages:?}");
+    // The load ran again. It did not answer from the model that the unload removed.
+    assert_eq!(states(&messages), ["downloaded", "optimizing", "ready"]);
+    assert_eq!(h.loader.loads.load(Ordering::SeqCst), 2);
 }
 
 #[test]

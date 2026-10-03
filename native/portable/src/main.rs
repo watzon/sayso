@@ -85,6 +85,11 @@ fn main() {
             engine.handle(&request);
             std::process::exit(0);
         }
+        if request.kind == "unload" {
+            // In arrival order: a `load` that follows must not find the model.
+            engine.handle(&request);
+            continue;
+        }
         if Engine::is_stream(&request.kind) {
             if stream_tx.send(request).is_err() {
                 break;

@@ -45,12 +45,20 @@ impl Default for SherpaLoader {
 }
 
 impl Loader for SherpaLoader {
-    fn load(&self, spec: &ModelSpec, dirs: &ModelDirs) -> Result<Loaded> {
-        let final_pass: Option<Arc<dyn FinalPass>> = if spec.recipe.final_pass() {
+    fn load_final_pass(
+        &self,
+        spec: &ModelSpec,
+        dirs: &ModelDirs,
+    ) -> Result<Option<Arc<dyn FinalPass>>> {
+        Ok(if spec.recipe.final_pass() {
             Some(Arc::new(Offline::load(spec.recipe, &dirs.main)?))
         } else {
             None
-        };
+        })
+    }
+
+    fn load(&self, spec: &ModelSpec, dirs: &ModelDirs) -> Result<Loaded> {
+        let final_pass = self.load_final_pass(spec, dirs)?;
         let preview: Option<Arc<dyn LivePreview>> = match &dirs.stream {
             Some(dir) => Some(Arc::new(Online::load(dir)?)),
             None => None,

@@ -71,6 +71,8 @@ impl ModelsPage {
         let (dot, label) = match &status {
             ModelStatus::Ready => (c.success, "In use".to_string()),
             ModelStatus::NotDownloaded if remote => (c.danger, "Provider not set up".to_string()),
+            // The idle time unloaded the model. The next dictation loads it.
+            ModelStatus::Downloaded if m.model_idle => (c.success, "In use, not in memory".to_string()),
             ModelStatus::Downloaded => (c.accent, "Loading".to_string()),
             ModelStatus::Optimizing => (c.accent, crate::shell::OPTIMIZING.to_string()),
             ModelStatus::Downloading { fraction, .. } => (c.accent, format!("Downloading {:.0}%", fraction * 100.)),

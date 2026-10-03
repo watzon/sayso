@@ -1,4 +1,4 @@
-//! Settings › Advanced: engine path, log level, folders.
+//! Settings › Advanced: engine path, model memory, log level, folders.
 
 use super::kit::{self, group, row};
 use crate::model::AppModel;
@@ -9,6 +9,8 @@ use sayso_ui::components::*;
 use sayso_ui::paper::PaperStyled;
 
 const LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+/// `dictation.keep_model_minutes`. None is "Always".
+const KEEP_MINUTES: [Option<u32>; 4] = [None, Some(5), Some(15), Some(60)];
 
 pub struct AdvancedSettings {
     model: Entity<AppModel>,
@@ -58,6 +60,20 @@ impl Render for AdvancedSettings {
             m1.update(cx, |m, cx| m.edit_config(cx, |c| c.advanced.log_level = v));
         });
 
+        let keep_index = KEEP_MINUTES.iter().position(|k| *k == m.config.dictation.keep_model_minutes).unwrap_or(0);
+        let m2 = self.model.clone();
+        let keep = Segmented::new("keep-model", ["Always", "5 minutes", "15 minutes", "1 hour"], keep_index).on_select(move |i, _, cx| {
+            m2.update(cx, |m, cx| m.edit_config(cx, |c| c.dictation.keep_model_minutes = KEEP_MINUTES[i]));
+        });
+        let mut keep_desc =
+            "With a time, Sayso unloads the speech model after that time without a dictation. The first dictation after that takes longer to start writing."
+                .to_string();
+        // One model for the final pass and the live preview: the preview waits for the load too.
+        // The Linux engine keeps the live preview of such a model in memory.
+        if !cfg!(target_os = "linux") && m.preview_model().as_ref() == Some(&m.config.dictation.model) {
+            keep_desc.push_str(" The live preview of that dictation also starts later.");
+        }
+
         let field = div()
             .flex()
             .items_center()
@@ -81,6 +97,7 @@ impl Render for AdvancedSettings {
         } else if self.engine_saved {
             engine = engine.child(kit::banner(BannerKind::Info, "Saved. Quit Sayso and open it again to use this engine.", cx));
         }
+        engine = engine.child(kit::row_s("Keep the model in memory".into(), keep_desc, keep, cx));
         engine = engine.child(row("Log level", "How much Sayso writes to its log. Takes effect when Sayso starts again.", levels, cx));
 
         let log_dir = paths.log_dir();

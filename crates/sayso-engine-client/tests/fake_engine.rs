@@ -249,6 +249,85 @@ fn download_progress_fills_the_status_cache() {
 }
 
 #[test]
+fn unload_updates_the_status_and_survives_a_restart() {
+    let f = fixture();
+    let events = f.client.subscribe();
+    let model = default_model();
+    // The fake engine lists a model with this file as downloaded.
+    std::fs::write(f.models.path().join(format!("downloaded-{model}")), "").unwrap();
+    f.client.load(&model).unwrap();
+    assert_eq!(f.client.status(&model), ModelStatus::Ready);
+
+    // The call does not wait for the engine, and the cache changes at once.
+    f.client.unload(&model, false).unwrap();
+    assert_eq!(f.client.status(&model), ModelStatus::Downloaded);
+    wait_for(&events, "downloaded event", |e| {
+        matches!(
+            e,
+            EngineEvent::ModelStatus {
+                status: ModelStatus::Downloaded,
+                ..
+            }
+        )
+        .then_some(())
+    });
+
+    // After a crash, the client does not load the model again.
+    let _ = f.client.transcribe(&[0.0; 160], &options_for("crash-once"));
+    wait_for(&events, "Restarted", |e| {
+        matches!(e, EngineEvent::Restarted).then_some(())
+    });
+    assert_eq!(f.client.status(&model), ModelStatus::Downloaded);
+    let sent = requests(&f.models);
+    assert!(
+        sent.iter().any(|r| r.contains(r#""type":"unload""#)),
+        "{sent:?}"
+    );
+    let loads = sent
+        .iter()
+        .filter(|r| r.contains(r#""type":"load""#))
+        .count();
+    assert_eq!(loads, 1, "an unloaded model stays out of memory");
+}
+
+#[test]
+fn unload_with_keep_preview_leaves_the_preview_ready() {
+    let f = fixture();
+    let model = default_model();
+    f.client.load(&model).unwrap();
+    assert!(
+        !f.client.preview_ready(&model),
+        "a Ready model needs no flag"
+    );
+
+    f.client.unload(&model, true).unwrap();
+    assert_eq!(f.client.status(&model), ModelStatus::Downloaded);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !f.client.preview_ready(&model) {
+        assert!(
+            Instant::now() < deadline,
+            "the engine did not report the preview"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        requests(&f.models)
+            .iter()
+            .any(|r| r.contains(r#""keep_preview":true"#))
+    );
+
+    // The load makes the model Ready, and the flag goes away.
+    f.client.load(&model).unwrap();
+    assert_eq!(f.client.status(&model), ModelStatus::Ready);
+    assert!(!f.client.preview_ready(&model));
+
+    // A full unload leaves no preview.
+    f.client.unload(&model, false).unwrap();
+    thread::sleep(Duration::from_millis(100));
+    assert!(!f.client.preview_ready(&model));
+}
+
+#[test]
 fn crash_restarts_the_engine_and_loads_models_again() {
     let f = fixture();
     let events = f.client.subscribe();

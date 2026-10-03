@@ -21,9 +21,18 @@ pub struct ModelDirs {
 /// Loads models. Loading is slow, so the engine calls it on a worker thread.
 pub trait Loader: Send + Sync {
     fn load(&self, spec: &ModelSpec, dirs: &ModelDirs) -> Result<Loaded>;
+    /// Load only the final pass, for a model whose live preview is in memory
+    /// already. None when the recipe has no final pass.
+    fn load_final_pass(
+        &self,
+        spec: &ModelSpec,
+        dirs: &ModelDirs,
+    ) -> Result<Option<Arc<dyn FinalPass>>>;
 }
 
 /// A model in memory. A model has a final pass, a live preview, or both.
+/// After an `unload` with `keep_preview`, the final pass of a model with both
+/// is out and the live preview stays.
 #[derive(Clone)]
 pub struct Loaded {
     pub final_pass: Option<Arc<dyn FinalPass>>,

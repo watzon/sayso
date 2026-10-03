@@ -3,7 +3,8 @@
 //!
 //! `main` reads stdin and calls [`Engine::handle`]: on a thread of its own for
 //! most requests, and on one serial thread for `stream_start`, `stream_audio`,
-//! and `stream_end`, which must run in arrival order.
+//! and `stream_end`, which must run in arrival order. `unload` runs on the
+//! stdin thread, so a later `load` of the same model finds the model gone.
 
 use crate::audio;
 use crate::download::{Downloader, Throttle};
@@ -162,6 +163,7 @@ impl Engine {
             "download" => self.download(r),
             "delete" => self.delete(r),
             "load" => self.load(r),
+            "unload" => self.unload(r),
             "transcribe" => self.transcribe(r),
             "stream_start" => self.stream_start(r),
             "stream_audio" => self.stream_audio(r),
@@ -432,6 +434,22 @@ impl Engine {
                 Err(message)
             }
         }
+    }
+
+    /// Take a model out of memory. Its files stay on disk.
+    fn unload(&self, r: &Request) -> Result<()> {
+        let id = r.id.as_deref();
+        let model = r.str("model")?;
+        self.acquire(model)?;
+        self.stop_sessions_of(model);
+        let removed = lock(&self.state).loaded.remove(model);
+        self.release(model);
+        if removed.is_some() {
+            log::info!("unloaded {model}");
+            self.out.model_state(id, model, "downloaded");
+        }
+        self.out.ok(id, json!({}));
+        Ok(())
     }
 
     // -- Transcribe ---------------------------------------------------------
@@ -860,6 +878,48 @@ mod tests {
         // Deleting what is not there is fine.
         let again = rig.send(json!({"type": "delete", "id": "r4", "model": "whisper-tiny"}));
         assert_eq!(types(&again), ["model_state", "ok"]);
+    }
+
+    #[test]
+    fn unload_takes_a_model_out_of_memory_and_keeps_the_files() {
+        let rig = rig();
+        rig.install("whisper-tiny");
+        rig.install_parakeet("parakeet-tdt-v3");
+        let list = json!({"type": "list_models", "id": "l", "models": [
+            {"id": "whisper-tiny", "engine": whisper()},
+            {"id": "parakeet-tdt-v3", "engine": parakeet()},
+        ]});
+        rig.send(json!({"type": "load", "id": "r1", "model": "whisper-tiny", "engine": whisper()}));
+        rig.send(
+            json!({"type": "load", "id": "r2", "model": "parakeet-tdt-v3", "engine": parakeet()}),
+        );
+        // A live preview session of the model ends with the unload.
+        rig.send(
+            json!({"type": "stream_start", "id": "r3", "session": 5, "model": "parakeet-tdt-v3"}),
+        );
+
+        let reply = rig.send(json!({"type": "unload", "id": "r4", "model": "parakeet-tdt-v3"}));
+        assert_eq!(types(&reply), ["model_state", "ok"]);
+        assert_eq!(reply[0]["state"], "downloaded");
+        assert_eq!(reply[0]["id"], "r4");
+        let states = rig.send(list);
+        assert_eq!(states[0]["state"], "ready", "the other model stays");
+        assert_eq!(states[1]["state"], "downloaded");
+        assert!(rig.dir.path().join("parakeet-tdt-v3").exists());
+        let end = rig.send(json!({"type": "stream_end", "id": "r5", "session": 5}));
+        assert_eq!(end[0]["message"], "unknown stream session 5");
+
+        // Not in memory: `ok`, and no state change.
+        let again = rig.send(json!({"type": "unload", "id": "r6", "model": "parakeet-tdt-v3"}));
+        assert_eq!(types(&again), ["ok"]);
+        // The next load reads the files again.
+        let load = rig.send(
+            json!({"type": "load", "id": "r7", "model": "parakeet-tdt-v3", "engine": parakeet()}),
+        );
+        assert_eq!(types(&load), ["model_state", "model_state", "ok"]);
+        assert_eq!(load[0]["state"], "optimizing");
+        let bad = rig.send(json!({"type": "unload", "id": "r8"}));
+        assert_eq!(bad[0]["message"], "missing string field model");
     }
 
     #[test]

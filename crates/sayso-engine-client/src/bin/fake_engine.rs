@@ -143,6 +143,15 @@ fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Va
             );
             reply(out, request, "ok", json!({}));
         }
+        "unload" => {
+            // Like the Linux engine: with `keep_preview`, the live preview stays.
+            let mut state = json!({"model": model, "state": "downloaded"});
+            if request["keep_preview"] == true {
+                state["preview"] = json!(true);
+            }
+            reply(out, request, "model_state", state);
+            reply(out, request, "ok", json!({}));
+        }
         "transcribe" => {
             if model == "crash-once" && !dir.join("crashed").exists() {
                 fs::write(dir.join("crashed"), "").ok();

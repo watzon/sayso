@@ -129,11 +129,22 @@ pub struct Dictation {
     pub min_duration_ms: u64,
     /// Recording stops by itself after this long.
     pub max_duration_s: u64,
+    /// Minutes the active local model stays in memory after the last
+    /// dictation. None keeps it in memory always. The live-preview model
+    /// always stays in memory.
+    pub keep_model_minutes: Option<u32>,
 }
 
 impl Default for Dictation {
     fn default() -> Self {
-        Self { language: "en".into(), model: default_model(), live_preview: true, min_duration_ms: 300, max_duration_s: 600 }
+        Self {
+            language: "en".into(),
+            model: default_model(),
+            live_preview: true,
+            min_duration_ms: 300,
+            max_duration_s: 600,
+            keep_model_minutes: None,
+        }
     }
 }
 
@@ -590,6 +601,19 @@ mod tests {
         assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
         assert_eq!(loaded.config.hotkeys.toggle, Some(Hotkey::toggle_default()));
         assert_eq!(loaded.config.hotkeys.push_to_talk, Some("right_option".parse().unwrap()));
+    }
+
+    #[test]
+    fn the_model_stays_in_memory_unless_the_file_gives_a_time() {
+        // A config file from before the setting.
+        let old = Config::parse("[dictation]\nlanguage = \"de\"\n");
+        assert!(old.issues.is_empty(), "{:?}", old.issues);
+        assert_eq!(old.config.dictation.keep_model_minutes, None);
+        let mut c = Config::default();
+        c.dictation.keep_model_minutes = Some(15);
+        let back = Config::parse(&c.to_toml());
+        assert!(back.issues.is_empty(), "{:?}", back.issues);
+        assert_eq!(back.config.dictation.keep_model_minutes, Some(15));
     }
 
     #[test]

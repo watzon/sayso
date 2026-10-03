@@ -20,6 +20,7 @@ use sayso_platform::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// Per-dictation data the state machine does not hold.
@@ -28,7 +29,9 @@ pub struct Session {
     pub app: Option<AppInfo>,
     pub samples: Arc<Mutex<Vec<f32>>>,
     pub capture: Option<Box<dyn CaptureHandle>>,
-    pub streaming: bool,
+    /// True while the live preview gets the audio. It can start after the
+    /// capture, when the model of the preview loads during the dictation.
+    pub streaming: Arc<AtomicBool>,
     pub started: Option<Instant>,
     pub duration_ms: u64,
     pub transcript: Option<String>,
@@ -126,7 +129,7 @@ impl AppModel {
                     if let Some(c) = s.capture.take() {
                         c.stop();
                     }
-                    if s.streaming
+                    if s.streaming.load(Ordering::Relaxed)
                         && let Some(e) = &self.services.engine {
                             e.end_stream(session);
                         }
@@ -171,21 +174,19 @@ impl AppModel {
         });
         self.live.clear();
         self.preview = (String::new(), String::new());
-        let options = self.session_options();
-        let engine = self.services.engine.clone();
-        let streaming = match (&engine, &options.preview_model) {
-            (Some(e), Some(p)) if self.config.overlay.show_preview && self.status_of(p).is_usable() => {
-                e.start_stream(session, &options).is_ok()
-            }
-            _ => false,
-        };
+        // The model loads while the microphone records, if the idle time unloaded it.
+        self.wake_model(cx);
+        let streaming = Arc::new(AtomicBool::new(self.start_preview(session)));
         let samples = Arc::new(Mutex::new(Vec::<f32>::with_capacity(SAMPLE_RATE as usize * 30)));
         let live = self.live.clone();
         let buf = samples.clone();
-        let stream_engine = if streaming { engine.clone() } else { None };
+        let stream_engine = self.services.engine.clone();
+        let stream_on = streaming.clone();
         let on_frame = Box::new(move |frame: sayso_platform::AudioFrame| {
             live.push(frame.level);
-            if let Some(e) = &stream_engine {
+            if stream_on.load(Ordering::Relaxed)
+                && let Some(e) = &stream_engine
+            {
                 let _ = e.push_audio(session, &frame.samples);
             }
             buf.lock().extend_from_slice(&frame.samples);
@@ -217,6 +218,32 @@ impl AppModel {
         s.started = Some(Instant::now());
     }
 
+    /// Open the live preview stream of a dictation. False when the preview is
+    /// off or its model is not in memory. After an idle unload, the engine can
+    /// have the live preview of the active model in memory without its final pass.
+    fn start_preview(&self, session: SessionId) -> bool {
+        let options = self.session_options();
+        match (&self.services.engine, &options.preview_model) {
+            (Some(e), Some(p)) if self.config.overlay.show_preview && (self.status_of(p).is_usable() || e.preview_ready(p)) => {
+                e.start_stream(session, &options).is_ok()
+            }
+            _ => false,
+        }
+    }
+
+    /// `model` is in memory now. If the dictation that records now waits for
+    /// it, its live preview starts here, with the audio from this moment on.
+    pub(crate) fn start_late_preview(&mut self, model: &sayso_core::models::ModelId) {
+        let State::Recording { session, .. } = self.machine.state else { return };
+        if self.preview_model().as_ref() != Some(model) {
+            return;
+        }
+        let Some(streaming) = self.sessions.get(&session).map(|s| s.streaming.clone()) else { return };
+        if !streaming.load(Ordering::Relaxed) && self.start_preview(session) {
+            streaming.store(true, Ordering::Relaxed);
+        }
+    }
+
     fn stop_capture(&mut self, session: SessionId) {
         let engine = self.services.engine.clone();
         let s = self.session(session);
@@ -226,11 +253,10 @@ impl AppModel {
         if let Some(t) = s.started {
             s.duration_ms = t.elapsed().as_millis() as u64;
         }
-        if s.streaming {
-            s.streaming = false;
-            if let Some(e) = engine {
-                e.end_stream(session);
-            }
+        if s.streaming.swap(false, Ordering::Relaxed)
+            && let Some(e) = engine
+        {
+            e.end_stream(session);
         }
     }
 
@@ -485,6 +511,8 @@ impl AppModel {
         };
         let options = self.session_options();
         let replacer = self.replacer.clone();
+        // The final pass waits for the model, if the idle time unloaded it.
+        self.wake_model(cx);
         cx.spawn(async move |this, cx| {
             cx.background_spawn(async move {
                 let samples = store.load_audio(&file).ok()?;
@@ -795,6 +823,7 @@ pub fn start_background_loops(
                             cx.notify();
                         }
                     }
+                    m.unload_unused_models(cx);
                     if n.is_multiple_of(2400) {
                         m.apply_retention();
                     }
@@ -806,4 +835,107 @@ pub fn start_background_loops(
         }
     })
     .detach();
+}
+
+#[cfg(test)]
+mod tests {
+    // No glob import: `gpui_kit` has a `test` attribute of its own.
+    use super::{FinalPass, Mutex};
+    use sayso_core::models::{ModelId, ModelInfo};
+    use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript};
+    use sayso_platform::{Result, SttBackend};
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    /// An engine whose final-pass model is still loading. `transcribe` notes
+    /// the model it ran and the status of that model at that moment.
+    struct LoadingEngine {
+        status: Mutex<ModelStatus>,
+        calls: Mutex<Vec<(ModelId, ModelStatus)>>,
+    }
+
+    impl LoadingEngine {
+        fn new(status: ModelStatus) -> Arc<Self> {
+            Arc::new(LoadingEngine { status: Mutex::new(status), calls: Mutex::new(Vec::new()) })
+        }
+    }
+
+    impl SttBackend for LoadingEngine {
+        fn catalog(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        fn status(&self, _model: &ModelId) -> ModelStatus {
+            self.status.lock().clone()
+        }
+        fn download(&self, _model: &ModelId) -> Result<()> {
+            Ok(())
+        }
+        fn delete(&self, _model: &ModelId) -> Result<()> {
+            Ok(())
+        }
+        fn load(&self, _model: &ModelId) -> Result<()> {
+            Ok(())
+        }
+        fn unload(&self, _model: &ModelId, _keep_preview: bool) -> Result<()> {
+            Ok(())
+        }
+        fn preview_ready(&self, _model: &ModelId) -> bool {
+            false
+        }
+        fn start_stream(&self, _session: u64, _options: &SessionOptions) -> Result<()> {
+            Ok(())
+        }
+        fn push_audio(&self, _session: u64, _samples: &[f32]) -> Result<()> {
+            Ok(())
+        }
+        fn end_stream(&self, _session: u64) {}
+        fn transcribe(&self, samples: &[f32], options: &SessionOptions) -> Result<Transcript> {
+            self.calls.lock().push((options.final_model.clone(), self.status.lock().clone()));
+            Ok(Transcript { text: format!("{} samples", samples.len()), model: options.final_model.clone(), elapsed_ms: 1 })
+        }
+        fn subscribe(&self) -> crossbeam_channel::Receiver<EngineEvent> {
+            crossbeam_channel::unbounded().1
+        }
+    }
+
+    fn options() -> SessionOptions {
+        SessionOptions {
+            final_model: ModelId::new("final"),
+            preview_model: Some(ModelId::new("preview")),
+            language: "en".into(),
+            vocabulary: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_dictation_that_stops_before_the_load_is_complete_waits_for_the_model() {
+        // The idle time unloaded the model, and the dictation stopped during the load.
+        let engine = LoadingEngine::new(ModelStatus::Downloaded);
+        let loader = engine.clone();
+        let load = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            *loader.status.lock() = ModelStatus::Optimizing;
+            std::thread::sleep(Duration::from_millis(200));
+            *loader.status.lock() = ModelStatus::Ready;
+        });
+        let pass = FinalPass::Local { engine: engine.clone(), model: ModelId::new("final") };
+        let started = Instant::now();
+        let (transcript, note) = pass.run(&[0.0; 1600], &options()).unwrap();
+        load.join().unwrap();
+
+        assert!(started.elapsed() >= Duration::from_millis(300), "the final pass ran before the load was complete");
+        // No text is lost, and the preview model did not replace the final-pass model.
+        assert_eq!(transcript.text, "1600 samples");
+        assert_eq!(transcript.model, ModelId::new("final"));
+        assert_eq!(note, None);
+        assert_eq!(*engine.calls.lock(), [(ModelId::new("final"), ModelStatus::Ready)]);
+    }
+
+    #[test]
+    fn a_load_that_fails_ends_the_final_pass_with_the_reason() {
+        let engine = LoadingEngine::new(ModelStatus::Failed { message: "the model files are broken".into() });
+        let pass = FinalPass::Local { engine: engine.clone(), model: ModelId::new("final") };
+        assert_eq!(pass.run(&[0.0; 1600], &options()).unwrap_err(), "the model files are broken");
+        assert!(engine.calls.lock().is_empty());
+    }
 }

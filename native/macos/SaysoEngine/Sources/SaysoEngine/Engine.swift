@@ -359,11 +359,23 @@ actor Engine {
         out.ok(id: id)
     }
 
-    private func unload(_ model: String) async throws {
+    /// `unload`: take a model out of memory. Its files stay on disk.
+    func unload(model: String, id: String?) async throws {
+        try acquire(model)
+        defer { busy.remove(model) }
+        if try await unload(model) {
+            out.send("model_state", id: id, ["model": model, "state": "downloaded"])
+        }
+        out.ok(id: id)
+    }
+
+    /// Returns false when the model was not in memory.
+    @discardableResult
+    private func unload(_ model: String) async throws -> Bool {
         for (session, info) in sessions where info.model == model {
             sessions[session] = nil
         }
-        guard let entry = loaded.removeValue(forKey: model) else { return }
+        guard let entry = loaded.removeValue(forKey: model) else { return false }
         switch entry {
         case .parakeetUnified(let batch, let stream):
             await batch.cleanup()
@@ -383,6 +395,7 @@ actor Engine {
             booster = nil
             ctcAssets = nil
         }
+        return true
     }
 
     // MARK: - Load

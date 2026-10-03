@@ -11,6 +11,7 @@ mod dictation;
 mod hub;
 mod icons;
 mod live;
+mod memory;
 mod model;
 mod model_picker;
 mod onboarding;

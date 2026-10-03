@@ -42,6 +42,8 @@ func handle(_ request: Request) async {
         case "load":
             try await engine.load(
                 model: try request.string("model"), spec: try request.engine(), id: id)
+        case "unload":
+            try await engine.unload(model: try request.string("model"), id: id)
         case "transcribe":
             try await engine.transcribe(
                 model: try request.string("model"), path: try request.string("path"),
@@ -103,6 +105,9 @@ for await line in lines {
     switch request.type {
     case "stream_start", "stream_audio", "stream_end":
         streamSink.yield(request)
+    case "unload":
+        // In arrival order: a `load` that follows must not find the model.
+        await handle(request)
     default:
         Task { await handle(request) }
     }

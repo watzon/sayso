@@ -113,6 +113,7 @@ impl OnboardingView {
         let (opt_label, opt_color) = match &status {
             ModelStatus::Ready => (crate::shell::os_text!("Optimized for this Mac", "Ready", "Ready on this computer").to_string(), c.success),
             ModelStatus::Optimizing => (crate::shell::os_text!("Optimizing for this Mac…", "Loading the model…", "Preparing the model…").to_string(), c.accent),
+            ModelStatus::Downloaded if m.model_idle => ("Loads when you dictate".to_string(), c.success),
             ModelStatus::Downloaded => ("Loading the model…".to_string(), c.accent),
             _ => ("Optimizes after the download".to_string(), c.pencil),
         };

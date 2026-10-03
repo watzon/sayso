@@ -5,6 +5,8 @@
 //! - Each request that has one reply (`hello`, `list_models`, `download`,
 //!   `delete`, `load`, `transcribe`) runs on its own thread, so a long
 //!   download or load never blocks other requests.
+//! - `unload` runs on the stdin loop, so a later `load` of the same model
+//!   finds the model gone.
 //! - The streaming requests (`stream_start`, `stream_audio`, `stream_end`)
 //!   run in arrival order on one stream worker thread.
 
@@ -132,6 +134,7 @@ impl Engine {
             "download" => self.download(request),
             "delete" => self.delete(request),
             "load" => self.load(request),
+            "unload" => self.unload(request),
             "transcribe" => self.transcribe(request),
             other => Err(anyhow!("unknown request type {other}")),
         };
@@ -144,13 +147,17 @@ impl Engine {
     // Status
     // -----------------------------------------------------------------------
 
-    fn status(&self, model: &str, spec: &ModelSpec) -> &'static str {
-        if self.state().loaded.contains_key(model) {
-            "ready"
-        } else if self.store.is_downloaded(model, spec) {
-            "downloaded"
-        } else {
-            "not_downloaded"
+    /// The state of a model and the extra fields of its `model_state`. A model
+    /// whose final pass is out and whose live preview stays is `downloaded`
+    /// with `preview: true`.
+    fn status(&self, model: &str, spec: &ModelSpec) -> (&'static str, Value) {
+        match self.state().loaded.get(model) {
+            Some((spec, loaded)) if final_pass_is_out(spec, loaded) => {
+                ("downloaded", json!({ "preview": true }))
+            }
+            Some(_) => ("ready", json!({})),
+            None if self.store.is_downloaded(model, spec) => ("downloaded", json!({})),
+            None => ("not_downloaded", json!({})),
         }
     }
 
@@ -171,8 +178,8 @@ impl Engine {
             models.push((id.to_string(), spec));
         }
         for (model, spec) in models {
-            let status = self.status(&model, &spec);
-            self.model_state(request.id(), &model, status, json!({}));
+            let (status, extra) = self.status(&model, &spec);
+            self.model_state(request.id(), &model, status, extra);
         }
         self.out.ok(request.id(), json!({}));
         Ok(())
@@ -252,7 +259,7 @@ impl Engine {
     fn delete(&self, request: &Request) -> Result<()> {
         let model = request.string("model")?;
         let _busy = self.acquire(model)?;
-        self.state().loaded.remove(model);
+        self.evict(model);
         self.store.delete(model)?;
         self.model_state(request.id(), model, "not_downloaded", json!({}));
         self.out.ok(request.id(), json!({}));
@@ -277,19 +284,37 @@ impl Engine {
         let id = request.id();
         let model = request.string("model")?;
         let spec = ModelSpec::from_json(request.value("engine")?)?;
-        let loaded_spec = self.state().loaded.get(model).map(|(s, _)| s.clone());
-        if loaded_spec.as_ref() == Some(&spec) {
-            self.model_state(id, model, "ready", json!({ "load_ms": 0 }));
-            self.out.ok(id, json!({}));
-            return Ok(());
-        }
+        // The live preview that an `unload` with `keep_preview` left in memory.
+        let kept_preview = match self.state().loaded.get(model) {
+            Some((s, loaded)) if *s == spec && final_pass_is_out(s, loaded) => {
+                loaded.preview.clone()
+            }
+            Some((s, _)) if *s == spec => {
+                self.model_state(id, model, "ready", json!({ "load_ms": 0 }));
+                self.out.ok(id, json!({}));
+                return Ok(());
+            }
+            _ => None,
+        };
         if !self.store.is_downloaded(model, &spec) {
             bail!("model {model} is not downloaded");
         }
         let _busy = self.acquire(model)?;
         self.model_state(id, model, "optimizing", json!({}));
         let start = Instant::now();
-        let loaded = match self.loader.load(&spec, &self.dirs(model, &spec)?) {
+        let dirs = self.dirs(model, &spec)?;
+        // With the live preview in memory, only the final pass loads.
+        let result = match kept_preview {
+            Some(preview) => self
+                .loader
+                .load_final_pass(&spec, &dirs)
+                .map(|final_pass| Loaded {
+                    final_pass,
+                    preview: Some(preview),
+                }),
+            None => self.loader.load(&spec, &dirs),
+        };
+        let loaded = match result {
             Ok(loaded) => loaded,
             Err(e) => {
                 self.model_state(id, model, "failed", json!({ "message": format!("{e:#}") }));
@@ -303,6 +328,62 @@ impl Engine {
         self.model_state(id, model, "ready", json!({ "load_ms": load_ms }));
         self.out.ok(id, json!({}));
         Ok(())
+    }
+
+    /// `unload`: take a model out of memory. Its files stay on disk. With
+    /// `keep_preview`, a model that has a live preview keeps it, and only its
+    /// final pass leaves.
+    fn unload(&self, request: &Request) -> Result<()> {
+        let model = request.string("model")?;
+        let keep_preview = request
+            .value("keep_preview")
+            .ok()
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let _busy = self.acquire(model)?;
+        let has_preview = self
+            .state()
+            .loaded
+            .get(model)
+            .is_some_and(|(_, loaded)| loaded.preview.is_some());
+        if keep_preview && has_preview {
+            if self.evict_final_pass(model) {
+                let extra = json!({ "preview": true });
+                self.model_state(request.id(), model, "downloaded", extra);
+            }
+        } else if self.evict(model) {
+            self.model_state(request.id(), model, "downloaded", json!({}));
+        }
+        self.out.ok(request.id(), json!({}));
+        Ok(())
+    }
+
+    /// Drop the final pass of a loaded model and keep its live preview. False
+    /// when the model had no final pass in memory.
+    fn evict_final_pass(&self, model: &str) -> bool {
+        let removed = match self.state().loaded.get_mut(model) {
+            Some((_, loaded)) => loaded.final_pass.take(),
+            None => None,
+        };
+        let was_loaded = removed.is_some();
+        drop(removed);
+        if was_loaded {
+            release_free_memory();
+        }
+        was_loaded
+    }
+
+    /// Drop a loaded model and give its memory back to the system. False when
+    /// the model was not loaded. A final pass or a stream that runs now keeps
+    /// its part of the model until it ends.
+    fn evict(&self, model: &str) -> bool {
+        let removed = self.state().loaded.remove(model);
+        let was_loaded = removed.is_some();
+        drop(removed);
+        if was_loaded {
+            release_free_memory();
+        }
+        was_loaded
     }
 
     // -----------------------------------------------------------------------
@@ -321,6 +402,9 @@ impl Engine {
             .get(model)
             .cloned()
             .ok_or_else(|| anyhow!("model {model} is not loaded"))?;
+        if final_pass_is_out(&spec, &loaded) {
+            bail!("model {model} is not loaded");
+        }
         let final_pass = loaded
             .final_pass
             .ok_or_else(|| anyhow!("model {model} has no final pass"))?;
@@ -366,6 +450,22 @@ fn check_files(spec: &ModelSpec, dirs: &ModelDirs) -> Result<()> {
         layout::online_files(stream)?;
     }
     Ok(())
+}
+
+/// True when the model has a final pass that is not in memory now: an
+/// `unload` with `keep_preview` took it out.
+fn final_pass_is_out(spec: &ModelSpec, loaded: &Loaded) -> bool {
+    spec.recipe.final_pass() && loaded.final_pass.is_none()
+}
+
+/// Return freed heap memory to the system. Without this, glibc keeps the
+/// memory of a dropped model in the process.
+fn release_free_memory() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim has no preconditions.
+    unsafe {
+        libc::malloc_trim(0);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -499,6 +599,8 @@ pub fn serve(input: impl BufRead, engine: Arc<Engine>) {
                 engine.out.ok(request.id(), json!({}));
                 return;
             }
+            // In arrival order: a `load` that follows must not find the model.
+            "unload" => engine.handle(&request),
             _ => {
                 let worker = Arc::clone(&engine);
                 let job = request.clone();

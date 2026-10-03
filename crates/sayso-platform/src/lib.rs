@@ -216,6 +216,17 @@ pub trait SttBackend: Send + Sync {
     fn delete(&self, model: &ModelId) -> Result<()>;
     /// Load into memory (and compile for the Neural Engine on first use). Blocks.
     fn load(&self, model: &ModelId) -> Result<()>;
+    /// Take a loaded model out of memory. Its files stay on disk. Returns at
+    /// once, and a request sent later runs after it. The status arrives as
+    /// `EngineEvent::ModelStatus`.
+    ///
+    /// With `keep_preview`, an engine that holds the final pass and the live
+    /// preview of the model as two parts unloads only the final pass. The
+    /// status is `Downloaded` in both cases; see `preview_ready`.
+    fn unload(&self, model: &ModelId, keep_preview: bool) -> Result<()>;
+    /// True when a stream of this model can start although the model is not
+    /// `Ready`: its live preview stayed in memory after an `unload`.
+    fn preview_ready(&self, model: &ModelId) -> bool;
     /// Open a live preview stream. Partials arrive as `EngineEvent::Partial`.
     fn start_stream(&self, session: u64, options: &SessionOptions) -> Result<()>;
     fn push_audio(&self, session: u64, samples: &[f32]) -> Result<()>;

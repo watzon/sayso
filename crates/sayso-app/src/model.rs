@@ -61,6 +61,12 @@ pub struct AppModel {
     pub last_app: Option<String>,
 
     pub model_status: HashMap<ModelId, ModelStatus>,
+    /// The idle time ended and the active model left memory. The next
+    /// dictation loads it again.
+    pub model_idle: bool,
+    /// When a dictation last ran or the active model loaded. The idle time
+    /// counts from here.
+    pub(crate) last_dictation: Instant,
     pub permissions: HashMap<Permission, PermissionState>,
     pub detected: Detected,
 
@@ -131,6 +137,8 @@ impl AppModel {
             last_text: None,
             last_app: None,
             model_status: HashMap::new(),
+            model_idle: false,
+            last_dictation: Instant::now(),
             permissions: HashMap::new(),
             detected: Detected::default(),
             recent: Vec::new(),
@@ -358,9 +366,16 @@ impl AppModel {
             && let Err(e) = self.services.platform.login_item.set_enabled(self.config.general.launch_at_login) {
                 log::warn!("launch at login: {e}");
             }
+        let keep_changed = before.dictation.keep_model_minutes != self.config.dictation.keep_model_minutes;
+        if before.dictation.model != self.config.dictation.model || keep_changed {
+            // A new model or a new idle time starts with the model in memory.
+            self.model_idle = false;
+            self.last_dictation = Instant::now();
+        }
         if before.dictation.model != self.config.dictation.model
             || before.dictation.language != self.config.dictation.language
             || before.dictation.live_preview != self.config.dictation.live_preview
+            || keep_changed
         {
             // The language can change which model gives the live preview.
             self.load_active_models(cx);
@@ -536,19 +551,21 @@ impl AppModel {
         self.edit_config(cx, |c| c.dictation.model = id);
     }
 
+    /// The active model, when it is a local model.
+    fn active_local_model(&self) -> Option<ModelId> {
+        (!self.active_model().is_remote()).then(|| self.config.dictation.model.clone())
+    }
+
+    /// The models that must be in engine memory now.
+    fn wanted_models(&self) -> Vec<ModelId> {
+        crate::memory::wanted(self.active_local_model().as_ref(), self.preview_model().as_ref(), self.model_idle)
+    }
+
     /// Load the final-pass and preview models when they are on disk. A cloud
-    /// model needs no load.
+    /// model needs no load. A model that the idle time unloaded stays out.
     pub fn load_active_models(&mut self, cx: &mut Context<Self>) {
         let Some(engine) = self.services.engine.clone() else { return };
-        let mut ids = Vec::new();
-        if !self.active_model().is_remote() {
-            ids.push(self.config.dictation.model.clone());
-        }
-        if let Some(p) = self.preview_model()
-            && !ids.contains(&p) {
-                ids.push(p);
-            }
-        for id in ids {
+        for id in self.wanted_models() {
             let status = self.status_of(&id);
             if !matches!(status, ModelStatus::Downloaded) {
                 continue;
@@ -563,13 +580,58 @@ impl AppModel {
                         Ok(()) => ModelStatus::Ready,
                         Err(e) => ModelStatus::Failed { message: e.to_string() },
                     };
-                    m.model_status.insert(id, status);
+                    if id == m.config.dictation.model {
+                        // A final pass that waited for this load must find the model.
+                        m.last_dictation = Instant::now();
+                    }
+                    m.model_status.insert(id.clone(), status);
+                    m.start_late_preview(&id);
                     cx.notify();
                 });
             })
             .detach();
         }
         cx.notify();
+    }
+
+    /// Unload the local models that are not in use: a model that is not the
+    /// active model or the live-preview model, and the active model when its
+    /// idle time ended. Runs with the slow checks, and never during a dictation.
+    pub(crate) fn unload_unused_models(&mut self, cx: &mut Context<Self>) {
+        let Some(engine) = self.services.engine.clone() else { return };
+        if !matches!(self.machine.state, State::Idle) {
+            self.last_dictation = Instant::now();
+            return;
+        }
+        let keep = self.config.dictation.keep_model_minutes;
+        if self.active_local_model().is_some_and(|id| self.status_of(&id).is_usable())
+            && crate::memory::idle_time_ended(keep, self.last_dictation.elapsed())
+        {
+            self.model_idle = true;
+        }
+        let preview = self.preview_model();
+        for id in crate::memory::unwanted(&self.model_status, &self.wanted_models()) {
+            // The idle active model that also gives the live preview: an engine
+            // that holds two parts keeps the preview part in memory.
+            match engine.unload(&id, crate::memory::keeps_preview(&id, preview.as_ref())) {
+                Ok(()) => {
+                    log::info!("unloaded {id}: it is not in use");
+                    self.model_status.insert(id, ModelStatus::Downloaded);
+                    cx.notify();
+                }
+                Err(e) => log::warn!("could not unload {id}: {e}"),
+            }
+        }
+    }
+
+    /// A final pass comes: the idle time starts again, and the active model
+    /// loads in the background when the idle time unloaded it.
+    pub(crate) fn wake_model(&mut self, cx: &mut Context<Self>) {
+        self.last_dictation = Instant::now();
+        if self.model_idle {
+            self.model_idle = false;
+            self.load_active_models(cx);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1017,6 +1079,8 @@ impl AppModel {
             ModelStatus::Downloading { fraction, .. } => {
                 ("Downloading".into(), format!("{} · {:.0}%", model.name, fraction * 100.0), |c| c.accent)
             }
+            // The idle time unloaded the model. The next dictation loads it.
+            ModelStatus::Downloaded if self.model_idle => ("Ready".into(), format!("{} · not in memory", model.name), |c| c.success),
             ModelStatus::Downloaded => ("Loading".into(), model.name, |c| c.accent),
             ModelStatus::NotDownloaded => ("No model".into(), "Open Models to download".into(), |c| c.danger),
             ModelStatus::Failed { .. } => ("Model error".into(), model.name, |c| c.danger),

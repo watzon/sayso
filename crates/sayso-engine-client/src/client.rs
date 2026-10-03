@@ -16,7 +16,7 @@ use sayso_core::models::{self, ModelId, ModelInfo};
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript, encode_wav, to_pcm16};
 use sayso_platform::{PlatformError, Result, SttBackend};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -121,6 +121,9 @@ struct Inner {
     statuses: Mutex<HashMap<ModelId, ModelStatus>>,
     /// Models that a caller loaded on purpose. The recovery thread loads them again.
     desired_loaded: Mutex<Vec<ModelId>>,
+    /// Models that are not `Ready` but whose live preview is in memory
+    /// (`model_state` with `preview: true`).
+    preview_ready: Mutex<HashSet<ModelId>>,
     child: Mutex<Option<Child>>,
     next_id: AtomicU64,
     next_file: AtomicU64,
@@ -192,6 +195,7 @@ impl EngineClient {
             subscribers: Mutex::new(Vec::new()),
             statuses: Mutex::new(HashMap::new()),
             desired_loaded: Mutex::new(Vec::new()),
+            preview_ready: Mutex::new(HashSet::new()),
             child: Mutex::new(None),
             next_id: AtomicU64::new(0),
             next_file: AtomicU64::new(0),
@@ -304,6 +308,28 @@ impl SttBackend for EngineClient {
             desired.push(model.clone());
         }
         Ok(())
+    }
+
+    fn unload(&self, model: &ModelId, keep_preview: bool) -> Result<()> {
+        self.inner.desired_loaded.lock().retain(|m| m != model);
+        self.inner.send(
+            "unload",
+            json!({"model": model, "keep_preview": keep_preview}),
+            Pending::Detached {
+                what: "unload",
+                model: None,
+            },
+        )?;
+        // The cache must not say `Ready` while the engine drops the model.
+        if self.status(model) == ModelStatus::Ready {
+            self.inner
+                .set_status(model.clone(), ModelStatus::Downloaded);
+        }
+        Ok(())
+    }
+
+    fn preview_ready(&self, model: &ModelId) -> bool {
+        self.inner.preview_ready.lock().contains(model)
     }
 
     fn start_stream(&self, session: u64, options: &SessionOptions) -> Result<()> {
@@ -466,6 +492,14 @@ impl Inner {
         match message.kind.as_str() {
             "model_state" | "download_progress" => {
                 if let Some((model, status)) = protocol::model_status(&message) {
+                    if message.kind == "model_state" {
+                        let mut kept = self.preview_ready.lock();
+                        if message.body["preview"] == true {
+                            kept.insert(model.clone());
+                        } else {
+                            kept.remove(&model);
+                        }
+                    }
                     self.set_status(model, status);
                 }
             }
@@ -648,6 +682,7 @@ impl Inner {
 
     /// With the process gone, nothing is loaded or downloading any more.
     fn reset_statuses_after_exit(&self) {
+        self.preview_ready.lock().clear();
         let current: Vec<(ModelId, ModelStatus)> = self
             .statuses
             .lock()
