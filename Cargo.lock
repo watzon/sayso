@@ -7200,6 +7200,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-platform-windows"
+version = "0.2.0"
+dependencies = [
+ "cpal 0.18.2",
+ "crossbeam-channel",
+ "env_logger",
+ "global-hotkey",
+ "image",
+ "log",
+ "parking_lot",
+ "rodio",
+ "sayso-core",
+ "sayso-platform",
+ "serde_json",
+ "thiserror 2.0.21",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "sayso-store"
 version = "0.2.0"
 dependencies = [
