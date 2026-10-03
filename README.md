@@ -57,11 +57,18 @@ If the installer is not signed, Windows SmartScreen asks first. Select **More in
 
 ### Linux
 
-1. Download `sayso-<version>-linux-<arch>.tar.gz` from the [Releases page](https://github.com/watzon/sayso/releases).
-2. Unpack it and run `./install.sh`. Sayso goes to `~/.local`. To install it for all users, with the udev rule for Wayland key input, run `sudo ./install.sh --system`.
-3. Open Sayso from your app menu. Onboarding starts.
+1. Download the file for your system from the [Releases page](https://github.com/watzon/sayso/releases). Each file is `sayso-<version>-linux-<arch>` with one of these endings, and `<arch>` is `x86_64` or `aarch64`.
 
-[docs/linux.md](docs/linux.md) has the details for each desktop.
+   | File | System | Install |
+   |---|---|---|
+   | `.deb` | Debian 12 or later, Ubuntu 22.04 or later | `sudo apt install ./sayso-<version>-linux-<arch>.deb` |
+   | `.rpm` | Fedora, openSUSE, and the RHEL 10 family | `sudo dnf install ./sayso-<version>-linux-<arch>.rpm` (openSUSE: `sudo zypper install`) |
+   | `.AppImage` | Other distributions, no install | `chmod +x` the file, then start it |
+   | `.tar.gz` | Other distributions | Unpack it and run `./install.sh`. Sayso goes to `~/.local`. `sudo ./install.sh --system` installs it for all users, with the udev rule for Wayland key input. |
+
+2. Open Sayso from your app menu, or start the AppImage. Onboarding starts.
+
+All four need glibc 2.35 or later. [docs/linux.md](docs/linux.md) lists the tested distributions and has the details for each desktop.
 
 ## First start
 
@@ -129,7 +136,7 @@ scripts/linux-deps.sh
 scripts/bundle-linux.sh
 ```
 
-The script makes `build/sayso-<version>-linux-<arch>.tar.gz`. Unpack it and run `./install.sh`.
+The script makes `build/sayso-<version>-linux-<arch>.tar.gz`. Unpack it and run `./install.sh`. To make the `.deb`, the `.rpm`, and the AppImage from that tarball, run `scripts/package-linux.sh build/sayso-<version>-linux-<arch>.tar.gz`.
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the development commands, the checks, and the layout of the code.
 

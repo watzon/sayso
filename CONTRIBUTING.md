@@ -66,6 +66,7 @@ scripts/linux-deps.sh                          # once, on Debian or Ubuntu
 cargo build -p sayso-app -p sayso-engine       # the app finds the engine next to it
 cargo run -p sayso-app -- --hub
 scripts/bundle-linux.sh                        # build/sayso-<version>-linux-<arch>.tar.gz
+scripts/package-linux.sh build/sayso-*.tar.gz  # the .deb, the .rpm, and the AppImage, from the tarball
 ```
 
 On Linux the permissions are capabilities, not grants, so a terminal run behaves like an installed app. [docs/linux.md](docs/linux.md) explains the desktops, the permissions, and the `sayso --toggle` command. `SAYSO_UI_BACKEND=x11` or `=wayland` forces the display server of the UI.
@@ -132,6 +133,8 @@ cargo test -p sayso-enhance --test real_cli -- --ignored   # real claude command
 ### What CI runs
 
 CI runs `scripts/check-deps.sh` on each push to `main` and on each pull request. It does not run the tests or clippy, because a GPUI build takes minutes. A maintainer starts the test jobs (macOS, Linux, and Windows) by hand with `gh workflow run ci.yml`. So run the checks above on your computer, and say in the pull request which checks you ran, and on which platform.
+
+A pull request that changes the Linux packaging (`packaging/linux`, `scripts/bundle-linux.sh`, `scripts/package-linux.sh`, `scripts/linux-deps.sh`, or `linux.yml`) also runs the Linux packages workflow. It builds the packages for both architectures, installs the `.deb`, and starts Sayso on a virtual display.
 
 ## Layout
 

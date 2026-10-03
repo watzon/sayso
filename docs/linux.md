@@ -2,6 +2,36 @@
 
 This page describes how Sayso works on Linux: which desktops it supports, the permissions it needs, and how to bind a shortcut when the desktop has no global shortcuts for apps.
 
+## Packages
+
+Each release has four files for x86_64 and four for aarch64. All of them hold the same two binaries, `sayso` and `sayso-engine`.
+
+| File | Installs to | Notes |
+|---|---|---|
+| `.deb` | `/usr/lib/sayso`, with the link `/usr/bin/sayso` | `apt` installs the libraries that Sayso needs. |
+| `.rpm` | `/usr/lib/sayso`, with the link `/usr/bin/sayso` | It names libraries, not packages, so one file works with `dnf` and `zypper`. The file is not signed: `zypper` needs `--allow-unsigned-rpm`. |
+| `.AppImage` | Nothing | It uses the libraries of your system, the same ones as the tarball. It cannot install the udev rule for `/dev/uinput` (see "Paste access"). |
+| `.tar.gz` | `~/.local`, or `/usr/local` with `--system` | `./install.sh --uninstall` removes a user install. |
+
+The `.deb`, the `.rpm`, and the AUR package also install the udev rule for `/dev/uinput`.
+
+The binaries need glibc 2.35 and the libstdc++ of GCC 12, or later versions. These distributions have them:
+
+| Distribution | Works from |
+|---|---|
+| Ubuntu | 22.04 |
+| Debian | 12 |
+| Fedora | All supported versions |
+| openSUSE | Leap 15.6, Tumbleweed |
+| RHEL, AlmaLinux, Rocky Linux | 10. Version 9 has glibc 2.34, which is too old. |
+| Arch Linux | Current |
+
+The install was tested in a container of each of these, except Tumbleweed and Arch Linux on aarch64. A start of Sayso was tested on Ubuntu 22.04 and 26.04 and on Debian 12.
+
+Without a `.deb` or `.rpm`, your system must have these libraries: ALSA (`libasound`), `libxcb`, `libxkbcommon`, `libxkbcommon-x11`, fontconfig, FreeType, and the Vulkan loader (`libvulkan`) or EGL. A Wayland session also needs `libwayland-client`.
+
+No package updates by itself. Sayso shows a new version and opens the download page.
+
 ## Desktop support
 
 Sayso runs on X11 and on Wayland. The parts that touch other apps (hotkeys, insertion, and the overlay) use a different method on each desktop.

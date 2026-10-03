@@ -1,0 +1,98 @@
+# The .deb and the .rpm. scripts/package-linux.sh runs nfpm in the unpacked
+# release folder (sayso-<version>-linux-<arch>/), so the src paths are relative
+# to that folder. The script also copies postinstall.sh there.
+#
+# The app finds the engine next to itself, so both binaries live in
+# /usr/lib/sayso and /usr/bin/sayso is a link.
+#
+# The glibc version below is the version of the build system
+# (.github/workflows/release.yml). package-linux.sh stops when a binary needs
+# a newer one.
+name: sayso
+arch: ${SAYSO_PKG_ARCH}
+platform: linux
+version: ${SAYSO_VERSION}
+release: "1"
+section: utils
+priority: optional
+maintainer: Watzon Ventures LLC
+vendor: Watzon Ventures LLC
+homepage: https://justsayso.app
+license: GPL-3.0-only
+description: |-
+  Local voice dictation into any app
+  Press a key, speak, and Sayso writes the text into the app you use.
+  Speech recognition runs on your computer.
+
+contents:
+  - src: bin/sayso
+    dst: /usr/lib/sayso/sayso
+    file_info: { mode: 0755 }
+  - src: bin/sayso-engine
+    dst: /usr/lib/sayso/sayso-engine
+    file_info: { mode: 0755 }
+  - src: /usr/lib/sayso/sayso
+    dst: /usr/bin/sayso
+    type: symlink
+  - src: share/applications/dev.sayso.Sayso.desktop
+    dst: /usr/share/applications/dev.sayso.Sayso.desktop
+  - src: share/metainfo/dev.sayso.Sayso.metainfo.xml
+    dst: /usr/share/metainfo/dev.sayso.Sayso.metainfo.xml
+  - src: share/icons/hicolor
+    dst: /usr/share/icons/hicolor
+    type: tree
+  - src: lib/udev/rules.d/70-sayso-uinput.rules
+    dst: /usr/lib/udev/rules.d/70-sayso-uinput.rules
+  - src: LICENSE
+    dst: /usr/share/licenses/sayso/LICENSE
+    packager: rpm
+  - src: LICENSE
+    dst: /usr/share/doc/sayso/copyright
+    packager: deb
+
+scripts:
+  postinstall: postinstall.sh
+
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.35)
+      - libgcc-s1
+      - libstdc++6 (>= 12)
+      - libasound2t64 | libasound2
+      - libxcb1
+      - libxkbcommon0
+      - libxkbcommon-x11-0
+      - libfontconfig1
+      - libfreetype6
+      # The app loads these at run time (Wayland, and Vulkan with a GL fallback).
+      - libwayland-client0
+      - libvulkan1
+    recommends:
+      - libegl1
+      - libwayland-egl1
+      - xdg-desktop-portal
+      - xdg-utils
+  rpm:
+    # Library names, not package names, so one .rpm installs on Fedora, the
+    # RHEL family, and openSUSE.
+    depends:
+      - libc.so.6(GLIBC_2.35)(64bit)
+      - libgcc_s.so.1()(64bit)
+      - libstdc++.so.6(GLIBCXX_3.4.30)(64bit)
+      - libasound.so.2()(64bit)
+      - libxcb.so.1()(64bit)
+      - libxkbcommon.so.0()(64bit)
+      - libxkbcommon-x11.so.0()(64bit)
+      - libfontconfig.so.1()(64bit)
+      - libfreetype.so.6()(64bit)
+      - libwayland-client.so.0()(64bit)
+      - libvulkan.so.1()(64bit)
+    recommends:
+      - xdg-utils
+
+rpm:
+  group: Applications/Productivity
+  compression: zstd
+deb:
+  compression: zstd

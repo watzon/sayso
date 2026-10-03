@@ -30,8 +30,9 @@ concurrency:
   group: release-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
-# One job for each platform. Each job builds its files, attaches them to the
-# release, and keeps them as a workflow artifact for the manifest job.
+# One job for each platform. Each job builds its files and keeps them as a
+# workflow artifact for the manifest job. The macOS and Windows jobs also
+# attach them to the release.
 jobs:
   macos:
     name: macOS (arm64)
@@ -136,27 +137,18 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
           rm -f "$RUNNER_TEMP/AuthKey.p8"
 
-  linux:
-    name: Linux (${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-24.04
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    permissions:
-      contents: write
+  # The Linux files come from the Linux packages workflow (linux.yml), which
+  # does not touch the release. The manifest job attaches its files.
+  linux-check:
+    name: Linux (check the release)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - name: Checkout the tag
         uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
 
-      # Each job reads the live state, so a new run and a rerun of one job obey it.
       - name: Stop when users already get this release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -174,45 +166,13 @@ jobs:
             exit 1
           fi
 
-      - name: Install the build packages
-        run: scripts/linux-deps.sh
-
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-
-      - uses: Swatinem/rust-cache@v2
-
-      # sherpa-onnx-sys downloads its native library to target/sherpa-onnx-prebuilt
-      # and links from there. The cache keeps the folders in that path, but
-      # deletes the files in them, and the build script does not download when
-      # the lib folder is there. When no library file is there, remove the
-      # folder and clean the crate, so the build script downloads again.
-      # Without this, a change to Cargo.lock fails with "could not find native
-      # static library sherpa-onnx-c-api".
-      - name: Get the sherpa-onnx library again when the cache does not have it
-        shell: bash
-        run: |
-          libs=$(find target/sherpa-onnx-prebuilt -type f \( -name '*.a' -o -name '*.lib' \) 2>/dev/null | head -n 1 || true)
-          if [[ -z "$libs" ]]; then
-            rm -rf target/sherpa-onnx-prebuilt
-            cargo clean -p sherpa-onnx-sys
-            cargo clean -p sherpa-onnx-sys --release
-          fi
-
-      - name: Build the tarball
-        run: SAYSO_BUNDLE_DIR=dist scripts/bundle-linux.sh
-
-      - name: Attach the files to the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$TAG" dist/*.tar.gz dist/*.tar.gz.sha256 --clobber
-
-      - name: Keep the files for the manifest job
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-linux-${{ matrix.arch }}
-          path: dist/*.tar.gz
-          if-no-files-found: error
+  linux:
+    name: Linux
+    needs: linux-check
+    uses: ./.github/workflows/linux.yml
+    with:
+      ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+      official_build: true
 
   windows:
     name: Windows (x64)
@@ -350,11 +310,19 @@ jobs:
               "linux-x86_64": f"sayso-{version}-linux-x86_64.tar.gz",
               "linux-aarch64": f"sayso-{version}-linux-aarch64.tar.gz",
           }
+          # The Linux packages are not in the manifest: Linux has no installer
+          # in the app. They must be there, so a release always has each format.
+          packages = [
+              f"sayso-{version}-linux-{arch}.{ext}"
+              for arch in ("x86_64", "aarch64")
+              for ext in ("deb", "rpm", "AppImage")
+          ]
+          missing = [name for name in [*files.values(), *packages] if not os.path.isfile(os.path.join("dist", name))]
+          if missing:
+              sys.exit(f"::error::These release files are missing: {', '.join(missing)}")
           assets = {}
           for platform, name in files.items():
               path = os.path.join("dist", name)
-              if not os.path.isfile(path):
-                  sys.exit(f"::error::The file {name} is missing. All four release files are necessary.")
               digest = hashlib.sha256()
               with open(path, "rb") as f:
                   for block in iter(lambda: f.read(1 << 20), b""):
@@ -388,6 +356,21 @@ jobs:
           cargo run --quiet -p sayso-update --example update_tool -- sign "$SAYSO_UPDATE_KEY_ID" payload.json > latest.json
           # The app of this tag must accept the manifest with its own key list.
           cargo run --quiet -p sayso-update --example update_tool -- verify latest.json
+
+      # The AUR package downloads the tarballs of the release, so its hashes
+      # come from the files that the next step attaches. The files stay in the
+      # run: nothing publishes them to the AUR yet.
+      - name: Make the AUR files
+        run: scripts/aur-pkgbuild.sh dist aur
+
+      - name: Keep the AUR files
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-sayso-bin
+          path: aur
+          include-hidden-files: true
+          if-no-files-found: error
+          overwrite: true
 
       # The release gets the files that the manifest names, also when another
       # run for this tag attached other files in the meantime.
