@@ -8,7 +8,7 @@
 //!
 //! All calls block: run them on a background thread.
 
-use crate::cli::{Invocation, Session, looks_like_login_problem};
+use crate::cli::{Invocation, Session, looks_like_login_problem, workdir};
 use crate::detect::{detect_claude_cli, detect_codex_cli, fetch_model_choices};
 use crate::secrets::SecretStore;
 use sayso_core::config::{Provider, ProviderKind};
@@ -66,10 +66,6 @@ fn program(
     path.map(PathBuf::from)
         .or_else(detect)
         .ok_or_else(|| EnhanceError::NotConfigured(format!("the {name} command was not found")))
-}
-
-fn workdir() -> Result<tempfile::TempDir, EnhanceError> {
-    tempfile::tempdir().map_err(|e| EnhanceError::Cli(format!("no temporary folder: {e}")))
 }
 
 fn list_claude_models(

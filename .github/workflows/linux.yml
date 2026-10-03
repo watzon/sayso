@@ -1,7 +1,8 @@
 name: Linux packages
 
 # Build the two Linux binaries one time for each architecture, then make each
-# package from that build: the tarball, the .deb, the .rpm, and the AppImage.
+# package from that build: the tarball, the .deb, the .rpm, the AppImage, and
+# the Flatpak.
 # The files stay in the workflow run as artifacts. The Release workflow calls
 # this workflow and attaches the files to the release.
 #
@@ -124,7 +125,7 @@ jobs:
       - name: Install the base tools
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl git binutils file
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl git binutils file flatpak
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -137,7 +138,7 @@ jobs:
           name: release-linux-${{ matrix.arch }}
           path: dist
 
-      - name: Make the .deb, the .rpm, and the AppImage
+      - name: Make the .deb, the .rpm, the AppImage, and the Flatpak
         shell: bash
         run: scripts/package-linux.sh dist/sayso-*-linux-${{ matrix.arch }}.tar.gz
 
@@ -165,5 +166,6 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/*.AppImage
+            dist/*.flatpak
           if-no-files-found: error
           overwrite: true

@@ -67,9 +67,37 @@ pub(crate) fn find_executable(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
 }
 
 fn detect(name: &str) -> Option<PathBuf> {
+    #[cfg(not(windows))]
+    if sayso_core::flatpak::app_id().is_some() {
+        return detect_on_host(name);
+    }
     let mut dirs = path_dirs();
     dirs.extend(common_dirs());
     find_executable(name, &dirs)
+}
+
+/// Prints the first executable file `$NAME` in the folders of `$PATH`, then
+/// of `$EXTRA` (both lists use `:`).
+#[cfg(not(windows))]
+const HOST_SEARCH: &str = r#"IFS=:
+for dir in $PATH $EXTRA; do
+  if [ -f "$dir/$NAME" ] && [ -x "$dir/$NAME" ]; then
+    printf '%s' "$dir/$NAME"
+    exit 0
+  fi
+done
+exit 1"#;
+
+/// The search of [`detect`] in a Flatpak. The sandbox does not have the
+/// folders of the host, so a shell on the host does the search, with the
+/// `PATH` of the host.
+#[cfg(not(windows))]
+fn detect_on_host(name: &str) -> Option<PathBuf> {
+    let extra = std::env::join_paths(common_dirs()).ok()?;
+    let envs = [("NAME", name), ("EXTRA", extra.to_str()?)];
+    let output = sayso_core::flatpak::host_command("sh".as_ref(), &envs, None).args(["-c", HOST_SEARCH]).output().ok()?;
+    let path = String::from_utf8_lossy(&output.stdout).into_owned();
+    (output.status.success() && !path.is_empty()).then(|| PathBuf::from(path))
 }
 
 /// The `claude` binary, searched in `PATH` and the usual install folders.
@@ -201,6 +229,29 @@ mod tests {
         touch(a.path(), "claude", 0o755);
         assert_eq!(find_executable("claude", &dirs), Some(a.path().join("claude")));
         assert_eq!(find_executable("codex", &dirs), None);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn the_host_search_takes_path_first_then_the_extra_folders() {
+        let (a, b, c) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        touch(a.path(), "claude", 0o644); // not executable: skipped
+        std::fs::create_dir(b.path().join("codex")).unwrap(); // a folder: skipped
+        touch(c.path(), "claude", 0o755);
+        touch(c.path(), "codex", 0o755);
+        let search = |name: &str, path: &std::path::Path, extra: &std::path::Path| {
+            let out = std::process::Command::new("sh")
+                .args(["-c", HOST_SEARCH])
+                .env("PATH", format!("{}:/usr/bin:/bin", path.display()))
+                .env("EXTRA", format!("{}:{}", extra.display(), c.path().display()))
+                .env("NAME", name)
+                .output()
+                .unwrap();
+            (out.status.success(), String::from_utf8(out.stdout).unwrap())
+        };
+        assert_eq!(search("claude", a.path(), b.path()), (true, c.path().join("claude").display().to_string()));
+        assert_eq!(search("codex", c.path(), b.path()), (true, c.path().join("codex").display().to_string()));
+        assert_eq!(search("no-such-tool", a.path(), b.path()), (false, String::new()));
     }
 
     #[test]

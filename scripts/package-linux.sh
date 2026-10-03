@@ -2,21 +2,21 @@
 # Make the Linux packages from the release tarball of scripts/bundle-linux.sh.
 # Nothing is compiled here: each format gets the same two binaries.
 #
-#   scripts/package-linux.sh <tarball> [deb] [rpm] [appimage]    default: all
+#   scripts/package-linux.sh <tarball> [deb] [rpm] [appimage] [flatpak]    default: all
 #
 # The packages go next to the tarball:
-#   sayso-<version>-linux-<arch>.deb, .rpm, .AppImage
+#   sayso-<version>-linux-<arch>.deb, .rpm, .AppImage, .flatpak
 #
 # Run it on Linux, on the architecture of the tarball. It needs curl, file,
-# and binutils. The tools (nfpm, appimagetool, the AppImage runtime) are
+# and binutils, and the flatpak command for the Flatpak. The tools (nfpm, appimagetool, the AppImage runtime) are
 # downloaded to build/tools, or to $SAYSO_TOOLS_DIR, and checked against the
 # hashes below.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 [[ "$(uname -s)" == Linux ]] || { echo "package-linux.sh runs on Linux" >&2; exit 1; }
-[[ $# -ge 1 && -f "$1" ]] || { echo "usage: $0 <tarball> [deb] [rpm] [appimage]" >&2; exit 2; }
+[[ $# -ge 1 && -f "$1" ]] || { echo "usage: $0 <tarball> [deb] [rpm] [appimage] [flatpak]" >&2; exit 2; }
 tarball=$(realpath "$1"); shift
-formats=("$@"); [[ ${#formats[@]} -gt 0 ]] || formats=(deb rpm appimage)
+formats=("$@"); [[ ${#formats[@]} -gt 0 ]] || formats=(deb rpm appimage flatpak)
 
 name=$(basename "$tarball" .tar.gz)
 if [[ ! "$name" =~ ^sayso-(.+)-linux-(x86_64|aarch64)$ ]]; then
@@ -101,12 +101,38 @@ package_appimage() {
   chmod +x "$out/$name.AppImage"
 }
 
+# The Flatpak is one file that the user installs with `flatpak install`. It
+# takes the runtime from Flathub. No build tool runs: the folder gets the
+# layout that `flatpak build-init` makes, so the SDK is not necessary here.
+#
+# The permissions (docs/linux.md, "Flatpak"): Sayso sends keys to other apps
+# and reads the keyboard (X11, /dev/uinput, /dev/input), and it starts the
+# `claude` and `codex` tools and `gsettings` of the host.
+flatpak_id=dev.sayso.Sayso
+flatpak_runtime=26.08
+package_flatpak() {
+  command -v flatpak >/dev/null || { echo "The flatpak command is missing" >&2; exit 1; }
+  local app="$work/flatpak" repo="$work/flatpak-repo"
+  mkdir -p "$app/files" "$app/var"
+  cp -R "$stage/bin" "$stage/share" "$app/files/"
+  printf '[Application]\nname=%s\nruntime=org.freedesktop.Platform/%s/%s\nsdk=org.freedesktop.Sdk/%s/%s\n' \
+    "$flatpak_id" "$arch" "$flatpak_runtime" "$arch" "$flatpak_runtime" > "$app/metadata"
+  flatpak build-finish "$app" --command=sayso \
+    --socket=wayland --socket=x11 --share=ipc --socket=pulseaudio --share=network --device=all \
+    --talk-name=org.freedesktop.secrets --talk-name=org.kde.StatusNotifierWatcher \
+    --talk-name=org.freedesktop.Flatpak --filesystem=xdg-config/autostart:create
+  flatpak build-export --disable-sandbox --arch="$arch" "$repo" "$app" stable
+  flatpak build-bundle --arch="$arch" --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+    "$repo" "$out/$name.flatpak" "$flatpak_id" stable
+}
+
 for format in "${formats[@]}"; do
   echo "==> $format"
   case "$format" in
     deb|rpm) package_nfpm "$format" ;;
     appimage) package_appimage ;;
-    *) echo "unknown format: $format (deb, rpm, appimage)" >&2; exit 2 ;;
+    flatpak) package_flatpak ;;
+    *) echo "unknown format: $format (deb, rpm, appimage, flatpak)" >&2; exit 2 ;;
   esac
 done
 ls -l "$out"/"$name".*

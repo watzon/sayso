@@ -18,6 +18,12 @@ const LIST_KEY: &str = "custom-keybindings";
 const ENTRY_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding";
 const BASE: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/";
 
+/// `gsettings` of the desktop. In a Flatpak it runs on the host: the sandbox
+/// has its own settings store.
+pub(crate) fn host_gsettings() -> Command {
+    sayso_core::flatpak::host_command("gsettings".as_ref(), &[], None)
+}
+
 /// One shortcut that Sayso adds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shortcut {
@@ -30,7 +36,7 @@ pub struct Shortcut {
 
 /// True when this GNOME has custom shortcuts (the `gsettings` tool and the schema exist).
 pub fn available() -> bool {
-    Command::new("gsettings")
+    host_gsettings()
         .args(["list-keys", LIST_SCHEMA])
         .output()
         .is_ok_and(|out| out.status.success() && String::from_utf8_lossy(&out.stdout).lines().any(|l| l == LIST_KEY))
@@ -39,7 +45,7 @@ pub fn available() -> bool {
 /// Make Sayso's custom shortcuts exactly `shortcuts`: add, change, or remove
 /// entries. Entries of other apps stay as they are.
 pub fn apply(shortcuts: &[Shortcut]) -> Result<(), String> {
-    let program = program()?;
+    let command = crate::launch::command().ok_or("cannot find the Sayso program")?;
     let current = parse_list(&gsettings(&["get", LIST_SCHEMA, LIST_KEY])?);
     let ours: Vec<String> = shortcuts.iter().map(|s| path(s.id)).collect();
     for old in current.iter().filter(|p| is_ours(p) && !ours.contains(p)) {
@@ -50,7 +56,7 @@ pub fn apply(shortcuts: &[Shortcut]) -> Result<(), String> {
     for shortcut in shortcuts {
         let schema = format!("{ENTRY_SCHEMA}:{}", path(shortcut.id));
         gsettings(&["set", &schema, "name", &gvariant_string(&format!("Sayso: {}", shortcut.name))])?;
-        gsettings(&["set", &schema, "command", &gvariant_string(&command_line(&program, shortcut.id))])?;
+        gsettings(&["set", &schema, "command", &gvariant_string(&command_line(&command, shortcut.id))])?;
         gsettings(&["set", &schema, "binding", &gvariant_string(&shortcut.binding)])?;
     }
     let list = merge_list(&current, &ours);
@@ -72,22 +78,12 @@ pub fn clear() {
 }
 
 fn gsettings(args: &[&str]) -> Result<String, String> {
-    let out = Command::new("gsettings").args(args).output().map_err(|e| format!("cannot run gsettings: {e}"))?;
+    let out = host_gsettings().args(args).output().map_err(|e| format!("cannot run gsettings: {e}"))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {
         Err(format!("gsettings {}: {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim()))
     }
-}
-
-/// The program GNOME starts: the AppImage when Sayso runs from one, else this executable.
-fn program() -> Result<String, String> {
-    std::env::var_os("APPIMAGE")
-        .filter(|v| !v.is_empty())
-        .map(std::path::PathBuf::from)
-        .or_else(|| std::env::current_exe().ok())
-        .map(|p| p.to_string_lossy().into_owned())
-        .ok_or_else(|| "cannot find the Sayso program".into())
 }
 
 /// The GNOME accelerator of a chord: `<Control><Alt>space`. None for a
@@ -126,11 +122,14 @@ fn is_ours(path: &str) -> bool {
     path.starts_with(BASE) && path[BASE.len()..].starts_with("sayso-")
 }
 
-/// The command for a shortcut. GNOME splits it like a shell, so a path with
-/// spaces gets single quotes.
-pub fn command_line(program: &str, id: &str) -> String {
-    let program = if program.contains([' ', '\'', '"']) { format!("'{}'", program.replace('\'', "'\\''")) } else { program.to_string() };
-    format!("{program} --{id}")
+/// The command for a shortcut: the words that start Sayso (see
+/// [`crate::launch`]) and the flag. GNOME splits it like a shell, so a word
+/// with spaces gets single quotes.
+pub fn command_line(words: &[String], id: &str) -> String {
+    let quote = |w: &String| if w.contains([' ', '\'', '"']) { format!("'{}'", w.replace('\'', "'\\''")) } else { w.clone() };
+    let mut parts: Vec<String> = words.iter().map(quote).collect();
+    parts.push(format!("--{id}"));
+    parts.join(" ")
 }
 
 /// A string in GVariant text form: `'it\'s'`.
@@ -188,8 +187,10 @@ mod tests {
 
     #[test]
     fn commands_and_strings_are_quoted() {
-        assert_eq!(command_line("/home/a/.local/lib/sayso/sayso", "toggle"), "/home/a/.local/lib/sayso/sayso --toggle");
-        assert_eq!(command_line("/home/a b/Sayso.AppImage", "paste-last"), "'/home/a b/Sayso.AppImage' --paste-last");
+        let words = |w: &[&str]| w.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert_eq!(command_line(&words(&["/home/a/.local/lib/sayso/sayso"]), "toggle"), "/home/a/.local/lib/sayso/sayso --toggle");
+        assert_eq!(command_line(&words(&["/home/a b/Sayso.AppImage"]), "paste-last"), "'/home/a b/Sayso.AppImage' --paste-last");
+        assert_eq!(command_line(&words(&["flatpak", "run", "dev.sayso.Sayso"]), "toggle"), "flatpak run dev.sayso.Sayso --toggle");
         assert_eq!(gvariant_string("it's \\ ok"), "'it\\'s \\\\ ok'");
     }
 }

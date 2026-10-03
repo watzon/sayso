@@ -14,7 +14,7 @@ This file says where the platform code lives, which seams the shared crates have
 | Model catalog | `models::catalog()` Apple list | `models/portable.rs` | `models_onnx.rs` | Nothing |
 | Secrets | `keyring` with the Keychain store | `keyring` with the Credential Manager store | `keyring` with the Secret Service store | A `keyring` feature in `sayso-enhance/Cargo.toml` |
 | Title bar | The native traffic lights | `caption.rs` (caption buttons) | `chrome.rs` (a setting; the system title bar by default) | Nothing, when the system draws the title bar |
-| Packaging | `scripts/bundle.sh`, DMG | `scripts/bundle-windows.ps1`, Inno Setup | `scripts/bundle-linux.sh`, tarball. `scripts/package-linux.sh` makes the `.deb`, the `.rpm`, and the AppImage from it. `flake.nix` is the Nix package | A script and a job in `release.yml` |
+| Packaging | `scripts/bundle.sh`, DMG | `scripts/bundle-windows.ps1`, Inno Setup | `scripts/bundle-linux.sh`, tarball. `scripts/package-linux.sh` makes the `.deb`, the `.rpm`, the AppImage, and the Flatpak from it. `flake.nix` is the Nix package | A script and a job in `release.yml` |
 
 Windows and Linux each have their own Rust engine and model catalog, because the two ports were made at the same time. One engine for both is possible: neither engine has system-specific code.
 
