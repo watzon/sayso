@@ -32,6 +32,37 @@ Without a `.deb` or `.rpm`, your system must have these libraries: ALSA (`libaso
 
 No package updates by itself. Sayso shows a new version and opens the download page.
 
+### NixOS
+
+The repository is a Nix flake. Its package takes the binaries from the release tarball and links them to the libraries of nixpkgs. To try Sayso:
+
+```sh
+nix run github:watzon/sayso
+```
+
+To install it on NixOS, add the flake as an input and turn on the module. The module installs Sayso and the udev rule for `/dev/uinput`.
+
+```nix
+{
+  inputs.sayso.url = "github:watzon/sayso";
+
+  outputs = { nixpkgs, sayso, ... }: {
+    nixosConfigurations.my-computer = nixpkgs.lib.nixosSystem {
+      modules = [
+        sayso.nixosModules.default
+        { programs.sayso.enable = true; }
+      ];
+    };
+  };
+}
+```
+
+Without the module, use the package `sayso.packages.${system}.default`, or the overlay `sayso.overlays.default`, which adds `pkgs.sayso`.
+
+To get a new version, run `nix flake update sayso` and build your system again.
+
+**Start at login** and the GNOME custom shortcuts store the path of Sayso in the Nix store. That path changes with each version, and the garbage collector can delete the old one. After an update, turn **Start at login** off and on again.
+
 ## Desktop support
 
 Sayso runs on X11 and on Wayland. The parts that touch other apps (hotkeys, insertion, and the overlay) use a different method on each desktop.

@@ -111,6 +111,13 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    The run also has the artifact `aur-sayso-bin`, with the `PKGBUILD` and the `.SRCINFO` for the AUR. Nothing publishes them yet.
 
+6. Set the Nix package to the new release and commit the file to `main`. The flake gives the release that `packaging/nix/release.json` names, so until this step `nix run github:watzon/sayso` gives the release before.
+
+   ```sh
+   scripts/nix-release.sh v0.3.0
+   git commit -m "Set the Nix package to 0.3.0" packaging/nix/release.json
+   ```
+
 If a job fails, the release stays a prerelease, and no installed Sayso sees it. Correct the cause and run the workflow again for the same tag. It replaces files that are already attached.
 
 ```sh

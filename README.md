@@ -63,12 +63,13 @@ If the installer is not signed, Windows SmartScreen asks first. Select **More in
    |---|---|---|
    | `.deb` | Debian 12 or later, Ubuntu 22.04 or later | `sudo apt install ./sayso-<version>-linux-<arch>.deb` |
    | `.rpm` | Fedora, openSUSE, and the RHEL 10 family | `sudo dnf install ./sayso-<version>-linux-<arch>.rpm` (openSUSE: `sudo zypper install`) |
+   | Nix flake | NixOS, and Nix on other distributions | `nix run github:watzon/sayso`. [docs/linux.md](docs/linux.md) has the NixOS configuration. |
    | `.AppImage` | Other distributions, no install | `chmod +x` the file, then start it |
    | `.tar.gz` | Other distributions | Unpack it and run `./install.sh`. Sayso goes to `~/.local`. `sudo ./install.sh --system` installs it for all users, with the udev rule for Wayland key input. |
 
 2. Open Sayso from your app menu, or start the AppImage. Onboarding starts.
 
-All four need glibc 2.35 or later. [docs/linux.md](docs/linux.md) lists the tested distributions and has the details for each desktop.
+The four files need glibc 2.35 or later. [docs/linux.md](docs/linux.md) lists the tested distributions and has the details for each desktop.
 
 ## First start
 
