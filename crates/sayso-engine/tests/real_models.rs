@@ -12,7 +12,9 @@
 //! second run downloads nothing. Without `SAYSO_ENGINE_PATH`, the test uses
 //! the debug build of the engine.
 
-#![cfg(not(target_os = "macos"))]
+// The client reads the catalog of the system, which is the sherpa-onnx
+// catalog only on Linux.
+#![cfg(target_os = "linux")]
 
 use crossbeam_channel::Receiver;
 use sayso_core::models::{self, ModelInfo};

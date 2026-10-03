@@ -1,7 +1,9 @@
 //! The real client (`sayso-engine-client`) against the built engine binary.
 //! No real models: the archives come from a local HTTP server.
 
-#![cfg(not(target_os = "macos"))]
+// The client reads the catalog of the system, which is the sherpa-onnx
+// catalog only on Linux.
+#![cfg(target_os = "linux")]
 
 use sayso_core::models::{self, ModelId};
 use sayso_core::stt::{EngineEvent, ModelStatus};
