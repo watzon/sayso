@@ -11,9 +11,11 @@ This file tells you how to build Sayso, run it during development, check a chang
 
 ## Requirements
 
-- macOS 14 or later on Apple Silicon.
-- Xcode 16 or later (Swift 6 toolchain) for the speech engine.
+- macOS 14 or later on Apple Silicon, with Xcode 16 or later (Swift 6 toolchain) for the speech engine.
+- Or Windows 10 or 11 (x64), with the Visual Studio 2022 Build Tools ("Desktop development with C++" and a Windows SDK) and CMake for the speech engine.
 - Rust 1.98.1. `rust-toolchain.toml` selects it.
+
+The macOS commands follow. Windows has its own section after them.
 
 ## Build and run
 
@@ -60,6 +62,28 @@ cargo run -p sayso-app -- --seed-demo --route=history --dark
 
 `swift scripts/shot.swift sayso /tmp/shot.png 800` takes a screenshot of the largest Sayso window.
 
+### Windows
+
+```powershell
+# The portable speech engine (Rust: transcribe-rs with ONNX Runtime and whisper.cpp).
+# Needed once, and after engine changes. It is its own Cargo workspace.
+cargo build --release --manifest-path native\portable\Cargo.toml
+
+# The app folder in build\windows\Sayso (release build). -Installer also makes the installer.
+powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1
+```
+
+Windows ties no permission to the app, so `cargo run -p sayso-app -- <flags>` works for everything, also dictation. It finds the engine in `native\portable\target\release`. The flags and the `XDG_*` variables above work the same:
+
+```powershell
+$env:XDG_CONFIG_HOME="$env:TEMP\sayso\c"; $env:XDG_DATA_HOME="$env:TEMP\sayso\d"; $env:XDG_CACHE_HOME="$env:TEMP\sayso\k"
+cargo run -p sayso-app -- --seed-demo --route=history --dark
+```
+
+A debug build opens a console window with the log; a release build has none. Only one Sayso runs at a time: a second start opens the Hub of the first.
+
+`powershell -ExecutionPolicy Bypass -File scripts\shot.ps1 sayso $env:TEMP\shot.png` takes a screenshot of the largest Sayso window (`-Screen` for the whole display).
+
 ## Checks
 
 Run these before you open a pull request:
@@ -69,6 +93,14 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 scripts/check-deps.sh                     # dependency rules from docs/plan.md §4
 ```
+
+On Windows, also test the speech engine:
+
+```powershell
+cargo test --manifest-path native\portable\Cargo.toml
+```
+
+The tests with the fake `claude` and `codex` scripts and the Swift engine test run on macOS only.
 
 These tests need models, API keys, or a login, so they do not run by default:
 
@@ -81,7 +113,7 @@ cargo test -p sayso-enhance --test real_cli -- --ignored   # real claude command
 
 ### What CI runs
 
-CI runs `scripts/check-deps.sh` on each push to `main` and on each pull request. It does not run the tests or clippy, because a GPUI build takes minutes. A maintainer starts the test job by hand with `gh workflow run ci.yml`. So run the checks above on your Mac, and say in the pull request which checks you ran.
+CI runs `scripts/check-deps.sh` on each push to `main` and on each pull request. It does not run the tests or clippy, because a GPUI build takes minutes. A maintainer starts the test jobs (macOS and Windows) by hand with `gh workflow run ci.yml`. So run the checks above on your computer, and say in the pull request which checks you ran, and on which platform.
 
 ## Layout
 
@@ -90,8 +122,10 @@ CI runs `scripts/check-deps.sh` on each push to `main` and on each pull request.
 | `crates/sayso-core` | Domain logic: config, paths, dictation state machine, pipeline, styles, dictionary, inks, model catalog, stats. No platform or UI code. |
 | `crates/sayso-platform` | Platform traits: hotkeys, text insertion, context, permissions, audio, speech engine, sounds, login item. |
 | `crates/sayso-platform-macos` | macOS implementations: Carbon hotkeys, listen-only event tap, clipboard paste, AVFoundation permissions, cpal capture, window glue. |
+| `crates/sayso-platform-windows` | Windows implementations: RegisterHotKey chords, low-level keyboard hook, clipboard paste with delayed rendering, privacy settings, cpal capture, Win32 window glue. |
 | `crates/sayso-engine-client` | Rust client for the engine sidecar (NDJSON over stdio, restart on crash). |
 | `native/macos/SaysoEngine` | Swift sidecar for the local models: Parakeet, Nemotron, Cohere, Canary, SenseVoice, Paraformer (FluidAudio), Whisper (WhisperKit), and Apple Speech (macOS 26). |
+| `native/portable` | Rust sidecar for the local models on Windows (and Linux): Parakeet (ONNX Runtime) and Whisper (whisper.cpp) through transcribe-rs. Same protocol as the Swift sidecar. |
 | `crates/sayso-store` | SQLite history and dictionary, FLAC audio, retention. |
 | `crates/sayso-enhance` | AI styles: OpenAI-compatible HTTP, Claude CLI, Codex CLI. |
 | `crates/sayso-transcribe` | Cloud models: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI, and any OpenAI-compatible server. |
@@ -99,6 +133,8 @@ CI runs `scripts/check-deps.sh` on each push to `main` and on each pull request.
 | `crates/sayso-app` | The app: model, dictation controller, overlay, popover, Hub, onboarding. |
 | `assets/` | Fonts (OFL), textures, sounds, icons, and the scripts that make them. |
 | `spikes/` | The throwaway prototypes from M0. |
+
+[docs/porting.md](docs/porting.md) lists the places where the platforms differ.
 
 `scripts/check-deps.sh` enforces the dependency rules between the crates. For example, `sayso-core` must not import GPUI or another Sayso crate.
 
