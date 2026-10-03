@@ -104,10 +104,12 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 5. Open the release and make sure that it is the latest release and has these files:
    - `Sayso-<version>-macos-arm64.dmg`
    - `Sayso-<version>-windows-x64-setup.exe`
-   - `sayso-<version>-linux-x86_64.tar.gz`
-   - `sayso-<version>-linux-aarch64.tar.gz`
-   - a `.sha256` file for each of the four
+   - `sayso-<version>-linux-x86_64.tar.gz`, `.deb`, `.rpm`, and `.AppImage`
+   - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, and `.AppImage`
+   - a `.sha256` file for each of the ten
    - `latest.json`
+
+   The run also has the artifact `aur-sayso-bin`, with the `PKGBUILD` and the `.SRCINFO` for the AUR. Nothing publishes them yet.
 
 If a job fails, the release stays a prerelease, and no installed Sayso sees it. Correct the cause and run the workflow again for the same tag. It replaces files that are already attached.
 
@@ -143,9 +145,28 @@ For notarization, the script uses the keychain profile `notarytool-password`, th
 powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
 ```
 
+## Build the Linux files
+
+The Linux jobs are in their own workflow, `linux.yml`, which the Release workflow calls. It has two jobs for each architecture:
+
+1. **Build** compiles the two binaries one time, in an Ubuntu 22.04 container, and makes the tarball (`scripts/bundle-linux.sh`). The container sets the oldest glibc that Sayso runs on: 2.35.
+2. **Packages** makes the `.deb`, the `.rpm`, and the AppImage from the tarball (`scripts/package-linux.sh`), with no compiler. It then installs the `.deb` on Ubuntu 22.04 and starts Sayso on a virtual display.
+
+`linux.yml` does not touch a release, so you can test a packaging change without one. A pull request that changes the packaging runs it. You can also start it by hand, and then download the files from the run:
+
+```sh
+gh workflow run linux.yml --ref <branch>
+```
+
+`packaging/linux/nfpm.yaml` has the layout and the dependencies of the `.deb` and the `.rpm`. It also declares the glibc and libstdc++ versions. `package-linux.sh` stops when a binary needs a newer version, so change the numbers there when you change the build container.
+
+`package-linux.sh` downloads nfpm, appimagetool, and the AppImage runtime at fixed versions and checks their SHA-256. To use a newer version, change the URL and the hash in the script for both architectures.
+
+`scripts/aur-pkgbuild.sh` makes the AUR files of `sayso-bin` from `packaging/linux/aur/PKGBUILD.in` and the two tarballs of the run.
+
 ## Add a platform
 
-The Release workflow has one job for each platform, and the `manifest` job that needs all of them. For a new platform, add a job that builds the files, runs `gh release upload "$TAG" <files> --clobber`, and keeps the files with `actions/upload-artifact` under a name that starts with `release-`. Name the files `Sayso-<version>-<os>-<arch>.<ext>`. Then add the job to `needs` of the `manifest` job and the file to its list of files.
+The Release workflow has one job for each platform, and the `manifest` job that needs all of them. For a new platform, add a job that builds the files, runs `gh release upload "$TAG" <files> --clobber`, and keeps the files with `actions/upload-artifact` under a name that starts with `release-`. Name the files `Sayso-<version>-<os>-<arch>.<ext>`. Then add the job to `needs` of the `manifest` job and the file to its list of files. The `manifest` job stops when a file of its lists is missing, so a release cannot become the latest release without it.
 
 ## Limits
 
