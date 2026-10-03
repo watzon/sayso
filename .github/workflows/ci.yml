@@ -1,6 +1,7 @@
 name: CI
 
 # A push runs only the dependency-rule check, which needs no build and takes seconds.
+# A change to only documents (Markdown, docs/, the license, the funding file) runs nothing.
 # The test suite builds GPUI and takes minutes, so it runs only when you start it:
 #   gh workflow run ci.yml
 on:
@@ -8,12 +9,16 @@ on:
     branches: [main]
     paths-ignore:
       - '**/*.md'
+      - 'docs/**'
       - '.github/ISSUE_TEMPLATE/**'
+      - '.github/FUNDING.yml'
       - 'LICENSE'
   pull_request:
     paths-ignore:
       - '**/*.md'
+      - 'docs/**'
       - '.github/ISSUE_TEMPLATE/**'
+      - '.github/FUNDING.yml'
       - 'LICENSE'
   workflow_dispatch:
 
