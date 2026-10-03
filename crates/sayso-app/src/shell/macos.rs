@@ -155,6 +155,11 @@ pub fn frontmost_app_is_fullscreen() -> bool {
     mac::frontmost_app_is_fullscreen()
 }
 
+/// The frame of the window that has the keyboard focus.
+pub fn focused_window_frame() -> Option<Rect> {
+    mac::frontmost_window_frame()
+}
+
 pub fn install_global_click_monitor(callback: impl Fn(Point) + 'static) -> MonitorToken {
     mac::install_global_click_monitor(callback)
 }

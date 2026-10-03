@@ -314,16 +314,28 @@ pub fn covers_a_display(bounds: Rect, displays: &[Rect]) -> bool {
 /// Works on any thread. A window that fills the screen without being in
 /// native full screen (a game, a video player) counts too.
 pub fn frontmost_app_is_fullscreen() -> bool {
-    let Some(pid) = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier()) else {
-        return false;
-    };
-    let displays = display_bounds();
+    frontmost_window_bounds().is_some_and(|bounds| covers_a_display(bounds, &display_bounds()))
+}
+
+/// The frame of the front app's topmost normal window, in Cocoa screen
+/// coordinates. Works on any thread.
+pub fn frontmost_window_frame() -> Option<Rect> {
+    let b = frontmost_window_bounds()?;
+    // The primary display has its origin at zero in both coordinate systems.
+    let primary_height = display_bounds().iter().find(|d| d.x == 0.0 && d.y == 0.0)?.height;
+    Some(Rect { x: b.x, y: primary_height - b.y - b.height, width: b.width, height: b.height })
+}
+
+/// The bounds of the front app's topmost normal window, in CoreGraphics
+/// coordinates (origin top left).
+fn frontmost_window_bounds() -> Option<Rect> {
+    let pid = NSWorkspace::sharedWorkspace().frontmostApplication().map(|a| a.processIdentifier())?;
     // SAFETY: "Copy" rule, so we own the array. Entries are CFDictionary.
     let raw = unsafe {
         CGWindowListCopyWindowInfo(kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID)
     };
     if raw.is_null() {
-        return false;
+        return None;
     }
     let windows: CFArray<CFDictionary<CFString, CFType>> = unsafe { CFArray::wrap_under_create_rule(raw.cast()) };
     let number = |w: &CFDictionary<CFString, CFType>, key: &str| {
@@ -334,18 +346,15 @@ pub fn frontmost_app_is_fullscreen() -> bool {
         if number(&window, "kCGWindowOwnerPID") != Some(i64::from(pid)) || number(&window, "kCGWindowLayer") != Some(0) {
             continue;
         }
-        let Some(dict) = window.find(CFString::new("kCGWindowBounds")).and_then(|v| v.downcast::<CFDictionary>()) else {
-            return false;
-        };
+        let dict = window.find(CFString::new("kCGWindowBounds")).and_then(|v| v.downcast::<CFDictionary>())?;
         let mut rect = CGRect::default();
         // SAFETY: `dict` is a bounds dictionary and `rect` a valid out-pointer.
         if !unsafe { CGRectMakeWithDictionaryRepresentation(dict.as_concrete_TypeRef().cast(), &mut rect) } {
-            return false;
+            return None;
         }
-        let bounds = Rect { x: rect.origin.x, y: rect.origin.y, width: rect.size.width, height: rect.size.height };
-        return covers_a_display(bounds, &displays);
+        return Some(Rect { x: rect.origin.x, y: rect.origin.y, width: rect.size.width, height: rect.size.height });
     }
-    false
+    None
 }
 
 /// Display bounds in CoreGraphics coordinates (origin top left), as used by the window list.

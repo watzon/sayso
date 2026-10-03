@@ -488,36 +488,48 @@ const SHELL_CLASSES: &[&str] = &["Progman", "WorkerW", "Shell_TrayWnd", "Shell_S
 /// Best effort: the foreground window fills a display (a game, a video, a
 /// presentation). Sayso's own windows never count.
 pub fn frontmost_app_is_fullscreen() -> bool {
+    let Some((r, own)) = foreground_window_rect() else { return false };
+    if own {
+        return false;
+    }
+    let bounds = Rect { x: f64::from(r.left), y: f64::from(r.top), width: f64::from(r.right - r.left), height: f64::from(r.bottom - r.top) };
+    let displays: Vec<Rect> = monitors()
+        .iter()
+        .map(|m| {
+            let f = m.frame;
+            Rect { x: f64::from(f.left), y: f64::from(f.top), width: f64::from(f.right - f.left), height: f64::from(f.bottom - f.top) }
+        })
+        .collect();
+    covers_a_display(bounds, &displays)
+}
+
+/// The frame of the foreground window in Cocoa coordinates. None for the
+/// desktop and the taskbar.
+pub fn frontmost_window_frame() -> Option<Rect> {
+    let (r, _) = foreground_window_rect()?;
+    Some(rect_from_physical(f64::from(r.left), f64::from(r.top), f64::from(r.right - r.left), f64::from(r.bottom - r.top)))
+}
+
+/// The foreground window's rectangle in physical pixels, and whether the
+/// window is one of Sayso's. None for the desktop and the taskbar.
+fn foreground_window_rect() -> Option<(RECT, bool)> {
     // SAFETY: plain queries on the foreground window; `r` and `class` are out-buffers.
     unsafe {
         let hwnd = GetForegroundWindow();
         if hwnd.is_invalid() {
-            return false;
+            return None;
         }
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        if pid == GetCurrentProcessId() {
-            return false;
-        }
         let mut class = [0u16; 64];
         let len = GetClassNameW(hwnd, &mut class) as usize;
         let class = String::from_utf16_lossy(&class[..len]);
         if SHELL_CLASSES.contains(&class.as_str()) {
-            return false;
+            return None;
         }
         let mut r = RECT::default();
-        if GetWindowRect(hwnd, &mut r).is_err() {
-            return false;
-        }
-        let bounds = Rect { x: f64::from(r.left), y: f64::from(r.top), width: f64::from(r.right - r.left), height: f64::from(r.bottom - r.top) };
-        let displays: Vec<Rect> = monitors()
-            .iter()
-            .map(|m| {
-                let f = m.frame;
-                Rect { x: f64::from(f.left), y: f64::from(f.top), width: f64::from(f.right - f.left), height: f64::from(f.bottom - f.top) }
-            })
-            .collect();
-        covers_a_display(bounds, &displays)
+        GetWindowRect(hwnd, &mut r).ok()?;
+        Some((r, pid == GetCurrentProcessId()))
     }
 }
 

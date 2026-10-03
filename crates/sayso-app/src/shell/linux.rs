@@ -269,6 +269,12 @@ pub fn frontmost_app_is_fullscreen() -> bool {
     session().x11_reaches_all_apps() && xw::active_window_is_fullscreen()
 }
 
+/// The frame of the window that has the keyboard focus. Only an X11 session
+/// can tell. Under XWayland, only X11 apps are known.
+pub fn focused_window_frame() -> Option<Rect> {
+    if on_x11() { xw::active_window_frame() } else { None }
+}
+
 /// Linux has no global click monitor. The popover closes when it loses focus.
 pub fn install_global_click_monitor(_callback: impl Fn(Point) + 'static) -> MonitorToken {
     MonitorToken

@@ -1,4 +1,4 @@
-//! Settings › Overlay: size, the idle pill, full screen, live preview, pill position.
+//! Settings › Overlay: size, the idle pill, full screen, the display, live preview, pill position.
 
 use super::kit::{self, group, row};
 use crate::model::AppModel;
@@ -20,7 +20,7 @@ impl OverlaySettings {
 impl Render for OverlaySettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let o = self.model.read(cx).config.overlay.clone();
-        let (m1, m2, m3, m4) = (self.model.clone(), self.model.clone(), self.model.clone(), self.model.clone());
+        let (m1, m2, m3, m4, m5) = (self.model.clone(), self.model.clone(), self.model.clone(), self.model.clone(), self.model.clone());
         let size_index = OverlaySize::ALL.iter().position(|s| *s == o.size).unwrap_or(2);
         let size = Segmented::new("overlay-size", ["Small", "Medium", "Large"], size_index).on_select(move |i, _, cx| {
             let size = OverlaySize::ALL[i];
@@ -32,6 +32,14 @@ impl Render for OverlaySettings {
         let fullscreen = Switch::new("hide-fullscreen", o.hide_in_fullscreen).on_toggle(move |on, _, cx| {
             m2.update(cx, |m, cx| m.edit_config(cx, |c| c.overlay.hide_in_fullscreen = on));
         });
+        let follow = Switch::new("follow-display", o.follow_display).on_toggle(move |on, _, cx| {
+            m5.update(cx, |m, cx| m.edit_config(cx, |c| c.overlay.follow_display = on));
+        });
+        let follow_help = if crate::shell::can_place_windows() {
+            "The pill moves to the display of your mouse or of the window you use, whichever changed last."
+        } else {
+            "The pill moves to the display you use each time a dictation starts."
+        };
         let preview = Switch::new("show-preview", o.show_preview).on_toggle(move |on, _, cx| {
             m3.update(cx, |m, cx| m.edit_config(cx, |c| c.overlay.show_preview = on));
         });
@@ -44,6 +52,7 @@ impl Render for OverlaySettings {
             .child(row("Size", "The size of the pill and of everything it shows while you dictate.", size, cx))
             .child(row("Show the idle pill", "A small pill at the bottom of the screen. Click it to start a dictation.", pill, cx))
             .child(row("Hide over full-screen apps", "The pill stays out of the way of videos and presentations.", fullscreen, cx))
+            .child(row("Follow the display in use", follow_help, follow, cx))
             .child(row(
                 "Pill position",
                 "Puts the pill back at the bottom center. To do this now, right-click the pill and choose Reset position.",

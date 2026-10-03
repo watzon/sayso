@@ -9,7 +9,7 @@ mod placement;
 
 use crate::model::AppModel;
 use gpui_kit::*;
-use placement::Placement;
+use placement::{Follow, Placement};
 use sayso_core::dictation::{Notice, Stage, State};
 use sayso_core::stt::ModelStatus;
 use sayso_core::config::OverlaySize;
@@ -69,12 +69,23 @@ pub struct OverlayView {
     last_key: String,
     hidden: bool,
     configured: bool,
+    follow: Follow,
+    last_follow: Instant,
+    /// A dictation was in the recording state at the last model change.
+    recording: bool,
     _observe: Subscription,
 }
 
+/// How often the overlay looks for the display in use.
+const FOLLOW_EVERY: Duration = Duration::from_millis(250);
+
 impl OverlayView {
     fn new(model: Entity<AppModel>, placement: Placement, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let observe = cx.observe(&model, |_, _, cx| cx.notify());
+        let observe = cx.observe_in(&model, window, |view, _, window, cx| {
+            view.reopen_when_recording_starts(window, cx);
+            cx.notify();
+        });
+        let recording = matches!(model.read(cx).state(), State::Recording { .. });
         let this = Self {
             model,
             placement,
@@ -86,10 +97,52 @@ impl OverlayView {
             last_key: String::new(),
             hidden: false,
             configured: false,
+            follow: Follow::default(),
+            last_follow: Instant::now(),
+            recording,
             _observe: observe,
         };
         Self::start_mouse_tracking(window, cx);
         this
+    }
+
+    /// Follow the display on a system where the overlay cannot move
+    /// (Wayland): open a new overlay when a recording starts. The compositor
+    /// puts a new layer surface on the display in use.
+    fn reopen_when_recording_starts(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let m = self.model.read(cx);
+        let recording = matches!(m.state(), State::Recording { .. });
+        let started = recording && !self.recording;
+        self.recording = recording;
+        if !started || crate::shell::can_place_windows() || !m.config.overlay.follow_display {
+            return;
+        }
+        let model = self.model.clone();
+        let old = window.window_handle();
+        // The new overlay opens first, so that the pill does not flash on the same display.
+        cx.defer(move |cx| {
+            open(&model, cx);
+            let _ = old.update(cx, |_, window, _| window.remove_window());
+        });
+    }
+
+    /// Move the overlay to the display of the mouse or of the focused window,
+    /// whichever went to another display last.
+    fn follow_display(&mut self, window: &mut Window, ns: crate::shell::NativeWindow, mouse: crate::shell::Point, cx: &mut Context<Self>) {
+        if self.last_follow.elapsed() < FOLLOW_EVERY || !self.model.read(cx).config.overlay.follow_display {
+            return;
+        }
+        self.last_follow = Instant::now();
+        let screens = crate::shell::screens();
+        let focus = crate::shell::focused_window_frame().and_then(|f| placement::display_at(&screens, f.x + f.width / 2.0, f.y + f.height / 2.0));
+        let Some(target) = self.follow.target(placement::display_at(&screens, mouse.x, mouse.y), focus) else { return };
+        if self.placement.display_of(&screens, window.bounds()) == Some(target) {
+            return;
+        }
+        let Some(origin) = self.placement.origin_on(&screens, target) else { return };
+        let screen_h = placement::main_screen_height();
+        let (x, y) = (origin.x.as_f32() as f64, (screen_h - origin.y.as_f32() - HEIGHT) as f64);
+        crate::app::appkit_later(cx, move || crate::shell::set_frame_origin(ns, x, y));
     }
 
     /// Poll the mouse at 30 Hz: hover state, click-through, and dragging.
@@ -152,6 +205,7 @@ impl OverlayView {
             }
             return true;
         }
+        self.follow_display(window, ns, mouse, cx);
 
         if inside != self.hovered {
             self.hovered = inside;

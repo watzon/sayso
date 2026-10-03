@@ -171,6 +171,11 @@ pub fn frontmost_app_is_fullscreen() -> bool {
     win::frontmost_app_is_fullscreen()
 }
 
+/// The frame of the window that has the keyboard focus.
+pub fn focused_window_frame() -> Option<Rect> {
+    win::frontmost_window_frame()
+}
+
 pub fn install_global_click_monitor(callback: impl Fn(Point) + 'static) -> MonitorToken {
     win::install_global_click_monitor(callback)
 }

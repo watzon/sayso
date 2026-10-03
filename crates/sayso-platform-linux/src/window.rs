@@ -316,12 +316,22 @@ pub fn set_transient_for(child: u32, parent: u32) {
     });
 }
 
+/// The window that `_NET_ACTIVE_WINDOW` names: the one with the keyboard focus.
+fn active_window(x: &X11) -> Option<u32> {
+    let active_atom = intern(x, b"_NET_ACTIVE_WINDOW")?;
+    let reply = x.conn.get_property(false, x.root, active_atom, AtomEnum::WINDOW, 0, 1).ok()?.reply().ok()?;
+    reply.value32()?.next().filter(|w| *w != 0)
+}
+
+/// The frame of the active window in points. Only X11 windows are known.
+pub fn active_window_frame() -> Option<Rect> {
+    frame(with_x(active_window)?)
+}
+
 /// Best effort: the active window is in full screen (`_NET_WM_STATE_FULLSCREEN`).
 pub fn active_window_is_fullscreen() -> bool {
     with_x(|x| {
-        let active_atom = intern(x, b"_NET_ACTIVE_WINDOW")?;
-        let reply = x.conn.get_property(false, x.root, active_atom, AtomEnum::WINDOW, 0, 1).ok()?.reply().ok()?;
-        let active = reply.value32()?.next().filter(|w| *w != 0)?;
+        let active = active_window(x)?;
         let state_atom = intern(x, b"_NET_WM_STATE")?;
         let full = intern(x, b"_NET_WM_STATE_FULLSCREEN")?;
         let states = x.conn.get_property(false, active, state_atom, AtomEnum::ATOM, 0, 32).ok()?.reply().ok()?;

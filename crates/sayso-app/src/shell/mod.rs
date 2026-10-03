@@ -10,7 +10,7 @@
 //!   `make_clear`, `add_child_window`, `order_front_without_activating`, `order_out`, `show_and_focus`.
 //! - Overlay: `overlay_kind`, `set_click_region`, `can_place_windows`.
 //! - Screens and mouse: `screens`, `primary_screen_height`, `mouse_location`, `mouse_button_down`,
-//!   `frontmost_app_is_fullscreen`, `install_global_click_monitor`, `MonitorToken`.
+//!   `frontmost_app_is_fullscreen`, `focused_window_frame`, `install_global_click_monitor`, `MonitorToken`.
 //! - Tray: `Tray` (with [`TrayEvent`]).
 //! - Files and system: `open`, `reveal`, `audio_player`, `user_full_name`, `model_runs_here`,
 //!   `open_requested` (a second start of Sayso asked to open the Hub). Windows plays

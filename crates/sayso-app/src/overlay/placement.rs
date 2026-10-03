@@ -47,16 +47,45 @@ pub fn main_screen_height() -> f32 {
     mac::primary_screen_height() as f32
 }
 
+fn contains(frame: Rect, x: f64, y: f64) -> bool {
+    x >= frame.x && x <= frame.x + frame.width && y >= frame.y && y <= frame.y + frame.height
+}
+
 fn screen_for(cocoa_x: f64, cocoa_y: f64) -> Option<mac::ScreenInfo> {
     let screens = mac::screens();
-    screens
-        .iter()
-        .find(|s| {
-            let f = s.frame;
-            cocoa_x >= f.x && cocoa_x <= f.x + f.width && cocoa_y >= f.y && cocoa_y <= f.y + f.height
-        })
-        .or(screens.first())
-        .copied()
+    screens.iter().find(|s| contains(s.frame, cocoa_x, cocoa_y)).or(screens.first()).copied()
+}
+
+/// The id of the display that holds a point, in Cocoa coordinates.
+pub fn display_at(screens: &[mac::ScreenInfo], x: f64, y: f64) -> Option<u32> {
+    screens.iter().find(|s| contains(s.frame, x, y)).map(|s| s.id)
+}
+
+/// The display that the overlay follows: the display of the mouse or of the
+/// focused window, whichever went to another display last.
+#[derive(Debug, Default)]
+pub struct Follow {
+    mouse: Option<u32>,
+    focus: Option<u32>,
+}
+
+impl Follow {
+    /// The display to move to, when the mouse or the focus went to another
+    /// display since the last call. None means that a display is not known.
+    /// When both moved, the focus wins: the text goes there.
+    pub fn target(&mut self, mouse: Option<u32>, focus: Option<u32>) -> Option<u32> {
+        let mouse_moved = mouse.is_some() && mouse != self.mouse;
+        let focus_moved = focus.is_some() && focus != self.focus;
+        self.mouse = mouse.or(self.mouse);
+        self.focus = focus.or(self.focus);
+        if focus_moved {
+            focus
+        } else if mouse_moved {
+            mouse
+        } else {
+            None
+        }
+    }
 }
 
 impl Placement {
@@ -74,6 +103,21 @@ impl Placement {
         let Some(screen) = screens.first() else { return point(px(0.), px(0.)) };
         let spot = self.read().pill.get(&screen.id.to_string()).copied().unwrap_or_default();
         origin_for(screen.visible_frame, spot)
+    }
+
+    /// The display that holds the card of the window (GPUI coordinates).
+    pub fn display_of(&self, screens: &[mac::ScreenInfo], window: Bounds<Pixels>) -> Option<u32> {
+        let h = mac::primary_screen_height();
+        let center_x = (window.origin.x.as_f32() + WIDTH / 2.) as f64;
+        let bottom = h - (window.origin.y.as_f32() + HEIGHT) as f64 + MARGIN as f64;
+        display_at(screens, center_x, bottom)
+    }
+
+    /// The window origin (GPUI coordinates) for the pill's spot on a display.
+    pub fn origin_on(&self, screens: &[mac::ScreenInfo], display: u32) -> Option<Point<Pixels>> {
+        let screen = screens.iter().find(|s| s.id == display)?;
+        let spot = self.read().pill.get(&display.to_string()).copied().unwrap_or_default();
+        Some(origin_for(screen.visible_frame, spot))
     }
 
     /// Snap the card after a drag, save the spot, and return the window origin to use.
@@ -125,4 +169,28 @@ fn origin_for(vf: Rect, spot: Spot) -> Point<Pixels> {
     let x = center_x - (WIDTH / 2.) as f64;
     let y = h - (window_cocoa_y + HEIGHT as f64);
     point(px(x as f32), px(y as f32))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Follow;
+
+    #[test]
+    fn follow_goes_to_the_display_that_changed_last() {
+        let mut follow = Follow::default();
+        assert_eq!(follow.target(Some(1), Some(2)), Some(2), "at the start the focus wins");
+        assert_eq!(follow.target(Some(1), Some(2)), None, "nothing moved");
+        assert_eq!(follow.target(Some(2), Some(2)), Some(2), "the mouse moved");
+        assert_eq!(follow.target(Some(2), Some(1)), Some(1), "the focus moved");
+        assert_eq!(follow.target(Some(1), Some(2)), Some(2), "both moved: the focus wins");
+    }
+
+    #[test]
+    fn follow_ignores_a_display_that_is_not_known() {
+        let mut follow = Follow::default();
+        assert_eq!(follow.target(Some(1), None), Some(1), "no focused window: the mouse decides");
+        assert_eq!(follow.target(None, None), None);
+        assert_eq!(follow.target(Some(1), None), None, "the mouse is back on the same display");
+        assert_eq!(follow.target(Some(1), Some(1)), Some(1), "the first known focus counts as a move");
+    }
 }

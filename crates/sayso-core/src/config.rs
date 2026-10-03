@@ -162,6 +162,8 @@ pub struct Overlay {
     /// Show the small idle pill.
     pub idle_pill: bool,
     pub hide_in_fullscreen: bool,
+    /// Move the overlay to the display that the user works on.
+    pub follow_display: bool,
     /// Show live preview text above the recording pill.
     pub show_preview: bool,
     /// The size of the overlay and the idle pill.
@@ -170,7 +172,7 @@ pub struct Overlay {
 
 impl Default for Overlay {
     fn default() -> Self {
-        Self { idle_pill: true, hide_in_fullscreen: true, show_preview: true, size: OverlaySize::default() }
+        Self { idle_pill: true, hide_in_fullscreen: true, follow_display: true, show_preview: true, size: OverlaySize::default() }
     }
 }
 

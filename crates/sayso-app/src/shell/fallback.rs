@@ -117,6 +117,9 @@ pub fn mouse_button_down() -> bool {
 pub fn frontmost_app_is_fullscreen() -> bool {
     false
 }
+pub fn focused_window_frame() -> Option<Rect> {
+    None
+}
 pub fn install_global_click_monitor(_callback: impl Fn(Point) + 'static) -> MonitorToken {
     MonitorToken
 }
