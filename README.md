@@ -1,5 +1,9 @@
 # Sayso
 
+[![Newest release](https://img.shields.io/github/v/release/watzon/sayso?style=flat-square)](https://github.com/watzon/sayso/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue?style=flat-square)](LICENSE)
+[![Sponsor](https://img.shields.io/badge/sponsor-GitHub_Sponsors-EA4AAA?style=flat-square&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/watzon)
+
 Sayso is a dictation app for macOS, Windows, and Linux. You press a key, speak, and Sayso writes the text into the app you are using. Speech recognition runs on your computer: on the Neural Engine of a Mac, and on the processor of a Windows or Linux computer. Nothing leaves the computer unless you choose a cloud model or turn on an AI style with a cloud provider.
 
 ![The Sayso Hub in the light theme](docs/images/hub-home.png)
@@ -21,17 +25,40 @@ Sayso is written in Rust with [GPUI](https://www.gpui.rs/). On macOS the speech 
 
 [CONTEXT.md](CONTEXT.md) defines the terms.
 
-## Requirements
-
-- macOS 14 or later on a Mac with Apple Silicon.
-- Or Windows 10 (version 1809) or later, or Windows 11, on a 64-bit Intel or AMD processor.
-- Or Linux on x86_64 or aarch64, with X11 or Wayland. [docs/linux.md](docs/linux.md) lists what works on each desktop.
-
 ## Install
+
+### Supported platforms
+
+Select a button to download the file of the newest release. The [Releases page](https://github.com/watzon/sayso/releases/latest) has all files, each with a `.sha256` file.
+
+| System | Versions | Download |
+|---|---|---|
+| macOS | 14 or later, on Apple Silicon | [![DMG for macOS](https://img.shields.io/badge/DMG-Apple_Silicon-000000?style=for-the-badge&logo=apple&logoColor=white)][dmg] |
+| Windows | 10 (version 1809) or later, and 11, on a 64-bit Intel or AMD processor | [![Installer for Windows](https://img.shields.io/badge/Installer-x64-0078D4?style=for-the-badge)][exe] |
+| Debian, Ubuntu | Debian 12 or later, Ubuntu 22.04 or later | [![.deb for x86_64](https://img.shields.io/badge/.deb-x86__64-A81D33?style=for-the-badge&logo=debian&logoColor=white)][deb-x86_64] [![.deb for aarch64](https://img.shields.io/badge/.deb-aarch64-A81D33?style=for-the-badge&logo=debian&logoColor=white)][deb-aarch64] |
+| Fedora, openSUSE, RHEL family | Fedora, Leap 15.6 or later, Tumbleweed, RHEL 10 | [![.rpm for x86_64](https://img.shields.io/badge/.rpm-x86__64-51A2DA?style=for-the-badge&logo=fedora&logoColor=white)][rpm-x86_64] [![.rpm for aarch64](https://img.shields.io/badge/.rpm-aarch64-51A2DA?style=for-the-badge&logo=fedora&logoColor=white)][rpm-aarch64] |
+| Linux with Flatpak | Any distribution | [![Flatpak for x86_64](https://img.shields.io/badge/Flatpak-x86__64-4A90D9?style=for-the-badge&logo=flatpak&logoColor=white)][flatpak-x86_64] [![Flatpak for aarch64](https://img.shields.io/badge/Flatpak-aarch64-4A90D9?style=for-the-badge&logo=flatpak&logoColor=white)][flatpak-aarch64] |
+| Other Linux | glibc 2.35 or later | [![AppImage for x86_64](https://img.shields.io/badge/AppImage-x86__64-1F6FEB?style=for-the-badge&logo=linux&logoColor=white)][appimage-x86_64] [![AppImage for aarch64](https://img.shields.io/badge/AppImage-aarch64-1F6FEB?style=for-the-badge&logo=linux&logoColor=white)][appimage-aarch64]<br>[![tarball for x86_64](https://img.shields.io/badge/tar.gz-x86__64-555555?style=for-the-badge&logo=linux&logoColor=white)][tarball-x86_64] [![tarball for aarch64](https://img.shields.io/badge/tar.gz-aarch64-555555?style=for-the-badge&logo=linux&logoColor=white)][tarball-aarch64] |
+| NixOS | Flakes | `nix run github:watzon/sayso` |
+
+Linux runs on X11 and on Wayland. [docs/linux.md](docs/linux.md) lists what works on each desktop.
+
+[dmg]: https://github.com/watzon/sayso/releases/download/v0.4.2/Sayso-0.4.2-macos-arm64.dmg
+[exe]: https://github.com/watzon/sayso/releases/download/v0.4.2/Sayso-0.4.2-windows-x64-setup.exe
+[deb-x86_64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-x86_64.deb
+[deb-aarch64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-aarch64.deb
+[rpm-x86_64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-x86_64.rpm
+[rpm-aarch64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-aarch64.rpm
+[flatpak-x86_64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-x86_64.flatpak
+[flatpak-aarch64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-aarch64.flatpak
+[appimage-x86_64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-x86_64.AppImage
+[appimage-aarch64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-aarch64.AppImage
+[tarball-x86_64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-x86_64.tar.gz
+[tarball-aarch64]: https://github.com/watzon/sayso/releases/download/v0.4.2/sayso-0.4.2-linux-aarch64.tar.gz
 
 ### macOS
 
-1. Download `Sayso-<version>-macos-arm64.dmg` from the [Releases page](https://github.com/watzon/sayso/releases).
+1. Download `Sayso-<version>-macos-arm64.dmg` with the button above.
 2. Open the DMG and move Sayso to the Applications folder.
 3. Open Sayso. Onboarding starts.
 
@@ -43,7 +70,7 @@ shasum -a 256 -c Sayso-<version>-macos-arm64.dmg.sha256
 
 ### Windows
 
-1. Download `Sayso-<version>-windows-x64-setup.exe` from the [Releases page](https://github.com/watzon/sayso/releases).
+1. Download `Sayso-<version>-windows-x64-setup.exe` with the button above.
 2. Open it. It installs Sayso for your user account, without administrator rights.
 3. Sayso starts after the install. Onboarding starts.
 
@@ -57,7 +84,7 @@ If the installer is not signed, Windows SmartScreen asks first. Select **More in
 
 ### Linux
 
-1. Download the file for your system from the [Releases page](https://github.com/watzon/sayso/releases). Each file is `sayso-<version>-linux-<arch>` with one of these endings, and `<arch>` is `x86_64` or `aarch64`.
+1. Download the file for your system with a button above. Each file is `sayso-<version>-linux-<arch>` with one of these endings, and `<arch>` is `x86_64` or `aarch64`.
 
    | File | System | Install |
    |---|---|---|
@@ -98,6 +125,16 @@ The source code is free software under the [GNU General Public License, version 
 The official build is the signed and notarized app. It is free, and it needs no license key. Sayso is paid for by the people who use it: the download page at [justsayso.app](https://justsayso.app) asks what you want to pay, and $0 is a valid answer.
 
 The name Sayso and the app icon are not part of the license. If you publish a changed version, give it another name and another icon.
+
+## Support Sayso
+
+Sayso has no price, no ads, and no telemetry. The people who use it pay for the work on it.
+
+If you got Sayso from GitHub (a release file, the Nix flake, or a build from source), nothing asked you what you want to pay. If Sayso is useful to you, sponsor its developer:
+
+[![Sponsor Sayso on GitHub Sponsors](https://img.shields.io/badge/Sponsor-GitHub_Sponsors-EA4AAA?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/watzon)
+
+A one-time amount and a monthly amount are both possible. A sponsorship gives you no extra features: each build of Sayso is the full app.
 
 ## Build from source
 
