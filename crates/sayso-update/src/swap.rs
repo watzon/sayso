@@ -387,6 +387,8 @@ pub(crate) mod tests {
         assert_eq!(f.installer.staged(), None);
     }
 
+    // Off Unix the install lock is always free: see `InstallLock::shared`.
+    #[cfg(unix)]
     #[test]
     fn another_sayso_on_the_install_keeps_the_update_ready() {
         let (f, context) = staged();
@@ -473,6 +475,8 @@ pub(crate) mod tests {
         assert_eq!(phase(&f), Some(Phase::Swapped));
     }
 
+    // Off Unix the install lock is always free: see `InstallLock::shared`.
+    #[cfg(unix)]
     #[test]
     fn confirm_waits_while_another_sayso_uses_the_install_and_ignores_other_updates() {
         let (f, context) = staged();
