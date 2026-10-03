@@ -23,7 +23,7 @@ impl StyleRoute {
     /// "Cloud · OpenRouter · Llama 3.3 8B", "Nothing leaves your Mac".
     pub fn line(&self) -> String {
         match self {
-            StyleRoute::NoAi => "Nothing leaves your Mac".into(),
+            StyleRoute::NoAi => crate::shell::os_text!("Nothing leaves your Mac", "Nothing leaves your computer").into(),
             StyleRoute::NeedsProvider => "AI is off. Inserts the transcript.".into(),
             StyleRoute::NeedsModel { provider } => format!("Choose a model for {provider}"),
             StyleRoute::Local { provider, model } => join(["Local", provider, model]),

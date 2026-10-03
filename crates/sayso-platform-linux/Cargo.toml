@@ -1,0 +1,44 @@
+[package]
+name = "sayso-platform-linux"
+description = "Linux implementations of the Sayso platform traits (X11 and Wayland)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# The crate is empty on other systems, so `cargo test --workspace` works everywhere.
+[target.'cfg(target_os = "linux")'.dependencies]
+sayso-core.workspace = true
+sayso-platform.workspace = true
+sayso-platform-common.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+log.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+libc = "0.2"
+# X11: key grabs, XInput2 raw keys, XTest, the clipboard selection, and window glue.
+x11rb = { version = "0.13", features = ["xinput", "xtest", "shape", "randr", "xfixes", "xkb"] }
+# Wayland: protocol probes and the data-control clipboard.
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+# The zwp_virtual_keyboard_v1 protocol, for key injection on wlroots compositors.
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
+# Keyboards through /dev/input, and the uinput virtual keyboard.
+evdev = "0.13"
+# XDG desktop portals: global shortcuts, remote desktop (key injection), settings.
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "global_shortcuts", "remote_desktop", "screencast", "settings"] }
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
+futures-lite = "2"
+# The command channel of the GlobalShortcuts portal thread.
+async-channel = "2"
+# The StatusNotifierItem tray icon.
+ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+env_logger.workspace = true
+tempfile.workspace = true

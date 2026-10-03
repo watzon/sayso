@@ -35,7 +35,7 @@ Success for v0.1:
 - Telemetry and crash reporting.
 - Licensing and purchase.
 - Languages other than English (the design supports them).
-- Linux and Windows (the design supports them).
+- Linux and Windows (the design supports them). Linux was added on 2026-10-02, see "Linux" below.
 
 ## 3. Decisions
 
@@ -57,6 +57,20 @@ Success for v0.1:
 | Releases (2026-10-02) | A published GitHub release starts the Release workflow, which builds, signs, notarizes, and attaches the DMG. See [releasing.md](releasing.md). |
 | Pindrop (2026-10-02) | Sayso is a separate product. It does not replace Pindrop through an update. The import from Pindrop is optional and only reads: dictations (without audio), dictionary words, replacements, and the user's prompt presets. Notes, meetings, and media stay in Pindrop. |
 
+### Linux (2026-10-02)
+
+| Topic | Decision |
+|---|---|
+| Scope | X11 and Wayland, on x86_64 and aarch64. GNOME, KDE Plasma, sway, and Hyprland are the reference desktops. [linux.md](linux.md) lists what works on each. |
+| UI | GPUI's Linux backend. On a Wayland compositor with the layer shell, the UI uses Wayland, and the overlay and popover are layer surfaces. On a compositor without it (GNOME), the UI uses XWayland, because only an X11 window can float over other apps there without taking focus. |
+| Speech engine | `sayso-engine`, a Rust sidecar on sherpa-onnx (CPU, prebuilt static library). It speaks the same NDJSON protocol as `SaysoEngine`, so `sayso-engine-client` is unchanged. The catalog is `sayso-core/src/models_onnx.rs`. Model ids match the macOS catalog where the model is the same. Windows can use the same engine. |
+| Hotkeys | X11: key grabs for chords, XInput2 for listen-only keys. Wayland: the GlobalShortcuts portal for chords, evdev (the `input` group) for listen-only keys. `sayso --toggle` and the other commands reach the running Sayso through a Unix socket, for desktops without global shortcuts. Default toggle: Ctrl+Alt+Space, because Alt+Space opens the window menu. |
+| Insertion | Paste with Shift+Insert, with our text in both the clipboard and the primary selection. Keys: XTest (X11), the virtual keyboard protocol (wlroots), the remote desktop portal (GNOME, KDE), or `/dev/uinput`. |
+| Permissions | Capabilities, not grants: Accessibility is "Paste access" (a key injection method works), and Input Monitoring is "Keyboard access" (evdev is readable). |
+| Secrets | The Secret Service, through the same `keyring` crate. |
+| Distribution | A tarball with an install script, a desktop entry, icons, and a udev rule for `/dev/uinput`. The Release workflow builds it for x86_64 and aarch64. |
+| Code layout | Portable platform code is in `sayso-platform-common`. The app reaches the system only through `sayso-app/src/shell` (one backend per system, plus a no-op fallback). |
+
 ### File locations
 
 | Kind | Lookup order |
@@ -64,6 +78,8 @@ Success for v0.1:
 | Config (`config.toml`, `styles/*.toml`) | `$XDG_CONFIG_HOME/sayso/` → `~/.config/sayso/` if it exists → `~/Library/Application Support/Sayso/` |
 | Data (database, audio, models) | `$XDG_DATA_HOME/sayso/` → `~/Library/Application Support/Sayso/` |
 | Cache | `$XDG_CACHE_HOME/sayso/` → `~/Library/Caches/Sayso/` |
+
+On Linux the last step of each lookup is the XDG default: `~/.config/sayso/`, `~/.local/share/sayso/`, and `~/.cache/sayso/`.
 
 Settings shows the active path for each kind.
 
@@ -260,7 +276,7 @@ Contents of `sayso-core`:
 | `ContextProvider` | Frontmost bundle id via NSWorkspace. Focused field via AX, for later features. |
 | `PermissionGuide` | Check, request, deep-link, and live-poll microphone, accessibility, and input monitoring |
 | `AudioCapture` | cpal input, device list and change events, levels |
-| `SttBackend` | The engine client (sidecar). On Linux and Windows it is transcribe-rs, later. |
+| `SttBackend` | The engine client (sidecar). On Linux the sidecar is `sayso-engine` (sherpa-onnx), not transcribe-rs: sherpa-onnx streams partials and needs no cmake. |
 | `LoginItem` | SMAppService |
 | `SoundPlayer` | rodio or a native player |
 

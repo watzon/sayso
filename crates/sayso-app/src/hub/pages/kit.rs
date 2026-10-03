@@ -83,15 +83,10 @@ pub fn ink_color(hex: &str, c: &Colors) -> Hsla {
     sayso_ui::theme::hsla(rgb)
 }
 
-/// The macOS full name's first word, for the greeting.
+/// The first word of the user's full name, for the greeting.
 pub fn first_name() -> Option<String> {
     static NAME: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-    NAME.get_or_init(|| {
-        let out = std::process::Command::new("id").arg("-F").output().ok()?;
-        let full = String::from_utf8(out.stdout).ok()?;
-        full.split_whitespace().next().map(str::to_string)
-    })
-    .clone()
+    NAME.get_or_init(|| crate::shell::user_full_name()?.split_whitespace().next().map(str::to_string)).clone()
 }
 
 /// A short slug for ids: "My Style" becomes "my-style".

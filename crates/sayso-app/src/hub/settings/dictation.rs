@@ -142,8 +142,11 @@ impl DictationSettings {
                         .gap(px(12.))
                         .child(div().flex_1().child(super::kit::notice(
                             BannerKind::Warning,
-                            "Push to talk needs Input Monitoring. Turn on Sayso in Privacy and Security › Input Monitoring.", cx)))
-                        .child(Button::new("open-im", "Open System Settings").small().on_click(cx.listener(|this, _, _, cx| {
+                            crate::shell::os_text!(
+                                "Push to talk needs Input Monitoring. Turn on Sayso in Privacy and Security › Input Monitoring.",
+                                "This push-to-talk key needs keyboard access. Add yourself to the input group, then log out and log in again.",
+                            ), cx)))
+                        .child(Button::new("open-im", crate::shell::OPEN_PERMISSION_SETTINGS).small().on_click(cx.listener(|this, _, _, cx| {
                             this.model.update(cx, |m, _| m.open_permission_settings(Permission::InputMonitoring));
                         }))),
                 ),

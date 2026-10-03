@@ -94,6 +94,9 @@ def iconset():
             img = big.reshape(px, 1024 // px, px, 1024 // px, 4).mean(axis=(1, 3)).astype(np.uint8) if step else big
             name = f"icon_{n}x{n}{'@2x' if scale == 2 else ''}.png"
             png(d / name, img)
+            # The colored tray icon on Linux, where panels can be light or dark.
+            if px == 64:
+                png(OUT / "icon-64.png", img)
     subprocess.run(["iconutil", "-c", "icns", str(d), "-o", str(OUT / "AppIcon.icns")], check=True)
     print("wrote AppIcon.icns")
 

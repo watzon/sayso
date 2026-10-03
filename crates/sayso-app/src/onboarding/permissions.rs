@@ -37,7 +37,7 @@ impl OnboardingView {
                 match mic {
                     PermissionState::Granted => "Say something. The ink should move with your voice.",
                     PermissionState::Denied => "Microphone access is off for Sayso. Turn on Sayso in Privacy and Security › Microphone.",
-                    PermissionState::NotDetermined => "Sayso records only while you dictate. macOS asks you once.",
+                    PermissionState::NotDetermined => crate::shell::os_text!("Sayso records only while you dictate. macOS asks you once.", "Sayso records only while you dictate."),
                 },
                 13.,
                 FontWeight::NORMAL,
@@ -75,7 +75,7 @@ impl OnboardingView {
                 }))),
             ),
             PermissionState::Denied => mic_card.child(
-                div().flex().pt(px(6.)).child(Button::new("open-mic", "Open System Settings").primary().on_click(cx.listener(|this, _, _, cx| {
+                div().flex().pt(px(6.)).child(Button::new("open-mic", crate::shell::OPEN_PERMISSION_SETTINGS).primary().on_click(cx.listener(|this, _, _, cx| {
                     this.model.update(cx, |m, _| m.open_permission_settings(Permission::Microphone));
                 }))),
             ),
@@ -85,12 +85,15 @@ impl OnboardingView {
         let mut ax_card = card(&c)
             .when(focus_ax, |d| d.shadow(ring(&c)))
             // macOS has no "denied" for Accessibility; until it is on, Sayso waits.
-            .child(card_head("Accessibility", if ax == PermissionState::Granted { ax } else { PermissionState::NotDetermined }, &c))
+            .child(card_head(crate::shell::permission_name(Permission::Accessibility), if ax == PermissionState::Granted { ax } else { PermissionState::NotDetermined }, &c))
             .child(text::ui(
                 if ax == PermissionState::Granted {
                     "Sayso can paste text into the app you are using."
                 } else {
-                    "Lets Sayso paste text into the app you are using. Turn on Sayso in Privacy and Security › Accessibility."
+                    crate::shell::os_text!(
+                        "Lets Sayso paste text into the app you are using. Turn on Sayso in Privacy and Security › Accessibility.",
+                        "Lets Sayso paste text into the app you are using. Allow it in the dialog of your desktop, or follow the setup guide.",
+                    )
                 },
                 13.,
                 FontWeight::NORMAL,
@@ -104,7 +107,7 @@ impl OnboardingView {
                     .items_center()
                     .gap(px(10.))
                     .pt(px(6.))
-                    .child(Button::new("open-ax", "Open System Settings").primary().on_click(cx.listener(|this, _, _, cx| {
+                    .child(Button::new("open-ax", crate::shell::os_text!("Open System Settings", "Allow")).primary().on_click(cx.listener(|this, _, _, cx| {
                         // `request` shows the macOS prompt, which adds Sayso to the list and opens Settings.
                         this.model.update(cx, |m, _| m.request_permission(Permission::Accessibility));
                     })))
@@ -116,7 +119,10 @@ impl OnboardingView {
             if self.show_why {
                 ax_card = ax_card.child(
                     text::ui(
-                        "macOS lets an app send Command+V to other apps only with Accessibility access. Sayso uses it to paste your words, and does not read your screen.",
+                        crate::shell::os_text!(
+                            "macOS lets an app send Command+V to other apps only with Accessibility access. Sayso uses it to paste your words, and does not read your screen.",
+                            "Sayso sends the paste key to the app you use. On Wayland your desktop asks you once to allow this. Sayso does not read your screen.",
+                        ),
                         12.,
                         FontWeight::NORMAL,
                         c.graphite,
@@ -172,7 +178,10 @@ impl OnboardingView {
             .child(download)
             .child(crate::hub::settings::kit::notice(
                 BannerKind::Info,
-                "A push-to-talk key needs one more permission, Input Monitoring. Sayso asks for it only if you set one in the next step.", cx))
+                crate::shell::os_text!(
+                "A push-to-talk key needs one more permission, Input Monitoring. Sayso asks for it only if you set one in the next step.",
+                "A push-to-talk key held alone, and Esc to cancel, need keyboard access. The next step tells you if your desktop needs it.",
+            ), cx))
             .into_any_element()
     }
 }

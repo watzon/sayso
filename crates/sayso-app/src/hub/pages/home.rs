@@ -211,10 +211,10 @@ impl HomePage {
         let style = m.active_style();
         let route = m.style_route(&style);
         let detail = match &route {
-            StyleRoute::NoAi => "Nothing leaves your Mac.".to_string(),
+            StyleRoute::NoAi => crate::shell::os_text!("Nothing leaves your Mac.", "Nothing leaves your computer.").to_string(),
             StyleRoute::NeedsProvider => "AI is off, so Sayso inserts the transcript. Add a provider in Styles.".into(),
             StyleRoute::NeedsModel { provider } => format!("No model is chosen for {provider}, so Sayso inserts the transcript. Choose one in Styles."),
-            StyleRoute::Local { provider, model } => format!("Runs on your Mac with {provider} · {model}."),
+            StyleRoute::Local { provider, model } => format!("Runs on your {} with {provider} · {model}.", crate::shell::os_text!("Mac", "computer")),
             StyleRoute::Cloud { provider, model } => format!("Sent to {provider} · {model}."),
         };
         let description = if style.description.is_empty() { detail } else { format!("{} {}", style.description, detail) };
@@ -321,7 +321,7 @@ impl HomePage {
                 fix("fix-model", "Open Models", Box::new(|m, cx| m.navigate(Route::Models, cx))).into_any_element()
             }
             ModelStatus::Ready | ModelStatus::Downloaded => plain(active.name.clone()),
-            ModelStatus::Optimizing => plain("Optimizing for your Mac".into()),
+            ModelStatus::Optimizing => plain(crate::shell::os_text!("Optimizing for your Mac", "Preparing the model").into()),
             ModelStatus::Downloading { fraction, .. } => plain(format!("Downloading {:.0}%", fraction * 100.)),
             ModelStatus::NotDownloaded => {
                 fix("fix-model", "Download", Box::new(|m, cx| m.navigate(Route::Models, cx))).into_any_element()
@@ -342,7 +342,7 @@ impl HomePage {
             .px(px(4.))
             .child(caps(if all_ok { "All set" } else { "Needs attention" }, 12., c.graphite))
             .child(row(mic_ok, "Microphone", mic))
-            .child(row(ax_ok, "Accessibility", ax))
+            .child(row(ax_ok, crate::shell::permission_name(Permission::Accessibility), ax))
             .child(row(model_ok, "Model", model_value))
             .child(row(true, "Dictionary", dict));
         // A cloud model does not need the engine for its final pass.

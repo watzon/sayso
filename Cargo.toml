@@ -13,6 +13,7 @@ sayso-core = { path = "crates/sayso-core" }
 sayso-platform = { path = "crates/sayso-platform" }
 sayso-platform-common = { path = "crates/sayso-platform-common" }
 sayso-platform-macos = { path = "crates/sayso-platform-macos" }
+sayso-platform-linux = { path = "crates/sayso-platform-linux" }
 sayso-engine-client = { path = "crates/sayso-engine-client" }
 sayso-store = { path = "crates/sayso-store" }
 sayso-enhance = { path = "crates/sayso-enhance" }

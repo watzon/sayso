@@ -12,7 +12,10 @@ use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
 use sayso_ui::{ActivePaper, Colors, text};
 
-pub const SENTENCE: &str = "Sayso writes what I say, in any app on my Mac, and nothing leaves this computer.";
+pub const SENTENCE: &str = crate::shell::os_text!(
+    "Sayso writes what I say, in any app on my Mac, and nothing leaves this computer.",
+    "Sayso writes what I say, in any app I use, and nothing leaves this computer.",
+);
 
 pub(super) struct Practice {
     field: Entity<TextareaState>,
@@ -107,8 +110,8 @@ impl OnboardingView {
             (Some(_), _) => ("Live preview loading".to_string(), c.accent),
         };
         let (opt_label, opt_color) = match &status {
-            ModelStatus::Ready => ("Optimized for this Mac".to_string(), c.success),
-            ModelStatus::Optimizing => ("Optimizing for this Mac…".to_string(), c.accent),
+            ModelStatus::Ready => (crate::shell::os_text!("Optimized for this Mac", "Ready on this computer").to_string(), c.success),
+            ModelStatus::Optimizing => (crate::shell::os_text!("Optimizing for this Mac…", "Preparing the model…").to_string(), c.accent),
             ModelStatus::Downloaded => ("Loading the model…".to_string(), c.accent),
             _ => ("Optimizes after the download".to_string(), c.pencil),
         };

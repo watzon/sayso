@@ -8,6 +8,7 @@ pub mod settings;
 mod sidebar;
 
 use crate::model::AppModel;
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use sayso_ui::ActivePaper;
 use sayso_ui::texture::{Grain, grain};
@@ -66,6 +67,10 @@ impl Render for HubView {
         let c = cx.paper().colors;
         let route = self.model.read(cx).route;
         let page = self.pages.view(route, window, cx);
+        // The custom title bar (Linux): a strip across the top that moves the
+        // window and holds the window buttons.
+        let custom = crate::chrome::is_custom(window);
+        let top = if custom { 36. } else { 10. };
         div()
             .relative()
             .size_full()
@@ -83,13 +88,13 @@ impl Render for HubView {
                     .flex_1()
                     .min_w_0()
                     .h_full()
-                    .pt(px(10.))
+                    .pt(px(top))
                     .pr(px(10.))
                     .pb(px(10.))
                     .child(
                         div()
                             .absolute()
-                            .top(px(16.))
+                            .top(px(top + 6.))
                             .right(px(6.))
                             .bottom(px(4.))
                             .left(px(6.))
@@ -100,7 +105,7 @@ impl Render for HubView {
                     .child(
                         div()
                             .absolute()
-                            .top(px(13.))
+                            .top(px(top + 3.))
                             .right(px(8.))
                             .bottom(px(6.))
                             .left(px(2.))
@@ -120,5 +125,18 @@ impl Render for HubView {
                             .child(div().relative().size_full().child(page)),
                     ),
             )
+            .when(custom, |d| {
+                d.child(
+                    crate::chrome::drag_area(div().id("hub-title").absolute().top_0().left_0().right_0().h(px(top)))
+                        .flex()
+                        .items_center()
+                        .justify_end()
+                        .pr(px(12.))
+                        .child(crate::chrome::window_controls(window, cx, |window, cx| {
+                            cx.global_mut::<crate::app::Windows>().hub = None;
+                            window.remove_window();
+                        })),
+                )
+            })
     }
 }

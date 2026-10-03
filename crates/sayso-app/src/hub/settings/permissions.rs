@@ -1,4 +1,4 @@
-//! Settings › Permissions: live state for each macOS permission.
+//! Settings › Permissions: live state for each permission.
 
 use super::kit::{self, group};
 use crate::model::AppModel;
@@ -21,10 +21,10 @@ impl Render for PermissionSettings {
         let m = self.model.read(cx);
         let rows = [
             (Permission::Microphone, "Microphone", "Lets Sayso hear you while you dictate. Required."),
-            (Permission::Accessibility, "Accessibility", "Lets Sayso paste text into the app you are using. Required."),
+            (Permission::Accessibility, crate::shell::permission_name(Permission::Accessibility), "Lets Sayso paste text into the app you are using. Required."),
             (
                 Permission::InputMonitoring,
-                "Input Monitoring",
+                crate::shell::permission_name(Permission::InputMonitoring),
                 "Needed for push to talk, for Esc to cancel, and to record keys in other apps.",
             ),
         ];
@@ -41,7 +41,7 @@ impl Render for PermissionSettings {
                     this.model.update(cx, |m, _| m.request_permission(perm2));
                 })));
             }
-            controls = controls.child(Button::new(("perm-open", i), "Open System Settings").small().on_click(cx.listener(
+            controls = controls.child(Button::new(("perm-open", i), crate::shell::OPEN_PERMISSION_SETTINGS).small().on_click(cx.listener(
                 move |this, _, _, cx| {
                     this.model.update(cx, |m, _| m.open_permission_settings(perm));
                 },
@@ -50,7 +50,10 @@ impl Render for PermissionSettings {
         }
         g = g.child(kit::banner(
             BannerKind::Info,
-            "This page updates by itself when you change a permission in System Settings. If a permission stays off after you turn it on, quit Sayso and open it again.", cx));
-        kit::page("permissions-page", "Permissions", "What Sayso can do on this Mac, and why.", kit::body().child(g), cx)
+            crate::shell::os_text!(
+                "This page updates by itself when you change a permission in System Settings. If a permission stays off after you turn it on, quit Sayso and open it again.",
+                "This page updates by itself when a permission changes. After you join the input group, log out and log in again.",
+            ), cx));
+        kit::page("permissions-page", "Permissions", crate::shell::os_text!("What Sayso can do on this Mac, and why.", "What Sayso can do on this computer, and why."), kit::body().child(g), cx)
     }
 }

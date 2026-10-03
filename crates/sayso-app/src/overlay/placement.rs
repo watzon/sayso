@@ -6,7 +6,7 @@
 use super::{HEIGHT, MARGIN, WIDTH};
 use gpui_kit::*;
 use sayso_core::paths::Paths;
-use sayso_platform_macos::window::{self as mac, Rect};
+use crate::shell::{self as mac, Rect};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;

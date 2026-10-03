@@ -64,7 +64,10 @@ impl OnboardingView {
                     .child(div().relative().child(display(c.highlight(0.85)).absolute().top(px(1.)).left_0()).child(display(c.ink)))
                     .child(
                         text::ui(
-                            "Dictate into any app on your Mac. Speech recognition runs on this Mac, so your voice never leaves it.",
+                            crate::shell::os_text!(
+                                "Dictate into any app on your Mac. Speech recognition runs on this Mac, so your voice never leaves it.",
+                                "Dictate into any app. Speech recognition runs on this computer, so your voice never leaves it.",
+                            ),
                             17.,
                             FontWeight::NORMAL,
                             c.graphite,
@@ -79,7 +82,7 @@ impl OnboardingView {
                     .flex()
                     .gap(px(28.))
                     .pt(px(8.))
-                    .child(fact("Runs on the Neural Engine"))
+                    .child(fact(crate::shell::os_text!("Runs on the Neural Engine", "Runs on this computer")))
                     .child(fact("Works in every app"))
                     .child(fact("Setup takes about 3 minutes")),
             )

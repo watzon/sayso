@@ -241,16 +241,16 @@ impl AppModel {
         if !path.exists() {
             let _ = self.config.save(&path);
         }
-        let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+        crate::shell::reveal(&path);
     }
 
     pub fn open_path(path: &std::path::Path) {
-        let _ = std::process::Command::new("open").arg(path).spawn();
+        crate::shell::open(path);
     }
 
     /// Open a web page in the default browser.
     pub fn open_url(url: &str) {
-        let _ = std::process::Command::new("open").arg(url).spawn();
+        crate::shell::open(url);
     }
 
     pub fn register_hotkeys(&mut self) {
@@ -315,11 +315,10 @@ impl AppModel {
     // Models
     // -----------------------------------------------------------------------
 
-    /// Every model this Mac can use: the local models its macOS version runs,
+    /// Every model this computer can use: the local models its system runs,
     /// and the models of the configured speech providers.
     pub fn catalog(&self) -> Vec<ModelInfo> {
-        let os = macos_major();
-        sayso_core::models::catalog_with(&self.config.speech).into_iter().filter(|m| m.min_macos <= os).collect()
+        sayso_core::models::catalog_with(&self.config.speech).into_iter().filter(crate::shell::model_runs_here).collect()
     }
 
     /// A cloud model is ready when its provider is set up. It has no download.
@@ -918,19 +917,4 @@ impl AppModel {
             c.onboarding.step = 6;
         });
     }
-}
-
-/// The major version of macOS ("15" from "15.6.1"). 14, the oldest macOS Sayso
-/// runs on, when the version cannot be read.
-pub fn macos_major() -> u32 {
-    static VERSION: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
-    *VERSION.get_or_init(|| {
-        std::process::Command::new("sw_vers")
-            .arg("-productVersion")
-            .output()
-            .ok()
-            .and_then(|out| String::from_utf8(out.stdout).ok())
-            .and_then(|v| v.trim().split('.').next().and_then(|major| major.parse().ok()))
-            .unwrap_or(14)
-    })
 }

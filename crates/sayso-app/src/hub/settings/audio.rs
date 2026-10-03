@@ -14,6 +14,9 @@ use sayso_ui::text;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Where the default input comes from.
+const FOLLOWS: &str = crate::shell::os_text!("Follows the input in System Settings › Sound.", "Follows the default input of the system.");
+
 const LENGTHS: [u64; 7] = [30, 60, 120, 300, 600, 900, 1800];
 
 pub struct AudioSettings {
@@ -97,7 +100,7 @@ impl Render for AudioSettings {
         let mut options: Vec<(Option<String>, String, String)> = vec![(
             None,
             "System default".into(),
-            default_name.clone().map(|n| format!("Now {n}. Follows the input in System Settings › Sound.")).unwrap_or_else(|| "Follows the input in System Settings › Sound.".into()),
+            default_name.clone().map(|n| format!("Now {n}. {}", FOLLOWS)).unwrap_or_else(|| FOLLOWS.into()),
         )];
         options.extend(devices.iter().map(|d| (Some(d.id.clone()), d.name.clone(), String::new())));
         let mut list = div().flex().flex_col();
@@ -129,7 +132,7 @@ impl Render for AudioSettings {
             );
         }
         if devices.is_empty() {
-            list = list.child(kit::banner(BannerKind::Warning, "Sayso found no microphone. Connect one, or check System Settings › Sound.", cx));
+            list = list.child(kit::banner(BannerKind::Warning, crate::shell::os_text!("Sayso found no microphone. Connect one, or check System Settings › Sound.", "Sayso found no microphone. Connect one, or check the sound settings."), cx));
         }
 
         // Level meter.
@@ -140,7 +143,7 @@ impl Render for AudioSettings {
                 .gap(px(12.))
                 .py(px(8.))
                 .child(div().flex_1().child(super::kit::notice(BannerKind::Info, "Allow microphone access to test your microphone here.", cx)))
-                .child(Button::new("allow-mic", if mic == PermissionState::Denied { "Open System Settings" } else { "Allow microphone" }).small().on_click(
+                .child(Button::new("allow-mic", if mic == PermissionState::Denied { crate::shell::OPEN_PERMISSION_SETTINGS } else { "Allow microphone" }).small().on_click(
                     cx.listener(move |this, _, _, cx| {
                         this.model.update(cx, |m, _| {
                             if mic == PermissionState::Denied {
@@ -153,7 +156,7 @@ impl Render for AudioSettings {
                 ))
                 .into_any_element()
         } else if let Some(e) = &self.meter_error {
-            kit::banner(BannerKind::Warning, format!("The microphone did not start: {e}. Choose another input, or check System Settings › Sound."), cx).into_any_element()
+            kit::banner(BannerKind::Warning, format!("The microphone did not start: {e}. Choose another input, or check {}.", crate::shell::os_text!("System Settings › Sound", "the sound settings")), cx).into_any_element()
         } else if recording {
             kit::banner(BannerKind::Info, "The test pauses while you dictate.", cx).into_any_element()
         } else {

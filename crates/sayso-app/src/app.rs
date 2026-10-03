@@ -7,7 +7,6 @@ use gpui_kit::*;
 use sayso_core::config::{Config, ThemeMode};
 use sayso_core::ink::Appearance;
 use sayso_core::paths::{Paths, SystemEnv};
-use sayso_platform_macos::window as mac;
 use sayso_ui::PaperTheme;
 use std::sync::Arc;
 
@@ -21,6 +20,7 @@ pub struct Windows {
 impl Global for Windows {}
 
 pub fn run() {
+    crate::shell::hand_off();
     let paths = Paths::resolve(&SystemEnv);
     if let Err(e) = paths.create_all() {
         eprintln!("sayso: could not create {}: {e}", paths.data_dir.display());
@@ -30,6 +30,7 @@ pub fn run() {
         sayso_core::config::LoadedConfig { config: Config::default(), issues: vec![], created: true }
     });
     init_logging(&paths, loaded.config.advanced.log_level.as_deref());
+    crate::shell::prepare();
     for issue in &loaded.issues {
         log::warn!("config: {}: {}", issue.field, issue.message);
     }
@@ -40,7 +41,7 @@ pub fn run() {
     gpui_kit::application().with_assets(sayso_ui::assets::Assets).run(move |cx| {
         gpui_kit::init(cx);
         sayso_ui::init(cx);
-        mac::become_accessory();
+        crate::shell::become_accessory();
 
         let services = start_services(&paths, &loaded.config);
         apply_theme(&loaded.config, &services, cx);
@@ -59,6 +60,17 @@ pub fn run() {
 
         crate::overlay::open(&model, cx);
         crate::popover::install(&model, cx);
+        // A second start of Sayso (Linux) asks this one to open the Hub.
+        let m = model.clone();
+        cx.spawn(async move |cx| {
+            loop {
+                cx.background_executor().timer(std::time::Duration::from_millis(250)).await;
+                if crate::shell::open_requested() {
+                    cx.update(|cx| open_hub(&m, Route::Home, cx));
+                }
+            }
+        })
+        .detach();
         if crate::dev::flag("popover") {
             let m = model.clone();
             cx.spawn(async move |cx| {
@@ -84,7 +96,9 @@ pub fn run() {
 
 fn init_logging(paths: &Paths, level: Option<&str>) {
     let level = level.unwrap_or("info");
-    let mut builder = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(level));
+    // The D-Bus library (Linux) logs each connection step at info.
+    let filter = format!("{level},zbus=warn,tracing=warn");
+    let mut builder = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(filter));
     if let Ok(file) = std::fs::File::create(paths.log_dir().join("sayso.log")) {
         builder.target(env_logger::Target::Pipe(Box::new(file)));
     }
@@ -100,7 +114,7 @@ fn start_services(paths: &Paths, config: &Config) -> Services {
             let _ = std::fs::write(sounds_dir.join(format!("{name}.wav")), bytes);
         }
     }
-    let platform = sayso_platform_macos::MacPlatform::new(sounds_dir);
+    let platform = crate::shell::platform(sounds_dir);
 
     let engine_path = config
         .advanced
@@ -168,7 +182,7 @@ pub fn open_hub(model: &Entity<AppModel>, route: Route, cx: &mut App) {
     model.update(cx, |m, cx| m.navigate(route, cx));
     if let Some(handle) = cx.global::<Windows>().hub
         && handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
-            appkit_later(cx, mac::show_app_and_activate);
+            appkit_later(cx, crate::shell::show_app_and_activate);
             return;
         }
     let bounds = Bounds::centered(None, size(px(1280.), px(820.)), cx);
@@ -179,6 +193,10 @@ pub fn open_hub(model: &Entity<AppModel>, route: Route, cx: &mut App) {
             titlebar: titlebar(),
             window_min_size: Some(size(px(1040.), px(680.))),
             inactive_frame_interval: None,
+            // The window class on Linux, which matches the desktop entry.
+            app_id: Some(crate::shell::APP_ID.into()),
+            window_decorations: crate::chrome::decorations(&model.read(cx).config),
+            window_background: crate::chrome::background(),
             focus: true,
             show: true,
             ..Default::default()
@@ -187,7 +205,7 @@ pub fn open_hub(model: &Entity<AppModel>, route: Route, cx: &mut App) {
         |window, cx| {
             window.on_window_should_close(cx, |_, cx| {
                 cx.global_mut::<Windows>().hub = None;
-                mac::set_dock_icon_visible(false);
+                crate::shell::set_dock_icon_visible(false);
                 true
             });
             cx.new(|cx| HubView::new(model2, window, cx))
@@ -197,9 +215,9 @@ pub fn open_hub(model: &Entity<AppModel>, route: Route, cx: &mut App) {
         Ok((handle, _)) => {
             cx.global_mut::<Windows>().hub = Some(handle);
             if model.read(cx).config.general.dock_icon_with_hub {
-                mac::set_dock_icon_visible(true);
+                crate::shell::set_dock_icon_visible(true);
             }
-            appkit_later(cx, mac::show_app_and_activate);
+            appkit_later(cx, crate::shell::show_app_and_activate);
         }
         Err(e) => log::error!("could not open the Hub: {e:#}"),
     }
@@ -218,6 +236,10 @@ pub fn open_onboarding(model: &Entity<AppModel>, cx: &mut App) {
             titlebar: titlebar(),
             is_resizable: false,
             focus: true,
+            // The window class on Linux, which matches the desktop entry.
+            app_id: Some(crate::shell::APP_ID.into()),
+            window_decorations: crate::chrome::decorations(&model.read(cx).config),
+            window_background: crate::chrome::background(),
             show: true,
             inactive_frame_interval: None,
             ..Default::default()
@@ -226,7 +248,7 @@ pub fn open_onboarding(model: &Entity<AppModel>, cx: &mut App) {
         |window, cx| {
             window.on_window_should_close(cx, |_, cx| {
                 cx.global_mut::<Windows>().onboarding = None;
-                mac::set_dock_icon_visible(false);
+                crate::shell::set_dock_icon_visible(false);
                 true
             });
             cx.new(|cx| crate::onboarding::OnboardingView::new(model2, window, cx))
@@ -235,8 +257,8 @@ pub fn open_onboarding(model: &Entity<AppModel>, cx: &mut App) {
     match opened {
         Ok((handle, _)) => {
             cx.global_mut::<Windows>().onboarding = Some(handle);
-            mac::set_dock_icon_visible(true);
-            appkit_later(cx, mac::show_app_and_activate);
+            crate::shell::set_dock_icon_visible(true);
+            appkit_later(cx, crate::shell::show_app_and_activate);
         }
         Err(e) => log::error!("could not open onboarding: {e:#}"),
     }

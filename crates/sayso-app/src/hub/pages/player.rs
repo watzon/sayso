@@ -1,9 +1,10 @@
 //! Audio playback for History: writes the samples to a temp WAV file and
-//! plays it with `afplay`. Pause stops the process and keeps the position.
+//! plays it with the system's player (`afplay` on macOS). Pause stops the
+//! process and keeps the position.
 
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::time::Instant;
 
 const RATE: u32 = sayso_core::stt::SAMPLE_RATE;
@@ -22,7 +23,8 @@ impl Playing {
         let slice = samples.get(skip.min(samples.len())..).unwrap_or(&[]);
         let path = temp_path(entry);
         write_wav(&path, slice).map_err(|e| format!("Could not prepare the audio: {e}"))?;
-        let child = Command::new("afplay")
+        let mut player = crate::shell::audio_player().ok_or("No audio player is installed.")?;
+        let child = player
             .arg(&path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())

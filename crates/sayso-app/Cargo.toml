@@ -1,6 +1,6 @@
 [package]
 name = "sayso-app"
-description = "Sayso: local dictation for macOS."
+description = "Sayso: local dictation for macOS and Linux."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,7 +13,6 @@ path = "src/main.rs"
 [dependencies]
 sayso-core.workspace = true
 sayso-platform.workspace = true
-sayso-platform-macos.workspace = true
 sayso-engine-client.workspace = true
 sayso-store.workspace = true
 sayso-enhance.workspace = true
@@ -27,12 +26,23 @@ chrono.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tray-icon = "0.26"
 image = { version = "0.25", default-features = false, features = ["png"] }
 raw-window-handle = "0.6"
-objc2 = "0.6"
 async-channel = "2"
 crossbeam-channel.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+sayso-platform-macos.workspace = true
+tray-icon = "0.26"
+objc2 = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sayso-platform-linux.workspace = true
+libc = "0.2"
+
+# Systems without their own backend yet (see src/shell/fallback.rs).
+[target.'cfg(not(any(target_os = "macos", target_os = "linux")))'.dependencies]
+sayso-platform-common.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -1,14 +1,14 @@
 # Sayso
 
-Sayso is a dictation app for macOS. You press a key, speak, and Sayso writes the text into the app you are using. Speech recognition runs on your Mac on the Neural Engine. Nothing leaves the Mac unless you choose a cloud model or turn on an AI style with a cloud provider.
+Sayso is a dictation app for macOS and Linux. You press a key, speak, and Sayso writes the text into the app you are using. Speech recognition runs on your computer: on the Neural Engine of a Mac, and on the CPU on Linux. Nothing leaves the computer unless you choose a cloud model or turn on an AI style with a cloud provider.
 
 ![The Sayso Hub in the light theme](docs/images/hub-home.png)
 
-Sayso is written in Rust with [GPUI](https://www.gpui.rs/). The speech engine is a Swift program that uses [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) and [FluidAudio](https://github.com/FluidInference/FluidAudio). The same developer made [Pindrop](https://github.com/watzon/pindrop).
+Sayso is written in Rust with [GPUI](https://www.gpui.rs/). On macOS the speech engine is a Swift program that uses [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) and [FluidAudio](https://github.com/FluidInference/FluidAudio). On Linux it is a Rust program that uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). The same developer made [Pindrop](https://github.com/watzon/pindrop).
 
 ## What Sayso does
 
-- **Dictation into any app.** Option+Space starts a dictation, and Option+Space stops it. You can also set a push-to-talk key. Sayso pastes the text into the focused app and then restores your clipboard.
+- **Dictation into any app.** Option+Space starts a dictation, and Option+Space stops it (Ctrl+Alt+Space on Linux). You can also set a push-to-talk key. Sayso pastes the text into the focused app and then restores your clipboard.
 - **Live preview.** An overlay shows a waveform, a timer, and the words while you speak.
 - **Local models.** Parakeet, Nemotron, Cohere Transcribe, Canary, SenseVoice, Paraformer, eight Whisper variants, and Apple Speech on macOS 26. You download the models that you want in the Models page.
 - **Cloud models, if you want them.** OpenAI, Groq, ElevenLabs, Deepgram, AssemblyAI, Mistral, or any server with the OpenAI transcription API. You use your own API key.
@@ -23,12 +23,14 @@ Sayso is written in Rust with [GPUI](https://www.gpui.rs/). The speech engine is
 
 ## Requirements
 
-- macOS 14 or later
-- A Mac with Apple Silicon
+- macOS 14 or later on a Mac with Apple Silicon.
+- Or Linux on x86_64 or aarch64, with X11 or Wayland. [docs/linux.md](docs/linux.md) lists what works on each desktop.
 
-Windows and Linux versions are planned.
+A Windows version is planned.
 
 ## Install
+
+### macOS
 
 1. Download `Sayso-<version>-macos-arm64.dmg` from the [Releases page](https://github.com/watzon/sayso/releases).
 2. Open the DMG and move Sayso to the Applications folder.
@@ -40,17 +42,25 @@ The DMG is signed with the Developer ID of Watzon Ventures LLC and notarized by 
 shasum -a 256 -c Sayso-<version>-macos-arm64.dmg.sha256
 ```
 
+### Linux
+
+1. Download `sayso-<version>-linux-<arch>.tar.gz` from the [Releases page](https://github.com/watzon/sayso/releases).
+2. Unpack it and run `./install.sh`. Sayso goes to `~/.local`. To install it for all users, with the udev rule for Wayland key input, run `sudo ./install.sh --system`.
+3. Open Sayso from your app menu. Onboarding starts.
+
+[docs/linux.md](docs/linux.md) has the details for each desktop.
+
 ## First start
 
 1. Choose a model and download it. The default, Parakeet Unified, is about 1.3 GB.
 2. Allow the microphone and Accessibility. Sayso needs Accessibility to paste text into other apps.
-3. Press Option+Space, speak, and press Option+Space again.
+3. Press Option+Space (Ctrl+Alt+Space on Linux), speak, and press it again.
 
 ## Privacy
 
-With a local model and the Raw style, Sayso sends nothing off the Mac. There is no telemetry.
+With a local model and the Raw style, Sayso sends nothing off the computer. There is no telemetry.
 
-| You turn on | What leaves the Mac | Where it goes |
+| You turn on | What leaves the computer | Where it goes |
 |---|---|---|
 | A cloud model | The audio of each dictation and your dictionary words | The speech provider that you added |
 | An AI style | The transcript, the style prompt, and your dictionary words | The AI provider of that style |
@@ -84,11 +94,11 @@ open build/Sayso.app
 
 | Kind | Default location |
 |---|---|
-| Config (`config.toml`, `styles/`) | `~/Library/Application Support/Sayso`, or `~/.config/sayso` when it exists, or `$XDG_CONFIG_HOME/sayso` |
-| History, audio, models | `~/Library/Application Support/Sayso`, or `$XDG_DATA_HOME/sayso` |
-| Logs | `~/Library/Caches/Sayso/logs/sayso.log`, or `$XDG_CACHE_HOME/sayso/logs` |
+| Config (`config.toml`, `styles/`) | macOS: `~/Library/Application Support/Sayso`, or `~/.config/sayso` when it exists. Linux: `~/.config/sayso`. `$XDG_CONFIG_HOME/sayso` on both. |
+| History, audio, models | macOS: `~/Library/Application Support/Sayso`. Linux: `~/.local/share/sayso`. `$XDG_DATA_HOME/sayso` on both. |
+| Logs | macOS: `~/Library/Caches/Sayso/logs/sayso.log`. Linux: `~/.cache/sayso/logs/sayso.log`. `$XDG_CACHE_HOME/sayso/logs` on both. |
 
-API keys are in the Keychain under `dev.sayso.Sayso`.
+API keys are in the Keychain (macOS) or the Secret Service keyring (Linux) under `dev.sayso.Sayso`.
 
 ## Help and contributions
 

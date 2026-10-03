@@ -56,9 +56,7 @@ impl Render for GeneralSettings {
             .gap(px(12.))
             .when(launch && state == LoginItemState::RequiresApproval, |d| {
                 d.child(Button::new("approve-login", "Approve in System Settings").small().on_click(|_, _, _| {
-                    let _ = std::process::Command::new("open")
-                        .arg("x-apple.systempreferences:com.apple.LoginItems-Settings.extension")
-                        .spawn();
+                    crate::shell::open("x-apple.systempreferences:com.apple.LoginItems-Settings.extension");
                 }))
             })
             .child(Switch::new("launch-at-login", launch).on_toggle({
@@ -78,14 +76,14 @@ impl Render for GeneralSettings {
             }}));
         let launch_desc = match (launch, state) {
             (true, LoginItemState::RequiresApproval) => "macOS needs your approval in Login Items before Sayso can start at login.",
-            _ => "Start Sayso in the menu bar when you log in.",
+            _ => crate::shell::os_text!("Start Sayso in the menu bar when you log in.", "Start Sayso in the background when you log in."),
         };
 
         let model = self.model.clone();
         let dock_switch = Switch::new("dock-icon", dock).on_toggle(move |on, _, cx| {
             model.update(cx, |m, cx| m.edit_config(cx, |c| c.general.dock_icon_with_hub = on));
             // The Hub is open now, so apply the change at once.
-            sayso_platform_macos::window::set_dock_icon_visible(on);
+            crate::shell::set_dock_icon_visible(on);
         });
 
         let name_field = div()
@@ -100,14 +98,17 @@ impl Render for GeneralSettings {
             .child(Input::new(&self.name).appearance(false).w_full());
         let you = group("You", cx).child(row(
             "Your name",
-            "Home greets you with it. Leave it empty to use the first name of your Mac account.",
+            crate::shell::os_text!("Home greets you with it. Leave it empty to use the first name of your Mac account.", "Home greets you with it. Leave it empty to use the name of your user account."),
             name_field,
             cx,
         ));
 
         let mut startup = group("Startup", cx)
             .child(row("Launch at login", launch_desc, launch_control, cx))
-            .child(row("Show the Dock icon while the Hub is open", "At other times Sayso lives in the menu bar only.", dock_switch, cx));
+            // Only macOS has a Dock.
+            .when(cfg!(target_os = "macos"), |g| {
+                g.child(row("Show the Dock icon while the Hub is open", "At other times Sayso lives in the menu bar only.", dock_switch, cx))
+            });
         if let Some(e) = &self.login_error {
             startup = startup.child(kit::banner(BannerKind::Warning, e.clone(), cx));
         }
@@ -154,7 +155,7 @@ impl Render for GeneralSettings {
             .child(row(
                 "Sayso",
                 &format!("Version {}", env!("CARGO_PKG_VERSION")),
-                text::ui("Local dictation for macOS", 13., FontWeight::NORMAL, c.graphite),
+                text::ui(crate::shell::os_text!("Local dictation for macOS", "Local dictation for Linux"), 13., FontWeight::NORMAL, c.graphite),
                 cx,
             ))
             .child(row(
@@ -171,7 +172,13 @@ impl Render for GeneralSettings {
             .child(row("Config file", &path, div(), cx));
         body = body.child(about);
 
-        kit::page("general-page", "General", "Your name, startup, the Dock icon, and the config file.", body, cx)
+        kit::page(
+            "general-page",
+            "General",
+            crate::shell::os_text!("Your name, startup, the Dock icon, and the config file.", "Your name, startup, and the config file."),
+            body,
+            cx,
+        )
     }
 }
 

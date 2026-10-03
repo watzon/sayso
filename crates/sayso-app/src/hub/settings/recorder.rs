@@ -259,7 +259,9 @@ pub fn conflict_text(c: &HotkeyConflict, open_app: bool) -> String {
             )
         }
         ConflictSource::System { name, .. } => format!(
-            "macOS uses {keys} for {name}. Choose another key, or turn the shortcut off in System Settings › Keyboard › Keyboard Shortcuts."
+            "{system} uses {keys} for {name}. Choose another key, or turn the shortcut off in {settings}.",
+            system = crate::shell::os_text!("macOS", "Your desktop"),
+            settings = crate::shell::os_text!("System Settings › Keyboard › Keyboard Shortcuts", "the keyboard settings of your desktop"),
         ),
     }
 }
