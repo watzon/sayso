@@ -47,6 +47,11 @@ def rename(font: TTFont, family: str, style: str) -> None:
         name.setName(style, 17, plat, enc, lang)
     if "fvar" in font:
         del font["fvar"]
+    # A static face needs no STAT. Fraunces's STAT names a "NonWonky" value
+    # that is not elidable, and DirectWrite then calls the family
+    # "Fraunces NonWonky", so Windows cannot find "Fraunces".
+    if "STAT" in font:
+        del font["STAT"]
 
 
 def cut(src: Path, axes: dict, family: str, style: str, weight: int, italic: bool) -> None:

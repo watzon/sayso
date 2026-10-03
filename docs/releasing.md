@@ -40,6 +40,20 @@ The script asks for the `.p12` password and stores the five secrets with `gh sec
 
 If the certificate is not `Developer ID Application: Watzon Ventures LLc (MB5789APU7)`, also set the repository variable `SAYSO_SIGN_IDENTITY` to its name.
 
+### Windows signing (optional)
+
+The Windows job signs the installer and the two exes when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
+
+| Secret | Contents |
+|---|---|
+| `WINDOWS_CERTIFICATE_PFX` | A code signing certificate with its private key, as a base64 `.pfx` file |
+| `WINDOWS_CERTIFICATE_PASSWORD` | The password of the `.pfx` file |
+
+```sh
+base64 -i codesign.pfx | gh secret set WINDOWS_CERTIFICATE_PFX
+gh secret set WINDOWS_CERTIFICATE_PASSWORD
+```
+
 ## Make a release
 
 1. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and commit both files to `main`.
@@ -63,9 +77,11 @@ If the certificate is not `Developer ID Application: Watzon Ventures LLc (MB5789
    gh run watch
    ```
 
-5. Open the release and make sure that it has these two files:
+5. Open the release and make sure that it has these four files:
    - `Sayso-<version>-macos-arm64.dmg`
    - `Sayso-<version>-macos-arm64.dmg.sha256`
+   - `Sayso-<version>-windows-x64-setup.exe`
+   - `Sayso-<version>-windows-x64-setup.exe.sha256`
 
 If the workflow fails, correct the cause and run it again for the same tag. It replaces files that are already attached.
 
@@ -84,9 +100,17 @@ scripts/release.sh                   # also notarize and staple
 
 For notarization, the script uses the keychain profile `notarytool-password`, the same profile that the Pindrop release uses. Set `SAYSO_NOTARY_PROFILE` to use another profile.
 
+## Build the Windows files on a PC
+
+`scripts/bundle-windows.ps1 -Installer` does the same steps as the Windows job and writes the installer and its `.sha256` to `dist\`. It needs CMake and [Inno Setup 6](https://jrsoftware.org/isinfo.php). Set `SAYSO_SIGN_CERT` and `SAYSO_SIGN_PASSWORD` to sign.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
+```
+
 ## Add a platform
 
-The Release workflow has one job for each platform. To add Windows or Linux, add a job next to `macos` that builds the files for that platform and runs `gh release upload "$TAG" <files> --clobber`. Name the files `Sayso-<version>-<os>-<arch>.<ext>`.
+The Release workflow has one job for each platform: `macos` and `windows`. To add Linux, add a job next to them that builds the files for that platform and runs `gh release upload "$TAG" <files> --clobber`. Name the files `Sayso-<version>-<os>-<arch>.<ext>`.
 
 ## Limits
 

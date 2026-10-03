@@ -6,14 +6,22 @@
 //! sound once. It never changes system settings and never requests a
 //! permission (a request from an unbundled binary could crash it).
 
+#[cfg(target_os = "macos")]
 use sayso_core::hotkey::Hotkey;
+#[cfg(target_os = "macos")]
 use sayso_platform::{Permission, SoundKind};
+#[cfg(target_os = "macos")]
 use sayso_platform_macos::MacPlatform;
+#[cfg(target_os = "macos")]
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::sync::Arc;
+#[cfg(target_os = "macos")]
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(target_os = "macos")]
 use std::time::Duration;
 
+#[cfg(target_os = "macos")]
 fn main() {
     env_logger::init();
     let sounds_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/sounds");
@@ -107,3 +115,6 @@ fn main() {
     }
     println!("done");
 }
+
+#[cfg(not(target_os = "macos"))]
+fn main() {}

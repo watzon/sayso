@@ -1,8 +1,10 @@
 //! Audio playback for History: writes the samples to a temp WAV file and
-//! plays it with `afplay`. Pause stops the process and keeps the position.
+//! plays it with `afplay` on macOS, or `PlaySound` on Windows. Pause stops
+//! the sound and keeps the position.
 
 use std::io::Write;
 use std::path::PathBuf;
+#[cfg(target_os = "macos")]
 use std::process::{Child, Command, Stdio};
 use std::time::Instant;
 
@@ -10,7 +12,15 @@ const RATE: u32 = sayso_core::stt::SAMPLE_RATE;
 
 pub struct Playing {
     pub entry: i64,
+    #[cfg(target_os = "macos")]
     child: Child,
+    /// Length of the part that plays. `PlaySound` reports no end.
+    #[cfg(windows)]
+    length_ms: u64,
+    /// `PlaySound` plays one sound per process. Only the newest `Playing`
+    /// may stop it, so dropping a replaced one keeps the new sound.
+    #[cfg(windows)]
+    sound: u64,
     started: Instant,
     from_ms: u64,
 }
@@ -22,13 +32,30 @@ impl Playing {
         let slice = samples.get(skip.min(samples.len())..).unwrap_or(&[]);
         let path = temp_path(entry);
         write_wav(&path, slice).map_err(|e| format!("Could not prepare the audio: {e}"))?;
+        #[cfg(target_os = "macos")]
         let child = Command::new("afplay")
             .arg(&path)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
             .map_err(|e| format!("Could not play the audio: {e}"))?;
-        Ok(Playing { entry, child, started: Instant::now(), from_ms })
+        #[cfg(windows)]
+        let sound = CURRENT_SOUND.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        #[cfg(windows)]
+        if !crate::os::window::play_wav(&path) {
+            return Err("Could not play the audio.".into());
+        }
+        Ok(Playing {
+            entry,
+            #[cfg(target_os = "macos")]
+            child,
+            #[cfg(windows)]
+            length_ms: length_ms(slice),
+            #[cfg(windows)]
+            sound,
+            started: Instant::now(),
+            from_ms,
+        })
     }
 
     /// The playback position now.
@@ -36,24 +63,42 @@ impl Playing {
         self.from_ms + self.started.elapsed().as_millis() as u64
     }
 
-    /// True when the player process ended by itself.
+    /// True when the sound ended by itself.
+    #[cfg(target_os = "macos")]
     pub fn finished(&mut self) -> bool {
         !matches!(self.child.try_wait(), Ok(None))
     }
 
+    #[cfg(windows)]
+    pub fn finished(&mut self) -> bool {
+        self.started.elapsed().as_millis() as u64 >= self.length_ms
+    }
+
+    #[cfg_attr(windows, allow(unused_mut))]
     pub fn stop(mut self) -> u64 {
         let pos = self.position_ms();
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        #[cfg(target_os = "macos")]
+        {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
         pos
     }
 }
 
 impl Drop for Playing {
     fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
         let _ = self.child.kill();
+        #[cfg(windows)]
+        if CURRENT_SOUND.load(std::sync::atomic::Ordering::SeqCst) == self.sound {
+            crate::os::window::stop_wav();
+        }
     }
 }
+
+#[cfg(windows)]
+static CURRENT_SOUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn temp_path(entry: i64) -> PathBuf {
     std::env::temp_dir().join(format!("sayso-play-{}-{entry}.wav", std::process::id()))

@@ -1,5 +1,7 @@
 //! The CLI providers against fake `claude` and `codex` scripts.
-//! No real tool runs and no model is called.
+//! No real tool runs and no model is called. The fake tools are shell
+//! scripts, so this file runs on Unix only.
+#![cfg(unix)]
 
 mod common;
 

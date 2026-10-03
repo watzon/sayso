@@ -1,0 +1,44 @@
+# The portable speech engine: the SaysoEngine sidecar for Windows and Linux.
+# Its own workspace, so the app workspace does not build ONNX Runtime and
+# whisper.cpp. See NOTES.md.
+[workspace]
+resolver = "3"
+
+[package]
+name = "sayso-engine"
+description = "SaysoEngine for Windows and Linux: Parakeet (ONNX Runtime) and Whisper (whisper.cpp) through transcribe-rs."
+version = "0.2.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+name = "sayso_engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "SaysoEngine"
+path = "src/main.rs"
+test = false
+
+[dependencies]
+sayso-core = { path = "../../crates/sayso-core" }
+transcribe-rs = { version = "0.3.12", features = ["onnx", "whisper-cpp"] }
+ureq = "3"
+hound = "3.5"
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+env_logger = { version = "0.10", default-features = false }
+
+[dev-dependencies]
+sayso-engine-client = { path = "../../crates/sayso-engine-client" }
+sayso-platform = { path = "../../crates/sayso-platform" }
+crossbeam-channel = "0.5"
+tiny_http = "0.12"
+tempfile = "3"
+
+[profile.release]
+# The engine is one binary that the app starts. Debug info stays out of it.
+debug = false

@@ -15,7 +15,7 @@ use crate::popover::ns_window;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use sayso_platform_macos::window as mac;
+use crate::os::window as mac;
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
 use sayso_ui::paper::PaperStyled;
@@ -162,14 +162,20 @@ pub fn open(model: &Entity<AppModel>, req: Request, cx: &mut App) {
 
     let key = req.key.clone();
     let model = model.clone();
+    // The window measures its sheet in its first frame and then takes its
+    // size. Windows draws only a shown window, so there the list opens shown,
+    // at its place with a first guess of the height; macOS opens it hidden.
+    const FIRST_H: f32 = 160.;
+    let cocoa_top = if place.flipped { place.edge + FIRST_H as f64 } else { place.edge };
+    let origin = point(px(place.left as f32), px((mac::primary_screen_height() - cocoa_top) as f32));
     // Plain GPUI, not `gpui_kit::open_window`: the kit's root paints the theme
     // background over the whole window, which shows around the sheet as a frame.
     let opened = cx.open_window(
         WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(Bounds { origin: point(px(0.), px(0.)), size: size(px(SHEET_W + SIDE * 2.), px(160.)) })),
+            window_bounds: Some(WindowBounds::Windowed(Bounds { origin, size: size(px(SHEET_W + SIDE * 2.), px(FIRST_H)) })),
             titlebar: None,
             focus: true,
-            show: false,
+            show: !cfg!(target_os = "macos"),
             kind: WindowKind::PopUp,
             is_movable: false,
             is_resizable: false,

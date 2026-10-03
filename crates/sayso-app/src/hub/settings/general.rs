@@ -56,9 +56,7 @@ impl Render for GeneralSettings {
             .gap(px(12.))
             .when(launch && state == LoginItemState::RequiresApproval, |d| {
                 d.child(Button::new("approve-login", "Approve in System Settings").small().on_click(|_, _, _| {
-                    let _ = std::process::Command::new("open")
-                        .arg("x-apple.systempreferences:com.apple.LoginItems-Settings.extension")
-                        .spawn();
+                    crate::os::open_url("x-apple.systempreferences:com.apple.LoginItems-Settings.extension");
                 }))
             })
             .child(Switch::new("launch-at-login", launch).on_toggle({
@@ -68,8 +66,11 @@ impl Render for GeneralSettings {
                 this.model.update(cx, |m, cx| m.edit_config(cx, |c| c.general.launch_at_login = on));
                 let now = this.model.read(cx).login_item_state();
                 this.login_error = match (on, now) {
-                    (true, LoginItemState::Disabled) => {
+                    (true, LoginItemState::Disabled) if cfg!(target_os = "macos") => {
                         Some("macOS did not add Sayso to the login items. Move Sayso to the Applications folder, then try again.".into())
+                    }
+                    (true, LoginItemState::Disabled) => {
+                        Some("Windows did not add Sayso to the startup apps. Check Settings › Apps › Startup.".into())
                     }
                     _ => None,
                 };
@@ -78,14 +79,15 @@ impl Render for GeneralSettings {
             }}));
         let launch_desc = match (launch, state) {
             (true, LoginItemState::RequiresApproval) => "macOS needs your approval in Login Items before Sayso can start at login.",
-            _ => "Start Sayso in the menu bar when you log in.",
+            _ if cfg!(target_os = "macos") => "Start Sayso in the menu bar when you log in.",
+            _ => "Start Sayso in the taskbar when you sign in.",
         };
 
         let model = self.model.clone();
         let dock_switch = Switch::new("dock-icon", dock).on_toggle(move |on, _, cx| {
             model.update(cx, |m, cx| m.edit_config(cx, |c| c.general.dock_icon_with_hub = on));
             // The Hub is open now, so apply the change at once.
-            sayso_platform_macos::window::set_dock_icon_visible(on);
+            crate::os::window::set_dock_icon_visible(on);
         });
 
         let name_field = div()
@@ -100,14 +102,17 @@ impl Render for GeneralSettings {
             .child(Input::new(&self.name).appearance(false).w_full());
         let you = group("You", cx).child(row(
             "Your name",
-            "Home greets you with it. Leave it empty to use the first name of your Mac account.",
+            &format!("Home greets you with it. Leave it empty to use the first name of your {} account.", if cfg!(windows) { "Windows" } else { crate::os::COMPUTER }),
             name_field,
             cx,
         ));
 
         let mut startup = group("Startup", cx)
             .child(row("Launch at login", launch_desc, launch_control, cx))
-            .child(row("Show the Dock icon while the Hub is open", "At other times Sayso lives in the menu bar only.", dock_switch, cx));
+            // Only macOS has a Dock icon to show or hide.
+            .when(cfg!(target_os = "macos"), |g| {
+                g.child(row("Show the Dock icon while the Hub is open", "At other times Sayso lives in the menu bar only.", dock_switch, cx))
+            });
         if let Some(e) = &self.login_error {
             startup = startup.child(kit::banner(BannerKind::Warning, e.clone(), cx));
         }
@@ -154,7 +159,7 @@ impl Render for GeneralSettings {
             .child(row(
                 "Sayso",
                 &format!("Version {}", env!("CARGO_PKG_VERSION")),
-                text::ui("Local dictation for macOS", 13., FontWeight::NORMAL, c.graphite),
+                text::ui(format!("Local dictation for {}", crate::os::OS_NAME), 13., FontWeight::NORMAL, c.graphite),
                 cx,
             ))
             .child(row(
@@ -171,7 +176,13 @@ impl Render for GeneralSettings {
             .child(row("Config file", &path, div(), cx));
         body = body.child(about);
 
-        kit::page("general-page", "General", "Your name, startup, the Dock icon, and the config file.", body, cx)
+        kit::page(
+            "general-page",
+            "General",
+            if cfg!(target_os = "macos") { "Your name, startup, the Dock icon, and the config file." } else { "Your name, startup, and the config file." },
+            body,
+            cx,
+        )
     }
 }
 

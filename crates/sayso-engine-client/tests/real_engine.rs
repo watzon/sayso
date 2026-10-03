@@ -8,6 +8,7 @@
 //!
 //! The spike models are only read. The test links them into a models directory under
 //! `target/`, where the CTC vocabulary helper is downloaded (about 100 MB, once).
+#![cfg(target_os = "macos")]
 
 use sayso_core::models;
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions};

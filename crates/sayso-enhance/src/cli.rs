@@ -63,7 +63,7 @@ fn collect(rx: Receiver<Vec<u8>>) -> String {
 fn spawn(inv: &Invocation, piped_stdin: bool, quiet_stderr: bool) -> Result<Child, EnhanceError> {
     let mut attempts = 0;
     loop {
-        let mut command = Command::new(inv.program);
+        let mut command = new_command(inv.program);
         command
             .args(&inv.args)
             .envs(inv.envs.iter().copied())
@@ -90,6 +90,17 @@ fn spawn(inv: &Invocation, piped_stdin: bool, quiet_stderr: bool) -> Result<Chil
             }
         }
     }
+}
+
+#[cfg(not(windows))]
+fn new_command(program: &Path) -> Command {
+    Command::new(program)
+}
+
+/// No console window, and npm `.cmd` shims run through node (see `win_shim`).
+#[cfg(windows)]
+fn new_command(program: &Path) -> Command {
+    crate::win_shim::command(program)
 }
 
 /// Run the tool and collect its output. When the deadline passes, the tool is

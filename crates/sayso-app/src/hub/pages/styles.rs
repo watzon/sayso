@@ -863,9 +863,9 @@ impl StylesPage {
                 },
             };
             let detail = if models.is_empty() {
-                "Running on this Mac · no models pulled yet".to_string()
+                format!("Running on this {} · no models pulled yet", crate::os::COMPUTER)
             } else {
-                format!("Running on this Mac · {}", kit::plural(models.len(), "model", "models"))
+                format!("Running on this {} · {}", crate::os::COMPUTER, kit::plural(models.len(), "model", "models"))
             };
             strip = strip.child(self.suggestion("suggest-ollama", "Ollama", detail, p, cx));
         }
@@ -876,7 +876,7 @@ impl StylesPage {
                 name: "Claude CLI".into(),
                 kind: ProviderKind::ClaudeCli { path: Some(path.display().to_string()), model: "haiku".into() },
             };
-            strip = strip.child(self.suggestion("suggest-claude", "Claude CLI", "Found on this Mac · Cloud".into(), p, cx));
+            strip = strip.child(self.suggestion("suggest-claude", "Claude CLI", format!("Found on this {} · Cloud", crate::os::COMPUTER), p, cx));
         }
         let has_codex = providers.iter().any(|p| matches!(p.kind, ProviderKind::CodexCli { .. }));
         if let (Some(path), false) = (&detected.codex_cli, has_codex) {
@@ -885,7 +885,7 @@ impl StylesPage {
                 name: "Codex CLI".into(),
                 kind: ProviderKind::CodexCli { path: Some(path.display().to_string()), model: None },
             };
-            strip = strip.child(self.suggestion("suggest-codex", "Codex CLI", "Found on this Mac · Cloud · about 5 s".into(), p, cx));
+            strip = strip.child(self.suggestion("suggest-codex", "Codex CLI", format!("Found on this {} · Cloud · about 5 s", crate::os::COMPUTER), p, cx));
         }
         strip = strip.child(
             kit::dashed("add-provider", cx)
@@ -898,7 +898,7 @@ impl StylesPage {
         );
         let mut col = div().flex().flex_col().gap(px(12.)).child(kit::section_head("Providers", Some(note.into_any_element()), cx).pb(px(8.)));
         if providers.is_empty() && !detected.done {
-            col = col.child(ui("Looking for AI providers on this Mac.", 13., 16., FontWeight::NORMAL, c.graphite));
+            col = col.child(ui(format!("Looking for AI providers on this {}.", crate::os::COMPUTER), 13., 16., FontWeight::NORMAL, c.graphite));
         }
         col = col.child(strip);
         if let Some(panel) = self.add_panel(cx) {
@@ -915,7 +915,7 @@ impl StylesPage {
         }
         let name = cx.new(|cx| InputState::new(window, cx).placeholder("For example, OpenRouter"));
         let url = cx.new(|cx| InputState::new(window, cx).placeholder("https://openrouter.ai/api/v1"));
-        let key = cx.new(|cx| InputState::new(window, cx).placeholder("Stored in your Keychain").masked(true));
+        let key = cx.new(|cx| InputState::new(window, cx).placeholder(format!("Stored in {}", crate::os::SECRET_STORE)).masked(true));
         self._subs.push(cx.subscribe_in(&url, window, |_, _, _: &InputEvent, _, cx| cx.notify()));
         name.update(cx, |s, cx| s.focus(window, cx));
         self.add = Some(AddProvider { kind: AddKind::OpenAi, name, url, key, error: None });

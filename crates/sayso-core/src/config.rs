@@ -529,6 +529,8 @@ mod tests {
         assert_eq!(c.hotkeys.toggle.unwrap().to_string(), "opt+space");
         assert_eq!(c.hotkeys.push_to_talk, None);
         assert_eq!(c.hotkeys.cancel, CancelMode::DoubleEscape);
+        assert_eq!(c.hotkeys.paste_last, Some(Hotkey::paste_last_default()));
+        #[cfg(target_os = "macos")]
         assert_eq!(c.hotkeys.paste_last.unwrap().to_string(), "ctrl+cmd+v");
         assert_eq!(c.history.keep_text_days, None);
         assert_eq!(c.history.keep_audio_days, Some(30));

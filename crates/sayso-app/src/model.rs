@@ -241,16 +241,16 @@ impl AppModel {
         if !path.exists() {
             let _ = self.config.save(&path);
         }
-        let _ = std::process::Command::new("open").arg("-R").arg(&path).spawn();
+        crate::os::reveal(&path);
     }
 
     pub fn open_path(path: &std::path::Path) {
-        let _ = std::process::Command::new("open").arg(path).spawn();
+        crate::os::open_path(path);
     }
 
     /// Open a web page in the default browser.
     pub fn open_url(url: &str) {
-        let _ = std::process::Command::new("open").arg(url).spawn();
+        crate::os::open_url(url);
     }
 
     pub fn register_hotkeys(&mut self) {
@@ -923,6 +923,10 @@ impl AppModel {
 /// The major version of macOS ("15" from "15.6.1"). 14, the oldest macOS Sayso
 /// runs on, when the version cannot be read.
 pub fn macos_major() -> u32 {
+    if !cfg!(target_os = "macos") {
+        // `min_macos` means nothing elsewhere, and no catalog model there needs more than 14.
+        return 14;
+    }
     static VERSION: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *VERSION.get_or_init(|| {
         std::process::Command::new("sw_vers")

@@ -258,8 +258,9 @@ pub fn conflict_text(c: &HotkeyConflict, open_app: bool) -> String {
                 "{name}{open} uses {keys} by default. If you did not change it in {name}, both apps will react. Choose another key, or change the shortcut in {name}."
             )
         }
-        ConflictSource::System { name, .. } => format!(
+        ConflictSource::System { name, .. } if cfg!(target_os = "macos") => format!(
             "macOS uses {keys} for {name}. Choose another key, or turn the shortcut off in System Settings › Keyboard › Keyboard Shortcuts."
         ),
+        ConflictSource::System { name, .. } => format!("{} uses {keys} for {name}. Choose another key.", crate::os::OS_NAME),
     }
 }

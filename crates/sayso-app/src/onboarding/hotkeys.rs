@@ -152,6 +152,10 @@ impl OnboardingView {
             div().child(text::ui("Optional", 13., FontWeight::NORMAL, c.graphite))
         };
         let im_line: AnyElement = match (ptt.is_some(), im) {
+            // Windows needs no permission to hear keys in other apps.
+            _ if !crate::os::HAS_INPUT_PERMISSIONS => {
+                text::ui("Works in every app while you hold it.", 13., FontWeight::NORMAL, c.graphite).into_any_element()
+            }
             (true, PermissionState::Granted) => super::check_line("Input Monitoring is on.", &c).into_any_element(),
             (true, _) => div()
                 .flex()

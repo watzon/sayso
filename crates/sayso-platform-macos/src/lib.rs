@@ -2,6 +2,9 @@
 //!
 //! Build everything with [`MacPlatform::new`]. The `window` module holds the
 //! AppKit helpers the UI calls directly.
+//!
+//! The crate is empty on other platforms, so `cargo test --workspace` works there.
+#![cfg(target_os = "macos")]
 
 pub mod audio;
 pub mod conflicts;

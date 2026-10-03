@@ -10,6 +10,7 @@ const OLLAMA_URL: &str = "http://localhost:11434";
 
 /// Folders to search after `PATH`. A Dock-launched app has a short `PATH`, so
 /// the usual install folders are listed here.
+#[cfg(not(windows))]
 fn common_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
@@ -24,16 +25,45 @@ fn common_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// Folders to search after `PATH` on Windows: the native installers' folders
+/// and npm's global folder.
+#[cfg(windows)]
+fn common_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(home) = std::env::var_os("USERPROFILE").map(PathBuf::from) {
+        dirs.push(home.join(".local").join("bin"));
+        dirs.push(home.join(".claude").join("local"));
+        dirs.push(home.join(".bun").join("bin"));
+    }
+    if let Some(appdata) = std::env::var_os("APPDATA").map(PathBuf::from) {
+        dirs.push(appdata.join("npm"));
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) {
+        dirs.push(local.join("pnpm"));
+        dirs.push(local.join("Volta").join("bin"));
+    }
+    dirs
+}
+
 fn path_dirs() -> Vec<PathBuf> {
     std::env::var_os("PATH").map(|p| std::env::split_paths(&p).collect()).unwrap_or_default()
 }
 
 /// The first executable file called `name` in `dirs`.
+#[cfg(not(windows))]
 pub(crate) fn find_executable(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     use std::os::unix::fs::PermissionsExt;
     dirs.iter().map(|d| d.join(name)).find(|candidate| {
         std::fs::metadata(candidate).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
     })
+}
+
+/// The first file called `name` with an executable extension (`PATHEXT`) in
+/// `dirs`. In each folder `.exe` wins over an npm `.cmd` shim.
+#[cfg(windows)]
+pub(crate) fn find_executable(name: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+    let names = crate::win_shim::executable_names(name);
+    dirs.iter().flat_map(|d| names.iter().map(move |n| d.join(n))).find(|candidate| candidate.is_file())
 }
 
 fn detect(name: &str) -> Option<PathBuf> {
@@ -137,8 +167,10 @@ pub fn test_provider(enhancer: &dyn Enhancer) -> Result<u64, EnhanceError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
+    #[cfg(unix)]
     fn touch(dir: &std::path::Path, name: &str, mode: u32) {
         let path = dir.join(name);
         std::fs::write(&path, "#!/bin/sh\n").unwrap();
@@ -146,6 +178,20 @@ mod tests {
     }
 
     #[test]
+    #[cfg(windows)]
+    fn finds_exe_and_cmd_files_in_order() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        std::fs::write(a.path().join("claude"), "").unwrap(); // no extension: skipped
+        std::fs::write(b.path().join("claude.cmd"), "").unwrap();
+        let dirs = vec![a.path().to_path_buf(), b.path().to_path_buf()];
+        assert_eq!(find_executable("claude", &dirs), Some(b.path().join("claude.cmd")));
+        std::fs::write(b.path().join("claude.exe"), "").unwrap();
+        assert_eq!(find_executable("claude", &dirs), Some(b.path().join("claude.exe")));
+        assert_eq!(find_executable("codex", &dirs), None);
+    }
+
+    #[test]
+    #[cfg(unix)]
     fn finds_the_first_executable_in_order() {
         let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         touch(a.path(), "claude", 0o644); // not executable: skipped
@@ -165,6 +211,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(windows))]
     fn common_dirs_cover_the_usual_install_folders() {
         let dirs = common_dirs();
         for needle in ["/opt/homebrew/bin", "/usr/local/bin", ".local/bin", ".claude/local"] {

@@ -13,6 +13,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Git Bash on Windows: the Windows script does the same steps.
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*) exec powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/dev.ps1 "$@" ;;
+esac
+
 scripts/bundle.sh --debug
 app="$PWD/build/Sayso.app"
 exe="$app/Contents/MacOS/Sayso"

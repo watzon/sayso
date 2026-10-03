@@ -9,6 +9,8 @@ publish.workspace = true
 [dependencies]
 sayso-core.workspace = true
 sayso-platform.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true
