@@ -347,11 +347,13 @@ pub struct AppearanceConfig {
     pub paper_texture: bool,
     /// None follows the macOS setting.
     pub reduce_motion: Option<bool>,
+    /// Linux only. False gives Sayso's own title bar and window buttons.
+    pub system_title_bar: bool,
 }
 
 impl Default for AppearanceConfig {
     fn default() -> Self {
-        Self { theme: ThemeMode::System, ink: Ink::default(), paper_texture: true, reduce_motion: None }
+        Self { theme: ThemeMode::System, ink: Ink::default(), paper_texture: true, reduce_motion: None, system_title_bar: true }
     }
 }
 
@@ -526,10 +528,11 @@ mod tests {
     #[test]
     fn defaults_match_the_plan() {
         let c = Config::default();
-        assert_eq!(c.hotkeys.toggle.unwrap().to_string(), "opt+space");
+        let (toggle, paste_last) = if cfg!(target_os = "macos") { ("opt+space", "ctrl+cmd+v") } else { ("ctrl+alt+space", "ctrl+alt+v") };
+        assert_eq!(c.hotkeys.toggle.unwrap().to_string(), toggle);
         assert_eq!(c.hotkeys.push_to_talk, None);
         assert_eq!(c.hotkeys.cancel, CancelMode::DoubleEscape);
-        assert_eq!(c.hotkeys.paste_last.unwrap().to_string(), "ctrl+cmd+v");
+        assert_eq!(c.hotkeys.paste_last.unwrap().to_string(), paste_last);
         assert_eq!(c.history.keep_text_days, None);
         assert_eq!(c.history.keep_audio_days, Some(30));
         assert!(c.overlay.idle_pill);

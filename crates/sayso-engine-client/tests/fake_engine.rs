@@ -1,7 +1,7 @@
 //! Tests against a scripted engine (`sayso-fake-engine`) that speaks the NDJSON protocol.
 
 use crossbeam_channel::Receiver;
-use sayso_core::models::ModelId;
+use sayso_core::models::{ModelId, default_model};
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions};
 use sayso_engine_client::{EngineClient, Options};
 use sayso_platform::SttBackend;
@@ -47,7 +47,7 @@ fn fixture() -> Fixture {
 fn options_for(model: &str) -> SessionOptions {
     SessionOptions {
         final_model: ModelId::new(model),
-        preview_model: Some(ModelId::new("parakeet-unified-en")),
+        preview_model: Some(default_model()),
         language: "en".into(),
         vocabulary: vec!["Sayso".into()],
     }
@@ -161,11 +161,11 @@ fn events_reach_every_subscriber() {
     let f = fixture();
     let first = f.client.subscribe();
     let second = f.client.subscribe();
-    let model = ModelId::new("parakeet-unified-en");
+    let model = default_model();
 
     f.client.load(&model).unwrap();
     f.client
-        .start_stream(9, &options_for("parakeet-unified-en"))
+        .start_stream(9, &options_for(default_model().as_str()))
         .unwrap();
     f.client.push_audio(9, &[0.25; 320]).unwrap();
 
@@ -252,7 +252,7 @@ fn download_progress_fills_the_status_cache() {
 fn crash_restarts_the_engine_and_loads_models_again() {
     let f = fixture();
     let events = f.client.subscribe();
-    let model = ModelId::new("parakeet-unified-en");
+    let model = default_model();
     f.client.load(&model).unwrap();
     assert_eq!(f.client.status(&model), ModelStatus::Ready);
 
@@ -313,7 +313,7 @@ fn calls_fail_fast_while_the_engine_is_down() {
     });
 
     let started = Instant::now();
-    assert!(client.load(&ModelId::new("parakeet-unified-en")).is_err());
+    assert!(client.load(&default_model()).is_err());
     assert!(client.push_audio(1, &[0.0; 320]).is_err());
     assert!(started.elapsed() < Duration::from_millis(500));
 }
@@ -344,7 +344,7 @@ fn dropping_the_client_stops_the_engine() {
 fn push_audio_does_not_wait_for_the_engine() {
     let f = fixture();
     f.client
-        .start_stream(1, &options_for("parakeet-unified-en"))
+        .start_stream(1, &options_for(default_model().as_str()))
         .unwrap();
     let started = Instant::now();
     for _ in 0..2000 {
@@ -361,6 +361,7 @@ fn push_audio_does_not_wait_for_the_engine() {
 fn default_engine_path_names_the_sidecar() {
     // Without SAYSO_ENGINE_PATH the dev path or a bundled copy comes back.
     if std::env::var_os("SAYSO_ENGINE_PATH").is_none() {
-        assert!(EngineClient::default_engine_path().ends_with("SaysoEngine"));
+        let name = if cfg!(target_os = "macos") { "SaysoEngine" } else { "sayso-engine" };
+        assert!(EngineClient::default_engine_path().ends_with(name));
     }
 }

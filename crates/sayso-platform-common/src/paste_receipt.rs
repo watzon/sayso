@@ -1,13 +1,14 @@
 //! When did the target app read the pasted text?
 //!
-//! The paste publishes the text as a promise. macOS then tells us each time
-//! an app reads it. A read after Cmd+V is the receipt: an app took the text.
-//! This module holds the times and decides what they mean. It has no macOS
-//! code, so the rules are tested directly.
+//! The paste publishes the text as a promise (macOS) or owns the clipboard
+//! selection (X11). The system then tells us each time an app reads it. A
+//! read after the paste key is the receipt: an app took the text. This module
+//! holds the times and decides what they mean. It has no system code, so the
+//! rules are tested directly.
 
 use std::time::{Duration, Instant};
 
-/// How long to wait for the first read after Cmd+V. A busy app reads within
+/// How long to wait for the first read after the paste key. A busy app reads within
 /// tens of milliseconds. With no read in this time, nothing took the text.
 pub const NO_READ_TIMEOUT: Duration = Duration::from_millis(1500);
 /// The longest wait after the first read, for an app that keeps reading.
@@ -19,14 +20,14 @@ pub enum Verdict {
     Wait,
     /// An app read the text, and its reads have stopped.
     Taken,
-    /// No app read the text after Cmd+V.
+    /// No app read the text after the paste key.
     NotTaken,
 }
 
 /// The reads of one paste.
 #[derive(Debug, Default)]
 pub struct Receipts {
-    /// When Cmd+V was sent. A read before this time is not the target app: it
+    /// When the paste key was sent. A read before this time is not the target app: it
     /// is a clipboard manager that reacts to the clipboard change itself.
     sent_at: Option<Instant>,
     reads: Vec<Instant>,
@@ -47,7 +48,7 @@ impl Receipts {
         self.replaced = true;
     }
 
-    /// The reads that count: at or after Cmd+V.
+    /// The reads that count: at or after the paste key.
     fn reads_after_send(&self) -> impl Iterator<Item = Instant> + '_ {
         let sent_at = self.sent_at;
         self.reads.iter().copied().filter(move |read| sent_at.is_some_and(|sent| *read >= sent))
@@ -111,7 +112,7 @@ mod tests {
 
     #[test]
     fn a_read_before_the_key_press_does_not_count() {
-        // A clipboard manager reads when the clipboard changes, before Cmd+V.
+        // A clipboard manager reads when the clipboard changes, before the paste key.
         let t = Instant::now();
         let mut r = Receipts::default();
         r.record_read(t);

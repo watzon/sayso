@@ -2,25 +2,27 @@
 //!
 //! Build everything with [`MacPlatform::new`]. The `window` module holds the
 //! AppKit helpers the UI calls directly.
+//!
+//! The crate compiles to nothing on other systems.
 
-pub mod audio;
+#![cfg(target_os = "macos")]
+
 pub mod conflicts;
 pub mod context;
-pub mod esc;
 pub mod ffi;
 pub mod hotkeys;
 pub mod inserter;
 pub mod keymap;
-pub mod paste_receipt;
 pub mod login_item;
 pub mod permissions;
 pub mod prefs;
-pub mod resample;
 pub mod secure_input;
-pub mod sounds;
 pub mod tap;
 pub mod tap_logic;
 pub mod window;
+
+// The portable modules, under the paths this crate always had.
+pub use sayso_platform_common::{audio, esc, paste_receipt, resample, sounds};
 
 use sayso_platform::Platform;
 use std::path::PathBuf;
@@ -40,8 +42,8 @@ impl MacPlatform {
             inserter: Arc::new(inserter::MacInserter),
             context: Arc::new(context::MacContext),
             permissions: Arc::new(permissions::MacPermissions),
-            audio: Arc::new(audio::MacAudio),
-            sounds: Arc::new(sounds::MacSounds::new(sounds_dir)),
+            audio: Arc::new(audio::CpalAudio::new(permissions::microphone_status)),
+            sounds: Arc::new(sounds::RodioSounds::new(sounds_dir)),
             login_item: Arc::new(login_item::MacLoginItem),
             prefs: Arc::new(prefs::MacPrefs),
         }

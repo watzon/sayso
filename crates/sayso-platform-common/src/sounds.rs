@@ -16,7 +16,7 @@ use std::time::Duration;
 /// How long the worker keeps the output device open after the last sound.
 const IDLE_CLOSE: Duration = Duration::from_secs(30);
 
-pub struct MacSounds {
+pub struct RodioSounds {
     tx: Sender<(SoundKind, f32)>,
 }
 
@@ -30,7 +30,7 @@ pub fn file_name(sound: SoundKind) -> &'static str {
     }
 }
 
-impl MacSounds {
+impl RodioSounds {
     pub fn new(sounds_dir: PathBuf) -> Self {
         let (tx, rx) = crossbeam_channel::unbounded::<(SoundKind, f32)>();
         let spawned = std::thread::Builder::new().name("sayso-sounds".into()).spawn(move || {
@@ -55,7 +55,7 @@ impl MacSounds {
     }
 }
 
-impl SoundPlayer for MacSounds {
+impl SoundPlayer for RodioSounds {
     fn play(&self, sound: SoundKind, volume: f32) {
         let _ = self.tx.send((sound, volume.clamp(0.0, 1.0)));
     }

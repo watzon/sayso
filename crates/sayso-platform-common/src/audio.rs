@@ -4,7 +4,6 @@
 //! resample to 16 kHz, cut into 20 ms frames, compute a display level, and
 //! call `on_frame`. The callback allocates nothing once its buffers are warm.
 
-use crate::permissions::microphone_status;
 use crate::resample::StreamResampler;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample};
@@ -21,7 +20,25 @@ const LEVEL_FLOOR_DB: f32 = -50.0;
 /// which gives a level of about 0.67. Loud speech (-20 dBFS) gives 0.83.
 const LEVEL_RANGE_DB: f32 = 36.0;
 
-pub struct MacAudio;
+/// Capture through the default `cpal` host.
+pub struct CpalAudio {
+    /// The microphone permission, checked before each start. A denied
+    /// microphone gives silence instead of an error on some systems.
+    microphone_status: fn() -> PermissionState,
+}
+
+impl CpalAudio {
+    /// `microphone_status` reads the system's microphone permission. Pass
+    /// [`always_granted`] on a system without one.
+    pub fn new(microphone_status: fn() -> PermissionState) -> Self {
+        Self { microphone_status }
+    }
+}
+
+/// For systems that do not gate the microphone per app.
+pub fn always_granted() -> PermissionState {
+    PermissionState::Granted
+}
 
 /// Root mean square of a frame.
 pub fn rms(samples: &[f32]) -> f32 {
@@ -137,7 +154,7 @@ impl CaptureHandle for Handle {
     }
 }
 
-impl AudioCapture for MacAudio {
+impl AudioCapture for CpalAudio {
     fn devices(&self) -> Vec<AudioDevice> {
         let host = cpal::default_host();
         let default_id = host.default_input_device().and_then(|d| d.id().ok()).map(|id| id.to_string());
@@ -157,7 +174,7 @@ impl AudioCapture for MacAudio {
         on_frame: Box<dyn FnMut(AudioFrame) + Send>,
     ) -> Result<Box<dyn CaptureHandle>> {
         // A denied microphone gives silence, not an error, so check first.
-        if microphone_status() == PermissionState::Denied {
+        if (self.microphone_status)() == PermissionState::Denied {
             return Err(PlatformError::PermissionDenied(Permission::Microphone));
         }
         let host = cpal::default_host();

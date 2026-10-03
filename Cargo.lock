@@ -7176,12 +7176,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-platform-common"
+version = "0.2.0"
+dependencies = [
+ "cpal 0.18.2",
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "rodio",
+ "sayso-platform",
+]
+
+[[package]]
 name = "sayso-platform-macos"
 version = "0.2.0"
 dependencies = [
  "block2 0.6.2",
  "core-foundation 0.10.1",
- "cpal 0.18.2",
  "crossbeam-channel",
  "env_logger",
  "global-hotkey",
@@ -7192,9 +7203,9 @@ dependencies = [
  "objc2-foundation 0.3.2",
  "objc2-service-management",
  "parking_lot",
- "rodio",
  "sayso-core",
  "sayso-platform",
+ "sayso-platform-common",
  "serde_json",
  "thiserror 2.0.21",
 ]

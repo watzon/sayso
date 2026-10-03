@@ -25,6 +25,30 @@ impl PathEnv for SystemEnv {
     }
 }
 
+/// The folders to use when no XDG variable says otherwise.
+struct PlatformDefaults {
+    config: PathBuf,
+    data: PathBuf,
+    cache: PathBuf,
+}
+
+impl PlatformDefaults {
+    /// macOS: `~/Library`. Other systems: the XDG defaults (`~/.config`,
+    /// `~/.local/share`, `~/.cache`).
+    fn for_home(home: &Path) -> Self {
+        if cfg!(target_os = "macos") {
+            let app_support = home.join("Library/Application Support/Sayso");
+            Self { config: app_support.clone(), data: app_support, cache: home.join("Library/Caches/Sayso") }
+        } else {
+            Self {
+                config: home.join(".config/sayso"),
+                data: home.join(".local/share/sayso"),
+                cache: home.join(".cache/sayso"),
+            }
+        }
+    }
+}
+
 /// Which rule picked a directory. Settings shows this next to the path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PathSource {
@@ -45,24 +69,24 @@ pub struct Paths {
 impl Paths {
     pub fn resolve(env: &impl PathEnv) -> Self {
         let home = env.home();
-        let app_support = home.join("Library/Application Support/Sayso");
+        let defaults = PlatformDefaults::for_home(&home);
 
         let (config_dir, config_source) = if let Some(xdg) = env.var("XDG_CONFIG_HOME") {
             (PathBuf::from(xdg).join("sayso"), PathSource::XdgVariable)
         } else if env.exists(&home.join(".config/sayso")) {
             (home.join(".config/sayso"), PathSource::DotConfig)
         } else {
-            (app_support.clone(), PathSource::PlatformDefault)
+            (defaults.config, PathSource::PlatformDefault)
         };
 
         let (data_dir, data_source) = match env.var("XDG_DATA_HOME") {
             Some(xdg) => (PathBuf::from(xdg).join("sayso"), PathSource::XdgVariable),
-            None => (app_support, PathSource::PlatformDefault),
+            None => (defaults.data, PathSource::PlatformDefault),
         };
 
         let cache_dir = match env.var("XDG_CACHE_HOME") {
             Some(xdg) => PathBuf::from(xdg).join("sayso"),
-            None => home.join("Library/Caches/Sayso"),
+            None => defaults.cache,
         };
 
         Self { config_dir, config_source, data_dir, data_source, cache_dir }
@@ -156,15 +180,21 @@ mod tests {
         let with = Paths::resolve(&env(&[], &["/Users/test/.config/sayso"]));
         assert_eq!(with.config_dir, PathBuf::from("/Users/test/.config/sayso"));
         let without = Paths::resolve(&env(&[], &[]));
-        assert_eq!(without.config_dir, PathBuf::from("/Users/test/Library/Application Support/Sayso"));
+        let config = if cfg!(target_os = "macos") { "/Users/test/Library/Application Support/Sayso" } else { "/Users/test/.config/sayso" };
+        assert_eq!(without.config_dir, PathBuf::from(config));
         assert_eq!(without.config_source, PathSource::PlatformDefault);
     }
 
     #[test]
     fn data_and_cache_defaults() {
         let p = Paths::resolve(&env(&[], &[]));
-        assert_eq!(p.data_dir, PathBuf::from("/Users/test/Library/Application Support/Sayso"));
-        assert_eq!(p.cache_dir, PathBuf::from("/Users/test/Library/Caches/Sayso"));
+        let (data, cache) = if cfg!(target_os = "macos") {
+            ("/Users/test/Library/Application Support/Sayso", "/Users/test/Library/Caches/Sayso")
+        } else {
+            ("/Users/test/.local/share/sayso", "/Users/test/.cache/sayso")
+        };
+        assert_eq!(p.data_dir, PathBuf::from(data));
+        assert_eq!(p.cache_dir, PathBuf::from(cache));
         let x = Paths::resolve(&env(&[("XDG_DATA_HOME", "/d"), ("XDG_CACHE_HOME", "/c")], &[]));
         assert_eq!(x.data_dir, PathBuf::from("/d/sayso"));
         assert_eq!(x.cache_dir, PathBuf::from("/c/sayso"));
