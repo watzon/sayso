@@ -2,8 +2,7 @@ cask "sayso" do
   version "@VERSION@"
   sha256 "@SHA256@"
 
-  url "https://github.com/watzon/sayso/releases/download/v#{version}/Sayso-#{version}-macos-arm64.dmg",
-      verified: "github.com/watzon/sayso/"
+  url "https://github.com/watzon/sayso/releases/download/v#{version}/Sayso-#{version}-macos-arm64.dmg"
   name "Sayso"
   desc "Local voice dictation into any app"
   homepage "https://justsayso.app/"
