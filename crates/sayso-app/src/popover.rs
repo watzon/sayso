@@ -71,9 +71,12 @@ fn placement(icon: mac::Rect, screen_right: f64, above: bool) -> (f64, f64, Subm
 }
 
 /// Put the popover under the menu bar icon and show it. Runs outside a GPUI update.
+///
+/// The size is set too: the window opens hidden, and on Windows a hidden
+/// window has the system's default size until GPUI shows it itself.
 fn place_and_show(ns: *mut c_void, origin: Option<(f64, f64)>) {
     if let Some((x, y)) = origin {
-        mac::set_frame_origin(ns, x, y);
+        mac::set_frame(ns, x, y, WINDOW_W as f64, WINDOW_H as f64);
     }
     mac::show_and_focus(ns);
 }
@@ -124,11 +127,8 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let tx = std::sync::Mutex::new(tx);
     tray_icon::TrayIconEvent::set_event_handler(Some(move |e: tray_icon::TrayIconEvent| {
-        if let tray_icon::TrayIconEvent::Click {
-            button: tray_icon::MouseButton::Left,
-            button_state: tray_icon::MouseButtonState::Down,
-            ..
-        } = e
+        if let tray_icon::TrayIconEvent::Click { button, button_state, .. } = e
+            && opens_popover(button, button_state)
         {
             let _ = tx.lock().map(|t| t.send(()));
         }
@@ -144,6 +144,17 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
         }
     })
     .detach();
+}
+
+/// macOS opens a menu bar item on the press of the left button. A taskbar
+/// icon opens on the release, and a right click opens it too.
+fn opens_popover(button: tray_icon::MouseButton, state: tray_icon::MouseButtonState) -> bool {
+    use tray_icon::{MouseButton, MouseButtonState};
+    if cfg!(target_os = "macos") {
+        button == MouseButton::Left && state == MouseButtonState::Down
+    } else {
+        matches!(button, MouseButton::Left | MouseButton::Right) && state == MouseButtonState::Up
+    }
 }
 
 #[cfg(target_os = "macos")]
