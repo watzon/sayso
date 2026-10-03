@@ -159,7 +159,6 @@ pub(super) fn catalog() -> Vec<ModelInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{ModelId, preview_for};
 
     fn model(id: &str) -> ModelInfo {
         catalog().into_iter().find(|m| m.id.as_str() == id).unwrap()
@@ -187,6 +186,7 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "macos"))] // `preview_for` reads the catalog of this platform.
     fn whisper_borrows_the_parakeet_preview_in_parakeet_languages() {
+        use crate::models::{ModelId, preview_for};
         let whisper = model("whisper-small");
         let on = |ids: &'static [&'static str]| move |id: &ModelId| ids.contains(&id.as_str());
         assert_eq!(preview_for(&whisper, "en", on(&["parakeet-tdt-v3"])), Some(ModelId::new("parakeet-tdt-v3")));
