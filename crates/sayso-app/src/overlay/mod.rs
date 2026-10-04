@@ -76,6 +76,15 @@ pub struct OverlayView {
     _observe: Subscription,
 }
 
+/// The window bounds in global points, with the origin at the top left of the
+/// primary display. `Window::bounds` on macOS is relative to the display of
+/// the window, so it is wrong when the overlay is not on the primary display.
+fn global_bounds(window: &Window, ns: crate::shell::NativeWindow) -> Bounds<Pixels> {
+    let Some(frame) = crate::shell::frame(ns) else { return window.bounds() };
+    let top = placement::main_screen_height() - (frame.y + frame.height) as f32;
+    Bounds { origin: point(px(frame.x as f32), px(top)), size: size(px(frame.width as f32), px(frame.height as f32)) }
+}
+
 /// How often the overlay looks for the display in use.
 const FOLLOW_EVERY: Duration = Duration::from_millis(250);
 
@@ -136,7 +145,7 @@ impl OverlayView {
         let screens = crate::shell::screens();
         let focus = crate::shell::focused_window_frame().and_then(|f| placement::display_at(&screens, f.x + f.width / 2.0, f.y + f.height / 2.0));
         let Some(target) = self.follow.target(placement::display_at(&screens, mouse.x, mouse.y), focus) else { return };
-        if self.placement.display_of(&screens, window.bounds()) == Some(target) {
+        if self.placement.display_of(&screens, global_bounds(window, ns)) == Some(target) {
             return;
         }
         let Some(origin) = self.placement.origin_on(&screens, target) else { return };
@@ -183,8 +192,8 @@ impl OverlayView {
             return self.track_in_place(window, ns, check_fullscreen, cx);
         }
         let mouse = crate::shell::mouse_location();
-        let frame = window.bounds();
-        // Window bounds are top-left based in GPUI; the mouse is Cocoa (bottom-left).
+        let frame = global_bounds(window, ns);
+        // These bounds are top-left based; the mouse is Cocoa (bottom-left).
         let screen_h = placement::main_screen_height();
         let local = point(px(mouse.x as f32) - frame.origin.x, px(screen_h - mouse.y as f32) - frame.origin.y);
         let card = self.card.get();
@@ -275,9 +284,10 @@ impl OverlayView {
             self.click(cx);
             return;
         }
+        let Some(ns) = crate::shell::native(window) else { return };
         let mouse = crate::shell::mouse_location();
         let screen_h = placement::main_screen_height();
-        self.drag = Some((point(px(mouse.x as f32), px(screen_h - mouse.y as f32)), window.bounds().origin, false));
+        self.drag = Some((point(px(mouse.x as f32), px(screen_h - mouse.y as f32)), global_bounds(window, ns).origin, false));
     }
 
     fn end_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -285,7 +295,7 @@ impl OverlayView {
         let Some(ns) = crate::shell::native(window) else { return };
         if moved {
             // Read the real frame after the move, snap, and save.
-            let snapped = self.placement.snap_and_save(window.bounds(), cx);
+            let snapped = self.placement.snap_and_save(global_bounds(window, ns), cx);
             let screen_h = placement::main_screen_height();
             let (x, y) = (snapped.x.as_f32() as f64, (screen_h - snapped.y.as_f32() - HEIGHT) as f64);
             crate::app::appkit_later(cx, move || crate::shell::set_frame_origin(ns, x, y));
