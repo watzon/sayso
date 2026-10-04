@@ -9,7 +9,7 @@ use std::time::Duration;
 fn clean(transcript: &str) -> (String, u64) {
     let style = builtin_styles().into_iter().find(|s| s.id == "clean").unwrap();
     let request = EnhanceRequest {
-        system_prompt: system_prompt(&style, &["Sayso".into()]),
+        system_prompt: system_prompt(&style, &["Sayso".into()], transcript),
         transcript: transcript.into(),
         model: None,
         temperature: None,

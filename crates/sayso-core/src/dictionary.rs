@@ -80,6 +80,58 @@ fn tidy_spacing(s: &str) -> String {
     s.split('\n').map(|line| line.trim_matches(' ')).collect::<Vec<_>>().join("\n")
 }
 
+/// The longest run of spoken words that one dictionary word can be: "may
+/// firm o s" for "MayFirmOS".
+const MAX_SPOKEN_WORDS: usize = 4;
+
+/// The words of the dictionary that `transcript` can contain: with the correct
+/// spelling, in separate words ("pin drop" for "Pindrop"), or with a small
+/// error ("fennec o" for "Fenneko"). The style prompt names only these words.
+///
+/// The comparison ignores case and all characters that are not letters or
+/// digits. A word fits when a run of spoken words differs from it in no more
+/// than one third of its characters.
+pub fn words_heard<'a>(words: &'a [String], transcript: &str) -> Vec<&'a str> {
+    let spoken: Vec<Vec<char>> = transcript
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|part| !part.is_empty())
+        .map(|part| part.to_lowercase().chars().collect())
+        .collect();
+    words
+        .iter()
+        .filter(|word| {
+            let key: Vec<char> = word.to_lowercase().chars().filter(|c| c.is_alphanumeric()).collect();
+            if key.is_empty() {
+                return false;
+            }
+            let allowed = key.len() / 3;
+            (0..spoken.len()).any(|start| {
+                let mut run: Vec<char> = Vec::new();
+                spoken[start..].iter().take(MAX_SPOKEN_WORDS).any(|part| {
+                    run.extend(part);
+                    run.len().abs_diff(key.len()) <= allowed && edit_distance(&run, &key) <= allowed
+                })
+            })
+        })
+        .map(String::as_str)
+        .collect()
+}
+
+/// The number of characters to add, remove, or change to make `a` into `b`.
+fn edit_distance(a: &[char], b: &[char]) -> usize {
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, x) in a.iter().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, y) in b.iter().enumerate() {
+            let change = diagonal + usize::from(x != y);
+            diagonal = row[j + 1];
+            row[j + 1] = change.min(row[j] + 1).min(diagonal + 1);
+        }
+    }
+    row[b.len()]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -127,5 +179,40 @@ mod tests {
     fn empty_rules_are_ignored() {
         let r = Replacer::new(&[rule(1, "  ", "x")]);
         assert_eq!(r.apply("hello").0, "hello");
+    }
+
+    fn heard(transcript: &str) -> Vec<&'static str> {
+        const WORDS: [&str; 7] = ["Claude Code", "Devhouse", "Fenneko", "ForgeCAD", "MayFirmOS", "Pindrop", "Sayso"];
+        let words: Vec<String> = WORDS.map(String::from).to_vec();
+        // The result borrows from `words`, so map it back to the constants.
+        words_heard(&words, transcript).into_iter().map(|w| *WORDS.iter().find(|c| **c == w).unwrap()).collect()
+    }
+
+    #[test]
+    fn a_transcript_without_a_dictionary_word_has_no_words_heard() {
+        assert!(heard("Commit everything you have locally, get it pushed up, and then let's create a new release.").is_empty());
+        assert!(heard("").is_empty());
+    }
+
+    #[test]
+    fn words_heard_finds_other_case_and_separate_words() {
+        assert_eq!(heard("open pin drop, then say so and forge cad"), ["ForgeCAD", "Pindrop", "Sayso"]);
+        assert_eq!(heard("I asked claude code about it"), ["Claude Code"]);
+        assert_eq!(heard("the may firm o s build"), ["MayFirmOS"]);
+        assert_eq!(heard("Sayso."), ["Sayso"]);
+    }
+
+    #[test]
+    fn words_heard_finds_a_word_with_a_small_error() {
+        assert_eq!(heard("ask fennec o for the file"), ["Fenneko"]);
+        assert_eq!(heard("the dev houses repo"), ["Devhouse"]);
+    }
+
+    #[test]
+    fn the_edit_distance_counts_changes() {
+        let d = |a: &str, b: &str| edit_distance(&a.chars().collect::<Vec<_>>(), &b.chars().collect::<Vec<_>>());
+        assert_eq!(d("sayso", "sayso"), 0);
+        assert_eq!(d("fennec", "fenneko"), 2);
+        assert_eq!(d("", "abc"), 3);
     }
 }

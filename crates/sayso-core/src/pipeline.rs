@@ -43,7 +43,7 @@ impl TextPipeline<'_> {
             return PipelineOutput { text: replaced, replacements, enhance: EnhanceOutcome::NotUsed, enhance_error: None };
         };
         let request = EnhanceRequest {
-            system_prompt: system_prompt(self.style, self.vocabulary),
+            system_prompt: system_prompt(self.style, self.vocabulary, &replaced),
             transcript: replaced.clone(),
             model: self.style.model.clone(),
             temperature: self.style.temperature,

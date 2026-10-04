@@ -235,3 +235,66 @@ fn real_sidecar_runs_the_language_model() {
     );
     assert_eq!(late.unwrap_err(), EnhanceError::Timeout(200));
 }
+
+/// The dictionary of the two tests below.
+fn vocabulary() -> Vec<String> {
+    ["Claude Code", "Devhouse", "Fenneko", "ForgeCAD", "MayFirmOS", "Pindrop", "Sayso"].map(String::from).to_vec()
+}
+
+/// Run the "clean" style on `transcript` with the real model, `times` times.
+fn clean_with_the_language_model(client: &EngineClient, transcript: &str, times: usize) -> Vec<String> {
+    use sayso_core::enhance::{LanguageModel, user_message};
+
+    let style = sayso_core::style::builtin_styles().into_iter().find(|s| s.id == "clean").expect("the clean style");
+    let instructions = sayso_core::style::system_prompt(&style, &vocabulary(), transcript);
+    (0..times)
+        .map(|_| {
+            client
+                .generate(&instructions, &user_message(transcript), style.temperature, Duration::from_secs(20))
+                .expect("the model answers")
+                .text
+        })
+        .collect()
+}
+
+fn language_model_client() -> EngineClient {
+    let dir = workspace().join("target/engine-it-language-model");
+    EngineClient::spawn(EngineClient::default_engine_path(), dir.join("models"), dir.join("cache")).expect("the sidecar starts")
+}
+
+/// Before the style prompt left out the words that the transcript cannot
+/// contain, the model added "Use Claude Code, Devhouse, …" to the first of these.
+#[test]
+#[ignore = "needs the real sidecar and Apple Intelligence on this Mac"]
+fn the_language_model_does_not_add_dictionary_words() {
+    let client = language_model_client();
+    let transcripts = [
+        "Commit everything you have locally, get it pushed up, make sure the CI all passes, and then let's create a new release.",
+        "um so the meeting is uh on friday at noon and we need the slides by thursday",
+        "can you send me the report when you get a chance thanks",
+        "I think we should use the second option because it is cheaper and it ships sooner",
+    ];
+    for transcript in transcripts {
+        for reply in clean_with_the_language_model(&client, transcript, 5) {
+            println!("{reply:?}");
+            let added: Vec<String> = vocabulary().into_iter().filter(|word| reply.contains(word.as_str())).collect();
+            assert!(added.is_empty(), "the reply has {added:?}: {reply}");
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs the real sidecar and Apple Intelligence on this Mac"]
+fn the_language_model_spells_the_dictionary_words_it_heard() {
+    let client = language_model_client();
+    let transcript = "um open pin drop and check if say so has an update";
+    for reply in clean_with_the_language_model(&client, transcript, 5) {
+        println!("{reply:?}");
+        assert!(reply.contains("Pindrop") && reply.contains("Sayso"), "{reply}");
+        // One sentence in, one sentence out: nothing after it.
+        assert!(reply.len() < transcript.len() + 20, "{reply}");
+        for word in ["Claude Code", "Devhouse", "Fenneko", "ForgeCAD", "MayFirmOS"] {
+            assert!(!reply.contains(word), "the reply has {word}: {reply}");
+        }
+    }
+}
