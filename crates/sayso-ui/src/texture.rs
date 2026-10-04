@@ -33,7 +33,7 @@ fn decode(path: &str) -> Option<Arc<RenderImage>> {
         px.0.swap(0, 2);
     }
     let frame = image::Frame::new(img);
-    Some(Arc::new(RenderImage::new(smallvec::smallvec![frame])))
+    Some(Arc::new(RenderImage::new([frame])))
 }
 
 pub(crate) fn init(cx: &mut App) {

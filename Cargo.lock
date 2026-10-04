@@ -7527,7 +7527,6 @@ dependencies = [
  "log",
  "rust-embed",
  "sayso-core",
- "smallvec",
 ]
 
 [[package]]
