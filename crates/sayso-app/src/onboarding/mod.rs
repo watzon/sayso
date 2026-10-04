@@ -147,6 +147,8 @@ impl OnboardingView {
                 }
                 _ => Footer { label: "Download".into(), enabled: true, skip: None },
             },
+            // Continue saves the selected provider. Skip leaves AI off.
+            2 => Footer { label: "Continue".into(), enabled: self.ai_choice(cx).is_some(), skip: Some("Skip for now") },
             3 => {
                 let both = m.permission(Permission::Microphone) == PermissionState::Granted
                     && m.permission(Permission::Accessibility) == PermissionState::Granted;
@@ -254,7 +256,12 @@ impl OnboardingView {
                 Button::new("skip", skip)
                     .ghost()
                     .large()
-                    .on_click(cx.listener(|this, _, window, cx| this.go_to(this.step + 1, window, cx))),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        if this.step == 2 {
+                            this.skip_ai(cx);
+                        }
+                        this.go_to(this.step + 1, window, cx)
+                    })),
             );
         }
         buttons = buttons.child(

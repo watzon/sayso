@@ -27,10 +27,14 @@ Every request with an `id` gets exactly one **reply**: `hello`, `ok`, `final`, o
 | `stream_audio` | `session, pcm` (base64 of 16 kHz mono little-endian i16), no `id` | none (errors have no `id`) |
 | `stream_end` | `session` | last `partial` if the text changed, `ok {text}` |
 | `transcribe` | `model, path` (16 kHz mono WAV), `language, vocabulary` | `final {text, elapsed_ms}` |
+| `language_model` | | `ok {available, model?, message?}`: the name of the language model, or why it cannot run |
+| `generate` | `instructions, prompt, timeout_ms, temperature?` | `ok {text, model}` |
 | `shutdown` | | `ok`, then exit |
 
 States: `not_downloaded`, `downloading`, `optimizing`, `downloaded`, `ready`, `failed {message}`.
-Other events: `log {level, message}`. Errors: `error {message}` with the request `id`.
+Other events: `log {level, message}`. Errors: `error {message, code?}` with the request `id`. `generate` sets `code` to `unavailable`, `refused`, or `timeout`.
+
+`language_model` and `generate` are additions to protocol v1 for AI enhancement on this computer. Only the Swift engine has them: it runs the language model of macOS (Apple Intelligence, `LanguageModel.swift`, macOS 26 and later) with guided generation, so the reply is bound to one `text` field. macOS owns the model, so there is no download, load, or unload. `generate` stops the model after `timeout_ms`, and the client waits 500 ms longer before it gives up. The other engines answer `error` (unknown request type), which the client reports as "not set up". `EngineClient` implements `sayso_core::enhance::LanguageModel` with these two requests.
 
 Engine kinds (`engine.kind`, with their fields): `parakeet_unified {streaming_tier}`, `parakeet_eou`, `parakeet_tdt {version}` (`v2`, `v3`, `ultra`, `redux`, `phonon2`, `tdt_ctc_110m`, `ja`), `nemotron {chunk_ms}`, `nemotron_multilingual {chunk_ms}`, `cohere`, `canary`, `sense_voice`, `paraformer`, `whisper {variant}`, `apple_speech`. The kind `remote` (a cloud model) never reaches the sidecar: `sayso-app` sends that audio with `sayso-transcribe`.
 

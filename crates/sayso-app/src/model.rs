@@ -33,6 +33,8 @@ pub struct Detected {
     pub codex_cli: Option<PathBuf>,
     /// Model names when Ollama is running.
     pub ollama: Option<Vec<String>>,
+    /// The name of the model when Apple Intelligence can run on this Mac.
+    pub apple_intelligence: Option<String>,
     pub done: bool,
 }
 
@@ -848,10 +850,11 @@ impl AppModel {
         }
         self.model_lists.insert(key.clone(), ModelList::Loading);
         cx.notify();
+        let engine = self.services.language_model.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    sayso_enhance::list_provider_models(&provider, secrets.as_ref(), Duration::from_secs(10))
+                    sayso_enhance::list_provider_models(&provider, secrets.as_ref(), engine.as_deref(), Duration::from_secs(10))
                 })
                 .await;
             let _ = this.update(cx, |m, cx| {
@@ -896,10 +899,11 @@ impl AppModel {
         let Some(provider) = self.config.ai.providers.iter().find(|p| p.id == id).cloned() else { return };
         let ai = self.config.ai.clone();
         let secrets = self.services.secrets.clone();
+        let engine = self.services.language_model.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai);
+                    let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
                     sayso_enhance::test_provider(enhancer.as_ref()).map_err(|e| e.to_string())
                 })
                 .await;
@@ -909,10 +913,12 @@ impl AppModel {
     }
 
     pub fn detect_providers(&mut self, cx: &mut Context<Self>) {
+        let engine = self.services.language_model.clone();
         cx.spawn(async move |this, cx| {
             let found = cx
                 .background_spawn(async move {
                     Detected {
+                        apple_intelligence: engine.and_then(|e| e.model_name().ok()),
                         claude_cli: sayso_enhance::detect_claude_cli(),
                         codex_cli: sayso_enhance::detect_codex_cli(),
                         ollama: sayso_enhance::detect_ollama(Duration::from_millis(600)),

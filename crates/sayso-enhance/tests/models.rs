@@ -41,7 +41,7 @@ fn list(
     p: &Provider,
     timeout: Duration,
 ) -> Result<Vec<sayso_core::enhance::ModelChoice>, EnhanceError> {
-    list_provider_models(p, &MemoryStore::new(), timeout)
+    list_provider_models(p, &MemoryStore::new(), None, timeout)
 }
 
 fn ids(choices: &[sayso_core::enhance::ModelChoice]) -> Vec<&str> {
@@ -251,6 +251,7 @@ fn openai_models_use_names_sort_by_id_and_send_the_key() {
     let choices = list_provider_models(
         &http_provider(&server, Some("acct")),
         &secrets,
+        None,
         Duration::from_secs(5),
     )
     .unwrap();

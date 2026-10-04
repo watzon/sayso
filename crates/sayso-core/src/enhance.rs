@@ -75,6 +75,28 @@ pub trait Enhancer: Send + Sync {
     fn enhance(&self, request: &EnhanceRequest) -> Result<EnhanceResponse, EnhanceError>;
 }
 
+/// The text of a [`LanguageModel`] and the name of the model that wrote it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Generated {
+    pub text: String,
+    pub model: String,
+}
+
+/// A language model that the engine runs on this computer, for example Apple
+/// Intelligence on macOS. Calls block. Run them on a background thread.
+pub trait LanguageModel: Send + Sync {
+    /// The name of the model when it can run. `NotConfigured` says why it cannot.
+    fn model_name(&self) -> Result<String, EnhanceError>;
+    /// Run the model. The engine binds the reply to the `text` field of the schema.
+    fn generate(
+        &self,
+        instructions: &str,
+        prompt: &str,
+        temperature: Option<f32>,
+        timeout: Duration,
+    ) -> Result<Generated, EnhanceError>;
+}
+
 /// The JSON schema every provider must follow: `{"text": string}`.
 pub fn output_schema() -> serde_json::Value {
     serde_json::json!({

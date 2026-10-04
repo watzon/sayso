@@ -12,6 +12,7 @@
 use crate::protocol::{self, Message, pcm_base64, request_line};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use parking_lot::Mutex;
+use sayso_core::enhance::{EnhanceError, Generated, LanguageModel};
 use sayso_core::models::{self, ModelId, ModelInfo};
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript, encode_wav, to_pcm16};
 use sayso_platform::{PlatformError, Result, SttBackend};
@@ -87,10 +88,17 @@ enum Outgoing {
     Audio { session: u64, pcm: Vec<i16> },
 }
 
+/// Why a request failed. `code` is the `code` field of an `error` reply, or
+/// `timeout` when the engine did not answer in time.
+struct Failure {
+    message: String,
+    code: Option<String>,
+}
+
 /// What to do with the reply of a request.
 enum Pending {
     /// A caller blocks on this channel.
-    Waiter(Sender<std::result::Result<Message, String>>),
+    Waiter(Sender<std::result::Result<Message, Failure>>),
     /// Nobody waits. A failure is logged and, for a model, shown as `Failed`.
     Detached {
         what: &'static str,
@@ -257,6 +265,66 @@ impl EngineClient {
     /// Number of live preview audio frames dropped because the sidecar fell behind.
     pub fn dropped_audio_frames(&self) -> u64 {
         self.inner.dropped_audio.load(Ordering::Relaxed)
+    }
+}
+
+/// How long the engine may take to end a `generate` request after its own
+/// deadline, before the client stops the wait.
+const GENERATE_GRACE: Duration = Duration::from_millis(500);
+
+impl Failure {
+    fn into_enhance_error(self, timeout: Duration) -> EnhanceError {
+        match self.code.as_deref() {
+            Some("timeout") => EnhanceError::Timeout(timeout.as_millis() as u64),
+            Some("unavailable") => EnhanceError::NotConfigured(self.message),
+            Some("refused") => EnhanceError::Refused(self.message),
+            _ => EnhanceError::Cli(self.message),
+        }
+    }
+}
+
+impl LanguageModel for EngineClient {
+    fn model_name(&self) -> std::result::Result<String, EnhanceError> {
+        let timeout = self.inner.options.request_timeout;
+        let reply = self
+            .inner
+            .request("language_model", json!({}), timeout)
+            // An engine without the request answers `error`: it has no language model.
+            .map_err(|failure| EnhanceError::NotConfigured(failure.message))?;
+        if reply.body["available"] == true {
+            Ok(reply.str("model").unwrap_or("language model").to_string())
+        } else {
+            let reason = reply.str("message").unwrap_or("the language model cannot run");
+            Err(EnhanceError::NotConfigured(reason.to_string()))
+        }
+    }
+
+    fn generate(
+        &self,
+        instructions: &str,
+        prompt: &str,
+        temperature: Option<f32>,
+        timeout: Duration,
+    ) -> std::result::Result<Generated, EnhanceError> {
+        let mut fields = json!({
+            "instructions": instructions,
+            "prompt": prompt,
+            "timeout_ms": timeout.as_millis() as u64,
+        });
+        if let Some(temperature) = temperature {
+            fields["temperature"] = json!(temperature);
+        }
+        let reply = self
+            .inner
+            .request("generate", fields, timeout + GENERATE_GRACE)
+            .map_err(|failure| failure.into_enhance_error(timeout))?;
+        let text = reply
+            .str("text")
+            .ok_or_else(|| EnhanceError::InvalidOutput("the engine sent no text".into()))?;
+        Ok(Generated {
+            text: text.to_string(),
+            model: reply.str("model").unwrap_or("language model").to_string(),
+        })
     }
 }
 
@@ -451,18 +519,35 @@ impl Inner {
 
     /// Send a request and wait for its reply.
     fn call(&self, kind: &str, fields: Value, timeout: Duration) -> Result<Message> {
+        self.request(kind, fields, timeout)
+            .map_err(|failure| failed(failure.message))
+    }
+
+    /// Like [`Inner::call`], but a failure keeps its code.
+    fn request(
+        &self,
+        kind: &str,
+        fields: Value,
+        timeout: Duration,
+    ) -> std::result::Result<Message, Failure> {
+        let plain = |message: String| Failure {
+            message,
+            code: None,
+        };
         let (tx, rx) = bounded(1);
-        let id = self.send(kind, fields, Pending::Waiter(tx))?;
+        let id = self
+            .send(kind, fields, Pending::Waiter(tx))
+            .map_err(|e| plain(e.to_string()))?;
         match rx.recv_timeout(timeout) {
-            Ok(Ok(message)) => Ok(message),
-            Ok(Err(message)) => Err(failed(message)),
+            Ok(reply) => reply,
             Err(RecvTimeoutError::Timeout) => {
                 self.core.lock().pending.remove(&id);
-                Err(failed(format!(
-                    "engine did not answer {kind} within {timeout:?}"
-                )))
+                Err(Failure {
+                    message: format!("engine did not answer {kind} within {timeout:?}"),
+                    code: Some("timeout".into()),
+                })
             }
-            Err(RecvTimeoutError::Disconnected) => Err(failed("engine stopped")),
+            Err(RecvTimeoutError::Disconnected) => Err(plain("engine stopped".into())),
         }
     }
 
@@ -550,7 +635,15 @@ impl Inner {
         };
         match pending {
             Pending::Waiter(tx) => {
-                let _ = tx.send(if is_error { Err(text) } else { Ok(message) });
+                let _ = tx.send(if is_error {
+                    let code = message.str("code").map(str::to_string);
+                    Err(Failure {
+                        message: text,
+                        code,
+                    })
+                } else {
+                    Ok(message)
+                });
             }
             Pending::Detached { what, model } => {
                 if is_error {
@@ -672,7 +765,10 @@ impl Inner {
         for pending in drained {
             match pending {
                 Pending::Waiter(tx) => {
-                    let _ = tx.send(Err(format!("{description} while a request was running")));
+                    let _ = tx.send(Err(Failure {
+                        message: format!("{description} while a request was running"),
+                        code: None,
+                    }));
                 }
                 Pending::Detached { what, .. } => log::warn!("engine {what} lost: {description}"),
             }

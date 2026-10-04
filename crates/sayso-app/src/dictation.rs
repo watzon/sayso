@@ -350,17 +350,21 @@ impl AppModel {
         self.dispatch(Event::EnhanceStarted { session }, cx);
         let ai = self.config.ai.clone();
         let secrets = self.services.secrets.clone();
+        let engine = self.services.language_model.clone();
         let vocabulary = self.vocabulary();
         let replacements = self.session(session).replacements.clone();
         let timeout = Duration::from_millis(match provider.kind {
-            sayso_core::config::ProviderKind::OpenAiCompatible { .. } => ai.http_timeout_ms,
+            // The language model of the engine answers as fast as a server.
+            sayso_core::config::ProviderKind::OpenAiCompatible { .. } | sayso_core::config::ProviderKind::AppleIntelligence => {
+                ai.http_timeout_ms
+            }
             _ => ai.cli_timeout_ms,
         });
         let style_name = style.name.clone();
         cx.spawn(async move |this, cx| {
             let out = cx
                 .background_spawn(async move {
-                    let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai);
+                    let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
                     let replacer = sayso_core::dictionary::Replacer::new(&[]);
                     let p = TextPipeline { replacer: &replacer, style: &style, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), timeout };
                     p.run_style(text, replacements)
@@ -558,12 +562,13 @@ impl AppModel {
         let Some(store) = self.services.store.clone() else { return };
         let ai = self.config.ai.clone();
         let secrets = self.services.secrets.clone();
+        let engine = self.services.language_model.clone();
         let vocabulary = self.vocabulary();
         let timeout = Duration::from_millis(ai.http_timeout_ms.max(ai.cli_timeout_ms));
         cx.spawn(async move |this, cx| {
             let ok = cx
                 .background_spawn(async move {
-                    let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai);
+                    let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
                     let replacer = sayso_core::dictionary::Replacer::new(&[]);
                     let p = TextPipeline { replacer: &replacer, style: &style, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), timeout };
                     let out = p.run_style(entry.final_text.clone(), entry.replacements.clone());

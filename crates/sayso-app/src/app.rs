@@ -139,14 +139,16 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
         .clone()
         .map(std::path::PathBuf::from)
         .unwrap_or_else(sayso_engine_client::EngineClient::default_engine_path);
-    let engine: Option<Arc<dyn sayso_platform::SttBackend>> =
-        match sayso_engine_client::EngineClient::spawn(engine_path.clone(), paths.models_dir(), paths.cache_dir.clone()) {
-            Ok(e) => Some(Arc::new(e)),
-            Err(e) => {
-                log::error!("could not start the engine at {}: {e:#}", engine_path.display());
-                None
-            }
-        };
+    let client = match sayso_engine_client::EngineClient::spawn(engine_path.clone(), paths.models_dir(), paths.cache_dir.clone()) {
+        Ok(e) => Some(e),
+        Err(e) => {
+            log::error!("could not start the engine at {}: {e:#}", engine_path.display());
+            None
+        }
+    };
+    // Both handles share the one sidecar.
+    let language_model = client.clone().map(|e| Arc::new(e) as Arc<dyn sayso_core::enhance::LanguageModel>);
+    let engine = client.map(|e| Arc::new(e) as Arc<dyn sayso_platform::SttBackend>);
 
     let store = match sayso_store::Store::open(paths.database_file(), paths.audio_dir()) {
         Ok(s) => {
@@ -161,7 +163,7 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
         }
     };
 
-    Services { platform, engine, store, secrets: Arc::new(sayso_enhance::KeychainStore), updates }
+    Services { platform, engine, language_model, store, secrets: Arc::new(sayso_enhance::KeychainStore), updates }
 }
 
 /// Build the paper theme from config and the system appearance.

@@ -1,4 +1,4 @@
-//! Step 3: optional AI clean-up. Continue saves the provider (or turns AI off).
+//! Step 3: optional AI clean-up. Continue saves the provider. Skip turns AI off.
 
 use super::{OnboardingView, heading};
 use crate::model::{AppModel, ModelList};
@@ -14,10 +14,10 @@ use sayso_ui::{ActivePaper, Colors, text};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum AiChoice {
+    Apple,
     Local,
     Cloud,
     Claude,
-    NotNow,
 }
 
 /// Base URL presets for the cloud option: (label, id, url).
@@ -62,6 +62,7 @@ impl AiForm {
                 (Some(AiChoice::Cloud), p, base_url.clone(), model.clone(), None)
             }
             Some(ProviderKind::ClaudeCli { .. }) => (Some(AiChoice::Claude), 0, PRESETS[0].2.to_string(), String::new(), None),
+            Some(ProviderKind::AppleIntelligence) => (Some(AiChoice::Apple), 0, PRESETS[0].2.to_string(), String::new(), None),
             _ => (None, 0, PRESETS[0].2.to_string(), String::new(), None),
         };
         let base_url = crate::widgets::input_state("https://…/v1", &url, window, cx);
@@ -165,20 +166,31 @@ impl OnboardingView {
         self.model.update(cx, |m, cx| m.load_draft_models(DRAFT, provider, api_key, force || changed, cx));
     }
 
-    fn ai_choice(&self, cx: &App) -> AiChoice {
+    /// The selected option. None when the user has not chosen one: Continue
+    /// is then off, and Skip is the way on.
+    pub(super) fn ai_choice(&self, cx: &App) -> Option<AiChoice> {
         let d = &self.model.read(cx).detected;
-        self.ai.choice.unwrap_or(if d.ollama.as_ref().is_some_and(|l| !l.is_empty()) { AiChoice::Local } else { AiChoice::NotNow })
+        self.ai.choice.or_else(|| d.ollama.as_ref().is_some_and(|l| !l.is_empty()).then_some(AiChoice::Local))
     }
 
     /// The provider for the current form, or a message that says what to fix.
-    fn ai_provider(&self, cx: &App) -> Result<Option<(Provider, Option<String>)>, String> {
+    fn ai_provider(&self, cx: &App) -> Result<(Provider, Option<String>), String> {
         let m = self.model.read(cx);
-        match self.ai_choice(cx) {
-            AiChoice::NotNow => Ok(None),
+        let choice = self.ai_choice(cx).ok_or("Choose an option, or skip this step.")?;
+        match choice {
+            AiChoice::Apple => {
+                if m.detected.apple_intelligence.is_none() {
+                    return Err("Apple Intelligence is not available on this Mac. Turn it on in System Settings, or choose another option.".into());
+                }
+                Ok((
+                    Provider { id: "apple-intelligence".into(), name: "Apple Intelligence".into(), kind: ProviderKind::AppleIntelligence },
+                    None,
+                ))
+            }
             AiChoice::Local => {
                 let models = m.detected.ollama.clone().unwrap_or_default();
-                let model = self.ai.local_model.clone().or_else(|| models.first().cloned()).ok_or("Ollama has no models. Run \"ollama pull qwen3:4b\", then try again.")?;
-                Ok(Some((
+                let model = self.ai.local_model.clone().or_else(|| models.first().cloned()).ok_or("Ollama has no models. Run \"ollama pull qwen3:4b\", then select Ollama again.")?;
+                Ok((
                     Provider {
                         id: "ollama".into(),
                         name: "Ollama".into(),
@@ -190,7 +202,7 @@ impl OnboardingView {
                         },
                     },
                     None,
-                )))
+                ))
             }
             AiChoice::Cloud => {
                 let url = self.ai.base_url.read(cx).value().trim().trim_end_matches('/').to_string();
@@ -204,7 +216,7 @@ impl OnboardingView {
                 let model = self.ai.model.clone().ok_or("Choose a model from the provider's list.")?;
                 let (label, id, preset_url) = PRESETS[self.ai.preset];
                 let (id, name) = if preset_url == url { (id.to_string(), label.to_string()) } else { ("custom".to_string(), "Custom endpoint".to_string()) };
-                Ok(Some((
+                Ok((
                     Provider {
                         id: id.clone(),
                         name,
@@ -216,18 +228,18 @@ impl OnboardingView {
                         },
                     },
                     (!key.is_empty()).then_some(key),
-                )))
+                ))
             }
             AiChoice::Claude => {
                 let path = m.detected.claude_cli.clone().ok_or("Sayso did not find the Claude CLI. Install it, or choose another option.")?;
-                Ok(Some((
+                Ok((
                     Provider {
                         id: "claude-cli".into(),
                         name: "Claude CLI".into(),
                         kind: ProviderKind::ClaudeCli { path: Some(path.display().to_string()), model: "haiku".into() },
                     },
                     None,
-                )))
+                ))
             }
         }
     }
@@ -239,14 +251,7 @@ impl OnboardingView {
                 self.ai.error = Some(e);
                 false
             }
-            Ok(None) => {
-                self.ai.error = None;
-                if self.model.read(cx).config.ai.enabled {
-                    self.model.update(cx, |m, cx| m.set_ai_enabled(false, cx));
-                }
-                true
-            }
-            Ok(Some((provider, key))) => {
+            Ok((provider, key)) => {
                 self.ai.error = None;
                 self.model.update(cx, |m, cx| {
                     let id = provider.id.clone();
@@ -261,10 +266,18 @@ impl OnboardingView {
         }
     }
 
+    /// Leave the step without a provider. A provider that "Test connection"
+    /// saved stays in Styles, but AI is off.
+    pub(super) fn skip_ai(&mut self, cx: &mut Context<Self>) {
+        self.ai.error = None;
+        if self.model.read(cx).config.ai.enabled {
+            self.model.update(cx, |m, cx| m.set_ai_enabled(false, cx));
+        }
+    }
+
     fn test_ai(&mut self, cx: &mut Context<Self>) {
         let provider = match self.ai_provider(cx) {
-            Ok(Some((p, key))) => (p, key),
-            Ok(None) => return,
+            Ok(provider) => provider,
             Err(e) => {
                 self.ai.error = Some(e);
                 cx.notify();
@@ -293,6 +306,10 @@ impl OnboardingView {
         self.ai.choice = Some(choice);
         self.ai.error = None;
         self.ai.test = None;
+        // Ask Ollama again: the user can pull a model while this step is open.
+        if choice == AiChoice::Local {
+            self.model.update(cx, |m, cx| m.detect_providers(cx));
+        }
         cx.notify();
     }
 
@@ -305,6 +322,30 @@ impl OnboardingView {
         let mut rows = div().flex().flex_col().gap(px(8.));
         if !d.done {
             rows = rows.child(text::ui(format!("Looking for AI tools on this {}…", crate::shell::COMPUTER), 13., FontWeight::NORMAL, c.graphite).px(px(4.)));
+        }
+        if let Some(model) = &d.apple_intelligence {
+            rows = rows.child(self.ai_row(
+                AiChoice::Apple,
+                choice,
+                "Apple Intelligence",
+                format!("The model of macOS ({model}). No setup. Text stays on this Mac."),
+                None,
+                None,
+                &c,
+                cx,
+            ));
+        }
+        if d.ollama.as_ref().is_some_and(|l| l.is_empty()) {
+            rows = rows.child(self.ai_row(
+                AiChoice::Local,
+                choice,
+                "Ollama",
+                format!("Ollama is running on this {}, but it has no models. Run \"ollama pull qwen3:4b\", then select this again.", crate::shell::COMPUTER),
+                None,
+                None,
+                &c,
+                cx,
+            ));
         }
         if let Some(models) = d.ollama.clone().filter(|l| !l.is_empty()) {
             let current = self.ai.local_model.clone().unwrap_or_else(|| models[0].clone());
@@ -328,7 +369,7 @@ impl OnboardingView {
                     cx.notify();
                 }));
             let mut extra = None;
-            if open && choice == AiChoice::Local {
+            if open && choice == Some(AiChoice::Local) {
                 let mut list = div().flex().flex_col().p(px(4.)).rounded(px(10.)).debossed(&c);
                 for (i, name) in models.into_iter().enumerate() {
                     let selected = name == current;
@@ -359,7 +400,7 @@ impl OnboardingView {
             rows = rows.child(self.ai_row(
                 AiChoice::Local,
                 choice,
-                "Local model",
+                "Ollama",
                 format!("Ollama is running on this {0}. Text stays on this {0}.", crate::shell::COMPUTER),
                 Some(picker.into_any_element()),
                 extra,
@@ -367,7 +408,7 @@ impl OnboardingView {
                 cx,
             ));
         }
-        let cloud_extra = (choice == AiChoice::Cloud).then(|| self.cloud_form(&c, cx));
+        let cloud_extra = (choice == Some(AiChoice::Cloud)).then(|| self.cloud_form(&c, cx));
         rows = rows.child(self.ai_row(
             AiChoice::Cloud,
             choice,
@@ -391,7 +432,6 @@ impl OnboardingView {
                 cx,
             ));
         }
-        rows = rows.child(self.ai_row(AiChoice::NotNow, choice, "Not now", "You can set this up later in Styles.".into(), None, None, &c, cx));
 
         let mut col = div()
             .flex()
@@ -402,11 +442,11 @@ impl OnboardingView {
             .pb(px(24.))
             .child(heading(
                 "Add AI clean-up",
-                "Optional. A style can remove filler words, fix grammar, or format an email. Without it, Sayso inserts exactly what you said.",
+                "Optional. A style can remove filler words, fix grammar, or format an email. Without it, Sayso inserts exactly what you said. You can also set this up later in Styles.",
                 &c,
             ))
             .child(rows);
-        if let Some(e) = self.ai.error.clone().filter(|_| choice != AiChoice::Cloud) {
+        if let Some(e) = self.ai.error.clone().filter(|_| choice != Some(AiChoice::Cloud)) {
             col = col.child(crate::hub::settings::kit::notice(BannerKind::Warning, e, cx));
         }
         col.into_any_element()
@@ -416,7 +456,7 @@ impl OnboardingView {
     fn ai_row(
         &self,
         me: AiChoice,
-        choice: AiChoice,
+        choice: Option<AiChoice>,
         title: &'static str,
         desc: String,
         trailing: Option<AnyElement>,
@@ -424,8 +464,7 @@ impl OnboardingView {
         c: &Colors,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let selected = me == choice;
-        let plain = me == AiChoice::NotNow && !selected;
+        let selected = Some(me) == choice;
         let mut card = div()
             .id(SharedString::from(format!("ai-{me:?}")))
             .flex()
@@ -440,8 +479,6 @@ impl OnboardingView {
             let mut s = vec![BoxShadow::new(px(0.), px(0.), c.ink).spread_radius(px(2.))];
             s.push(BoxShadow::new(px(0.), px(1.), c.shadow(0.14)).blur_radius(px(2.)));
             card.bg(c.sheet_raised).shadow(s)
-        } else if plain {
-            card.hover(|s| s.bg(c.deboss.opacity(0.35)))
         } else {
             card.bg(c.sheet_raised).shadow(paper::raised_small(c)).hover(|s| s.bg(c.sheet))
         };

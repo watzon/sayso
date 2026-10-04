@@ -762,6 +762,11 @@ impl StylesPage {
         let label = match p.model() {
             Some(id) => m.model_label(&p.id, id),
             None if p.needs_model() => "Choose a model".into(),
+            // macOS chooses the model. Its name comes with the list.
+            None if p.kind == ProviderKind::AppleIntelligence => match m.model_lists.get(&p.id) {
+                Some(crate::model::ModelList::Ready(list)) if !list.is_empty() => list[0].name.clone(),
+                _ => "Default model".into(),
+            },
             None => "Default model".into(),
         };
         let pid = p.id.clone();
@@ -886,6 +891,15 @@ impl StylesPage {
                 kind: ProviderKind::CodexCli { path: Some(path.display().to_string()), model: None },
             };
             strip = strip.child(self.suggestion("suggest-codex", "Codex CLI", format!("Found on this {} · Cloud · about 5 s", crate::shell::COMPUTER), p, cx));
+        }
+        let has_apple = providers.iter().any(|p| matches!(p.kind, ProviderKind::AppleIntelligence));
+        if let (Some(model), false) = (&detected.apple_intelligence, has_apple) {
+            let p = Provider {
+                id: self.model.read(cx).new_provider_id("apple-intelligence"),
+                name: "Apple Intelligence".into(),
+                kind: ProviderKind::AppleIntelligence,
+            };
+            strip = strip.child(self.suggestion("suggest-apple", "Apple Intelligence", format!("Runs on this Mac · {model}"), p, cx));
         }
         strip = strip.child(
             kit::dashed("add-provider", cx)

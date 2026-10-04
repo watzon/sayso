@@ -1,5 +1,6 @@
 // SaysoEngine: speech sidecar for Sayso. NDJSON requests on stdin, NDJSON events on stdout.
 // Hosts FluidAudio (Parakeet, Nemotron, Cohere, Canary, SenseVoice, Paraformer) and WhisperKit.
+// It also runs the language model of macOS for AI enhancement (LanguageModel.swift).
 import Foundation
 
 // Keep the protocol channel clean. Duplicate the real stdout for NDJSON, then point fd 1 at
@@ -49,12 +50,24 @@ func handle(_ request: Request) async {
                 model: try request.string("model"), path: try request.string("path"),
                 language: request.optionalString("language") ?? "en",
                 vocabulary: request.stringArray("vocabulary"), id: id)
+        case "language_model":
+            switch SystemModel.status() {
+            case .success(let model): out.ok(id: id, ["available": true, "model": model])
+            case .failure(let failure): out.ok(id: id, ["available": false, "message": failure.message])
+            }
+        case "generate":
+            let reply = try await SystemModel.generate(
+                instructions: try request.string("instructions"), prompt: try request.string("prompt"),
+                temperature: request.optionalDouble("temperature"), timeoutMs: try request.int("timeout_ms"))
+            out.ok(id: id, ["text": reply.text, "model": reply.model])
         case "shutdown":
             out.ok(id: id)
             exit(0)
         default:
             throw EngineError("unknown request type \(request.type)")
         }
+    } catch let failure as LanguageModelError {
+        out.error(failure.message, id: id, code: failure.code)
     } catch {
         out.error("\(error)", id: id)
     }

@@ -5,6 +5,7 @@
 //!   protocol answers an `initialize` request with the model list. No prompt
 //!   is sent, so this costs nothing.
 //! - Codex: the `codex app-server` JSON-RPC `model/list` method.
+//! - Apple Intelligence: the one model that the engine reports.
 //!
 //! All calls block: run them on a background thread.
 
@@ -12,7 +13,7 @@ use crate::cli::{Invocation, Session, looks_like_login_problem, workdir};
 use crate::detect::{detect_claude_cli, detect_codex_cli, fetch_model_choices};
 use crate::secrets::SecretStore;
 use sayso_core::config::{Provider, ProviderKind};
-use sayso_core::enhance::{EnhanceError, ModelChoice};
+use sayso_core::enhance::{EnhanceError, LanguageModel, ModelChoice};
 use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -32,6 +33,7 @@ const CODEX_MAX_PAGES: u64 = 5;
 pub fn list_provider_models(
     provider: &Provider,
     secrets: &dyn SecretStore,
+    engine: Option<&dyn LanguageModel>,
     timeout: Duration,
 ) -> Result<Vec<ModelChoice>, EnhanceError> {
     match &provider.kind {
@@ -53,6 +55,12 @@ pub fn list_provider_models(
         ProviderKind::CodexCli { path, .. } => {
             let program = program(path.as_deref(), detect_codex_cli, "codex")?;
             list_codex_models(&program, timeout)
+        }
+        // macOS chooses the model, so the list has one entry.
+        ProviderKind::AppleIntelligence => {
+            let engine = engine.ok_or_else(|| EnhanceError::NotConfigured("the engine does not run".into()))?;
+            let name = engine.model_name()?;
+            Ok(vec![choice(&name, None, Some("Runs on this Mac"))])
         }
     }
 }

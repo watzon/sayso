@@ -56,6 +56,7 @@ pub fn provider_detail(p: &Provider) -> String {
         // The time depends on the model: about 1.8 s with Haiku.
         ProviderKind::ClaudeCli { .. } => "Cloud · your Claude login".into(),
         ProviderKind::CodexCli { .. } => "Cloud · about 5 s per call".into(),
+        ProviderKind::AppleIntelligence => "Local · runs on this Mac".into(),
     }
 }
 

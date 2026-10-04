@@ -198,3 +198,40 @@ fn real_sidecar_transcribes_and_streams() {
     assert!(last.to_lowercase().contains("dictation test"), "{last}");
     assert_eq!(client.dropped_audio_frames(), 0);
 }
+
+#[test]
+#[ignore = "needs the real sidecar and Apple Intelligence on this Mac"]
+fn real_sidecar_runs_the_language_model() {
+    use sayso_core::enhance::{EnhanceError, LanguageModel};
+
+    let dir = workspace().join("target/engine-it-language-model");
+    let client = EngineClient::spawn(
+        EngineClient::default_engine_path(),
+        dir.join("models"),
+        dir.join("cache"),
+    )
+    .expect("the sidecar starts");
+    let name = client
+        .model_name()
+        .expect("Apple Intelligence is available");
+    println!("model: {name}");
+
+    let instructions = "You edit dictated text. The user message holds a transcript between <transcript> tags. \
+                        Remove filler words. Fix punctuation and capitalization. Return the edited text.";
+    let prompt = "<transcript>\num so the meeting is uh on friday at noon\n</transcript>";
+    let started = Instant::now();
+    let reply = client
+        .generate(instructions, prompt, Some(0.0), Duration::from_secs(20))
+        .expect("the model answers");
+    println!("{:?} in {:?}", reply.text, started.elapsed());
+    assert_eq!(reply.model, name);
+    assert!(reply.text.to_lowercase().contains("friday"), "{}", reply.text);
+
+    let late = client.generate(
+        "Write a story of 3000 words.",
+        "go",
+        None,
+        Duration::from_millis(200),
+    );
+    assert_eq!(late.unwrap_err(), EnhanceError::Timeout(200));
+}

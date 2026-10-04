@@ -11,7 +11,7 @@ fn show(label: &str, kind: ProviderKind) -> Vec<String> {
         name: label.into(),
         kind,
     };
-    let choices = list_provider_models(&provider, &MemoryStore::new(), Duration::from_secs(20))
+    let choices = list_provider_models(&provider, &MemoryStore::new(), None, Duration::from_secs(20))
         .expect("model list");
     let ids: Vec<String> = choices.iter().map(|c| c.id.clone()).collect();
     eprintln!(

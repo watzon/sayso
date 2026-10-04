@@ -53,8 +53,10 @@ final class Output: @unchecked Sendable {
         send("log", ["level": level, "message": message])
     }
 
-    func error(_ message: String, id: String? = nil) {
-        send("error", id: id, ["message": message])
+    func error(_ message: String, id: String? = nil, code: String? = nil) {
+        var fields: [String: Any] = ["message": message]
+        if let code { fields["code"] = code }
+        send("error", id: id, fields)
     }
 
     func ok(id: String?, _ fields: [String: Any] = [:]) {
@@ -158,6 +160,8 @@ struct Request: @unchecked Sendable {
     }
 
     func optionalInt64(_ key: String) -> Int64? { (fields[key] as? NSNumber)?.int64Value }
+
+    func optionalDouble(_ key: String) -> Double? { (fields[key] as? NSNumber)?.doubleValue }
 
     func stringArray(_ key: String) -> [String] { (fields[key] as? [String]) ?? [] }
 

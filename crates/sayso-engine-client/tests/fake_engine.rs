@@ -1,6 +1,7 @@
 //! Tests against a scripted engine (`sayso-fake-engine`) that speaks the NDJSON protocol.
 
 use crossbeam_channel::Receiver;
+use sayso_core::enhance::{EnhanceError, LanguageModel};
 use sayso_core::models::{ModelId, default_model};
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions};
 use sayso_engine_client::{EngineClient, Options};
@@ -154,6 +155,50 @@ fn engine_errors_come_back_as_errors() {
     let err = f.client.load(&ModelId::new("not-in-catalog")).unwrap_err();
     assert!(err.to_string().contains("unknown model"), "{err}");
     assert_eq!(wav_files(&f.cache), 0);
+}
+
+#[test]
+fn the_language_model_reports_its_name_or_why_it_cannot_run() {
+    let f = fixture();
+    assert_eq!(f.client.model_name().unwrap(), "Fake LM");
+    std::fs::write(f.models.path().join("no-language-model"), "").unwrap();
+    let err = f.client.model_name().unwrap_err();
+    assert_eq!(
+        err,
+        EnhanceError::NotConfigured("Apple Intelligence is off".into())
+    );
+}
+
+#[test]
+fn generate_returns_the_text_and_maps_the_error_codes() {
+    let f = fixture();
+    let run = |prompt: &str, timeout_ms: u64| {
+        f.client.generate(
+            "instructions",
+            prompt,
+            Some(0.0),
+            Duration::from_millis(timeout_ms),
+        )
+    };
+    let done = run("hello", 5000).unwrap();
+    assert_eq!((done.text.as_str(), done.model.as_str()), ("HELLO", "Fake LM"));
+    let sent = requests(&f.models).into_iter().find(|line| line.contains("\"generate\"")).unwrap();
+    let sent: serde_json::Value = serde_json::from_str(&sent).unwrap();
+    assert_eq!(sent["instructions"], "instructions");
+    assert_eq!(sent["timeout_ms"], 5000);
+    assert_eq!(sent["temperature"], 0.0);
+
+    assert_eq!(
+        run("refuse", 5000).unwrap_err(),
+        EnhanceError::Refused("the model refused".into())
+    );
+    assert_eq!(
+        run("unavailable", 5000).unwrap_err(),
+        EnhanceError::NotConfigured("the model is not ready".into())
+    );
+    let started = Instant::now();
+    assert_eq!(run("slow", 100).unwrap_err(), EnhanceError::Timeout(100));
+    assert!(started.elapsed() < Duration::from_secs(3));
 }
 
 #[test]

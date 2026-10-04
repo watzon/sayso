@@ -20,7 +20,7 @@ The raw text from the speech model, before any changes.
 The fixed steps that turn audio into inserted text: transcribe → apply replacements → apply style → insert.
 
 **Engine**
-The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows it is the portable sidecar (`native/portable`, also `SaysoEngine`) with transcribe-rs. On Linux it is the Rust sidecar (`sayso-engine`) with sherpa-onnx. The Windows and Linux engines run on the CPU. All three speak the same protocol. Rust code talks to the engine through the `SttBackend` trait. The engine never sees a cloud model.
+The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows it is the portable sidecar (`native/portable`, also `SaysoEngine`) with transcribe-rs. On Linux it is the Rust sidecar (`sayso-engine`) with sherpa-onnx. The Windows and Linux engines run on the CPU. All three speak the same protocol. Rust code talks to the engine through the `SttBackend` trait. The engine never sees a cloud model. The engine on macOS also runs the language model of a style (see Apple Intelligence). Rust code reaches it through the `LanguageModel` trait.
 
 **Model**
 A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". One model is the active model. A model is a local model or a cloud model.
@@ -52,7 +52,10 @@ The user's list of words and replacements.
 A named AI enhancement with a prompt and optional provider, model, and timeout overrides. "Raw" is the style with no AI. Each style is one TOML file. Built-in styles ship in the app, and a user file with the same id overrides them.
 
 **Enhancer**
-The trait that sends a transcript and a style prompt to an AI provider and returns schema-checked JSON. The implementations are the OpenAI-compatible endpoint, the Claude CLI, and the Codex CLI.
+The trait that sends a transcript and a style prompt to an AI provider and returns schema-checked JSON. The implementations are the OpenAI-compatible endpoint, the Claude CLI, the Codex CLI, and the language model of the engine.
+
+**Apple Intelligence**
+The provider of a style that runs the language model of macOS (macOS 26 and later) in the engine. The transcript stays on the Mac. macOS chooses the model and owns its files, so there is no download and no model choice. It is not a model in the sense of this file, because it does not transcribe speech.
 
 **Insertion**
 The step that puts the final text into the focused app. The default is paste through the clipboard, with a safe restore. Typing is the fallback.

@@ -5,6 +5,10 @@
 //! - `slow-*`: `transcribe` answers after 300 ms (other requests may overtake it).
 //! - `crash-once`: `transcribe` kills the process the first time (marker file `crashed`).
 //!
+//! `generate` answers with its prompt in upper case. The prompt steers it: `refuse` and
+//! `unavailable` give an error with that code, and `slow` never answers. `language_model`
+//! reports the model `Fake LM`, or "not available" when the file `no-language-model` exists.
+//!
 //! `download` reports 50 % at once, waits 300 ms, then reports `downloaded`.
 
 use serde_json::{Value, json};
@@ -178,6 +182,35 @@ fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Va
             }
         }
         "stream_start" | "stream_end" => reply(out, request, "ok", json!({})),
+        "language_model" => {
+            let body = if dir.join("no-language-model").exists() {
+                json!({"available": false, "message": "Apple Intelligence is off"})
+            } else {
+                json!({"available": true, "model": "Fake LM"})
+            };
+            reply(out, request, "ok", body);
+        }
+        "generate" => match request["prompt"].as_str().unwrap_or_default() {
+            "slow" => {}
+            "refuse" => reply(
+                out,
+                request,
+                "error",
+                json!({"message": "the model refused", "code": "refused"}),
+            ),
+            "unavailable" => reply(
+                out,
+                request,
+                "error",
+                json!({"message": "the model is not ready", "code": "unavailable"}),
+            ),
+            prompt => reply(
+                out,
+                request,
+                "ok",
+                json!({"text": prompt.to_uppercase(), "model": "Fake LM"}),
+            ),
+        },
         other => reply(
             out,
             request,

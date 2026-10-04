@@ -273,6 +273,8 @@ pub enum ProviderKind {
         #[serde(default)]
         model: Option<String>,
     },
+    /// The language model of macOS, which the engine runs on this Mac.
+    AppleIntelligence,
 }
 
 fn default_claude_model() -> String {
@@ -294,6 +296,7 @@ impl Provider {
         let model = match &self.kind {
             ProviderKind::OpenAiCompatible { model, .. } | ProviderKind::ClaudeCli { model, .. } => Some(model.as_str()),
             ProviderKind::CodexCli { model, .. } => model.as_deref(),
+            ProviderKind::AppleIntelligence => None,
         };
         model.filter(|m| !m.trim().is_empty())
     }
@@ -302,6 +305,8 @@ impl Provider {
         match &mut self.kind {
             ProviderKind::OpenAiCompatible { model, .. } | ProviderKind::ClaudeCli { model, .. } => *model = id,
             ProviderKind::CodexCli { model, .. } => *model = Some(id),
+            // macOS chooses the model.
+            ProviderKind::AppleIntelligence => {}
         }
     }
 
@@ -316,6 +321,7 @@ impl Provider {
         match &self.kind {
             ProviderKind::OpenAiCompatible { base_url, .. } => !is_local_url(base_url),
             ProviderKind::ClaudeCli { .. } | ProviderKind::CodexCli { .. } => true,
+            ProviderKind::AppleIntelligence => false,
         }
     }
 }
@@ -691,6 +697,20 @@ mod tests {
         let claude = Provider { id: "k".into(), name: "Claude CLI".into(), kind: ProviderKind::ClaudeCli { path: None, model: "haiku".into() } };
         assert_eq!(claude.model(), Some("haiku"));
         assert!(!claude.needs_model());
+    }
+
+    #[test]
+    fn apple_intelligence_is_local_and_reads_from_the_config_file() {
+        let parsed = Config::parse("[[ai.providers]]\nid = \"apple\"\nname = \"Apple Intelligence\"\nkind = \"apple_intelligence\"\n");
+        assert!(parsed.issues.is_empty(), "{:?}", parsed.issues);
+        let mut apple = parsed.config.ai.providers[0].clone();
+        assert_eq!(apple.kind, ProviderKind::AppleIntelligence);
+        assert!(!apple.is_cloud());
+        assert!(!apple.needs_model(), "macOS chooses the model");
+        apple.set_model("other".into());
+        assert_eq!(apple.model(), None);
+        let saved = parsed.config.to_toml();
+        assert_eq!(Config::parse(&saved).config.ai.providers, parsed.config.ai.providers);
     }
 
     #[test]

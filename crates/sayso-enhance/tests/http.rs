@@ -188,7 +188,7 @@ fn authorization_header_comes_from_the_secret_store() {
             zero_data_retention: false,
         },
     };
-    let enhancer = build_enhancer(&config, &secrets, &Ai::default());
+    let enhancer = build_enhancer(&config, &secrets, &Ai::default(), None);
     let mut req = request("with-key");
     req.model = None;
     let response = enhancer.enhance(&req).unwrap();
