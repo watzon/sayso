@@ -14,6 +14,8 @@ Each release has five files for x86_64 and five for aarch64. All of them hold th
 | `.AppImage` | Nothing | It uses the libraries of your system, the same ones as the tarball. It cannot install the udev rule for `/dev/uinput` (see "Paste access"). |
 | `.tar.gz` | `~/.local`, or `/usr/local` with `--system` | `./install.sh --uninstall` removes a user install. |
 
+The AUR package [`sayso-bin`](https://aur.archlinux.org/packages/sayso-bin) installs the binaries of the tarball to `/usr/lib/sayso`, for x86_64 and aarch64.
+
 The `.deb`, the `.rpm`, and the AUR package also install the udev rule for `/dev/uinput`.
 
 Without the Flatpak, the binaries need glibc 2.35 and the libstdc++ of GCC 12, or later versions. These distributions have them:

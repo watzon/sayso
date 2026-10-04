@@ -39,6 +39,7 @@ Select a button to download the file of the newest release. The [Releases page](
 | Fedora, openSUSE, RHEL family | Fedora, Leap 15.6 or later, Tumbleweed, RHEL 10 | [![.rpm for x86_64](https://img.shields.io/badge/.rpm-x86__64-51A2DA?style=for-the-badge&logo=fedora&logoColor=white)][rpm-x86_64] [![.rpm for aarch64](https://img.shields.io/badge/.rpm-aarch64-51A2DA?style=for-the-badge&logo=fedora&logoColor=white)][rpm-aarch64] |
 | Linux with Flatpak | Any distribution | [![Flatpak for x86_64](https://img.shields.io/badge/Flatpak-x86__64-4A90D9?style=for-the-badge&logo=flatpak&logoColor=white)][flatpak-x86_64] [![Flatpak for aarch64](https://img.shields.io/badge/Flatpak-aarch64-4A90D9?style=for-the-badge&logo=flatpak&logoColor=white)][flatpak-aarch64] |
 | Other Linux | glibc 2.35 or later | [![AppImage for x86_64](https://img.shields.io/badge/AppImage-x86__64-1F6FEB?style=for-the-badge&logo=linux&logoColor=white)][appimage-x86_64] [![AppImage for aarch64](https://img.shields.io/badge/AppImage-aarch64-1F6FEB?style=for-the-badge&logo=linux&logoColor=white)][appimage-aarch64]<br>[![tarball for x86_64](https://img.shields.io/badge/tar.gz-x86__64-555555?style=for-the-badge&logo=linux&logoColor=white)][tarball-x86_64] [![tarball for aarch64](https://img.shields.io/badge/tar.gz-aarch64-555555?style=for-the-badge&logo=linux&logoColor=white)][tarball-aarch64] |
+| Arch Linux | Current | [`sayso-bin`](https://aur.archlinux.org/packages/sayso-bin) on the AUR |
 | NixOS | Flakes | `nix run github:watzon/sayso` |
 
 Linux runs on X11 and on Wayland. [docs/linux.md](docs/linux.md) lists what works on each desktop.
@@ -98,6 +99,7 @@ If the installer is not signed, Windows SmartScreen asks first. Select **More in
    |---|---|---|
    | `.deb` | Debian 12 or later, Ubuntu 22.04 or later | `sudo apt install ./sayso-<version>-linux-<arch>.deb` |
    | `.rpm` | Fedora, openSUSE, and the RHEL 10 family | `sudo dnf install ./sayso-<version>-linux-<arch>.rpm` (openSUSE: `sudo zypper install`) |
+   | AUR | Arch Linux and systems based on it | `yay -S sayso-bin`, or another AUR helper |
    | Nix flake | NixOS, and Nix on other distributions | `nix run github:watzon/sayso`. [docs/linux.md](docs/linux.md) has the NixOS configuration. |
    | `.flatpak` | Any distribution with Flatpak | `flatpak install --user ./sayso-<version>-linux-<arch>.flatpak` |
    | `.AppImage` | Other distributions, no install | `chmod +x` the file, then start it |
