@@ -22,6 +22,8 @@ pub enum Command {
     Cancel,
     PasteLast,
     CycleStyle,
+    /// Turn incognito on or off.
+    Incognito,
     /// Push-to-talk from a key that sends one command on press and one on release.
     PushToTalkDown,
     PushToTalkUp,
@@ -37,6 +39,7 @@ impl Command {
             Command::Cancel => "cancel",
             Command::PasteLast => "paste-last",
             Command::CycleStyle => "cycle-style",
+            Command::Incognito => "incognito",
             Command::PushToTalkDown => "push-to-talk-down",
             Command::PushToTalkUp => "push-to-talk-up",
             Command::Open => "open",
@@ -49,6 +52,7 @@ impl Command {
             Command::Cancel,
             Command::PasteLast,
             Command::CycleStyle,
+            Command::Incognito,
             Command::PushToTalkDown,
             Command::PushToTalkUp,
             Command::Open,
@@ -68,6 +72,7 @@ impl Command {
             Command::Cancel => HotkeyEvent::Cancel,
             Command::PasteLast => HotkeyEvent::PasteLast,
             Command::CycleStyle => HotkeyEvent::CycleStyle,
+            Command::Incognito => HotkeyEvent::ToggleIncognito,
             Command::PushToTalkDown => HotkeyEvent::PushToTalkDown,
             Command::PushToTalkUp => HotkeyEvent::PushToTalkUp,
             Command::Open => return None,
@@ -194,7 +199,7 @@ mod tests {
 
     #[test]
     fn words_round_trip_and_flags_parse() {
-        for c in [Command::Toggle, Command::Cancel, Command::PasteLast, Command::CycleStyle, Command::Open] {
+        for c in [Command::Toggle, Command::Cancel, Command::PasteLast, Command::CycleStyle, Command::Incognito, Command::Open] {
             assert_eq!(Command::parse(c.word()), Some(c));
         }
         assert_eq!(Command::parse("toggle\n"), Some(Command::Toggle));

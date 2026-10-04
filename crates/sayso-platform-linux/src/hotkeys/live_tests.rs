@@ -34,6 +34,7 @@ fn bindings(toggle: &str, ptt: &str) -> HotkeyBindings {
         push_to_talk: Some(ptt.parse().unwrap()),
         paste_last: None,
         cycle_style: None,
+        incognito: None,
         single_escape: false,
         double_escape_window: Duration::from_millis(400),
     }

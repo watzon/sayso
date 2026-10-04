@@ -102,6 +102,14 @@ mod fallback;
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 pub use fallback::*;
 
+/// Gray out a tray icon image (RGBA): the sign that incognito is on.
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
+fn dim_icon(rgba: &mut [u8]) {
+    for pixel in rgba.as_chunks_mut::<4>().0 {
+        pixel[3] = (f32::from(pixel[3]) * 0.4) as u8;
+    }
+}
+
 /// What happened at the menu bar or tray icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(any(target_os = "macos", windows), allow(dead_code))] // The macOS and Windows icons have no menu, so they only send `Click`.

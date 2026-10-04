@@ -127,6 +127,8 @@ pub fn install_global_click_monitor(_callback: impl Fn(Point) + 'static) -> Moni
 pub struct Tray;
 
 impl Tray {
+    pub fn set_incognito(&self, _on: bool) {}
+
     pub fn install(_on_event: impl Fn(TrayEvent) + Send + Sync + 'static) -> Option<Tray> {
         None
     }
@@ -151,7 +153,7 @@ struct NoHotkeys(Receiver<HotkeyEvent>);
 
 impl HotkeySource for NoHotkeys {
     fn register(&self, bindings: &HotkeyBindings) -> HotkeyRegistration {
-        let failed = [bindings.toggle, bindings.push_to_talk, bindings.paste_last, bindings.cycle_style]
+        let failed = [bindings.toggle, bindings.push_to_talk, bindings.paste_last, bindings.cycle_style, bindings.incognito]
             .into_iter()
             .flatten()
             .map(|h| (h, "Hotkeys are not built for this system yet.".to_string()))

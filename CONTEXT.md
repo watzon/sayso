@@ -75,6 +75,9 @@ The themed panel that opens from the menu bar icon (the taskbar icon on Windows,
 **History entry**
 A stored dictation. It holds the transcript, the final text, the style, the target app, the model, the time, the duration, and (until it expires) the audio. When history is off, Sayso stores no history entry for a new dictation. Entries from before stay until the user clears them.
 
+**Incognito**
+A mode in which Sayso stores no history entry for a dictation. It stays on until the user turns it off or quits Sayso. It changes only what Sayso stores: a cloud model or the provider of a style still gets the audio or the transcript.
+
 **Update manifest**
 The signed file `latest.json` on a GitHub release. It names the version and, for each system, the release file with its size and hash.
 

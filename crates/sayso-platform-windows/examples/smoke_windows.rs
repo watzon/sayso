@@ -74,6 +74,7 @@ fn main() {
         push_to_talk: Some(Hotkey::Solo(sayso_core::hotkey::SoloModifier::RightOption)),
         paste_last: Some(Hotkey::paste_last_default()),
         cycle_style: Some("ctrl+opt+s".parse().unwrap()),
+        incognito: None,
         single_escape: false,
         double_escape_window: Duration::from_millis(400),
     };
@@ -89,6 +90,7 @@ fn main() {
         push_to_talk: None,
         paste_last: None,
         cycle_style: None,
+        incognito: None,
         ..bindings
     });
     println!("unregistered again");

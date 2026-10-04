@@ -42,6 +42,8 @@ pub struct Session {
     pub enhance: Option<EnhanceOutcome>,
     pub final_text: Option<String>,
     pub insert: Option<InsertOutcome>,
+    /// Incognito was on when the dictation started.
+    pub incognito: bool,
 }
 
 pub type Sessions = HashMap<SessionId, Session>;
@@ -210,7 +212,9 @@ impl AppModel {
                 None
             }
         };
+        let incognito = self.incognito;
         let s = self.session(session);
+        s.incognito = incognito;
         s.app = app;
         s.samples = samples;
         s.capture = capture;
@@ -453,8 +457,8 @@ impl AppModel {
     fn save_history(&mut self, session: SessionId, cx: &mut Context<Self>) {
         let Some(store) = self.services.store.clone() else { return };
         let Some(s) = self.sessions.remove(&session) else { return };
-        if !self.config.history.enabled {
-            // History is off: no entry, no audio, and no replacement counts.
+        if !saves_history(self.config.history.enabled, s.incognito, self.incognito) {
+            // No entry, no audio, and no replacement counts.
             return;
         }
         let samples = s.samples.lock().clone();
@@ -591,6 +595,7 @@ impl AppModel {
             HotkeyEvent::Cancel => self.dispatch(Event::Cancel, cx),
             HotkeyEvent::PasteLast => self.paste_last(cx),
             HotkeyEvent::CycleStyle => self.cycle_style(cx),
+            HotkeyEvent::ToggleIncognito => self.toggle_incognito(cx),
         }
     }
 
@@ -656,6 +661,12 @@ impl AppModel {
             Err(e) => log::warn!("retention: {e}"),
         }
     }
+}
+
+/// True when a dictation becomes a history entry: history is on, and
+/// incognito was off both when the dictation started and when it ended.
+fn saves_history(history_enabled: bool, incognito_at_start: bool, incognito_at_end: bool) -> bool {
+    history_enabled && !incognito_at_start && !incognito_at_end
 }
 
 /// The backend for one final pass, with everything a background thread needs.
@@ -844,7 +855,7 @@ pub fn start_background_loops(
 #[cfg(test)]
 mod tests {
     // No glob import: `gpui_kit` has a `test` attribute of its own.
-    use super::{FinalPass, Mutex};
+    use super::{FinalPass, Mutex, saves_history};
     use sayso_core::models::{ModelId, ModelInfo};
     use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript};
     use sayso_platform::{Result, SttBackend};
@@ -941,5 +952,13 @@ mod tests {
         let pass = FinalPass::Local { engine: engine.clone(), model: ModelId::new("final") };
         assert_eq!(pass.run(&[0.0; 1600], &options()).unwrap_err(), "the model files are broken");
         assert!(engine.calls.lock().is_empty());
+    }
+
+    #[test]
+    fn a_dictation_is_saved_only_with_history_on_and_incognito_off() {
+        assert!(saves_history(true, false, false));
+        assert!(!saves_history(false, false, false), "history is off");
+        assert!(!saves_history(true, true, false), "incognito was on at the start");
+        assert!(!saves_history(true, false, true), "incognito was on at the end");
     }
 }

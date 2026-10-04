@@ -83,6 +83,9 @@ pub struct AppModel {
     pub engine_down: Option<String>,
     /// A short message for the overlay when a hotkey is blocked (Secure Input).
     pub blocked_notice: Option<(String, Instant)>,
+    /// Incognito: Sayso saves no history entry while it is on. It is never
+    /// written to disk, so it is off after each start.
+    pub incognito: bool,
     /// Bumps when history changes, so pages can refresh their own queries.
     pub history_revision: u64,
 
@@ -107,6 +110,10 @@ pub struct AppModel {
 }
 
 impl EventEmitter<AppEvent> for AppModel {}
+
+/// The overlay notices of the incognito hotkey.
+pub const INCOGNITO_ON: &str = "Incognito is on";
+pub const INCOGNITO_OFF: &str = "Incognito is off";
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {
@@ -152,6 +159,7 @@ impl AppModel {
             replacer: Arc::new(Replacer::new(&[])),
             engine_down: None,
             blocked_notice: None,
+            incognito: false,
             history_revision: 0,
             sessions: Default::default(),
             started: Instant::now(),
@@ -355,6 +363,10 @@ impl AppModel {
         if before.hotkeys != self.config.hotkeys {
             self.register_hotkeys();
         }
+        if !self.config.history.enabled {
+            // Nothing is saved while history is off, so incognito has no meaning.
+            self.incognito = false;
+        }
         if before.updates.check != self.config.updates.check
             && let Some(updater) = &self.updater
         {
@@ -415,6 +427,7 @@ impl AppModel {
             push_to_talk: h.push_to_talk,
             paste_last: h.paste_last,
             cycle_style: h.cycle_style,
+            incognito: h.incognito,
             single_escape: h.cancel == sayso_core::config::CancelMode::SingleEscape,
             double_escape_window: Duration::from_millis(h.double_escape_ms),
         };
@@ -1039,6 +1052,24 @@ impl AppModel {
         }
         self.reload_history();
         cx.notify();
+    }
+
+    /// Turn incognito on or off. It does nothing while history is off.
+    pub fn set_incognito(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.config.history.enabled && self.incognito != on {
+            self.incognito = on;
+            cx.notify();
+        }
+    }
+
+    /// The incognito hotkey: switch the mode and say so in the overlay.
+    pub fn toggle_incognito(&mut self, cx: &mut Context<Self>) {
+        if !self.config.history.enabled {
+            return;
+        }
+        self.set_incognito(!self.incognito, cx);
+        let text = if self.incognito { INCOGNITO_ON } else { INCOGNITO_OFF };
+        self.blocked_notice = Some((text.to_string(), Instant::now()));
     }
 
     /// History has a place in the Hub while it is on, or while entries from before remain.

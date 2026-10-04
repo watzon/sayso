@@ -82,7 +82,7 @@ impl ksni::Tray for SaysoTray {
 
 /// Keeps the tray icon. Dropping it removes the icon.
 pub struct Tray {
-    _handle: ksni::blocking::Handle<SaysoTray>,
+    handle: ksni::blocking::Handle<SaysoTray>,
 }
 
 impl Tray {
@@ -90,21 +90,27 @@ impl Tray {
     /// `on_event` runs on the tray's own thread. None when no tray host runs
     /// (for example GNOME without the AppIndicator extension).
     pub fn install(rgba: Option<(Vec<u8>, u32, u32)>, on_event: impl Fn(TrayEvent) + Send + Sync + 'static) -> Option<Tray> {
-        let icon = rgba.map(|(data, width, height)| ksni::Icon {
-            width: width as i32,
-            height: height as i32,
-            data: rgba_to_argb(&data),
-        });
-        let tray = SaysoTray { icon, on_event: Box::new(on_event) };
+        let tray = SaysoTray { icon: rgba.map(icon), on_event: Box::new(on_event) };
         // A sandbox cannot own the bus name of a tray item, and the item works without it.
         match tray.disable_dbus_name(sayso_core::flatpak::app_id().is_some()).spawn() {
-            Ok(handle) => Some(Tray { _handle: handle }),
+            Ok(handle) => Some(Tray { handle }),
             Err(e) => {
                 log::warn!("no tray icon: {e}");
                 None
             }
         }
     }
+}
+
+impl Tray {
+    /// Show another image. The panel reads it again.
+    pub fn set_image(&self, rgba: Option<(Vec<u8>, u32, u32)>) {
+        self.handle.update(|tray| tray.icon = rgba.map(icon));
+    }
+}
+
+fn icon((data, width, height): (Vec<u8>, u32, u32)) -> ksni::Icon {
+    ksni::Icon { width: width as i32, height: height as i32, data: rgba_to_argb(&data) }
 }
 
 /// RGBA bytes to ARGB bytes (the order the protocol uses).

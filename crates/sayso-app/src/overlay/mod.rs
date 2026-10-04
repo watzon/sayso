@@ -346,6 +346,7 @@ impl Render for OverlayView {
         let t = if reduce { 0.0 } else { self.start.elapsed().as_secs_f32() };
 
         let blocked = m.blocked_notice.as_ref().map(|(s, _)| s.clone());
+        let incognito = m.incognito;
         let preview = m.preview.clone();
         let show_preview = m.config.overlay.show_preview;
         let toggle_caps = m.config.hotkeys.toggle.map(|h| h.keycaps()).unwrap_or_default();
@@ -364,7 +365,14 @@ impl Render for OverlayView {
         };
 
         let body: AnyElement = if let Some(text) = blocked.filter(|_| matches!(state, State::Idle)) {
-            let ic = if text.starts_with("Style:") {
+            let incognito_detail = match text.as_str() {
+                crate::model::INCOGNITO_ON => Some("Sayso does not save dictations to history."),
+                crate::model::INCOGNITO_OFF => Some("Sayso saves dictations to history again."),
+                _ => None,
+            };
+            let ic = if incognito_detail.is_some() {
+                Icon::Wordmark
+            } else if text.starts_with("Style:") {
                 Icon::Styles
             } else if text.contains("microphone") {
                 Icon::Mic
@@ -373,7 +381,7 @@ impl Render for OverlayView {
             } else {
                 Icon::Info
             };
-            notice_pill(ic, &text, None, size, &c).child(capture()).into_any_element()
+            notice_pill(ic, &text, incognito_detail, size, &c).child(capture()).into_any_element()
         } else {
             match &state {
                 State::Idle => idle_pill(self.hovered, &toggle_caps, size, &c).child(capture()).into_any_element(),
@@ -412,6 +420,19 @@ impl Render for OverlayView {
                         )
                         .child(ink_waveform(levels, t, c.ink).w(z(232.)).h(z(36.)))
                         .child(text::mono(clock(elapsed), 13. * tk, c.graphite).w(px(36. * tk)).text_right())
+                        .when(incognito, |d| {
+                            d.child(
+                                div()
+                                    .flex()
+                                    .flex_none()
+                                    .items_center()
+                                    .h(z(22.))
+                                    .px(z(9.))
+                                    .rounded_full()
+                                    .debossed(&c)
+                                    .child(text::ui("Incognito", 12. * tk, FontWeight::MEDIUM, c.graphite)),
+                            )
+                        })
                         .child(capture());
                     let mut col = div().flex().flex_col().items_center().gap(z(12.));
                     if show_preview && !(preview.0.is_empty() && preview.1.is_empty()) {

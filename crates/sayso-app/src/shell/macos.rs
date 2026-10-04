@@ -175,7 +175,7 @@ impl Tray {
     /// Show the icon. `on_event` runs on any thread.
     pub fn install(on_event: impl Fn(TrayEvent) + Send + Sync + 'static) -> Option<Tray> {
         let mut builder = tray_icon::TrayIconBuilder::new().with_tooltip("Sayso");
-        if let Some(icon) = tray_icon_image() {
+        if let Some(icon) = tray_icon_image(false) {
             builder = builder.with_icon_templated(icon);
         } else {
             builder = builder.with_title("Sayso");
@@ -200,6 +200,13 @@ impl Tray {
         Some(Tray { icon })
     }
 
+    /// Gray out the icon while incognito is on.
+    pub fn set_incognito(&self, on: bool) {
+        if let Err(e) = self.icon.set_icon_templated(tray_icon_image(on)) {
+            log::warn!("could not change the menu bar icon: {e}");
+        }
+    }
+
     /// The icon's screen frame. Read it at click time: right after creation
     /// the frame is still empty.
     pub fn icon_rect(&self) -> Option<Rect> {
@@ -208,9 +215,12 @@ impl Tray {
     }
 }
 
-fn tray_icon_image() -> Option<tray_icon::Icon> {
+fn tray_icon_image(incognito: bool) -> Option<tray_icon::Icon> {
     let bytes = sayso_ui::assets::bytes("app/tray.png")?;
-    let img = image::load_from_memory(&bytes).ok()?.into_rgba8();
+    let mut img = image::load_from_memory(&bytes).ok()?.into_rgba8();
+    if incognito {
+        super::dim_icon(&mut img);
+    }
     let (w, h) = img.dimensions();
     tray_icon::Icon::from_rgba(img.into_raw(), w, h).ok()
 }

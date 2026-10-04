@@ -116,7 +116,7 @@ With more than one display, the overlay follows the display in use (Settings ›
 - On KDE, sway, and Hyprland, a layer surface cannot change its display. Sayso opens a new overlay each time a dictation starts, and the compositor puts it on the display in use. The idle pill stays on the display of the last dictation.
 - On GNOME (Wayland), Sayso sees the mouse and the focus only over X11 apps, so the pill follows only those.
 
-On GNOME 47 and earlier without keyboard access, Sayso adds its chords to **Settings › Keyboard › Custom Shortcuts**, named "Sayso: …". GNOME then runs `sayso --toggle` (or `--paste-last`, `--cycle-style`) for the key. Push-to-talk cannot work this way, because GNOME does not report a key release. When the shortcuts portal or keyboard access becomes available, Sayso removes these entries.
+On GNOME 47 and earlier without keyboard access, Sayso adds its chords to **Settings › Keyboard › Custom Shortcuts**, named "Sayso: …". GNOME then runs `sayso --toggle` (or `--paste-last`, `--cycle-style`, `--incognito`) for the key. Push-to-talk cannot work this way, because GNOME does not report a key release. When the shortcuts portal or keyboard access becomes available, Sayso removes these entries.
 
 ## Title bar
 
@@ -180,6 +180,7 @@ If your desktop gives no global shortcuts to apps, bind these commands to keys i
 | `sayso --cancel` | Cancel the dictation |
 | `sayso --paste-last` | Paste the last text again |
 | `sayso --cycle-style` | Switch to the next style |
+| `sayso --incognito` | Turn incognito on or off |
 | `sayso --push-to-talk-down`, `sayso --push-to-talk-up` | Push-to-talk, for tools that run one command on press and one on release |
 
 On sway, for example, add this to the config:

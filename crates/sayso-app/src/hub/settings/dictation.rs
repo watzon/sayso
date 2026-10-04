@@ -119,6 +119,7 @@ impl DictationSettings {
         let ptt_field = kit::key_field(Slot::PushToTalk, ptt, &self.recorder, true, right_option, start, cancel, clear, cx);
         let paste_field = kit::key_field(Slot::PasteLast, config.hotkeys.paste_last, &self.recorder, true, None, start, cancel, clear, cx);
         let cycle_field = kit::key_field(Slot::CycleStyle, config.hotkeys.cycle_style, &self.recorder, true, None, start, cancel, clear, cx);
+        let incognito_field = kit::key_field(Slot::Incognito, config.hotkeys.incognito, &self.recorder, true, None, start, cancel, clear, cx);
 
         let cancel_index = if config.hotkeys.cancel == CancelMode::SingleEscape { 1 } else { 0 };
         let model = self.model.clone();
@@ -165,6 +166,7 @@ impl DictationSettings {
         g.child(row("Cancel", "Only while recording.", cancel_control, cx))
             .child(row("Paste last text", "Pastes your last dictation again.", paste_field, cx))
             .child(row("Next style", "Switches to the next style.", cycle_field, cx))
+            .child(row("Incognito", "Turns incognito on and off. While it is on, Sayso does not save dictations to history.", incognito_field, cx))
     }
 
     fn insertion_group(&mut self, cx: &mut Context<Self>) -> Div {

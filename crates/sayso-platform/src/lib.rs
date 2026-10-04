@@ -37,6 +37,7 @@ pub struct HotkeyBindings {
     pub push_to_talk: Option<Hotkey>,
     pub paste_last: Option<Hotkey>,
     pub cycle_style: Option<Hotkey>,
+    pub incognito: Option<Hotkey>,
     /// Cancel on one Esc instead of two.
     pub single_escape: bool,
     pub double_escape_window: Duration,
@@ -51,6 +52,8 @@ pub enum HotkeyEvent {
     Cancel,
     PasteLast,
     CycleStyle,
+    /// Turn incognito on or off.
+    ToggleIncognito,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

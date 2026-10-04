@@ -206,6 +206,7 @@ fn plan(bindings: &HotkeyBindings) -> Plan {
         (bindings.toggle, HotkeyEvent::Toggle),
         (bindings.paste_last, HotkeyEvent::PasteLast),
         (bindings.cycle_style, HotkeyEvent::CycleStyle),
+        (bindings.incognito, HotkeyEvent::ToggleIncognito),
     ] {
         if let Some(hotkey) = hotkey {
             add_chord(&mut plan, hotkey, ChordAction::Press(event));
@@ -226,6 +227,7 @@ fn portal_binding(chord: &Chord, action: ChordAction) -> Option<portal::Binding>
         ChordAction::Press(HotkeyEvent::Toggle) => ("toggle", "Start or stop a dictation"),
         ChordAction::Press(HotkeyEvent::PasteLast) => ("paste-last", "Paste the last dictation"),
         ChordAction::Press(HotkeyEvent::CycleStyle) => ("cycle-style", "Switch to the next style"),
+        ChordAction::Press(HotkeyEvent::ToggleIncognito) => ("incognito", "Turn incognito on or off"),
         ChordAction::PushToTalk => ("push-to-talk", "Record while you hold the keys"),
         ChordAction::Press(_) => return None,
     };
@@ -264,6 +266,7 @@ impl HotkeySource for LinuxHotkeys {
                         ChordAction::Press(HotkeyEvent::Toggle) => ("toggle", "Start or stop dictation"),
                         ChordAction::Press(HotkeyEvent::PasteLast) => ("paste-last", "Paste the last text"),
                         ChordAction::Press(HotkeyEvent::CycleStyle) => ("cycle-style", "Next style"),
+                        ChordAction::Press(HotkeyEvent::ToggleIncognito) => ("incognito", "Incognito"),
                         ChordAction::Press(_) => continue,
                         ChordAction::PushToTalk => {
                             failed.push((*hotkey, "this version of GNOME cannot tell Sayso when you release a key. Use a toggle key, or join the input group".into()));
@@ -377,6 +380,7 @@ mod tests {
             push_to_talk: ptt.map(|s| s.parse().unwrap()),
             paste_last: None,
             cycle_style: None,
+            incognito: None,
             single_escape: false,
             double_escape_window: Duration::from_millis(400),
         }

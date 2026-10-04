@@ -85,6 +85,7 @@ impl HotkeySource for MacHotkeys {
             (bindings.toggle, HotkeyEvent::Toggle),
             (bindings.paste_last, HotkeyEvent::PasteLast),
             (bindings.cycle_style, HotkeyEvent::CycleStyle),
+            (bindings.incognito, HotkeyEvent::ToggleIncognito),
         ];
         {
             let mut carbon = self.carbon.lock();

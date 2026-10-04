@@ -21,6 +21,7 @@ pub enum Slot {
     PushToTalk,
     PasteLast,
     CycleStyle,
+    Incognito,
 }
 
 impl Slot {
@@ -30,6 +31,7 @@ impl Slot {
             Slot::PushToTalk => c.hotkeys.push_to_talk,
             Slot::PasteLast => c.hotkeys.paste_last,
             Slot::CycleStyle => c.hotkeys.cycle_style,
+            Slot::Incognito => c.hotkeys.incognito,
         }
     }
 
@@ -39,6 +41,7 @@ impl Slot {
             Slot::PushToTalk => m.set_push_to_talk(hotkey, cx),
             Slot::PasteLast => m.edit_config(cx, |c| c.hotkeys.paste_last = hotkey),
             Slot::CycleStyle => m.edit_config(cx, |c| c.hotkeys.cycle_style = hotkey),
+            Slot::Incognito => m.edit_config(cx, |c| c.hotkeys.incognito = hotkey),
         }
     }
 
@@ -49,6 +52,7 @@ impl Slot {
             (Slot::PushToTalk, "Push to talk"),
             (Slot::PasteLast, "Paste last text"),
             (Slot::CycleStyle, "Next style"),
+            (Slot::Incognito, "Incognito"),
         ]
         .into_iter()
         .find(|(s, _)| *s != self && s.get(c).as_ref() == Some(hotkey))

@@ -64,6 +64,7 @@ mod mac {
             push_to_talk: Some(Hotkey::Solo(sayso_core::hotkey::SoloModifier::RightOption)),
             paste_last: Some(Hotkey::paste_last_default()),
             cycle_style: Some("ctrl+cmd+s".parse().unwrap()),
+            incognito: None,
             single_escape: false,
             double_escape_window: Duration::from_millis(400),
         };

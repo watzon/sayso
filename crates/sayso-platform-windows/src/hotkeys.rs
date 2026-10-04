@@ -104,6 +104,7 @@ impl HotkeySource for WinHotkeys {
             (bindings.toggle, HotkeyEvent::Toggle),
             (bindings.paste_last, HotkeyEvent::PasteLast),
             (bindings.cycle_style, HotkeyEvent::CycleStyle),
+            (bindings.incognito, HotkeyEvent::ToggleIncognito),
         ];
         {
             let mut state = self.chords.lock();
@@ -204,6 +205,7 @@ mod tests {
             push_to_talk: ptt.map(|p| p.parse().unwrap()),
             paste_last: None,
             cycle_style: None,
+            incognito: None,
             single_escape: false,
             double_escape_window: Duration::from_millis(400),
         }

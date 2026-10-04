@@ -286,7 +286,7 @@ use super::TrayEvent;
 
 /// The tray icon (StatusNotifierItem).
 pub struct Tray {
-    _icon: sayso_platform_linux::tray::Tray,
+    icon: sayso_platform_linux::tray::Tray,
     /// The last click, in X11 pixels.
     last_click: std::sync::Arc<parking_lot::Mutex<Option<(i32, i32)>>>,
 }
@@ -296,7 +296,7 @@ impl Tray {
     pub fn install(on_event: impl Fn(TrayEvent) + Send + Sync + 'static) -> Option<Tray> {
         let last_click = std::sync::Arc::new(parking_lot::Mutex::new(None));
         let clicks = last_click.clone();
-        let icon = sayso_platform_linux::tray::Tray::install(tray_image(), move |event| {
+        let icon = sayso_platform_linux::tray::Tray::install(tray_image(false), move |event| {
             use sayso_platform_linux::tray::TrayEvent as E;
             match event {
                 E::Click { x, y } => {
@@ -308,7 +308,12 @@ impl Tray {
                 E::Quit => on_event(TrayEvent::Quit),
             }
         })?;
-        Some(Tray { _icon: icon, last_click })
+        Some(Tray { icon, last_click })
+    }
+
+    /// Gray out the icon while incognito is on.
+    pub fn set_incognito(&self, on: bool) {
+        self.icon.set_image(tray_image(on));
     }
 
     /// A small rectangle around the last click on the icon, when the panel
@@ -326,9 +331,12 @@ impl Tray {
 
 /// The colored app icon: a template image like the macOS one would vanish on
 /// a dark panel.
-fn tray_image() -> Option<(Vec<u8>, u32, u32)> {
+fn tray_image(incognito: bool) -> Option<(Vec<u8>, u32, u32)> {
     let bytes = sayso_ui::assets::bytes("app/icon-64.png").or_else(|| sayso_ui::assets::bytes("app/tray.png"))?;
-    let img = image::load_from_memory(&bytes).ok()?.into_rgba8();
+    let mut img = image::load_from_memory(&bytes).ok()?.into_rgba8();
+    if incognito {
+        super::dim_icon(&mut img);
+    }
     let (w, h) = img.dimensions();
     Some((img.into_raw(), w, h))
 }

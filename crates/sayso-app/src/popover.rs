@@ -83,6 +83,21 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
     };
     TRAY.with(|t| *t.borrow_mut() = Some(Tray { icon, popover: None, visible: false, _monitor: None }));
 
+    // The icon is gray while incognito is on.
+    let mut shown = false;
+    cx.observe(model, move |model, cx| {
+        let incognito = model.read(cx).incognito;
+        if incognito != shown {
+            shown = incognito;
+            TRAY.with(|t| {
+                if let Some(tray) = t.borrow().as_ref() {
+                    tray.icon.set_incognito(incognito);
+                }
+            });
+        }
+    })
+    .detach();
+
     let model = model.clone();
     cx.spawn(async move |cx| {
         loop {
@@ -367,6 +382,14 @@ impl PopoverView {
     }
 
     /// The floating list of a row. `footer` is a last line that opens the Hub.
+    /// A submenu closes when the pointer moves to another part of the sheet, as
+    /// in a native menu. The pointer can still cross the gap to the submenu.
+    fn close_submenu_on_hover(&mut self, hovered: &bool, _: &mut Window, cx: &mut Context<Self>) {
+        if *hovered && self.submenu.take().is_some() {
+            cx.notify();
+        }
+    }
+
     fn submenu(&self, kind: Submenu, footer: Option<(&'static str, Route)>, cx: &mut Context<Self>) -> impl IntoElement {
         let c = cx.paper().colors;
         let (items, empty) = match kind {
@@ -460,20 +483,19 @@ impl Render for PopoverView {
         let recording = matches!(m.state(), State::Recording { .. });
         let toggle_caps = m.config.hotkeys.toggle.map(|h| h.keycaps()).unwrap_or_default();
         let paste_caps = m.config.hotkeys.paste_last.map(|h| h.compact_label()).unwrap_or_default();
-        // The label and the text of the last dictation. While history is off, Sayso
-        // saves no entry, so the last dictation comes from memory.
-        let last: Option<(String, String)> = match &m.last_text {
-            Some(text) if !m.config.history.enabled => {
-                let app = m.last_app.clone().unwrap_or_else(|| "Sayso".into());
-                Some((format!("Last · {app} · not saved"), text.clone()))
-            }
-            _ => m.recent.first().map(|e| {
-                let app = e.app.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "Sayso".into());
-                let time = e.created_at.with_timezone(&chrono::Local).format("%-H:%M").to_string();
-                (format!("Last · {app} · {time}"), e.final_text.clone())
-            }),
-        };
-        let today = if m.config.history.enabled {
+        let history_on = m.config.history.enabled;
+        let incognito = m.incognito;
+        // The label and the text of the last history entry. A dictation that Sayso
+        // does not save never shows here, so the card is hidden while history is
+        // off and while incognito is on.
+        let last: Option<(String, String)> = m.recent.first().filter(|_| history_on && !incognito).map(|e| {
+            let app = e.app.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "Sayso".into());
+            let time = e.created_at.with_timezone(&chrono::Local).format("%-H:%M").to_string();
+            (format!("Last · {app} · {time}"), e.final_text.clone())
+        });
+        let today = if incognito {
+            "Incognito".to_string()
+        } else if history_on {
             format!("{} words today", sayso_core::stats::format_count(m.stats.words_today))
         } else {
             "History off".to_string()
@@ -624,7 +646,17 @@ impl Render for PopoverView {
             );
         }
         sheet = sheet.child(
-            div().flex().flex_col().gap(px(8.)).px(px(6.)).pt(px(10.)).pb(px(4.)).child(text::caps("Style", &c).px(px(4.))).child(chips),
+            div()
+                .id("styles")
+                .on_hover(cx.listener(Self::close_submenu_on_hover))
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .px(px(6.))
+                .pt(px(10.))
+                .pb(px(4.))
+                .child(text::caps("Style", &c).px(px(4.)))
+                .child(chips),
         );
 
         // Model and microphone rows. Each opens a submenu beside the sheet, on
@@ -667,7 +699,25 @@ impl Render for PopoverView {
             Some(Submenu::Microphone) => mic_row = mic_row.child(self.submenu(Submenu::Microphone, None, cx)),
             None => {}
         }
-        let rows = div().flex().flex_col().px(px(4.)).pt(px(6.)).child(model_row).child(mic_row);
+        // Incognito has no meaning while history is off, so the row is hidden then.
+        let incognito_row = history_on.then(|| {
+            let model = self.model.clone();
+            div()
+                .id("incognito-row")
+                .on_hover(cx.listener(Self::close_submenu_on_hover))
+                .flex()
+                .items_center()
+                .gap(px(10.))
+                .h(px(38.))
+                .px(px(8.))
+                .border_t_1()
+                .border_color(c.rule)
+                .child(icon(Icon::Wordmark, 15., c.graphite).opacity(if incognito { 0.45 } else { 1.0 }))
+                .child(text::ui("Incognito", 14., FontWeight::NORMAL, c.ink))
+                .child(text::ui("Not saved to history", 13., FontWeight::NORMAL, c.graphite).flex_1().when(!incognito, |d| d.invisible()))
+                .child(Switch::new("incognito", incognito).on_toggle(move |on, _, cx| model.update(cx, |m, cx| m.set_incognito(on, cx))))
+        });
+        let rows = div().flex().flex_col().px(px(4.)).pt(px(6.)).child(model_row).child(mic_row).children(incognito_row);
         sheet = sheet.child(rows);
 
         // The update line, above the footer.
@@ -678,6 +728,8 @@ impl Render for PopoverView {
         // Footer.
         sheet = sheet.child(
             div()
+                .id("footer")
+                .on_hover(cx.listener(Self::close_submenu_on_hover))
                 .flex()
                 .items_center()
                 .gap(px(6.))

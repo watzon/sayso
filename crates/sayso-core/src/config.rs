@@ -79,6 +79,9 @@ pub struct Hotkeys {
     pub paste_last: Option<Hotkey>,
     #[serde(with = "optional_hotkey")]
     pub cycle_style: Option<Hotkey>,
+    /// Turns incognito on and off. It has no default.
+    #[serde(with = "optional_hotkey")]
+    pub incognito: Option<Hotkey>,
 }
 
 /// A hotkey with no key is the empty string in the file. TOML has no null, and
@@ -112,6 +115,7 @@ impl Default for Hotkeys {
             double_escape_ms: 400,
             paste_last: Some(Hotkey::paste_last_default()),
             cycle_style: "ctrl+opt+s".parse().ok(),
+            incognito: None,
         }
     }
 }
@@ -633,6 +637,7 @@ mod tests {
         };
         assert_eq!(c.hotkeys.toggle.unwrap().to_string(), toggle);
         assert_eq!(c.hotkeys.push_to_talk, None);
+        assert_eq!(c.hotkeys.incognito, None);
         assert_eq!(c.hotkeys.cancel, CancelMode::DoubleEscape);
         assert_eq!(c.hotkeys.paste_last.unwrap().to_string(), paste_last);
         assert!(c.history.enabled);
