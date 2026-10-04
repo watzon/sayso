@@ -73,7 +73,7 @@ The main window. Its sections are Home, History, Dictionary, Styles, Models, and
 The themed panel that opens from the menu bar icon (the taskbar icon on Windows, the tray icon on Linux). It is not a native menu.
 
 **History entry**
-A stored dictation. It holds the transcript, the final text, the style, the target app, the model, the time, the duration, and (until it expires) the audio.
+A stored dictation. It holds the transcript, the final text, the style, the target app, the model, the time, the duration, and (until it expires) the audio. When history is off, Sayso stores no history entry for a new dictation. Entries from before stay until the user clears them.
 
 **Update manifest**
 The signed file `latest.json` on a GitHub release. It names the version and, for each system, the release file with its size and hash.

@@ -66,6 +66,15 @@ impl Store {
             }
         }
     }
+
+    /// The number of audio files in the audio directory and their total size.
+    /// Orphans count, because "Delete audio" removes them too.
+    pub(crate) fn audio_use(&self) -> (usize, u64) {
+        let Ok(dir) = std::fs::read_dir(&self.audio_dir) else { return (0, 0) };
+        dir.flatten()
+            .filter(|item| item.path().extension().is_some_and(|e| e == EXTENSION))
+            .fold((0, 0), |(files, bytes), item| (files + 1, bytes + item.metadata().map_or(0, |m| m.len())))
+    }
 }
 
 fn encode_flac(samples: &[f32]) -> Result<Vec<u8>> {

@@ -357,6 +357,9 @@ impl Ai {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct History {
+    /// Save each dictation as a history entry. When false, Sayso saves no
+    /// text and no audio. Entries that exist stay until the user clears them.
+    pub enabled: bool,
     /// Days to keep text. None keeps it forever.
     pub keep_text_days: Option<u32>,
     pub save_audio: bool,
@@ -366,7 +369,7 @@ pub struct History {
 
 impl Default for History {
     fn default() -> Self {
-        Self { keep_text_days: None, save_audio: true, keep_audio_days: Some(30) }
+        Self { enabled: true, keep_text_days: None, save_audio: true, keep_audio_days: Some(30) }
     }
 }
 
@@ -632,6 +635,7 @@ mod tests {
         assert_eq!(c.hotkeys.push_to_talk, None);
         assert_eq!(c.hotkeys.cancel, CancelMode::DoubleEscape);
         assert_eq!(c.hotkeys.paste_last.unwrap().to_string(), paste_last);
+        assert!(c.history.enabled);
         assert_eq!(c.history.keep_text_days, None);
         assert_eq!(c.history.keep_audio_days, Some(30));
         assert!(c.overlay.idle_pill);
@@ -703,6 +707,16 @@ mod tests {
         let small = OverlaySize::Small;
         assert!(small.scale() < OverlaySize::Medium.scale() && OverlaySize::Medium.scale() < OverlaySize::Large.scale());
         assert!(small.text_scale() > small.scale(), "text shrinks less than shapes");
+    }
+
+    #[test]
+    fn history_can_be_turned_off_and_keeps_the_other_keys() {
+        let loaded = Config::parse("[history]\nenabled = false\n");
+        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert!(!loaded.config.history.enabled);
+        assert!(loaded.config.history.save_audio, "other keys keep their defaults");
+        let old_file = Config::parse("[history]\nkeep_audio_days = 7\n");
+        assert!(old_file.config.history.enabled, "a config from before the key keeps history on");
     }
 
     #[test]

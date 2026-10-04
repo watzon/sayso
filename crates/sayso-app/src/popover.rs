@@ -460,8 +460,24 @@ impl Render for PopoverView {
         let recording = matches!(m.state(), State::Recording { .. });
         let toggle_caps = m.config.hotkeys.toggle.map(|h| h.keycaps()).unwrap_or_default();
         let paste_caps = m.config.hotkeys.paste_last.map(|h| h.compact_label()).unwrap_or_default();
-        let last = m.recent.first().cloned();
-        let words_today = sayso_core::stats::format_count(m.stats.words_today);
+        // The label and the text of the last dictation. While history is off, Sayso
+        // saves no entry, so the last dictation comes from memory.
+        let last: Option<(String, String)> = match &m.last_text {
+            Some(text) if !m.config.history.enabled => {
+                let app = m.last_app.clone().unwrap_or_else(|| "Sayso".into());
+                Some((format!("Last · {app} · not saved"), text.clone()))
+            }
+            _ => m.recent.first().map(|e| {
+                let app = e.app.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "Sayso".into());
+                let time = e.created_at.with_timezone(&chrono::Local).format("%-H:%M").to_string();
+                (format!("Last · {app} · {time}"), e.final_text.clone())
+            }),
+        };
+        let today = if m.config.history.enabled {
+            format!("{} words today", sayso_core::stats::format_count(m.stats.words_today))
+        } else {
+            "History off".to_string()
+        };
         let active_style = m.config.ai.active_style.clone();
         let styles: Vec<(String, String, Hsla)> = m
             .styles
@@ -513,7 +529,7 @@ impl Render for PopoverView {
                     .pb(px(6.))
                     .child(status_dot(dot(&c), 8.))
                     .child(text::ui(status, 14., FontWeight::SEMIBOLD, c.ink).flex_1())
-                    .child(text::ui(format!("{words_today} words today"), 12., FontWeight::NORMAL, c.graphite)),
+                    .child(text::ui(today, 12., FontWeight::NORMAL, c.graphite)),
             )
             // The big ink button.
             .child(
@@ -546,11 +562,9 @@ impl Render for PopoverView {
             );
 
         // Last transcript.
-        if let Some(entry) = last {
-            let text_copy = entry.final_text.clone();
-            let text_paste = entry.final_text.clone();
-            let app = entry.app.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "Sayso".into());
-            let time = entry.created_at.with_timezone(&chrono::Local).format("%-H:%M").to_string();
+        if let Some((label, last_text)) = last {
+            let text_copy = last_text.clone();
+            let text_paste = last_text.clone();
             let model_copy = self.model.clone();
             sheet = sheet.child(
                 div()
@@ -567,7 +581,7 @@ impl Render for PopoverView {
                             .flex()
                             .justify_between()
                             .items_center()
-                            .child(text::caps(format!("Last · {app} · {time}"), &c))
+                            .child(text::caps(label, &c))
                             .child(
                                 div()
                                     .flex()
@@ -594,7 +608,7 @@ impl Render for PopoverView {
                                     ),
                             ),
                     )
-                    .child(text::serif(entry.final_text.replace('\n', " "), 14., c.ink).line_clamp(3).text_ellipsis()),
+                    .child(text::serif(last_text.replace('\n', " "), 14., c.ink).line_clamp(3).text_ellipsis()),
             );
         }
 

@@ -1,7 +1,7 @@
 //! History entries: insert, update, read, search, delete.
 
 use crate::error::{Result, StoreError};
-use crate::Store;
+use crate::{StorageUse, Store};
 use chrono::{DateTime, TimeZone, Utc};
 use rusqlite::types::Value;
 use rusqlite::{Row, params, params_from_iter};
@@ -225,7 +225,31 @@ impl Store {
             deleted
         };
         self.remove_all_audio_files();
+        // Without this, the deleted text stays in free pages of the database file.
+        let conn = self.conn.lock();
+        conn.execute_batch("VACUUM")?;
+        conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
         Ok(deleted)
+    }
+
+    /// Delete the audio of every entry. The entries and their text stay.
+    /// Returns the number of entries that had audio.
+    pub fn clear_audio(&self) -> Result<usize> {
+        let cleared =
+            self.conn.lock().execute("UPDATE history SET audio_file = NULL WHERE audio_file IS NOT NULL", [])?;
+        self.remove_all_audio_files();
+        Ok(cleared)
+    }
+
+    /// What the store holds on disk, for Settings › History and privacy.
+    pub fn storage_use(&self) -> Result<StorageUse> {
+        let (entries, database_bytes) = self.conn.lock().query_row(
+            "SELECT (SELECT COUNT(*) FROM history), page_count * page_size FROM pragma_page_count(), pragma_page_size()",
+            [],
+            |r| Ok((r.get::<_, i64>(0)? as usize, r.get::<_, i64>(1)? as u64)),
+        )?;
+        let (audio_files, audio_bytes) = self.audio_use();
+        Ok(StorageUse { entries, database_bytes, audio_files, audio_bytes })
     }
 
     /// All entries created at or after `since`, newest first. Input for the Home stats.
@@ -435,5 +459,62 @@ mod tests {
         assert_eq!(store.count(&HistoryQuery::default()).unwrap(), 0);
         assert!(!store.audio_path(&name).exists());
         assert_eq!(store.list_words().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn clear_audio_keeps_the_entries_and_their_text() {
+        let (_dir, store) = temp_store();
+        let name = store.save_audio(&[0.1; 1600]).unwrap();
+        let mut e = entry("with audio", Duration::zero());
+        e.audio_file = Some(name.clone());
+        let id = store.insert_entry(&e).unwrap();
+        store.insert_entry(&entry("no audio", Duration::zero())).unwrap();
+        // An orphan: a file that no entry points at.
+        let orphan = store.save_audio(&[0.1; 1600]).unwrap();
+
+        assert_eq!(store.clear_audio().unwrap(), 1);
+        let kept = store.get(id).unwrap().expect("the entry stays");
+        assert_eq!(kept.audio_file, None);
+        assert_eq!(kept.final_text, "with audio");
+        assert_eq!(kept.waveform, vec![1, 2, 3], "the waveform stays");
+        assert!(!store.audio_path(&name).exists());
+        assert!(!store.audio_path(&orphan).exists());
+        assert_eq!(store.count(&HistoryQuery::default()).unwrap(), 2);
+    }
+
+    #[test]
+    fn storage_use_counts_entries_and_audio() {
+        let (_dir, store) = temp_store();
+        let empty = store.storage_use().unwrap();
+        assert_eq!((empty.entries, empty.audio_files, empty.audio_bytes), (0, 0, 0));
+        assert!(empty.database_bytes > 0, "the schema takes pages");
+
+        let name = store.save_audio(&[0.1; 1600]).unwrap();
+        let mut e = entry("with audio", Duration::zero());
+        e.audio_file = Some(name.clone());
+        store.insert_entry(&e).unwrap();
+        store.insert_entry(&entry("no audio", Duration::zero())).unwrap();
+
+        let used = store.storage_use().unwrap();
+        assert_eq!((used.entries, used.audio_files), (2, 1));
+        assert_eq!(used.audio_bytes, std::fs::metadata(store.audio_path(&name)).unwrap().len());
+
+        store.clear_audio().unwrap();
+        let after = store.storage_use().unwrap();
+        assert_eq!((after.entries, after.audio_files, after.audio_bytes), (2, 0, 0));
+    }
+
+    #[test]
+    fn clear_all_shrinks_the_database() {
+        let (_dir, store) = temp_store();
+        let long = "dictation ".repeat(2_000);
+        for _ in 0..50 {
+            store.insert_entry(&entry(&long, Duration::zero())).unwrap();
+        }
+        let full = store.storage_use().unwrap().database_bytes;
+        assert_eq!(store.clear_all().unwrap(), 50);
+        let cleared = store.storage_use().unwrap();
+        assert_eq!(cleared.entries, 0);
+        assert!(cleared.database_bytes < full / 4, "{} is not much less than {full}", cleared.database_bytes);
     }
 }

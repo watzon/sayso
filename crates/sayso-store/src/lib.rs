@@ -28,6 +28,16 @@ use parking_lot::Mutex;
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
+/// What the store holds on disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StorageUse {
+    pub entries: usize,
+    /// Size of the database: the history text and the dictionary.
+    pub database_bytes: u64,
+    pub audio_files: usize,
+    pub audio_bytes: u64,
+}
+
 /// Sample rate of all stored audio, in Hz.
 pub const AUDIO_SAMPLE_RATE: u32 = 16_000;
 

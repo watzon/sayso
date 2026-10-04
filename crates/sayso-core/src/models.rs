@@ -618,8 +618,10 @@ pub fn preview_for(active: &ModelInfo, language_setting: &str, on_disk: impl Fn(
 pub fn format_size(bytes: u64) -> String {
     if bytes >= 1_000_000_000 {
         format!("{:.1} GB", bytes as f64 / 1e9)
-    } else {
+    } else if bytes >= 1_000_000 {
         format!("{} MB", (bytes as f64 / 1e6).round() as u64)
+    } else {
+        format!("{} KB", (bytes as f64 / 1e3).round() as u64)
     }
 }
 
@@ -729,5 +731,6 @@ mod tests {
     fn sizes_format() {
         assert_eq!(format_size(626 * MB), "626 MB");
         assert_eq!(format_size(1_271 * MB), "1.3 GB");
+        assert_eq!(format_size(412_000), "412 KB");
     }
 }

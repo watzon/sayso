@@ -141,9 +141,76 @@ impl HomePage {
             .child(week)
     }
 
+    /// "Turn on history" and a link to the setting, for the two "History is off" states.
+    fn history_off_actions(&self, cx: &App) -> (Button, Stateful<Div>) {
+        let (on, open) = (self.model.clone(), self.model.clone());
+        let turn_on = Button::new("turn-on-history", "Turn on history")
+            .small()
+            .on_click(move |_, _, cx| on.update(cx, |m, cx| m.edit_config(cx, |c| c.history.enabled = true)));
+        let settings = kit::link("open-history-settings", "Open History settings", 14., cx)
+            .on_click(move |_, _, cx| open.update(cx, |m, cx| m.navigate(Route::Settings(SettingsPage::HistoryPrivacy), cx)));
+        (turn_on, settings)
+    }
+
+    /// Takes the place of the stats while history is off and entries from before remain.
+    fn history_off_strip(&self, cx: &App) -> Div {
+        let c = cx.paper().colors;
+        let (turn_on, settings) = self.history_off_actions(cx);
+        div()
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(32.))
+            .py(px(24.))
+            .border_t_1()
+            .border_b_1()
+            .border_color(c.rule)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(6.))
+                    .child(text::title("History is off", 22., &c).line_height(px(28.)))
+                    .child(ui(
+                        "Sayso does not save new dictations, so there are no stats. The entries below are from before.",
+                        14.,
+                        20.,
+                        FontWeight::NORMAL,
+                        c.graphite,
+                    )),
+            )
+            .child(div().flex().flex_none().items_center().gap(px(16.)).child(settings).child(turn_on))
+    }
+
+    /// Takes the place of the stats and the recent list while history is off and no entry remains.
+    fn history_off_block(&self, cx: &App) -> Div {
+        let c = cx.paper().colors;
+        let (turn_on, settings) = self.history_off_actions(cx);
+        div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .gap(px(18.))
+            .child(text::title("History is off", 22., &c).line_height(px(28.)))
+            .child(
+                text::body(
+                    "Sayso does not keep your dictations, so there are no recent entries and no stats. Paste last still works until you quit Sayso.",
+                    &c,
+                )
+                .max_w(px(460.)),
+            )
+            .child(div().flex().items_center().gap(px(16.)).child(turn_on).child(settings))
+    }
+
     fn recent(&self, cx: &App) -> Div {
         let c = cx.paper().colors;
         let m = self.model.read(cx);
+        if !m.config.history.enabled && m.recent.is_empty() {
+            return self.history_off_block(cx);
+        }
         let open = {
             let model = self.model.clone();
             kit::link("open-history", "Open History", 14., cx)
@@ -195,7 +262,7 @@ impl HomePage {
                         kit::select_history_entry(id, cx);
                         model.update(cx, |m, cx| m.navigate(Route::History, cx));
                     })
-                    .child(mono(kit::clock(e.created_at), 12., c.graphite).w(px(44.)).flex_none())
+                    .child(mono(kit::clock_or_day(e.created_at), 12., c.graphite).w(px(44.)).flex_none())
                     .child(AppBadge::new(app).icon(app_icon))
                     .child(fraunces(e.final_text.replace('\n', " "), 15., 18., c.ink).flex_1().min_w_0().truncate())
                     .child(StyleTag::new(name, dot).width(84.))
@@ -356,6 +423,13 @@ impl HomePage {
 impl Render for HomePage {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c: Colors = cx.paper().colors;
+        let m = self.model.read(cx);
+        // Stats come from history entries. While history is off, a notice takes their place.
+        let top = if m.config.history.enabled {
+            Some(self.stats(cx))
+        } else {
+            (!m.recent.is_empty()).then(|| self.history_off_strip(cx))
+        };
         div()
             .id("home")
             .absolute()
@@ -371,7 +445,7 @@ impl Render for HomePage {
                     .px(px(52.))
                     .text_color(c.ink)
                     .child(self.header(cx))
-                    .child(self.stats(cx))
+                    .children(top)
                     .child(
                         div()
                             .flex()

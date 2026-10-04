@@ -1074,6 +1074,19 @@ impl Render for HistoryPage {
         }
         let total = self.model.read(cx).history_total;
         let root = div().absolute().inset_0().flex().text_color(c.ink);
+        if total == 0 && !self.model.read(cx).config.history.enabled {
+            let model = self.model.clone();
+            let turn_on = Button::new("turn-on-history", "Turn on history")
+                .small()
+                .on_click(move |_, _, cx| model.update(cx, |m, cx| m.edit_config(cx, |c| c.history.enabled = true)));
+            return root.items_center().justify_center().child(kit::empty_state(
+                Icon::History,
+                "History is off",
+                "Sayso does not keep your dictations. Turn on history to keep each dictation here.",
+                Some(turn_on.into_any_element()),
+                cx,
+            ));
+        }
         if total == 0 {
             let hk = self
                 .model

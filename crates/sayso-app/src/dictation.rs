@@ -453,6 +453,10 @@ impl AppModel {
     fn save_history(&mut self, session: SessionId, cx: &mut Context<Self>) {
         let Some(store) = self.services.store.clone() else { return };
         let Some(s) = self.sessions.remove(&session) else { return };
+        if !self.config.history.enabled {
+            // History is off: no entry, no audio, and no replacement counts.
+            return;
+        }
         let samples = s.samples.lock().clone();
         let save_audio = self.config.history.save_audio && !samples.is_empty();
         let model = s.model.clone().unwrap_or_else(|| self.config.dictation.model.clone());

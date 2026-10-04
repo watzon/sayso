@@ -32,7 +32,7 @@ pub fn sidebar(model: &Entity<AppModel>, route: Route, cx: &App) -> impl IntoEle
             .child(config_footer(model, cx)),
         _ => col
             .child(wordmark(cx))
-            .child(main_nav(model, route))
+            .child(main_nav(model, route, cx))
             .child(div().flex_1())
             .child(main_footer(model, cx)),
     }
@@ -61,7 +61,8 @@ fn go(model: &Entity<AppModel>, route: Route) -> impl Fn(&ClickEvent, &mut Windo
     move |_, _, cx| model.update(cx, |m, cx| m.navigate(route, cx))
 }
 
-fn main_nav(model: &Entity<AppModel>, route: Route) -> impl IntoElement {
+fn main_nav(model: &Entity<AppModel>, route: Route, cx: &App) -> impl IntoElement {
+    let history = model.read(cx).history_visible();
     let items = [
         (Route::Home, Icon::Home, "Home"),
         (Route::History, Icon::History, "History"),
@@ -71,7 +72,7 @@ fn main_nav(model: &Entity<AppModel>, route: Route) -> impl IntoElement {
         (Route::Settings(SettingsPage::Dictation), Icon::Settings, "Settings"),
     ];
     let mut nav = div().flex().flex_col().gap(px(2.));
-    for (i, (r, ic, label)) in items.into_iter().enumerate() {
+    for (i, (r, ic, label)) in items.into_iter().enumerate().filter(|(_, (r, ..))| history || *r != Route::History) {
         let active = route == r;
         nav = nav.child(NavItem::new(("nav", i), ic, label, active).on_click(go(model, r)));
     }

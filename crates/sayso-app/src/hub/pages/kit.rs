@@ -39,6 +39,12 @@ pub fn clock(at: chrono::DateTime<chrono::Utc>) -> String {
     at.with_timezone(&chrono::Local).format("%-H:%M").to_string()
 }
 
+/// The time of an entry from today ("9:41"), or the day of an older one ("Sep 30").
+pub fn clock_or_day(at: chrono::DateTime<chrono::Utc>) -> String {
+    let local = at.with_timezone(&chrono::Local);
+    if local.date_naive() == chrono::Local::now().date_naive() { clock(at) } else { local.format("%b %-d").to_string() }
+}
+
 /// "0:07", "1:32".
 pub fn duration(ms: u64) -> String {
     let s = (ms + 500) / 1000;

@@ -73,6 +73,8 @@ pub struct AppModel {
     pub recent: Vec<HistoryEntry>,
     pub stats: Stats,
     pub history_total: usize,
+    /// What the store holds on disk, for Settings › History and privacy.
+    pub storage: sayso_store::StorageUse,
     pub words: Vec<Word>,
     pub replacements: Vec<Replacement>,
     pub(crate) replacer: Arc<Replacer>,
@@ -144,6 +146,7 @@ impl AppModel {
             recent: Vec::new(),
             stats: Stats::default(),
             history_total: 0,
+            storage: sayso_store::StorageUse::default(),
             words: Vec::new(),
             replacements: Vec::new(),
             replacer: Arc::new(Replacer::new(&[])),
@@ -701,6 +704,11 @@ impl AppModel {
         self.catalog().iter().filter(|m| self.status_of(&m.id).is_on_disk()).map(|m| m.size_bytes).sum()
     }
 
+    /// The number of downloaded models, for Settings › History and privacy.
+    pub fn models_on_disk(&self) -> usize {
+        self.catalog().iter().filter(|m| m.size_bytes > 0 && self.status_of(&m.id).is_on_disk()).count()
+    }
+
     // -----------------------------------------------------------------------
     // Styles and AI
     // -----------------------------------------------------------------------
@@ -987,6 +995,7 @@ impl AppModel {
         let q = sayso_store::HistoryQuery { limit: Some(50), ..Default::default() };
         self.recent = store.list(&q).unwrap_or_default();
         self.history_total = store.count(&sayso_store::HistoryQuery::default()).unwrap_or(0);
+        self.storage = store.storage_use().unwrap_or_default();
         let since = chrono::Utc::now() - chrono::Duration::days(8);
         let entries = store.entries_since(since).unwrap_or_default();
         self.stats = stats::compute(&entries, chrono::Local::now());
@@ -1019,6 +1028,22 @@ impl AppModel {
         }
         self.reload_history();
         cx.notify();
+    }
+
+    /// Delete the audio of every entry. The text stays.
+    pub fn clear_audio(&mut self, cx: &mut Context<Self>) {
+        if let Some(store) = &self.services.store
+            && let Err(e) = store.clear_audio()
+        {
+            log::error!("could not delete audio: {e}");
+        }
+        self.reload_history();
+        cx.notify();
+    }
+
+    /// History has a place in the Hub while it is on, or while entries from before remain.
+    pub fn history_visible(&self) -> bool {
+        self.config.history.enabled || self.history_total > 0
     }
 
     pub fn load_audio(&self, file: &str) -> Option<Vec<f32>> {
