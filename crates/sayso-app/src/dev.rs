@@ -3,6 +3,7 @@
 //! - `--hub` opens the Hub at startup.
 //! - `--route=home|history|dictionary|styles|models|settings-<page>` picks the page.
 //! - `--onboarding[=N]` opens onboarding at step N (0 to 6).
+//! - `--whats-new` opens the "What is new" window with the newest notes in `release-notes.toml`.
 //! - `--dark` / `--light` force the appearance.
 //! - `--seed-demo` fills an empty database with the sample content from the design.
 //!

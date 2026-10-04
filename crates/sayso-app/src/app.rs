@@ -15,6 +15,7 @@ use std::sync::Arc;
 pub struct Windows {
     pub hub: Option<AnyWindowHandle>,
     pub onboarding: Option<AnyWindowHandle>,
+    pub whats_new: Option<AnyWindowHandle>,
 }
 
 impl Global for Windows {}
@@ -103,8 +104,15 @@ pub fn run() {
         }
         if onboarding_flag || !model.read(cx).config.onboarding.completed {
             open_onboarding(&model, cx);
-        } else if crate::dev::flag("hub") || crate::dev::route().is_some() {
-            open_hub(&model, crate::dev::route().unwrap_or(Route::Home), cx);
+        } else {
+            if crate::dev::flag("hub") || crate::dev::route().is_some() {
+                open_hub(&model, crate::dev::route().unwrap_or(Route::Home), cx);
+            }
+            if crate::dev::flag("whats-new") {
+                crate::whats_new::open_newest(&model, cx);
+            } else {
+                crate::whats_new::show_after_update(&model, cx);
+            }
         }
         // Keep the model alive for the whole run.
         std::mem::forget(model);
@@ -286,6 +294,8 @@ pub fn open_onboarding(model: &Entity<AppModel>, cx: &mut App) {
 /// Close onboarding and open the Hub (the "Open Sayso" button).
 pub fn finish_onboarding(model: &Entity<AppModel>, window: &mut Window, cx: &mut App) {
     model.update(cx, |m, cx| m.finish_onboarding(cx));
+    // A first install is not an update: it gets no "What is new" window.
+    crate::whats_new::mark_seen(&model.read(cx).paths);
     cx.global_mut::<Windows>().onboarding = None;
     window.remove_window();
     open_hub(model, Route::Home, cx);

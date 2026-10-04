@@ -1,0 +1,51 @@
+# The notes that Sayso shows one time after an update, in the "What is new"
+# window. docs/releasing.md says how to add a release.
+#
+# Newest release first. A release without an entry here shows no window.
+#
+#   [[release]]
+#   version = "1.2.3"            # The version in Cargo.toml.
+#   title = "One short line"     # The headline of the window.
+#
+#   [[release.item]]             # One new feature. Keep to five or fewer.
+#   icon = "sparkle"             # A name from `icon` in crates/sayso-app/src/whats_new.rs.
+#   title = "The feature"
+#   text = "One or two sentences."
+#   systems = ["macos"]          # Optional: "macos", "windows", "linux". Without it, all systems.
+#
+#   [release.note]               # Optional: an announcement or a request, above the footer.
+#   title = "The note"
+#   text = "One or two sentences."
+#   action = "The button"
+#   url = "https://…"
+
+[[release]]
+version = "0.5.0"
+title = "More control over what Sayso keeps"
+
+[[release.item]]
+icon = "sparkle"
+title = "Apple Intelligence styles"
+text = "A style can use the language model of macOS 26. The transcript stays on your Mac, and there is no download."
+systems = ["macos"]
+
+[[release.item]]
+icon = "lock"
+title = "Incognito"
+text = "Turn on Incognito, and Sayso stores no history entry until you turn it off or quit Sayso."
+
+[[release.item]]
+icon = "history"
+title = "History controls"
+text = "Turn history off, delete the text and the audio separately, and see how much disk space they use."
+
+[[release.item]]
+icon = "search"
+title = "Search in the app filter"
+text = "Type to find an app in the filter of History, and use the arrow keys to select it."
+
+[release.note]
+title = "Sayso is pay what you want"
+text = "If Sayso is useful to you, support its development. Each build is the full app."
+action = "Support Sayso"
+url = "https://github.com/sponsors/watzon"

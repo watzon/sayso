@@ -84,6 +84,8 @@ impl GeneralSettings {
         } else {
             v.detail
         };
+        let notes_url = v.notes_url;
+        let whats_new = notes_url.is_none() && crate::whats_new::current().is_some();
         let status_row = div()
             .flex()
             .items_center()
@@ -113,12 +115,23 @@ impl GeneralSettings {
                             .flex_wrap()
                             .gap(px(6.))
                             .child(text::ui(detail, 13., FontWeight::NORMAL, c.graphite).line_height(px(16.)))
-                            .when_some(v.notes_url, |d, url| {
+                            .when_some(notes_url, |d, url| {
                                 d.child(
                                     div()
                                         .id("update-notes")
                                         .cursor_pointer()
                                         .on_click(move |_, _, _| crate::shell::open(&url))
+                                        .child(text::ui("See what is new", 13., FontWeight::SEMIBOLD, c.accent).line_height(px(16.))),
+                                )
+                            })
+                            // The notes of this version, when no newer version has the link.
+                            .when(whats_new, |d| {
+                                let model = self.model.clone();
+                                d.child(
+                                    div()
+                                        .id("update-whats-new")
+                                        .cursor_pointer()
+                                        .on_click(move |_, _, cx| crate::whats_new::open(&model, cx))
                                         .child(text::ui("See what is new", 13., FontWeight::SEMIBOLD, c.accent).line_height(px(16.))),
                                 )
                             }),

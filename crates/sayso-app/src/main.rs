@@ -21,6 +21,7 @@ mod popover;
 mod services;
 mod shell;
 mod update_ui;
+mod whats_new;
 mod widgets;
 
 fn main() {

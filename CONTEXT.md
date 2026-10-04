@@ -87,6 +87,12 @@ The signed file `latest.json` on a GitHub release. It names the version and, for
 **Update check**
 One request for the update manifest. Sayso compares the version in the manifest with its own version. [docs/updates.md](docs/updates.md) has the design.
 
+**Release notes**
+The entry of a version in `release-notes.toml`: a headline, the new features, and an optional note. They are part of the build. The notes on the GitHub release are a different text, which GitHub makes from the pull requests.
+
+**What is new window**
+The window that shows the release notes one time, at the first start of a new version. It also opens from Settings › General.
+
 **Official build**
 A build from the Release workflow. Only an official build looks for updates.
 

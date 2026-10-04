@@ -68,7 +68,17 @@ The states show in three places:
 - One line in the Popover, above the footer, for Available, Downloading, Ready, Failed, and Manual.
 - A slip in the Hub sidebar, below the engine status and above the theme switch, for the same five states. A click opens Settings › General. For Ready, a click restarts Sayso.
 
-After a swap, Sayso shows "Sayso is now X" one time, with a link to the release notes.
+After a swap, Sayso shows "Sayso is now X" one time in the Popover. Its button **What is new** opens the "What is new" window, or the release notes on GitHub when the version has no notes in the app.
+
+### The "What is new" window
+
+At the first start of a version that has an entry in `release-notes.toml`, Sayso opens a window with the notes of that version: a headline, the new features, an optional note (an announcement or a request for support), and a link to the release on GitHub. The Paper design is on the page "What is new".
+
+- The notes are part of the build. The window needs no network, and Sayso opens no address from a server.
+- The window does not depend on the updater. Sayso keeps the last version it showed in `state.json` (`whats_new`) and compares it with its own version, so an update from Homebrew, a package, or an installer shows the window too.
+- A first install shows no window: the end of onboarding records the version.
+- An item can name its systems. A version with nothing for this system shows no window.
+- The link **See what is new** in Settings › General opens the window again.
 
 The config has a new table:
 

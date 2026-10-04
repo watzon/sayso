@@ -121,8 +121,16 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
 ## Make a release
 
-1. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and commit both files to `main`.
-2. Run the checks on your Mac. CI does not run them on a push.
+1. Write the notes of the new version in `release-notes.toml`, as the first `[[release]]` entry. Sayso shows them one time in the "What is new" window, at the first start of the new version. The comment at the top of the file gives the fields.
+   - Write for a user, not for a developer: name what the user can do now. Keep to five items or fewer.
+   - Give an item `systems` when only some systems have the feature.
+   - Use `[release.note]` for one announcement or one request, for example a request for support.
+   - A version without an entry shows no window. Leave the entry out for a release that has only corrections.
+
+   To see the window, run `scripts/dev.sh --whats-new`. It shows the first entry of the file.
+
+2. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and commit the two files and `release-notes.toml` to `main`.
+3. Run the checks on your Mac. CI does not run them on a push.
 
    ```sh
    cargo test --workspace
@@ -130,19 +138,19 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
    scripts/check-deps.sh
    ```
 
-3. Publish the release as a prerelease. The tag must be `v` plus the version in `Cargo.toml`, or the workflow stops. `--notes-start-tag` names the release before this one, because GitHub does not use a prerelease as the start of the notes by itself.
+4. Publish the release as a prerelease. The tag must be `v` plus the version in `Cargo.toml`, or the workflow stops. `--notes-start-tag` names the release before this one, because GitHub does not use a prerelease as the start of the notes by itself.
 
    ```sh
    gh release create v0.3.0 --target main --title "Sayso 0.3.0" --prerelease --generate-notes --notes-start-tag v0.2.0
    ```
 
-4. Wait for the workflow. It takes about 25 minutes without a build cache. The last job, **Update manifest**, removes the prerelease mark.
+5. Wait for the workflow. It takes about 25 minutes without a build cache. The last job, **Update manifest**, removes the prerelease mark.
 
    ```sh
    gh run watch
    ```
 
-5. Open the release and make sure that it is the latest release and has these files:
+6. Open the release and make sure that it is the latest release and has these files:
    - `Sayso-<version>-macos-arm64.dmg`
    - `Sayso-<version>-windows-x64-setup.exe`
    - `sayso-<version>-linux-x86_64.tar.gz`, `.deb`, `.rpm`, `.AppImage`, and `.flatpak`
@@ -154,7 +162,7 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    The AUR package `sayso-bin` must also have the new version.
 
-6. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before.
+7. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before.
 
    ```sh
    scripts/after-release.sh v0.3.0

@@ -156,7 +156,8 @@ fn when(unix_seconds: u64) -> String {
     }
 }
 
-fn release_notes(version: &sayso_update::manifest::Version) -> String {
+/// The page of a release on GitHub.
+pub fn release_notes(version: &sayso_update::manifest::Version) -> String {
     format!("{}tag/v{version}", sayso_update::manifest::URL_PREFIX)
 }
 
@@ -269,7 +270,18 @@ pub fn popover_line(model: &Entity<AppModel>, hide: fn(&mut App), cx: &App) -> O
                 .pr(px(6.))
                 .child(icon(Icon::Check, 14., c.graphite))
                 .child(text::ui(format!("Sayso is now {version}"), 13., FontWeight::MEDIUM, c.ink).flex_1().truncate())
-                .child(button("update-notes", "What is new", c.accent).on_click(move |_, _, _| crate::shell::open(&notes)))
+                .child(button("update-notes", "What is new", c.accent).on_click({
+                    let model = model.clone();
+                    move |_, _, cx| {
+                        // The notes in the app, when this version has some.
+                        if crate::whats_new::current().is_some() {
+                            hide(cx);
+                            crate::whats_new::open(&model, cx);
+                        } else {
+                            crate::shell::open(&notes);
+                        }
+                    }
+                }))
                 .child(
                     div()
                         .id("update-notice-dismiss")
