@@ -83,6 +83,28 @@ gh secret set HOMEBREW_TAP_DEPLOY_KEY --repo watzon/sayso < tap-key
 rm tap-key tap-key.pub
 ```
 
+### AUR package
+
+The job **AUR package** pushes the `PKGBUILD` and the `.SRCINFO` of `sayso-bin` to the [AUR](https://aur.archlinux.org/packages/sayso-bin). The `manifest` job makes the two files from `packaging/linux/aur/PKGBUILD.in` and the tarballs of the run (`scripts/aur-pkgbuild.sh`). Like the Homebrew job, it runs after the release is the latest release.
+
+The job needs one secret:
+
+| Secret | Contents |
+|---|---|
+| `AUR_SSH_PRIVATE_KEY` | The private key of an SSH key of the AUR account that maintains `sayso-bin` |
+
+To make a new key, add the public key to the AUR account (**My Account › SSH Public Key**, one key for each line), then set the secret:
+
+```sh
+ssh-keygen -t ed25519 -N "" -C "sayso release (AUR)" -f aur-key
+cat aur-key.pub                       # add this line to the AUR account
+gh secret set AUR_SSH_PRIVATE_KEY --repo watzon/sayso < aur-key
+```
+
+The AUR commit uses the name and the email address of the repository variables `AUR_COMMIT_NAME` and `AUR_COMMIT_EMAIL`, when they are set.
+
+To change the package without a new Sayso version (for example a new dependency), change `PKGBUILD.in`, increase `pkgrel` there, and push the files by hand. Set `pkgrel` back to 1 for the next version.
+
 ### Windows signing (optional)
 
 The Windows job signs the installer and the two exes when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
@@ -130,7 +152,7 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    The tap `watzon/homebrew-tap` must also have a new commit, `sayso <version>`.
 
-   The run also has the artifact `aur-sayso-bin`, with the `PKGBUILD` and the `.SRCINFO` for the AUR. Nothing publishes them yet.
+   The AUR package `sayso-bin` must also have the new version.
 
 6. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before.
 

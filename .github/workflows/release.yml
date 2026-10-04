@@ -477,3 +477,59 @@ jobs:
           done
           echo "::error::Could not push the cask to the tap."
           exit 1
+
+  # Publish sayso-bin to the AUR. Like the Homebrew job, this runs after the
+  # release is the latest release, so a failure here does not change the
+  # release. To publish again, run this job again.
+  aur:
+    name: AUR package
+    needs: manifest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: aur-sayso-bin
+      cancel-in-progress: false
+    steps:
+      # The PKGBUILD and the .SRCINFO that the manifest job made from the tarballs of this run.
+      - name: Get the AUR files of this run
+        uses: actions/download-artifact@v4
+        with:
+          name: aur-sayso-bin
+          path: aur
+
+      - name: Push the files to the AUR
+        env:
+          # A key of the AUR account that maintains sayso-bin. See docs/releasing.md.
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          AUR_COMMIT_NAME: ${{ vars.AUR_COMMIT_NAME || 'Chris Watson' }}
+          AUR_COMMIT_EMAIL: ${{ vars.AUR_COMMIT_EMAIL || 'cawatson1993@gmail.com' }}
+        run: |
+          if [[ -z "$AUR_SSH_PRIVATE_KEY" ]]; then
+            echo "::error::The secret AUR_SSH_PRIVATE_KEY is not set. See docs/releasing.md."
+            exit 1
+          fi
+          version="${TAG#v}"
+          grep -qx "pkgver=$version" aur/PKGBUILD || { echo "::error::The PKGBUILD is not for version $version."; exit 1; }
+          umask 077
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$RUNNER_TEMP/aur-key"
+          trap 'rm -f "$RUNNER_TEMP/aur-key"' EXIT
+          # The Ed25519 host key of the AUR (SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4 on https://aur.archlinux.org).
+          echo "aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN" > "$RUNNER_TEMP/aur-known-hosts"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/aur-key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/aur-known-hosts"
+
+          # A package that does not exist yet gives an empty repository, and the first push creates it.
+          git -c init.defaultBranch=master clone ssh://aur@aur.archlinux.org/sayso-bin.git repo
+          current=$(sed -n 's/^pkgver=//p' repo/PKGBUILD 2>/dev/null || true)
+          if [[ -n "$current" && "$current" != "$version" && "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" == "$current" ]]; then
+            echo "::warning::The AUR has sayso-bin $current, which is newer than $version. The package stays as it is."
+            exit 0
+          fi
+          cp aur/PKGBUILD aur/.SRCINFO repo/
+          git -C repo add PKGBUILD .SRCINFO
+          if git -C repo diff --cached --quiet; then
+            echo "The AUR already has sayso-bin $version."
+            exit 0
+          fi
+          git -C repo -c user.name="$AUR_COMMIT_NAME" -c user.email="$AUR_COMMIT_EMAIL" commit --quiet -m "sayso-bin $version"
+          git -C repo push origin HEAD:master
+          echo "The AUR has sayso-bin $version."
