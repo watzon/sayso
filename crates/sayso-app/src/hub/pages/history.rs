@@ -7,12 +7,12 @@ use super::kit::{self, caps, fraunces, mono, ui};
 use super::player::{self, Playing};
 use crate::hub::{Route, SettingsPage};
 use crate::model::AppModel;
-use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::input::{InputEvent, InputState, MoveDown, MoveUp};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use sayso_core::history::{EnhanceOutcome, HistoryEntry, InsertOutcome};
-use sayso_store::HistoryQuery;
+use sayso_store::{AppCount, HistoryQuery};
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
 use sayso_ui::fonts::DISPLAY;
@@ -37,6 +37,11 @@ pub struct HistoryPage {
     /// (bundle id, name)
     app: Option<(String, String)>,
     app_menu: bool,
+    /// The filter field of the app picker.
+    app_filter: Entity<InputState>,
+    /// The row of the app picker that Enter picks.
+    app_cursor: usize,
+    app_scroll: ScrollHandle,
     /// The three-dot menu of the open entry.
     actions_menu: bool,
     limit: usize,
@@ -75,6 +80,12 @@ impl HistoryPage {
                 this.refresh(cx);
             }
         });
+        let app_filter = cx.new(|cx| InputState::new(window, cx).placeholder("Find an app"));
+        let app_sub = cx.subscribe_in(&app_filter, window, |this: &mut Self, _, ev: &InputEvent, _, cx| match ev {
+            InputEvent::Change => this.reset_app_cursor(cx),
+            InputEvent::PressEnter { .. } => this.pick_app(this.app_cursor, cx),
+            _ => {}
+        });
         let mut page = Self {
             model,
             search,
@@ -82,6 +93,9 @@ impl HistoryPage {
             has_audio: false,
             app: None,
             app_menu: false,
+            app_filter,
+            app_cursor: 0,
+            app_scroll: ScrollHandle::new(),
             actions_menu: false,
             limit: PAGE,
             entries: Vec::new(),
@@ -101,7 +115,7 @@ impl HistoryPage {
             transcript_open: false,
             modal_focus: cx.focus_handle(),
             bar_bounds: Rc::new(Cell::new(None)),
-            _subs: vec![observe, sub],
+            _subs: vec![observe, sub, app_sub],
         };
         page.refresh(cx);
         page
@@ -143,6 +157,129 @@ impl HistoryPage {
         self.search.update(cx, |s, cx| s.set_value("", window, cx));
         self.limit = PAGE;
         self.refresh(cx);
+    }
+
+    // -----------------------------------------------------------------------
+    // App picker
+    // -----------------------------------------------------------------------
+
+    fn app_rows(&self, cx: &App) -> Vec<Option<AppCount>> {
+        app_rows(self.model.read(cx).history_apps(), &self.app_filter.read(cx).value())
+    }
+
+    fn toggle_app_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.app_menu = !self.app_menu;
+        if self.app_menu {
+            self.app_filter.update(cx, |s, cx| {
+                s.set_value("", window, cx);
+                s.focus(window, cx);
+            });
+            self.reset_app_cursor(cx);
+        }
+        cx.notify();
+    }
+
+    /// Put the cursor on the app of the filter, or on the first row.
+    fn reset_app_cursor(&mut self, cx: &mut Context<Self>) {
+        let current = self.app.as_ref().map(|a| a.0.as_str());
+        let rows = self.app_rows(cx);
+        self.app_cursor = rows.iter().position(|r| r.as_ref().map(|a| a.bundle_id.as_str()) == current).unwrap_or(0);
+        self.app_scroll.scroll_to_item(self.app_cursor);
+        cx.notify();
+    }
+
+    fn move_app_cursor(&mut self, down: bool, cx: &mut Context<Self>) {
+        let last = self.app_rows(cx).len().saturating_sub(1);
+        self.app_cursor = if down { (self.app_cursor + 1).min(last) } else { self.app_cursor.saturating_sub(1) };
+        self.app_scroll.scroll_to_item(self.app_cursor);
+        cx.notify();
+    }
+
+    fn pick_app(&mut self, row: usize, cx: &mut Context<Self>) {
+        let Some(pick) = self.app_rows(cx).into_iter().nth(row) else { return };
+        self.app = pick.map(|a| (a.bundle_id, a.name));
+        self.app_menu = false;
+        self.refresh(cx);
+    }
+
+    /// The floating sheet of the App filter: a filter field, then "All apps"
+    /// and each app with its icon and its number of dictations.
+    fn app_picker(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let c = cx.paper().colors;
+        let rows = self.app_rows(cx);
+        let current = self.app.as_ref().map(|a| a.0.as_str());
+        let mut list = div().id("app-rows").track_scroll(&self.app_scroll).flex().flex_col().gap(px(1.)).max_h(px(298.)).overflow_y_scroll().px(px(5.)).pb(px(5.));
+        if rows.is_empty() {
+            list = list.child(div().px(px(9.)).py(px(8.)).child(ui("No app matches.", 13., 16., FontWeight::NORMAL, c.graphite)));
+        }
+        for (i, row) in rows.iter().enumerate() {
+            let selected = row.as_ref().map(|a| a.bundle_id.as_str()) == current;
+            let (badge, name, count) = match row {
+                Some(a) => (
+                    AppBadge::new(a.name.clone()).icon(self.model.read(cx).icons.get(&a.bundle_id)).size(18.).into_any_element(),
+                    a.name.clone(),
+                    a.count,
+                ),
+                None => (
+                    div().flex().flex_none().items_center().justify_center().size(px(18.)).child(icon(Icon::History, 14., c.graphite)).into_any_element(),
+                    "All apps".to_string(),
+                    self.model.read(cx).history_total,
+                ),
+            };
+            list = list.child(
+                div()
+                    .id(("app-row", i))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(9.))
+                    .h(px(32.))
+                    .px(px(9.))
+                    .rounded(px(8.))
+                    .cursor_pointer()
+                    .when(i == self.app_cursor, |d| d.bg(c.deboss))
+                    .hover(|s| s.bg(c.deboss))
+                    .on_click(cx.listener(move |this, _, _, cx| this.pick_app(i, cx)))
+                    .child(badge)
+                    .child(ui(name, 13., 16., if selected { FontWeight::SEMIBOLD } else { FontWeight::NORMAL }, c.ink).flex_1().min_w_0().truncate())
+                    .when(selected, |d| d.child(icon(Icon::Check, 12., c.ink)))
+                    .child(mono(sayso_core::stats::format_count(count), 12., c.graphite).flex_none()),
+            );
+        }
+        let sheet = div()
+            .id("app-picker")
+            .flex()
+            .flex_col()
+            .w(px(272.))
+            .rounded(px(12.))
+            .bg(c.sheet_raised)
+            .border_1()
+            .border_color(c.rule)
+            .shadow(paper::floating(&c))
+            .occlude()
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                this.app_menu = false;
+                cx.notify();
+            }))
+            // Capture, so the arrows move the cursor before the field sees them.
+            .capture_action(cx.listener(|this, _: &MoveUp, _, cx| {
+                cx.stop_propagation();
+                this.move_app_cursor(false, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &MoveDown, _, cx| {
+                cx.stop_propagation();
+                this.move_app_cursor(true, cx);
+            }))
+            .capture_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                if ev.keystroke.key == "escape" {
+                    cx.stop_propagation();
+                    this.app_menu = false;
+                    cx.notify();
+                }
+            }))
+            .child(div().p(px(6.)).child(kit::search_well(&self.app_filter, 32., None, cx)))
+            .child(list);
+        deferred(anchored().snap_to_window_with_margin(px(8.)).child(div().mt(px(6.)).child(sheet))).with_priority(2)
     }
 
     fn select(&mut self, id: i64, cx: &mut Context<Self>) {
@@ -428,39 +565,10 @@ impl HistoryPage {
             })));
         let chip = Chip::new("f-app", app_label, self.app.is_some())
             .trailing(Icon::ChevronDown)
-            .on_click(cx.listener(|this, _, _, cx| {
-                this.app_menu = !this.app_menu;
-                cx.notify();
-            }));
+            .on_click(cx.listener(|this, _, window, cx| this.toggle_app_menu(window, cx)));
         let mut app = div().relative().child(chip);
         if self.app_menu {
-            let apps = self.model.read(cx).history_apps();
-            let mut items: Vec<(SharedString, bool)> = vec![("All apps".into(), self.app.is_none())];
-            for a in &apps {
-                let sel = self.app.as_ref().is_some_and(|x| x.0 == a.bundle_id);
-                items.push((format!("{} ({})", a.name, a.count).into(), sel));
-            }
-            let entity = cx.entity();
-            let entity2 = cx.entity();
-            app = app.child(div().absolute().top_full().left_0().child(kit::menu(
-                "app-menu",
-                items,
-                move |i, _, cx| {
-                    let pick = if i == 0 { None } else { apps.get(i - 1).map(|a| (a.bundle_id.clone(), a.name.clone())) };
-                    entity.update(cx, |this, cx| {
-                        this.app = pick;
-                        this.app_menu = false;
-                        this.refresh(cx);
-                    });
-                },
-                move |_, cx| {
-                    entity2.update(cx, |this, cx| {
-                        this.app_menu = false;
-                        cx.notify();
-                    })
-                },
-                cx,
-            )));
+            app = app.child(div().absolute().top_full().left_0().child(self.app_picker(cx)));
         }
         row = row.child(app);
         row
@@ -1124,10 +1232,34 @@ fn paragraphs(text: &str) -> Vec<&str> {
     if parts.is_empty() { vec![text.trim()] } else { parts }
 }
 
+/// The rows of the app picker: "All apps" (None), then the apps. With a
+/// query, only the apps whose name has it.
+fn app_rows(apps: Vec<AppCount>, query: &str) -> Vec<Option<AppCount>> {
+    let query = query.trim().to_lowercase();
+    if query.is_empty() {
+        return std::iter::once(None).chain(apps.into_iter().map(Some)).collect();
+    }
+    apps.into_iter().filter(|a| a.name.to_lowercase().contains(&query)).map(Some).collect()
+}
+
 #[cfg(test)]
 mod tests {
     // Not a glob: gpui_kit exports its own `test` macro.
-    use super::paragraphs;
+    use super::{AppCount, app_rows, paragraphs};
+
+    #[test]
+    fn app_rows_filter_by_name() {
+        let apps = || {
+            ["Orca", "Grok Bot", "OpenMausBot"]
+                .into_iter()
+                .map(|n| AppCount { bundle_id: n.to_lowercase(), name: n.to_string(), count: 1 })
+                .collect::<Vec<_>>()
+        };
+        let names = |q: &str| app_rows(apps(), q).into_iter().map(|r| r.map(|a| a.name)).collect::<Vec<_>>();
+        assert_eq!(names(" "), [None, Some("Orca".into()), Some("Grok Bot".into()), Some("OpenMausBot".into())]);
+        assert_eq!(names("BOT "), [Some("Grok Bot".to_string()), Some("OpenMausBot".into())]);
+        assert!(names("zed").is_empty());
+    }
 
     #[test]
     fn paragraphs_split_at_blank_lines() {
