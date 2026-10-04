@@ -16,6 +16,10 @@ struct VocabularyBooster {
     private let vocabulary: CustomVocabularyContext
     private let sizeConfig: ContextBiasingConstants.VocabSizeConfig
 
+    /// The lowest spelling similarity for a replacement. FluidAudio uses 0.50 for a short
+    /// dictionary, which lets "window" become "Pindrop". Above 0.60 true matches are lost.
+    static let minSimilarity: Float = 0.60
+
     /// CTC models and tokenizer, loaded once from the models directory. No network.
     struct CtcAssets {
         let models: CtcModels
@@ -49,7 +53,11 @@ struct VocabularyBooster {
         self.rescorer = try await VocabularyRescorer.create(
             spotter: spotter,
             vocabulary: context,
-            config: VocabularyBoostingSession.itnDefaultConfig,
+            // No acoustic rescue. That pass swaps a word for a term on the CTC score alone,
+            // with no spelling check that holds, and with a short dictionary it fires on
+            // ordinary words ("macOS" became "MayFirmOS", "distros" became "Pindrop").
+            // The similarity pass keeps the true matches ("say so" to "Sayso").
+            config: VocabularyRescorer.Config(spotterRescueEnabled: false),
             ctcModelDirectory: assets.directory
         )
     }
@@ -125,7 +133,7 @@ struct VocabularyBooster {
                 frameDuration: spot.frameDuration,
                 cbw: sizeConfig.cbw,
                 marginSeconds: 0.5,
-                minSimilarity: max(sizeConfig.minSimilarity, vocabulary.minSimilarity)
+                minSimilarity: max(sizeConfig.minSimilarity, vocabulary.minSimilarity, Self.minSimilarity)
             )
             return output.wasModified ? Self.apply(output.replacements, to: text) : text
         } catch {
