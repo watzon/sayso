@@ -38,3 +38,12 @@ log = "0.4"
 env_logger = "0.11"
 regex = "1"
 tempfile = "3"
+
+# Debug information is most of the size of target/. Workspace crates keep
+# file and line numbers for backtraces. Dependencies keep none: on macOS their
+# debug information stays in target/ as one object file per codegen unit.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
