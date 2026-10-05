@@ -20,8 +20,20 @@ use sayso_ui::{ActivePaper, Colors, text};
 use std::collections::HashMap;
 
 /// "632 MB", or "macOS" for Apple Speech, whose files macOS downloads and stores.
-fn size_label(info: &ModelInfo) -> String {
+pub fn size_label(info: &ModelInfo) -> String {
     if info.size_bytes == 0 { "macOS".into() } else { format_size(info.size_bytes) }
+}
+
+/// The groups of the local catalog, in display order.
+pub const LOCAL_GROUPS: [(&str, Family); 3] = [("Parakeet", Family::Parakeet), ("Whisper", Family::Whisper), ("More local models", Family::Other)];
+
+/// The speed meter: five bars, `speed` of them in ink.
+pub fn speed_meter(speed: u8, c: &Colors) -> Div {
+    let mut meter = div().flex().flex_none().items_center().gap(px(3.));
+    for i in 0..5u8 {
+        meter = meter.child(div().w(px(14.)).h(px(6.)).rounded(px(2.)).bg(if i < speed { c.ink } else { c.deboss_shade }));
+    }
+    meter
 }
 
 /// The result of a provider check, shown on the provider's line.
@@ -213,10 +225,7 @@ impl ModelsPage {
         let engine_name = info.engine.runtime();
         let langs = info.language_label();
         let desc = info.description.trim_end_matches('.').to_string();
-        let mut speed = div().flex().flex_none().items_center().gap(px(3.)).w(px(120.));
-        for i in 0..5u8 {
-            speed = speed.child(div().w(px(14.)).h(px(6.)).rounded(px(2.)).bg(if i < info.speed { c.ink } else { c.deboss_shade }));
-        }
+        let speed = speed_meter(info.speed, &c).w(px(120.));
         let id = info.id.clone();
         let key = info.id.as_str().to_string();
         let confirm = self.confirm_delete.as_deref() == Some(key.as_str());
@@ -667,7 +676,7 @@ impl Render for ModelsPage {
             catalog.iter().filter(|i| i.id != active && !i.is_remote() && i.engine.family() == family).cloned().collect()
         };
         let mut tables = div().flex().flex_col().gap(px(20.));
-        for (title, family) in [("Parakeet", Family::Parakeet), ("Whisper", Family::Whisper), ("More local models", Family::Other)] {
+        for (title, family) in LOCAL_GROUPS {
             let models = local(family);
             if !models.is_empty() {
                 tables = tables.child(self.group(title, &models, cx));

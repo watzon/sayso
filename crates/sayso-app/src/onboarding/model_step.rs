@@ -1,7 +1,10 @@
 //! Step 2: choose a speech model. Choosing one starts its download, and
-//! the step does not continue until a model is on disk.
+//! the step does not continue until a model is on disk. The step offers
+//! three models, and a list of all local models (`all_models`).
 
 use super::{OnboardingView, heading, size_text};
+use crate::hub::pages::kit;
+use crate::hub::pages::models::size_label;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use sayso_core::models::{ModelId, ModelInfo, default_model};
@@ -30,7 +33,7 @@ impl OnboardingView {
         });
     }
 
-    fn choose_model(&mut self, id: ModelId, cx: &mut Context<Self>) {
+    pub(super) fn choose_model(&mut self, id: ModelId, cx: &mut Context<Self>) {
         self.model.update(cx, |m, cx| {
             m.set_active_model(id.clone(), cx);
             if matches!(m.status_of(&id), ModelStatus::NotDownloaded | ModelStatus::Failed { .. }) {
@@ -112,6 +115,35 @@ impl OnboardingView {
             );
         }
 
+        // The way to the list of all models. A model from that list shows here as the choice.
+        let open = cx.listener(|this, _, window, cx| this.open_all_models(window, cx));
+        let more = if choices().contains(&active) {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .child(text::ui("Do you want a different model?", 13., FontWeight::NORMAL, c.graphite))
+                .child(kit::link("all-models-link", format!("Show all {} models", self.local_models(cx).len()), 13., cx).on_click(open))
+        } else {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(12.))
+                .py(px(12.))
+                .px(px(18.))
+                .rounded(px(14.))
+                .bg(c.sheet_raised)
+                .shadow(super::ring(&c))
+                .child(radio_dot(true, cx))
+                .child(text::title(active_info.name.clone(), 16., &c).line_height(px(20.)))
+                .child(
+                    text::mono(format!("{} · {}", size_label(&active_info), active_info.language_label()), 12., c.ink)
+                        .font_weight(FontWeight::NORMAL)
+                        .flex_1(),
+                )
+                .child(kit::link("all-models-link", "Change", 13., cx).on_click(open))
+        };
+
         let strip = self.download_strip(&active_info, status, engine, &c, cx);
         div()
             .flex()
@@ -125,7 +157,7 @@ impl OnboardingView {
                 "Sayso needs one downloaded model to work. You can add or switch models later.",
                 &c,
             ))
-            .child(cards)
+            .child(div().flex().flex_col().gap(px(14.)).child(cards).child(more))
             .child(strip)
             .into_any_element()
     }
@@ -143,7 +175,8 @@ impl OnboardingView {
         match status {
             ModelStatus::Downloading { fraction, bytes_done, bytes_total } => {
                 let total = if bytes_total > 0 { bytes_total } else { info.size_bytes };
-                let mut right = format!("{} of {}", size_text(bytes_done), size_text(total));
+                // macOS downloads Apple Speech and gives no sizes.
+                let mut right = if total > 0 { format!("{} of {}", size_text(bytes_done), size_text(total)) } else { String::new() };
                 if let Some(left) = self.time_left(&info.id, bytes_done, total) {
                     right = format!("{right} · {left}");
                 }
@@ -177,7 +210,7 @@ impl OnboardingView {
                         .justify_between()
                         .child(text::ui(format!("{} is not downloaded yet", info.name), 14., FontWeight::SEMIBOLD, c.ink))
                         .child(
-                            Button::new("start-download", format!("Download {}", size_text(info.size_bytes)))
+                            Button::new("start-download", if info.size_bytes > 0 { format!("Download {}", size_text(info.size_bytes)) } else { "Download".into() })
                                 .small()
                                 .icon(Icon::Download)
                                 .on_click(cx.listener(|this, _, _, cx| this.ensure_download(cx))),
@@ -192,7 +225,7 @@ impl OnboardingView {
                     _ => "Downloaded.",
                 };
                 well()
-                    .child(super::check_line_w(format!("{} · {}", info.name, size_text(info.size_bytes)), FontWeight::SEMIBOLD, c))
+                    .child(super::check_line_w(format!("{} · {}", info.name, size_label(info)), FontWeight::SEMIBOLD, c))
                     .child(text::ui(detail, 12., FontWeight::NORMAL, c.graphite))
                     .into_any_element()
             }

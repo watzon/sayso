@@ -4,6 +4,7 @@
 //! `set_onboarding_step`, so Sayso resumes at the same step after a quit.
 
 mod ai;
+mod all_models;
 mod done;
 mod hotkeys;
 mod model_step;
@@ -42,6 +43,7 @@ pub struct OnboardingView {
     /// Download samples for the time estimate: (model, [(time, bytes)]).
     download: Option<(sayso_core::models::ModelId, VecDeque<(Instant, u64)>)>,
     ai: ai::AiForm,
+    all_models: all_models::AllModels,
     practice: practice::Practice,
     show_why: bool,
     _observe: Subscription,
@@ -65,6 +67,7 @@ impl OnboardingView {
         let step = model.read(cx).onboarding_step().min(STEPS - 1);
         let ai = ai::AiForm::new(&model, window, cx);
         let practice = practice::Practice::new(window, cx);
+        let all_models = all_models::AllModels::new(window, cx);
         let mut this = Self {
             model,
             step,
@@ -75,6 +78,7 @@ impl OnboardingView {
             started: Instant::now(),
             download: None,
             ai,
+            all_models,
             practice,
             show_why: false,
             _observe: observe,
@@ -401,6 +405,7 @@ impl Render for OnboardingView {
         };
         let top = self.top_bar(window, cx);
         let footer = self.footer(cx);
+        let all_models = (self.step == 1).then(|| self.all_models_modal(cx)).flatten();
         div()
             .relative()
             .size_full()
@@ -444,5 +449,6 @@ impl Render for OnboardingView {
                     .child(footer),
             )
             .children(crate::caption::caption_bar(false, cx))
+            .children(all_models)
     }
 }
