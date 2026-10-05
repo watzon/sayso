@@ -75,6 +75,12 @@ The step that puts the final text into the focused app. The default is paste thr
 **Shell**
 The app glue that GPUI does not cover, one backend for each system: window placement, the tray, the Dock, and startup (`crates/sayso-app/src/shell`). On Linux it also picks the display server for the UI.
 
+**Rail**
+The collapsed Hub sidebar: a column of icons with no labels. Each label shows as a tooltip. The user collapses and expands the sidebar with a button in its footer (`appearance.sidebar_collapsed`). In a window less than 920 wide the Hub always shows the rail.
+
+**Floor**
+The smallest size at which a window draws its content. A tiling window manager can make a window smaller than its minimum size. Below the floor the content keeps its size and the window scrolls.
+
 **Overlay**
 The floating window that shows a dictation in progress (ink waveform, timer, live preview, errors).
 

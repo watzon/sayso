@@ -27,7 +27,7 @@ impl HomePage {
         Self { model, _observe: observe }
     }
 
-    fn header(&self, cx: &App) -> Div {
+    fn header(&self, narrow: bool, cx: &App) -> Div {
         let c = cx.paper().colors;
         let m = self.model.read(cx);
         let now = chrono::Local::now();
@@ -65,29 +65,28 @@ impl HomePage {
                     }))
             }
         };
-        div()
+        let title = div()
             .flex()
-            .flex_none()
-            .items_end()
-            .justify_between()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(10.))
-                    .child(caps(now.format("%A, %B %-d").to_string(), 13., c.graphite))
-                    .child(text::display(greeting, 44., &c)),
-            )
-            .child(hint.pb(px(6.)))
+            .flex_col()
+            .min_w_0()
+            .gap(px(10.))
+            .child(caps(now.format("%A, %B %-d").to_string(), 13., c.graphite))
+            .child(text::display(greeting, if narrow { 36. } else { 44. }, &c));
+        // A narrow page has no room for the hint at the side of the greeting.
+        if narrow {
+            return div().flex().flex_col().flex_none().gap(px(14.)).child(title).child(hint);
+        }
+        div().flex().flex_none().items_end().justify_between().gap(px(24.)).child(title.flex_1()).child(hint.flex_none().pb(px(6.)))
     }
 
-    fn stats(&self, cx: &App) -> Div {
+    fn stats(&self, narrow: bool, cx: &App) -> Div {
         let c = cx.paper().colors;
         let s = &self.model.read(cx).stats;
+        let (big, small) = if narrow { (34., 28.) } else { (40., 32.) };
         let stat = |label: &str, value: Option<String>, first: bool| {
             let v = match value {
-                Some(v) => text::display(v, 40., &c),
-                None => text::display("None yet", 32., &c).opacity(0.45),
+                Some(v) => text::display(v, big, &c),
+                None => text::display("None yet", small, &c).opacity(0.45),
             };
             div()
                 .flex()
@@ -122,23 +121,27 @@ impl HomePage {
                     .flex_col()
                     .gap(px(6.))
                     .child(ui("This week", 13., 16., FontWeight::MEDIUM, c.graphite))
-                    .child(text::display(format_count(s.words_this_week), 40., &c)),
+                    .child(text::display(format_count(s.words_this_week), big, &c)),
             )
             .child(bars);
         week.style().flex_grow = Some(1.3);
         week.style().flex_shrink = Some(1.);
         week.style().flex_basis = Some(relative(0.).into());
-        div()
-            .flex()
-            .flex_none()
-            .py(px(24.))
-            .border_t_1()
-            .border_b_1()
-            .border_color(c.rule)
-            .child(stat("Words today", Some(format_count(s.words_today)), true))
-            .child(stat("Time saved", Some(format!("{} min", s.minutes_saved_today)), false))
-            .child(stat("Speaking pace", s.pace_wpm.map(|p| format!("{p} wpm")), false))
-            .child(week)
+        let strip = div().flex().flex_none().py(px(24.)).border_t_1().border_b_1().border_color(c.rule);
+        let words = stat("Words today", Some(format_count(s.words_today)), true);
+        let saved = stat("Time saved", Some(format!("{} min", s.minutes_saved_today)), false);
+        let pace = s.pace_wpm.map(|p| format!("{p} wpm"));
+        // A narrow page: two rows of two.
+        if narrow {
+            week.style().flex_grow = Some(1.);
+            return strip
+                .flex_col()
+                .gap(px(20.))
+                .py(px(20.))
+                .child(div().flex().child(words).child(saved))
+                .child(div().flex().child(stat("Speaking pace", pace, true)).child(week));
+        }
+        strip.child(words).child(saved).child(stat("Speaking pace", pace, false)).child(week)
     }
 
     /// "Turn on history" and a link to the setting, for the two "History is off" states.
@@ -181,7 +184,7 @@ impl HomePage {
                         c.graphite,
                     )),
             )
-            .child(div().flex().flex_none().items_center().gap(px(16.)).child(settings).child(turn_on))
+            .child(div().flex().flex_none().flex_wrap().items_center().gap(px(16.)).child(settings).child(turn_on))
     }
 
     /// Takes the place of the stats and the recent list while history is off and no entry remains.
@@ -421,12 +424,14 @@ impl HomePage {
 }
 
 impl Render for HomePage {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c: Colors = cx.paper().colors;
         let m = self.model.read(cx);
+        let pad = crate::layout::page_pad(window, &self.model.read(cx).config);
+        let narrow = crate::layout::page_narrow(window, &self.model.read(cx).config);
         // Stats come from history entries. While history is off, a notice takes their place.
         let top = if m.config.history.enabled {
-            Some(self.stats(cx))
+            Some(self.stats(narrow, cx))
         } else {
             (!m.recent.is_empty()).then(|| self.history_off_strip(cx))
         };
@@ -440,20 +445,27 @@ impl Render for HomePage {
                     .flex()
                     .flex_col()
                     .w_full()
-                    .gap(px(40.))
-                    .py(px(44.))
-                    .px(px(52.))
+                    .gap(px(if narrow { 28. } else { 40. }))
+                    .py(px(pad.min(44.)))
+                    .px(px(pad))
                     .text_color(c.ink)
-                    .child(self.header(cx))
+                    .child(self.header(narrow, cx))
                     .children(top)
-                    .child(
-                        div()
-                            .flex()
-                            .w_full()
-                            .gap(px(40.))
-                            .child(self.recent(cx))
-                            .child(div().flex().flex_col().flex_none().w(px(300.)).gap(px(28.)).child(self.active_style(cx)).child(self.checklist(cx))),
-                    ),
+                    .child(if narrow {
+                        // A narrow page: the side column goes under the list, as a row.
+                        div().flex().flex_col().w_full().gap(px(32.)).child(self.recent(cx)).child(
+                            div()
+                                .flex()
+                                .items_start()
+                                .gap(px(28.))
+                                .child(self.active_style(cx).flex_1().min_w_0())
+                                .child(self.checklist(cx).flex_1().min_w_0()),
+                        )
+                    } else {
+                        div().flex().w_full().gap(px(40.)).child(self.recent(cx)).child(
+                            div().flex().flex_col().flex_none().w(px(300.)).gap(px(28.)).child(self.active_style(cx)).child(self.checklist(cx)),
+                        )
+                    }),
             )
     }
 }

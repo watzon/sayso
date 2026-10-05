@@ -418,11 +418,14 @@ pub struct AppearanceConfig {
     pub reduce_motion: Option<bool>,
     /// Linux only. False gives Sayso's own title bar and window buttons.
     pub system_title_bar: bool,
+    /// True shows the Hub sidebar as a rail of icons. A narrow window shows
+    /// the rail also when this is false.
+    pub sidebar_collapsed: bool,
 }
 
 impl Default for AppearanceConfig {
     fn default() -> Self {
-        Self { theme: ThemeMode::System, ink: Ink::default(), paper_texture: true, reduce_motion: None, system_title_bar: true }
+        Self { theme: ThemeMode::System, ink: Ink::default(), paper_texture: true, reduce_motion: None, system_title_bar: true, sidebar_collapsed: false }
     }
 }
 

@@ -165,7 +165,7 @@ impl OnboardingView {
             .flex_col()
             .gap(px(22.))
             .pt(px(28.))
-            .px(px(72.))
+            .px(px(self.side()))
             .pb(px(24.))
             .child(if crate::shell::HAS_INPUT_PERMISSIONS {
                 heading(
@@ -179,7 +179,7 @@ impl OnboardingView {
             .when(!crate::dev::running_from_bundle(), |d| {
                 d.child(crate::hub::settings::kit::notice(BannerKind::Warning, crate::dev::UNBUNDLED_NOTE, cx))
             })
-            .child(div().flex().items_start().gap(px(14.)).child(mic_card).when(crate::shell::HAS_INPUT_PERMISSIONS, |d| d.child(ax_card)))
+            .child(self.columns().child(mic_card).when(crate::shell::HAS_INPUT_PERMISSIONS, |d| d.child(ax_card)))
             .child(download)
             .when(crate::shell::HAS_INPUT_PERMISSIONS, |d| {
                 d.child(crate::hub::settings::kit::notice(

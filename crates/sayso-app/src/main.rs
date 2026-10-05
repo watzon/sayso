@@ -10,6 +10,7 @@ mod dev;
 mod dictation;
 mod hub;
 mod icons;
+mod layout;
 mod live;
 mod memory;
 mod model;

@@ -77,7 +77,7 @@ impl OnboardingView {
         let status = m.status_of(&active);
         let active_info = m.active_model();
 
-        let mut cards = div().flex().gap(px(14.));
+        let mut cards = self.columns().items_stretch();
         for (i, info) in infos.into_iter().enumerate() {
             let selected = info.id == active;
             let id = info.id.clone();
@@ -150,7 +150,7 @@ impl OnboardingView {
             .flex_col()
             .gap(px(22.))
             .pt(px(28.))
-            .px(px(72.))
+            .px(px(self.side()))
             .pb(px(24.))
             .child(heading(
                 "Choose a speech model",

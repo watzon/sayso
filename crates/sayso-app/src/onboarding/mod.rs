@@ -46,6 +46,8 @@ pub struct OnboardingView {
     all_models: all_models::AllModels,
     practice: practice::Practice,
     show_why: bool,
+    /// The window has no room for two columns (set at each render).
+    narrow: bool,
     _observe: Subscription,
 }
 
@@ -81,6 +83,7 @@ impl OnboardingView {
             all_models,
             practice,
             show_why: false,
+            narrow: false,
             _observe: observe,
         };
         this.entered(step, window, cx);
@@ -197,6 +200,17 @@ impl OnboardingView {
     // Pieces
     // -----------------------------------------------------------------------
 
+    /// The side padding of a step: 72 as designed, 32 in a narrow window.
+    fn side(&self) -> f32 {
+        if self.narrow { 32. } else { 72. }
+    }
+
+    /// A row of cards. In a narrow window the cards go in one column.
+    fn columns(&self) -> Div {
+        let row = div().flex().items_start().gap(px(14.));
+        if self.narrow { row.flex_col().items_stretch() } else { row }
+    }
+
     fn top_bar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let c = cx.paper().colors;
         let mut trail = div().flex().flex_1().items_center().justify_center();
@@ -285,7 +299,8 @@ impl OnboardingView {
             .px(px(28.))
             .border_t_1()
             .border_color(c.rule)
-            .child(if last {
+            // A narrow window has room for the buttons only.
+            .child(if last || self.narrow {
                 div()
             } else {
                 text::ui("You can quit at any time. Sayso continues where you stopped.", 13., FontWeight::NORMAL, c.graphite)
@@ -393,6 +408,7 @@ impl Drop for OnboardingView {
 impl Render for OnboardingView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.sync_meter(cx);
+        self.narrow = crate::layout::onboarding_narrow(window);
         let c = cx.paper().colors;
         let content: AnyElement = match self.step {
             0 => self.welcome(window, cx),
@@ -406,9 +422,8 @@ impl Render for OnboardingView {
         let top = self.top_bar(window, cx);
         let footer = self.footer(cx);
         let all_models = (self.step == 1).then(|| self.all_models_modal(cx)).flatten();
-        div()
+        let view = div()
             .relative()
-            .size_full()
             .flex()
             .flex_col()
             .p(px(10.))
@@ -449,6 +464,7 @@ impl Render for OnboardingView {
                     .child(footer),
             )
             .children(crate::caption::caption_bar(false, cx))
-            .children(all_models)
+            .children(all_models);
+        crate::layout::floor("onboarding-floor", crate::layout::ONBOARDING_FLOOR, view)
     }
 }

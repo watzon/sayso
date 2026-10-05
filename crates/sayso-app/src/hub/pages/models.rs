@@ -61,6 +61,8 @@ pub struct ModelsPage {
     add: Option<AddProvider>,
     tests: HashMap<String, Test>,
     confirm_remove: Option<String>,
+    /// The page has no room for all columns (set at each render).
+    narrow: bool,
     _observe: Subscription,
     _subs: Vec<Subscription>,
 }
@@ -68,7 +70,7 @@ pub struct ModelsPage {
 impl ModelsPage {
     pub fn new(model: Entity<AppModel>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&model, |_, _, cx| cx.notify());
-        Self { model, confirm_delete: None, add: None, tests: HashMap::new(), confirm_remove: None, _observe: observe, _subs: Vec::new() }
+        Self { model, confirm_delete: None, add: None, tests: HashMap::new(), confirm_remove: None, narrow: false, _observe: observe, _subs: Vec::new() }
     }
 
     fn hero(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -186,6 +188,8 @@ impl ModelsPage {
             .flex()
             .flex_none()
             .gap(px(36.))
+            // A narrow page: the numbers go under the name.
+            .when(self.narrow, |d| d.flex_col().gap(px(20.)))
             .py(px(24.))
             .px(px(28.))
             .rounded(px(16.))
@@ -341,7 +345,8 @@ impl ModelsPage {
                         .truncate(),
                     ),
             )
-            .child(speed)
+            // A narrow page has no speed column.
+            .when(!self.narrow, |d| d.child(speed))
             .child(mono(if remote { place.to_string() } else { size_label(info) }, 12., c.graphite).w(px(80.)).flex_none())
             .child(div().flex().flex_none().justify_end().w(px(150.)).child(action))
     }
@@ -357,7 +362,7 @@ impl ModelsPage {
                 .gap(px(16.))
                 .h(px(36.))
                 .child(caps(title.to_string(), 12., c.graphite).flex_1())
-                .child(caps("Speed", 12., c.graphite).w(px(120.)).flex_none())
+                .when(!self.narrow, |d| d.child(caps("Speed", 12., c.graphite).w(px(120.)).flex_none()))
                 .child(caps("Size", 12., c.graphite).w(px(80.)).flex_none())
                 .child(div().w(px(150.)).flex_none()),
         );
@@ -643,8 +648,10 @@ impl ModelsPage {
 }
 
 impl Render for ModelsPage {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c: Colors = cx.paper().colors;
+        let pad = crate::layout::page_pad(window, &self.model.read(cx).config);
+        self.narrow = crate::layout::page_narrow(window, &self.model.read(cx).config);
         let (catalog, active, used, dir, engine_down) = {
             let m = self.model.read(cx);
             (m.catalog(), m.active_model().id, m.models_disk_bytes(), m.models_dir_display(), m.services.engine.is_none())
@@ -690,8 +697,8 @@ impl Render for ModelsPage {
                 .flex_col()
                 .w_full()
                 .gap(px(28.))
-                .py(px(44.))
-                .px(px(52.))
+                .py(px(pad.min(44.)))
+                .px(px(pad))
                 .child(head)
                 .when(engine_down, |d| {
                     d.child(Banner::new(

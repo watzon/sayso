@@ -51,6 +51,11 @@ impl SettingsPage {
 pub struct HubView {
     model: Entity<AppModel>,
     pages: pages::Pages,
+    /// The sidebar width at the last render, and the width it had before
+    /// its last change. The change between the two is animated.
+    side: Option<(f32, f32)>,
+    /// Counts the changes: a new number starts the animation again.
+    side_changes: usize,
     _observe: Subscription,
 }
 
@@ -58,7 +63,7 @@ impl HubView {
     pub fn new(model: Entity<AppModel>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let pages = pages::Pages::new(model.clone(), window, cx);
         let observe = cx.observe(&model, |_, _, cx| cx.notify());
-        Self { model, pages, _observe: observe }
+        Self { model, pages, side: None, side_changes: 0, _observe: observe }
     }
 }
 
@@ -73,16 +78,34 @@ impl Render for HubView {
         // sheets under it peek out 6 and 3 px below its top edge.
         let custom = crate::chrome::is_custom(window);
         let top = if custom { 36. } else { crate::caption::top_margin(10.) };
-        div()
+        let forced = crate::layout::rail_forced(window);
+        let rail = crate::layout::rail(window, &self.model.read(cx).config);
+        // The sidebar and the rail change places with a short slide.
+        let to = if rail { crate::layout::RAIL_W } else { crate::layout::SIDEBAR_W };
+        let from = match self.side {
+            Some((_, last)) if last != to => {
+                self.side_changes += 1;
+                last
+            }
+            Some((from, _)) => from,
+            None => to,
+        };
+        self.side = Some((from, to));
+        let from = if cx.paper().reduce_motion { to } else { from };
+        let side = div().flex_none().h_full().overflow_hidden().child(sidebar::sidebar(&self.model, route, rail, forced, cx)).with_animation(
+            ("sidebar-width", self.side_changes),
+            Animation::new(std::time::Duration::from_millis(220)).with_easing(ease_out_quint()),
+            move |d, t| d.w(px(from + (to - from) * t)),
+        );
+        let hub = div()
             .relative()
-            .size_full()
             .flex()
             .flex_row()
             .bg(c.ground)
             .font_family(sayso_ui::fonts::UI)
             .text_color(c.ink)
             .child(grain(Grain::Board, px(0.), cx))
-            .child(sidebar::sidebar(&self.model, route, cx))
+            .child(side)
             .child(
                 // The content sheet, with two sheets peeking out underneath.
                 div()
@@ -140,6 +163,7 @@ impl Render for HubView {
                         })),
                 )
             })
-            .children(crate::caption::caption_bar(true, cx))
+            .children(crate::caption::caption_bar(true, cx));
+        crate::layout::floor("hub-floor", crate::layout::HUB_MIN, hub)
     }
 }

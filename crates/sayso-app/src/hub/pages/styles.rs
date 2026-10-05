@@ -1346,13 +1346,16 @@ impl Render for StylesPage {
             Some(new_style),
             cx,
         );
+        let pad = crate::layout::page_pad(window, &self.model.read(cx).config);
+        // Three cards in a row, or two on a narrow page.
+        let columns = if crate::layout::page_narrow(window, &self.model.read(cx).config) { 2 } else { 3 };
         let mut grid = div().flex().flex_col().gap(px(18.));
-        for chunk in styles.chunks(3) {
+        for chunk in styles.chunks(columns) {
             let mut row = div().flex().gap(px(18.));
             for s in chunk {
                 row = row.child(self.card(s, s.id == active, cx));
             }
-            for _ in chunk.len()..3 {
+            for _ in chunk.len()..columns {
                 row = row.child(div().flex_1());
             }
             grid = grid.child(row);
@@ -1361,7 +1364,6 @@ impl Render for StylesPage {
         let base_prompt = self.base_prompt_row(cx);
         let providers = self.providers(cx);
         let editor = self.editor_panel(cx).or_else(|| self.base_editor_panel(cx));
-        let _ = window;
         div()
             .absolute()
             .inset_0()
@@ -1373,8 +1375,8 @@ impl Render for StylesPage {
                         .flex_col()
                         .w_full()
                         .gap(px(28.))
-                        .py(px(44.))
-                        .px(px(52.))
+                        .py(px(pad.min(44.)))
+                        .px(px(pad))
                         .child(head)
                         .children(errors.into_iter().map(|e| Banner::new(BannerKind::Warning, format!("A style file has an error: {e}"))))
                         .child(grid)

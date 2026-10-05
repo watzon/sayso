@@ -5,6 +5,8 @@
 //! - `--onboarding[=N]` opens onboarding at step N (0 to 6).
 //! - `--whats-new` opens the "What is new" window with the newest notes in `release-notes.toml`.
 //! - `--dark` / `--light` force the appearance.
+//! - `--size=WxH` opens the Hub or onboarding at this size and drops the
+//!   minimum size, as a tiling window manager does.
 //! - `--seed-demo` fills an empty database with the sample content from the design.
 //!
 //! Use temporary `XDG_CONFIG_HOME` and `XDG_DATA_HOME` with `--seed-demo` so
@@ -23,6 +25,13 @@ pub fn arg(name: &str) -> Option<String> {
 pub fn flag(name: &str) -> bool {
     let f = format!("--{name}");
     std::env::args().any(|a| a == f)
+}
+
+/// The window size from `--size=WxH`.
+pub fn size() -> Option<gpui_kit::Size<gpui_kit::Pixels>> {
+    let s = arg("size")?;
+    let (w, h) = s.split_once('x')?;
+    Some(gpui_kit::size(gpui_kit::px(w.parse().ok()?), gpui_kit::px(h.parse().ok()?)))
 }
 
 pub fn route() -> Option<Route> {

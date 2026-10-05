@@ -90,7 +90,7 @@ impl OnboardingView {
             .items_center()
             .justify_center()
             .gap(px(26.))
-            .px(px(72.))
+            .px(px(self.side()))
             .pb(px(16.))
             .child(Seal::new(92.).ringed())
             .child(

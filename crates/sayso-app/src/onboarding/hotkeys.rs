@@ -186,10 +186,10 @@ impl OnboardingView {
             .flex_col()
             .gap(px(22.))
             .pt(px(28.))
-            .px(px(72.))
+            .px(px(self.side()))
             .pb(px(24.))
             .child(heading("Choose your keys", "Press the keys to test them. Sayso checks that no other app uses the same keys.", &c))
-            .child(div().flex().items_start().gap(px(14.)).child(toggle_card).child(ptt_card));
+            .child(self.columns().child(toggle_card).child(ptt_card));
         for x in &conflicts {
             col = col.child(crate::hub::settings::kit::notice(BannerKind::Warning, recorder::conflict_text(x, true), cx));
         }

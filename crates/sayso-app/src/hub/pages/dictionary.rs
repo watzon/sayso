@@ -28,6 +28,8 @@ pub struct DictionaryPage {
     editing: Option<(i64, Entity<InputState>, Entity<InputState>)>,
     phrase: Entity<InputState>,
     error: Option<String>,
+    /// The page has no room for two columns (set at each render).
+    narrow: bool,
     _subs: Vec<Subscription>,
 }
 
@@ -80,6 +82,7 @@ impl DictionaryPage {
             editing: None,
             phrase,
             error: None,
+            narrow: false,
             _subs: subs,
         }
     }
@@ -276,7 +279,7 @@ impl DictionaryPage {
             .flex()
             .flex_col()
             .flex_none()
-            .w(px(380.))
+            .map(|d| if self.narrow { d.w_full() } else { d.w(px(380.)) })
             .gap(px(16.))
             .child(kit::section_head("Words", Some(ui(note, 13., 16., FontWeight::NORMAL, c.graphite).into_any_element()), cx));
         if total == 0 {
@@ -511,8 +514,11 @@ fn small_input(state: &Entity<InputState>, italic: bool, cx: &App) -> Div {
 }
 
 impl Render for DictionaryPage {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c: Colors = cx.paper().colors;
+        let pad = crate::layout::page_pad(window, &self.model.read(cx).config);
+        self.narrow = crate::layout::page_narrow(window, &self.model.read(cx).config);
+        let narrow = self.narrow;
         let needle = self.filter.read(cx).value().trim().to_lowercase();
         let add = Button::new("add", "Add")
             .primary()
@@ -539,10 +545,15 @@ impl Render for DictionaryPage {
                 .flex_col()
                 .w_full()
                 .gap(px(32.))
-                .py(px(44.))
-                .px(px(52.))
+                .py(px(pad.min(44.)))
+                .px(px(pad))
                 .child(head)
-                .child(div().flex().w_full().gap(px(44.)).child(words).child(ledger)),
+                // A narrow page: the words go above the replacements.
+                .child(if narrow {
+                    div().flex().flex_col().w_full().gap(px(32.)).child(words).child(ledger)
+                } else {
+                    div().flex().w_full().gap(px(44.)).child(words).child(ledger)
+                }),
         )
     }
 }

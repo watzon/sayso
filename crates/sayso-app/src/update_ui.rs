@@ -162,6 +162,39 @@ pub fn release_notes(version: &sayso_update::manifest::Version) -> String {
 }
 
 /// The slip in the Hub sidebar, below the engine status.
+/// The slip on the rail: one square button. The text is in the tooltip.
+pub fn rail_slip(model: &Entity<AppModel>, cx: &App) -> Option<AnyElement> {
+    let c = cx.paper().colors;
+    let m = model.read(cx);
+    let v = view(&m.update);
+    let (headline, label, action) = v.short?;
+    let can_restart = m.can_restart_to_update();
+    let model = model.clone();
+    let slip = div()
+        .id("update-slip")
+        .flex()
+        .flex_none()
+        .items_center()
+        .justify_center()
+        .size(px(36.))
+        .rounded(px(9.))
+        .tooltip(text_tooltip(format!("{headline}. {label}")));
+    Some(if action == Action::Restart {
+        slip.ink_button(&c)
+            .when(can_restart, |d| d.cursor_pointer().on_click(move |_, _, cx| perform(Action::Restart, &model, cx)))
+            .when(!can_restart, |d| d.opacity(0.6))
+            .child(icon(Icon::Download, 16., c.on_ink))
+            .into_any_element()
+    } else {
+        let fg = if v.tone == Tone::Danger { c.danger } else { c.ink };
+        slip.raised_small(&c)
+            .cursor_pointer()
+            .on_click(move |_, _, cx| perform(Action::OpenSettings, &model, cx))
+            .child(icon(Icon::Download, 16., fg))
+            .into_any_element()
+    })
+}
+
 pub fn sidebar_slip(model: &Entity<AppModel>, cx: &App) -> Option<AnyElement> {
     let c = cx.paper().colors;
     let m = model.read(cx);

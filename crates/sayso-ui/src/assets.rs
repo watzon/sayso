@@ -79,6 +79,8 @@ pub enum Icon {
     Download,
     Keyboard,
     More,
+    File,
+    Sidebar,
     Wordmark,
 }
 
@@ -123,6 +125,8 @@ impl Icon {
             Icon::Download => "download",
             Icon::Keyboard => "keyboard",
             Icon::More => "more",
+            Icon::File => "file",
+            Icon::Sidebar => "sidebar",
             Icon::Wordmark => "wordmark",
         };
         format!("icons/{name}.svg").into()

@@ -49,6 +49,8 @@ pub struct HistoryPage {
     matches: usize,
     selected: Option<i64>,
     seen_revision: u64,
+    /// The page has no room for the full list pane (set at each render).
+    narrow: bool,
     playing: Option<Playing>,
     /// (entry id, position in ms) for the paused position.
     position: (i64, u64),
@@ -102,6 +104,7 @@ impl HistoryPage {
             matches: 0,
             selected: None,
             seen_revision: u64::MAX,
+            narrow: false,
             playing: None,
             position: (0, 0),
             audio: None,
@@ -476,7 +479,7 @@ impl HistoryPage {
             .flex()
             .flex_col()
             .flex_none()
-            .w(px(392.))
+            .w(px(if self.narrow { 300. } else { 392. }))
             .h_full()
             .gap(px(18.))
             .pt(px(40.))
@@ -548,6 +551,7 @@ impl HistoryPage {
         let mut row = div()
             .flex()
             .flex_none()
+            .flex_wrap()
             .gap(px(6.))
             .child(Chip::new("f-all", "All", all).on_click(cx.listener(|this, _, _, cx| {
                 this.enhanced = false;
@@ -752,6 +756,11 @@ impl HistoryPage {
             )
             .child(actions);
 
+        let side = if self.narrow { 28. } else { 48. };
+        // Two parts. The top part (the text and the player) does not scroll:
+        // only the text scrolls, in its box. The steps under it scroll on
+        // their own. On a short window the steps give up height first, down
+        // to 120, and then the text box, down to 1.5 lines.
         let content = div()
             .flex()
             .flex_col()
@@ -759,12 +768,19 @@ impl HistoryPage {
             .min_h_0()
             .gap(px(28.))
             .pt(px(8.))
-            .pb(px(32.))
-            .px(px(48.))
+            .px(px(side))
             .child(self.final_text(&e.final_text, &c))
             .child(div().flex_none().child(self.player(&e, cx)))
-            .child(self.trail(&e, cx));
-        // Nothing here scrolls but the text: the player and the trail always show. On a short window the text box gives up height first.
+            .child(
+                div()
+                    .id("history-trail")
+                    .flex_1()
+                    .min_h(px(120.))
+                    .overflow_y_scroll()
+                    .border_t_1()
+                    .border_color(c.rule)
+                    .child(div().pt(px(20.)).pb(px(32.)).child(self.trail(&e, cx))),
+            );
         div()
             .flex()
             .flex_col()
@@ -772,7 +788,7 @@ impl HistoryPage {
             .min_w_0()
             .h_full()
             .overflow_hidden()
-            .child(div().flex_none().pt(px(40.)).pb(px(20.)).px(px(48.)).child(header))
+            .child(div().flex_none().pt(px(40.)).pb(px(20.)).px(px(side)).child(header))
             .child(content)
             .into_any_element()
     }
@@ -1169,6 +1185,7 @@ fn bars(peaks: Vec<u8>, progress: f32, played: Hsla, rest: Hsla, out: Rc<Cell<Op
 impl Render for HistoryPage {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c: Colors = cx.paper().colors;
+        self.narrow = crate::layout::page_narrow(window, &self.model.read(cx).config);
         if let Some(id) = kit::take_history_selection(cx) {
             if !self.entries.iter().any(|e| e.id == id) {
                 self.clear_filters(window, cx);

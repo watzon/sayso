@@ -212,13 +212,13 @@ pub fn open_hub(model: &Entity<AppModel>, route: Route, cx: &mut App) {
             appkit_later(cx, crate::shell::show_app_and_activate);
             return;
         }
-    let bounds = Bounds::centered(None, size(px(1280.), px(820.)), cx);
+    let bounds = Bounds::centered(None, crate::dev::size().unwrap_or(size(px(1280.), px(820.))), cx);
     let model2 = model.clone();
     let opened = gpui_kit::open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: titlebar(),
-            window_min_size: Some(size(px(1040.), px(680.))),
+            window_min_size: crate::dev::size().is_none().then_some(crate::layout::min_size(crate::layout::HUB_MIN)),
             inactive_frame_interval: None,
             // The window class on Linux, which matches the desktop entry.
             app_id: Some(crate::shell::APP_ID.into()),
@@ -255,13 +255,15 @@ pub fn open_onboarding(model: &Entity<AppModel>, cx: &mut App) {
         && handle.update(cx, |_, window, _| window.activate_window()).is_ok() {
             return;
         }
-    let bounds = Bounds::centered(None, size(px(960.), px(640.)), cx);
+    let bounds = Bounds::centered(None, crate::dev::size().unwrap_or(crate::layout::min_size(crate::layout::ONBOARDING_SIZE)), cx);
     let model2 = model.clone();
     let opened = gpui_kit::open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: titlebar(),
-            is_resizable: false,
+            // Linux gives no fixed size, so the window also has a minimum size.
+            is_resizable: crate::dev::size().is_some(),
+            window_min_size: crate::dev::size().is_none().then_some(crate::layout::min_size(crate::layout::ONBOARDING_SIZE)),
             focus: true,
             // The window class on Linux, which matches the desktop entry.
             app_id: Some(crate::shell::APP_ID.into()),

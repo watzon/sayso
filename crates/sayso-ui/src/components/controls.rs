@@ -8,6 +8,12 @@ use crate::paper::{self, PaperStyled};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+/// A tooltip with one line of text, for a control that shows only an icon.
+pub fn text_tooltip(label: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
+    let label: SharedString = label.into();
+    move |window, cx| gpui_kit::component::tooltip::Tooltip::new(label.clone()).build(window, cx)
+}
+
 type OnBool = std::rc::Rc<dyn Fn(bool, &mut Window, &mut App)>;
 type OnIndex = std::rc::Rc<dyn Fn(usize, &mut Window, &mut App)>;
 type OnDelta = std::rc::Rc<dyn Fn(i32, &mut Window, &mut App)>;
@@ -227,6 +233,7 @@ pub struct Segmented {
     options: Vec<(SharedString, Option<Icon>)>,
     selected: usize,
     compact: bool,
+    rail: bool,
     on_select: Option<OnIndex>,
 }
 
@@ -237,6 +244,7 @@ impl Segmented {
             options: options.into_iter().map(|o| (o.into(), None)).collect(),
             selected,
             compact: false,
+            rail: false,
             on_select: None,
         }
     }
@@ -249,6 +257,11 @@ impl Segmented {
     /// The small sidebar version that fills its width.
     pub fn compact(mut self) -> Self {
         self.compact = true;
+        self
+    }
+    /// The rail version: a column of icons. Each label is a tooltip.
+    pub fn rail(mut self) -> Self {
+        self.rail = true;
         self
     }
     pub fn on_select(mut self, f: impl Fn(usize, &mut Window, &mut App) + 'static) -> Self {
@@ -264,6 +277,9 @@ impl RenderOnce for Segmented {
         let mut track = div().id(self.id).flex().p(px(3.)).gap(px(2.)).rounded(px(10.)).debossed(&c);
         if self.compact {
             track = track.w_full();
+        }
+        if self.rail {
+            track = track.flex_col();
         }
         for (i, (label, ic)) in self.options.into_iter().enumerate() {
             let selected = i == self.selected;
@@ -282,8 +298,8 @@ impl RenderOnce for Segmented {
                 .font_weight(if selected { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
                 .text_color(fg)
                 .cursor_pointer()
-                .when_some(ic, |s, ic| s.child(icon(ic, 14., fg)))
-                .child(label);
+                .when_some(ic, |s, ic| s.child(icon(ic, 14., fg)));
+            seg = if self.rail { seg.w(px(30.)).px_0().tooltip(text_tooltip(label)) } else { seg.child(label) };
             if self.compact {
                 seg = seg.flex_1().px(px(4.));
             }
@@ -308,12 +324,18 @@ pub struct NavItem {
     icon: Icon,
     label: SharedString,
     active: bool,
+    icon_only: bool,
     on_click: Option<OnClick>,
 }
 
 impl NavItem {
     pub fn new(id: impl Into<ElementId>, icon: Icon, label: impl Into<SharedString>, active: bool) -> Self {
-        Self { id: id.into(), icon, label: label.into(), active, on_click: None }
+        Self { id: id.into(), icon, label: label.into(), active, icon_only: false, on_click: None }
+    }
+    /// The rail version: a square with the icon. The label is a tooltip.
+    pub fn icon_only(mut self, icon_only: bool) -> Self {
+        self.icon_only = icon_only;
+        self
     }
     pub fn on_click(mut self, f: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> Self {
         self.on_click = Some(std::rc::Rc::new(f));
@@ -337,8 +359,8 @@ impl RenderOnce for NavItem {
             .text_size(px(14.))
             .font_weight(if self.active { FontWeight::SEMIBOLD } else { FontWeight::MEDIUM })
             .text_color(fg)
-            .child(icon(self.icon, 18., fg))
-            .child(self.label);
+            .child(icon(self.icon, 18., fg));
+        row = if self.icon_only { row.w(px(36.)).px_0().justify_center().tooltip(text_tooltip(self.label)) } else { row.child(self.label) };
         if self.active {
             row = row.bg(c.deboss).shadow(vec![
                 BoxShadow::new(px(0.), px(1.), c.shadow(0.22)).blur_radius(px(2.5)).inset(),

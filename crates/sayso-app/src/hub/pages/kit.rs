@@ -143,21 +143,26 @@ pub fn ui(s: impl Into<SharedString>, size: f32, line: f32, weight: FontWeight, 
 /// A page title with an intro line, and actions at the bottom right.
 pub fn page_head(title: &str, intro: Option<AnyElement>, actions: Option<AnyElement>, cx: &App) -> Div {
     let c = cx.paper().colors;
+    // The title takes 340 or more. Actions that do not fit go under it.
+    let mut head = div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .min_w_0()
+        .gap(px(8.))
+        .child(text::display(title.to_string(), 44., &c))
+        .when_some(intro, |d, i| d.child(i));
+    head.style().flex_basis = Some(px(340.).into());
     div()
         .flex()
         .flex_none()
+        .flex_wrap()
         .items_end()
         .justify_between()
-        .gap(px(24.))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(8.))
-                .child(text::display(title.to_string(), 44., &c))
-                .when_some(intro, |d, i| d.child(i)),
-        )
-        .when_some(actions, |d, a| d.child(div().flex().flex_none().items_center().gap(px(8.)).child(a)))
+        .gap_x(px(24.))
+        .gap_y(px(16.))
+        .child(head)
+        .when_some(actions, |d, a| d.child(div().flex().flex_none().max_w_full().items_center().gap(px(8.)).child(a)))
 }
 
 /// The 15 px graphite intro under a page title.

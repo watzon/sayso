@@ -438,7 +438,7 @@ impl OnboardingView {
             .flex_col()
             .gap(px(22.))
             .pt(px(28.))
-            .px(px(72.))
+            .px(px(self.side()))
             .pb(px(24.))
             .child(heading(
                 "Add AI clean-up",
