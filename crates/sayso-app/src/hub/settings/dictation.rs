@@ -183,6 +183,7 @@ impl DictationSettings {
         let c = cx.paper().colors;
         let m = self.model.read(cx);
         let restore = m.config.insertion.restore_clipboard;
+        let trailing_space = m.config.insertion.trailing_space;
         let apps = m.config.insertion.type_in_apps.clone();
         let running = self.picker.clone().unwrap_or_else(|| m.running_apps());
         let names: Vec<(String, String, _)> =
@@ -190,6 +191,10 @@ impl DictationSettings {
         let model = self.model.clone();
         let restore_switch = Switch::new("restore-clipboard", restore).on_toggle(move |on, _, cx| {
             model.update(cx, |m, cx| m.edit_config(cx, |c| c.insertion.restore_clipboard = on));
+        });
+        let model = self.model.clone();
+        let space_switch = Switch::new("trailing-space", trailing_space).on_toggle(move |on, _, cx| {
+            model.update(cx, |m, cx| m.edit_config(cx, |c| c.insertion.trailing_space = on));
         });
 
         let mut chips = div().flex().flex_wrap().justify_end().gap(px(6.)).max_w(px(460.));
@@ -248,6 +253,12 @@ impl DictationSettings {
                 "Restore the clipboard after pasting",
                 "Only if you did not copy something new in the meantime.",
                 restore_switch,
+                cx,
+            ))
+            .child(row(
+                "Add a space after the text",
+                "Your next dictation starts as a new word. Text that ends with a line break gets no space.",
+                space_switch,
                 cx,
             ))
             .child(row("Type instead of paste in these apps", "For apps that block paste. Slower for long text.", chips, cx));

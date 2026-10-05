@@ -70,7 +70,7 @@ The trait that sends a transcript and a style prompt to an AI provider and retur
 The provider of a style that runs the language model of macOS (macOS 26 and later) in the engine. The transcript stays on the Mac. macOS chooses the model and owns its files, so there is no download and no model choice. It is not a model in the sense of this file, because it does not transcribe speech.
 
 **Insertion**
-The step that puts the final text into the focused app. The default is paste through the clipboard, with a safe restore. Typing is the fallback.
+The step that puts the final text into the focused app. The default is paste through the clipboard, with a safe restore. Typing is the fallback. Sayso adds a space after the text, and a setting turns this off.
 
 **Shell**
 The app glue that GPUI does not cover, one backend for each system: window placement, the tray, the Dock, and startup (`crates/sayso-app/src/shell`). On Linux it also picks the display server for the UI.

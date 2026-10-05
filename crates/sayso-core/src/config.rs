@@ -167,11 +167,23 @@ pub struct Insertion {
     pub type_in_apps: Vec<String>,
     /// Add a space before the text when the cursor follows a word. Reserved.
     pub smart_spacing: bool,
+    /// Add a space after the text, so the next dictation does not join the
+    /// last word.
+    pub trailing_space: bool,
 }
 
 impl Default for Insertion {
     fn default() -> Self {
-        Self { restore_clipboard: true, restore_delay_ms: 450, type_in_apps: Vec::new(), smart_spacing: false }
+        Self { restore_clipboard: true, restore_delay_ms: 450, type_in_apps: Vec::new(), smart_spacing: false, trailing_space: true }
+    }
+}
+
+impl Insertion {
+    /// The text that goes into the app. Text that is empty or that ends with
+    /// a space or a line break gets no trailing space.
+    pub fn text_to_insert(&self, text: &str) -> String {
+        let ends_open = text.chars().next_back().is_some_and(|c| !c.is_whitespace());
+        if self.trailing_space && ends_open { format!("{text} ") } else { text.to_string() }
     }
 }
 
@@ -656,6 +668,21 @@ mod tests {
         assert!(c.overlay.idle_pill);
         assert!(!c.ai.enabled);
         assert_eq!(c.ai.http_timeout_ms, 4000);
+    }
+
+    #[test]
+    fn insertion_adds_one_trailing_space_by_default() {
+        let on = Insertion::default();
+        assert!(on.trailing_space);
+        assert_eq!(on.text_to_insert("Hello there."), "Hello there. ");
+        assert_eq!(on.text_to_insert("Hello "), "Hello ");
+        assert_eq!(on.text_to_insert("First line\n"), "First line\n");
+        assert_eq!(on.text_to_insert(""), "");
+        let off = Insertion { trailing_space: false, ..Insertion::default() };
+        assert_eq!(off.text_to_insert("Hello there."), "Hello there.");
+        let read = Config::parse("[insertion]\ntrailing_space = false\n");
+        assert!(read.issues.is_empty(), "{:?}", read.issues);
+        assert!(!read.config.insertion.trailing_space);
     }
 
     #[test]

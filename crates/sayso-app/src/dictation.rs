@@ -405,6 +405,8 @@ impl AppModel {
         self.session(session).final_text = Some(text.clone());
         self.last_text = Some(text.clone());
         self.last_app = target.as_ref().map(|a| a.name.clone());
+        // History and the failure notice keep the text without the trailing space.
+        let to_insert = self.config.insertion.text_to_insert(&text);
         let inserter = self.services.platform.inserter.clone();
         log::debug!(
             "insert into {:?}; frontmost now {:?}",
@@ -412,7 +414,7 @@ impl AppModel {
             self.services.platform.context.frontmost_app().map(|a| a.bundle_id)
         );
         cx.spawn(async move |this, cx| {
-            let t = text.clone();
+            let t = to_insert;
             let result = cx.background_spawn(async move { inserter.insert(&t, method) }).await;
             let _ = this.update(cx, |m, cx| match result {
                 Ok(r) => {
@@ -445,6 +447,7 @@ impl AppModel {
 
     /// Insert any text into the focused app (History "Insert", popover "Paste").
     pub fn insert_text(&mut self, text: String, cx: &mut Context<Self>) {
+        let text = self.config.insertion.text_to_insert(&text);
         let inserter = self.services.platform.inserter.clone();
         let method = InsertMethod::Paste {
             restore_clipboard: self.config.insertion.restore_clipboard,
