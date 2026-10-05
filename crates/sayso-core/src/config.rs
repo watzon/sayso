@@ -129,6 +129,9 @@ pub struct Dictation {
     /// A local model id, or "<provider id>:<model>" for a speech provider's model.
     pub model: ModelId,
     pub live_preview: bool,
+    /// Change spoken punctuation ("comma", "new line") into marks and line
+    /// breaks, after the replacements. The commands are English.
+    pub spoken_punctuation: bool,
     /// A push-to-talk press shorter than this is ignored as an accident.
     pub min_duration_ms: u64,
     /// Recording stops by itself after this long.
@@ -145,6 +148,7 @@ impl Default for Dictation {
             language: "en".into(),
             model: default_model(),
             live_preview: true,
+            spoken_punctuation: false,
             min_duration_ms: 300,
             max_duration_s: 600,
             keep_model_minutes: None,

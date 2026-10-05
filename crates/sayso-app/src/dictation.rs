@@ -300,6 +300,7 @@ impl AppModel {
         let samples = self.session(session).samples.lock().clone();
         let options = self.session_options();
         let replacer = self.replacer.clone();
+        let spoken_punctuation = self.config.dictation.spoken_punctuation;
         if matches!(pass, FinalPass::Local { .. }) && !self.status_of(&options.final_model).is_usable() {
             self.load_active_models(cx);
         }
@@ -308,6 +309,7 @@ impl AppModel {
                 .background_spawn(async move {
                     let (t, note) = pass.run(&samples, &options)?;
                     let (replaced, applied) = replacer.apply(t.text.trim());
+                    let replaced = if spoken_punctuation { sayso_core::spoken_punctuation::apply(&replaced) } else { replaced };
                     Ok::<_, String>((t, replaced, applied, note))
                 })
                 .await;
@@ -352,6 +354,7 @@ impl AppModel {
         let secrets = self.services.secrets.clone();
         let engine = self.services.language_model.clone();
         let vocabulary = self.vocabulary();
+        let base_prompt = self.styles.base_prompt().to_string();
         let replacements = self.session(session).replacements.clone();
         let timeout = Duration::from_millis(match provider.kind {
             // The language model of the engine answers as fast as a server.
@@ -366,7 +369,7 @@ impl AppModel {
                 .background_spawn(async move {
                     let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
                     let replacer = sayso_core::dictionary::Replacer::new(&[]);
-                    let p = TextPipeline { replacer: &replacer, style: &style, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), timeout };
+                    let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), timeout };
                     p.run_style(text, replacements)
                 })
                 .await;
@@ -523,6 +526,7 @@ impl AppModel {
         };
         let options = self.session_options();
         let replacer = self.replacer.clone();
+        let spoken_punctuation = self.config.dictation.spoken_punctuation;
         // The final pass waits for the model, if the idle time unloaded it.
         self.wake_model(cx);
         cx.spawn(async move |this, cx| {
@@ -530,6 +534,7 @@ impl AppModel {
                 let samples = store.load_audio(&file).ok()?;
                 let (t, _) = pass.run(&samples, &options).inspect_err(|e| log::warn!("transcribe again: {e}")).ok()?;
                 let (text, applied) = replacer.apply(t.text.trim());
+                let text = if spoken_punctuation { sayso_core::spoken_punctuation::apply(&text) } else { text };
                 let mut e = entry;
                 e.transcript = t.text;
                 e.final_text = text;
@@ -564,13 +569,14 @@ impl AppModel {
         let secrets = self.services.secrets.clone();
         let engine = self.services.language_model.clone();
         let vocabulary = self.vocabulary();
+        let base_prompt = self.styles.base_prompt().to_string();
         let timeout = Duration::from_millis(ai.http_timeout_ms.max(ai.cli_timeout_ms));
         cx.spawn(async move |this, cx| {
             let ok = cx
                 .background_spawn(async move {
                     let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
                     let replacer = sayso_core::dictionary::Replacer::new(&[]);
-                    let p = TextPipeline { replacer: &replacer, style: &style, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), timeout };
+                    let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), timeout };
                     let out = p.run_style(entry.final_text.clone(), entry.replacements.clone());
                     let ok = out.enhance_error.is_none();
                     let mut e = entry;
@@ -651,7 +657,10 @@ impl AppModel {
                 }
         }
         let styles = sayso_core::style::StyleLibrary::load(&self.paths.styles_dir());
-        if styles.entries != self.styles.entries || styles.errors != self.styles.errors {
+        if styles.entries != self.styles.entries
+            || styles.errors != self.styles.errors
+            || styles.user_base_prompt != self.styles.user_base_prompt
+        {
             self.styles = styles;
             cx.notify();
         }

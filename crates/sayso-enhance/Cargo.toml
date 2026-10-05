@@ -28,3 +28,7 @@ keyring = "4"
 
 [dev-dependencies]
 tiny_http = "0.12"
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+# The style evaluation runs Apple Intelligence through the real sidecar.
+sayso-engine-client.workspace = true

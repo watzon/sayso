@@ -17,7 +17,7 @@ A key that records while you hold it and stops when you release it. It has no de
 The raw text from the speech model, before any changes.
 
 **Pipeline**
-The fixed steps that turn audio into inserted text: transcribe → apply replacements → apply style → insert.
+The fixed steps that turn audio into inserted text: transcribe → apply replacements → apply spoken punctuation → apply style → insert. Spoken punctuation is a setting and is off by default.
 
 **Engine**
 The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows it is the portable sidecar (`native/portable`, also `SaysoEngine`) with transcribe-rs. On Linux it is the Rust sidecar (`sayso-engine`) with sherpa-onnx. The Windows and Linux engines run on the CPU. All three speak the same protocol. Rust code talks to the engine through the `SttBackend` trait. The engine never sees a cloud model. The engine on macOS also runs the language model of a style (see Apple Intelligence). Rust code reaches it through the `LanguageModel` trait.
@@ -49,7 +49,19 @@ The user's list of words and replacements.
 - A **replacement** is a rule that changes text after transcription ("git hub" → "GitHub").
 
 **Style**
-A named AI enhancement with a prompt and optional provider, model, and timeout overrides. "Raw" is the style with no AI. Each style is one TOML file. Built-in styles ship in the app, and a user file with the same id overrides them.
+A named AI enhancement with a prompt and optional provider, model, and timeout overrides. "Raw" is the style with no AI. Each style is one TOML file. Built-in styles ship in the app, and a user file with the same id overrides them. The prompt of a style says only what the style adds to the base prompt.
+
+**Base prompt**
+The cleanup rules and examples that all styles share: filler words, self-corrections, numbers, and acronyms. A style adds its own prompt to it. The user can change the base prompt (`styles/base.md`) and reset it to the default. A standalone style does not get it.
+
+**Standalone style**
+A style that runs without the base prompt, for a prompt that is not a cleanup (a translation, for example).
+
+**Spoken punctuation**
+The step that changes the English commands "comma", "period", "question mark", "new line", and others into marks and line breaks. It runs in code, with no AI.
+
+**Spelled word**
+A word that the speaker spells after a cue: "Dana Cats, that's K A T Z". Before the model of a style runs, code puts the spelled word in place of the cue and of the words that it corrects.
 
 **Enhancer**
 The trait that sends a transcript and a style prompt to an AI provider and returns schema-checked JSON. The implementations are the OpenAI-compatible endpoint, the Claude CLI, the Codex CLI, and the language model of the engine.

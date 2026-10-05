@@ -246,7 +246,7 @@ fn clean_with_the_language_model(client: &EngineClient, transcript: &str, times:
     use sayso_core::enhance::{LanguageModel, user_message};
 
     let style = sayso_core::style::builtin_styles().into_iter().find(|s| s.id == "clean").expect("the clean style");
-    let instructions = sayso_core::style::system_prompt(&style, &vocabulary(), transcript);
+    let instructions = sayso_core::style::system_prompt(&style, sayso_core::style::DEFAULT_BASE_PROMPT, &vocabulary(), transcript);
     (0..times)
         .map(|_| {
             client

@@ -89,6 +89,8 @@ fn preset_style(preset: &PindropPreset) -> Style {
         temperature: None,
         timeout_ms: None,
         apps: Vec::new(),
+        // A preset was written as a complete prompt.
+        standalone: true,
     }
 }
 

@@ -12,6 +12,8 @@ use std::time::Duration;
 pub struct TextPipeline<'a> {
     pub replacer: &'a Replacer,
     pub style: &'a Style,
+    /// The base prompt of the style library.
+    pub base_prompt: &'a str,
     pub vocabulary: &'a [String],
     /// None when AI is off or no provider is set up.
     pub enhancer: Option<&'a dyn Enhancer>,
@@ -39,20 +41,30 @@ impl TextPipeline<'_> {
 
     /// Run the style on text that already has replacements applied.
     pub fn run_style(&self, replaced: String, replacements: Vec<AppliedReplacement>) -> PipelineOutput {
-        let Some(enhancer) = self.enhancer.filter(|_| self.style.uses_ai()) else {
+        // A model answers an empty transcript with a remark about it.
+        let Some(enhancer) = self.enhancer.filter(|_| self.style.uses_ai() && !replaced.trim().is_empty()) else {
             return PipelineOutput { text: replaced, replacements, enhance: EnhanceOutcome::NotUsed, enhance_error: None };
         };
+        // The model gets spelled words as words. A failure returns the text without this step.
+        let spoken = crate::spelled::apply(&replaced);
         let request = EnhanceRequest {
-            system_prompt: system_prompt(self.style, self.vocabulary, &replaced),
-            transcript: replaced.clone(),
+            system_prompt: system_prompt(self.style, self.base_prompt, self.vocabulary, &spoken),
+            transcript: spoken,
             model: self.style.model.clone(),
             temperature: self.style.temperature,
             timeout: self.style.timeout_ms.map(Duration::from_millis).unwrap_or(self.timeout),
         };
+        let attempt = || {
+            let response = enhancer.enhance(&request)?;
+            if is_runaway(&replaced, &response.text) {
+                return Err(EnhanceError::InvalidOutput("the reply is much longer than the text".into()));
+            }
+            Ok(response)
+        };
         // One retry when the reply has the wrong shape. Timeouts are not retried.
-        let mut result = enhancer.enhance(&request);
+        let mut result = attempt();
         if matches!(result, Err(EnhanceError::InvalidOutput(_))) {
-            result = enhancer.enhance(&request);
+            result = attempt();
         }
         match result {
             Ok(resp) => PipelineOutput {
@@ -81,6 +93,12 @@ impl TextPipeline<'_> {
         let (replaced, applied) = self.replace(transcript);
         self.run_style(replaced, applied)
     }
+}
+
+/// True when `reply` is too long to be an edit of `text`: the model answered
+/// the text or did not stop. A greeting and a sign-off fit in the limit.
+fn is_runaway(text: &str, reply: &str) -> bool {
+    reply.chars().count() > text.chars().count() * 3 + 200
 }
 
 #[cfg(test)]
@@ -132,7 +150,7 @@ mod tests {
         let fake = Fake::new(vec![ok("Open a GitHub issue.")]);
         let replacer = Replacer::new(&rules());
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
+        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
         let out = p.run("open a git hub issue");
         assert_eq!(out.text, "Open a GitHub issue.");
         assert_eq!(fake.seen.lock().unwrap()[0].transcript, "open a GitHub issue");
@@ -144,7 +162,7 @@ mod tests {
         let fake = Fake::new(vec![]);
         let replacer = Replacer::new(&[]);
         let raw = style("raw");
-        let p = TextPipeline { replacer: &replacer, style: &raw, vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
+        let p = TextPipeline { replacer: &replacer, style: &raw, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
         assert!(!p.will_enhance());
         assert_eq!(p.run("hi there").enhance, EnhanceOutcome::NotUsed);
     }
@@ -154,7 +172,7 @@ mod tests {
         let fake = Fake::new(vec![Err(EnhanceError::Timeout(4000))]);
         let replacer = Replacer::new(&rules());
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
+        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
         let out = p.run("on git hub");
         assert_eq!(out.text, "on GitHub");
         assert_eq!(out.enhance_error.as_deref(), Some("fake timed out after 4 s"));
@@ -166,7 +184,7 @@ mod tests {
         let fake = Fake::new(vec![Err(EnhanceError::InvalidOutput("x".into())), ok("Fixed.")]);
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
+        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
         assert_eq!(p.run("fixed").text, "Fixed.");
         assert_eq!(fake.seen.lock().unwrap().len(), 2);
     }
@@ -178,11 +196,48 @@ mod tests {
         let mut s = style("email");
         s.model = Some("big".into());
         s.timeout_ms = Some(9000);
-        let p = TextPipeline { replacer: &replacer, style: &s, vocabulary: &["Dana".into()], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
+        let p = TextPipeline { replacer: &replacer, style: &s, base_prompt: "- Shared rule.", vocabulary: &["Dana".into()], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
         p.run("hi dana");
         let req = &fake.seen.lock().unwrap()[0];
         assert_eq!(req.model.as_deref(), Some("big"));
         assert_eq!(req.timeout, Duration::from_millis(9000));
         assert!(req.system_prompt.contains("Dana"));
+        assert!(req.system_prompt.contains("- Shared rule."));
+    }
+
+    #[test]
+    fn the_model_gets_spelled_words_as_words() {
+        let fake = Fake::new(vec![ok("Send it to Dana Katz."), Err(EnhanceError::Timeout(4000))]);
+        let replacer = Replacer::new(&[]);
+        let clean = style("clean");
+        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
+        assert_eq!(p.run("send it to dana cats that's k a t z").text, "Send it to Dana Katz.");
+        assert_eq!(fake.seen.lock().unwrap()[0].transcript, "send it to dana katz");
+        // A failure returns what the speaker said.
+        assert_eq!(p.run("send it to dana cats that's k a t z").text, "send it to dana cats that's k a t z");
+    }
+
+    #[test]
+    fn an_empty_text_never_calls_the_provider() {
+        let fake = Fake::new(vec![]);
+        let replacer = Replacer::new(&[]);
+        let clean = style("clean");
+        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
+        assert_eq!(p.run("  ").enhance, EnhanceOutcome::NotUsed);
+    }
+
+    #[test]
+    fn a_reply_much_longer_than_the_text_keeps_the_replaced_text() {
+        let answer = "Tokyo is nine hours ahead of UTC. ".repeat(10);
+        let fake = Fake::new(vec![ok(&answer), ok(&answer)]);
+        let replacer = Replacer::new(&[]);
+        let clean = style("clean");
+        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_secs(4) };
+        let out = p.run("what time is it in tokyo");
+        assert_eq!(out.text, "what time is it in tokyo");
+        assert!(matches!(out.enhance, EnhanceOutcome::Failed { .. }));
+        assert_eq!(fake.seen.lock().unwrap().len(), 2, "one retry");
+        // An email adds a greeting and a sign-off to a short text.
+        assert!(!is_runaway("send dana the report", "Hi Dana,\n\nPlease send me the report.\n\nBest regards,"));
     }
 }

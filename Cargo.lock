@@ -7387,6 +7387,7 @@ dependencies = [
  "log",
  "parking_lot",
  "sayso-core",
+ "sayso-engine-client",
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",

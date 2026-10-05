@@ -766,6 +766,21 @@ impl AppModel {
         cx.notify();
     }
 
+    pub fn save_base_prompt(&mut self, text: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        sayso_core::style::save_base_prompt(&self.paths.styles_dir(), text).map_err(|e| e.to_string())?;
+        self.styles = StyleLibrary::load(&self.paths.styles_dir());
+        cx.notify();
+        Ok(())
+    }
+
+    pub fn reset_base_prompt(&mut self, cx: &mut Context<Self>) {
+        if let Err(e) = sayso_core::style::reset_base_prompt(&self.paths.styles_dir()) {
+            log::warn!("reset base prompt: {e}");
+        }
+        self.styles = StyleLibrary::load(&self.paths.styles_dir());
+        cx.notify();
+    }
+
     /// Delete a user style file. Built-in ids are reset instead.
     pub fn delete_style(&mut self, id: &str, cx: &mut Context<Self>) {
         self.reset_style(id, cx);

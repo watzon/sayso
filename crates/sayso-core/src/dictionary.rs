@@ -118,7 +118,7 @@ pub fn words_heard<'a>(words: &'a [String], transcript: &str) -> Vec<&'a str> {
 }
 
 /// The number of characters to add, remove, or change to make `a` into `b`.
-fn edit_distance(a: &[char], b: &[char]) -> usize {
+pub(crate) fn edit_distance(a: &[char], b: &[char]) -> usize {
     let mut row: Vec<usize> = (0..=b.len()).collect();
     for (i, x) in a.iter().enumerate() {
         let mut diagonal = row[0];

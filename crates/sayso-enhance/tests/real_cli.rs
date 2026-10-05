@@ -2,14 +2,14 @@
 //! `cargo test -p sayso-enhance --test real_cli -- --ignored`.
 
 use sayso_core::enhance::{EnhanceRequest, Enhancer};
-use sayso_core::style::{builtin_styles, system_prompt};
+use sayso_core::style::{DEFAULT_BASE_PROMPT, builtin_styles, system_prompt};
 use sayso_enhance::ClaudeCli;
 use std::time::Duration;
 
 fn clean(transcript: &str) -> (String, u64) {
     let style = builtin_styles().into_iter().find(|s| s.id == "clean").unwrap();
     let request = EnhanceRequest {
-        system_prompt: system_prompt(&style, &["Sayso".into()], transcript),
+        system_prompt: system_prompt(&style, DEFAULT_BASE_PROMPT, &["Sayso".into()], transcript),
         transcript: transcript.into(),
         model: None,
         temperature: None,

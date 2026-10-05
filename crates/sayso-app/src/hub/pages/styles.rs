@@ -40,8 +40,16 @@ struct Editor {
     /// The style's model. None uses the provider's model.
     model: Option<String>,
     timeout: Entity<InputState>,
+    /// False for a standalone style.
+    use_base: bool,
     error: Option<String>,
     confirm_delete: bool,
+}
+
+/// The editor of the base prompt.
+struct BaseEditor {
+    prompt: Entity<TextareaState>,
+    error: Option<String>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -78,6 +86,7 @@ pub struct StylesPage {
     provider_menu: Option<String>,
     confirm_remove: Option<String>,
     editor: Option<Editor>,
+    base_editor: Option<BaseEditor>,
     add: Option<AddProvider>,
     tests: HashMap<String, Test>,
     _subs: Vec<Subscription>,
@@ -93,6 +102,7 @@ impl StylesPage {
             provider_menu: None,
             confirm_remove: None,
             editor: None,
+            base_editor: None,
             add: None,
             tests: HashMap::new(),
             _subs: vec![observe],
@@ -116,6 +126,7 @@ impl StylesPage {
             temperature: None,
             timeout_ms: None,
             apps: Vec::new(),
+            standalone: false,
         });
         let origin = if is_new { None } else { self.model.read(cx).style_origin(&base.id) };
         let http_s = self.model.read(cx).config.ai.http_timeout_ms as f64 / 1000.0;
@@ -134,6 +145,7 @@ impl StylesPage {
         });
         name.update(cx, |s, cx| s.focus(window, cx));
         let style_model = base.model.clone();
+        let use_base = !base.standalone;
         self.editor = Some(Editor {
             id: base.id.clone(),
             is_new,
@@ -147,6 +159,7 @@ impl StylesPage {
             provider_menu: false,
             model: style_model,
             timeout,
+            use_base,
             error: None,
             confirm_delete: false,
         });
@@ -184,6 +197,7 @@ impl StylesPage {
             provider: ed.provider.clone(),
             model: ed.model.clone(),
             timeout_ms,
+            standalone: !ed.use_base,
             ..ed.base.clone()
         };
         match self.model.update(cx, |m, cx| m.save_style(&style, cx)) {
@@ -446,6 +460,40 @@ impl StylesPage {
             .child(kit::field("Description", kit::input_well(&ed.description, cx), None, cx))
             .child(kit::field("Ink", swatches, None, cx))
             .child(kit::field("Prompt", prompt, Some("Sayso adds your dictionary words and asks for JSON. You only write the style."), cx))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap(px(16.))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .flex_1()
+                            .min_w_0()
+                            .gap(px(2.))
+                            .child(ui("Use the base prompt", 13., 16., FontWeight::SEMIBOLD, c.ink))
+                            .child(ui(
+                                "The base prompt cleans up the text: filler words, corrections, numbers. Turn it off for a style that does something else, for example a translation.",
+                                12.,
+                                16.,
+                                FontWeight::NORMAL,
+                                c.graphite,
+                            )),
+                    )
+                    .child(div().flex_none().child(Switch::new("use-base", ed.use_base).on_toggle({
+                        let page = cx.entity();
+                        move |on, _, cx| {
+                            page.update(cx, |this, cx| {
+                                if let Some(ed) = this.editor.as_mut() {
+                                    ed.use_base = on;
+                                }
+                                cx.notify();
+                            })
+                        }
+                    }))),
+            )
             .child(kit::field("Provider", provider_field, None, cx))
             .child(
                 div()
@@ -457,8 +505,14 @@ impl StylesPage {
             .when_some(ed.error.clone(), |d, e| d.child(Banner::new(BannerKind::Warning, e)))
             .child(div().pt(px(6.)).child(buttons));
 
+        Some(self.side_panel("style-editor", body, cx))
+    }
+
+    /// A panel on the right of the page, over a scrim. A click on the scrim closes it.
+    fn side_panel(&self, id: &'static str, body: Div, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
         let panel = div()
-            .id("style-editor")
+            .id(id)
             .absolute()
             .top(px(12.))
             .right(px(12.))
@@ -477,9 +531,135 @@ impl StylesPage {
             .occlude()
             .on_click(cx.listener(|this, _, _, cx| {
                 this.editor = None;
+                this.base_editor = None;
                 cx.notify();
             }));
-        Some(div().absolute().inset_0().child(scrim).child(panel).into_any_element())
+        div().absolute().inset_0().child(scrim).child(panel).into_any_element()
+    }
+
+    // -----------------------------------------------------------------------
+    // Base prompt
+    // -----------------------------------------------------------------------
+
+    fn open_base_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let text = self.model.read(cx).styles.base_prompt().to_string();
+        let prompt = cx.new(|cx| TextareaState::new(window, cx).placeholder("Rules that all styles share. Leave empty for no shared rules.").default_value(text));
+        prompt.update(cx, |s, cx| s.focus(window, cx));
+        self.base_editor = Some(BaseEditor { prompt, error: None });
+        cx.notify();
+    }
+
+    fn save_base_editor(&mut self, cx: &mut Context<Self>) {
+        let Some(ed) = self.base_editor.as_ref() else { return };
+        let text = ed.prompt.read(cx).value().to_string();
+        // The default text saved again is not a change.
+        let result = if text.trim() == sayso_core::style::DEFAULT_BASE_PROMPT {
+            self.model.update(cx, |m, cx| m.reset_base_prompt(cx));
+            Ok(())
+        } else {
+            self.model.update(cx, |m, cx| m.save_base_prompt(&text, cx))
+        };
+        match result {
+            Ok(()) => self.base_editor = None,
+            Err(e) => {
+                if let Some(ed) = self.base_editor.as_mut() {
+                    ed.error = Some(format!("Sayso could not save the base prompt: {e}"));
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    /// The row under the style cards that opens the base prompt.
+    fn base_prompt_row(&self, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        let changed = self.model.read(cx).styles.user_base_prompt.is_some();
+        let note = div()
+            .flex()
+            .items_center()
+            .gap(px(10.))
+            .when(changed, |d| d.child(Badge::new("Changed", BadgeTone::Ink)))
+            .child(Button::new("edit-base", "Edit").small().on_click(cx.listener(|this, _, w, cx| this.open_base_editor(w, cx))));
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .child(kit::section_head("Base prompt", Some(note.into_any_element()), cx))
+            .child(ui(
+                "The cleanup rules that all styles share: filler words, corrections, numbers, and acronyms. Each style adds its own prompt to them.",
+                13.,
+                18.,
+                FontWeight::NORMAL,
+                c.graphite,
+            ))
+            .into_any_element()
+    }
+
+    fn base_editor_panel(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let c = cx.paper().colors;
+        let ed = self.base_editor.as_ref()?;
+        let m = self.model.read(cx);
+        let changed = m.styles.user_base_prompt.is_some();
+        let file_note = if changed {
+            format!("You changed the base prompt. It is the file {}/{}.", m.styles_dir_display(), sayso_core::style::BASE_PROMPT_FILE)
+        } else {
+            "The default base prompt. Saving a change writes your copy to the styles folder.".to_string()
+        };
+        let prompt = div()
+            .p(px(4.))
+            .rounded(px(10.))
+            .debossed(&c)
+            .text_size(px(14.))
+            .child(Textarea::new(&ed.prompt).appearance(false).h(px(380.)).text_size(px(14.)));
+        let mut buttons = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .child(Button::new("save-base", "Save").primary().on_click(cx.listener(|this, _, _, cx| this.save_base_editor(cx))))
+            .child(Button::new("cancel-base", "Cancel").ghost().on_click(cx.listener(|this, _, _, cx| {
+                this.base_editor = None;
+                cx.notify();
+            })))
+            .child(div().flex_1());
+        if changed {
+            buttons = buttons.child(Button::new("reset-base", "Reset to default").icon(Icon::Undo).on_click(cx.listener(|this, _, _, cx| {
+                this.model.update(cx, |m, cx| m.reset_base_prompt(cx));
+                this.base_editor = None;
+                cx.notify();
+            })));
+        }
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(px(18.))
+            .p(px(28.))
+            .child(
+                div()
+                    .flex()
+                    .items_start()
+                    .justify_between()
+                    .gap(px(12.))
+                    .child(div().flex().flex_col().flex_1().min_w_0().gap(px(6.)).child(text::title("Base prompt", 28., &c)).child(ui(
+                        file_note,
+                        13.,
+                        18.,
+                        FontWeight::NORMAL,
+                        c.graphite,
+                    )))
+                    .child(kit::icon_button("close-base", Icon::Close, 12., cx).on_click(cx.listener(|this, _, _, cx| {
+                        this.base_editor = None;
+                        cx.notify();
+                    }))),
+            )
+            .child(kit::field(
+                "Rules for all styles",
+                prompt,
+                Some("Short rules and a few short examples work best with a small model. A style with \"Use the base prompt\" off does not get this text."),
+                cx,
+            ))
+            .when_some(ed.error.clone(), |d, e| d.child(Banner::new(BannerKind::Warning, e)))
+            .child(div().pt(px(6.)).child(buttons));
+        Some(self.side_panel("base-editor", body, cx))
     }
 
     // -----------------------------------------------------------------------
@@ -1178,8 +1358,9 @@ impl Render for StylesPage {
             grid = grid.child(row);
         }
         let errors = self.model.read(cx).styles.errors.clone();
+        let base_prompt = self.base_prompt_row(cx);
         let providers = self.providers(cx);
-        let editor = self.editor_panel(cx);
+        let editor = self.editor_panel(cx).or_else(|| self.base_editor_panel(cx));
         let _ = window;
         div()
             .absolute()
@@ -1197,6 +1378,7 @@ impl Render for StylesPage {
                         .child(head)
                         .children(errors.into_iter().map(|e| Banner::new(BannerKind::Warning, format!("A style file has an error: {e}"))))
                         .child(grid)
+                        .child(base_prompt)
                         .child(providers),
                 ),
             )

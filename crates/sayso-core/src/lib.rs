@@ -17,6 +17,8 @@ pub mod models_onnx;
 pub mod paths;
 pub mod pipeline;
 pub mod speech;
+pub mod spelled;
+pub mod spoken_punctuation;
 pub mod stats;
 pub mod style;
 pub mod stt;

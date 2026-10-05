@@ -87,7 +87,17 @@ impl DictationSettings {
                 cx,
             )));
         }
-        group("Language", cx).child(kit::row_s("Dictation language".into(), description, control, cx))
+        let spoken = self.model.read(cx).config.dictation.spoken_punctuation;
+        let model = self.model.clone();
+        let spoken_switch = Switch::new("spoken-punctuation", spoken).on_toggle(move |on, _, cx| {
+            model.update(cx, |m, cx| m.edit_config(cx, |c| c.dictation.spoken_punctuation = on));
+        });
+        group("Language", cx).child(kit::row_s("Dictation language".into(), description, control, cx)).child(row(
+            "Spoken punctuation",
+            "Writes \"comma\", \"period\", \"question mark\", \"new line\", and \"new paragraph\" as marks and line breaks. English only. Leave it off if your model writes punctuation itself.",
+            spoken_switch,
+            cx,
+        ))
     }
 
     fn hotkeys_group(&mut self, cx: &mut Context<Self>) -> Div {
