@@ -19,18 +19,20 @@ dependency sits under `[target.'cfg(windows)'.dependencies]`).
 | `input` | `SendInput` key lists (paste, typing, mask key, releasing held modifiers). |
 | `inserter` | Paste (save every memory clipboard format, publish with delayed rendering, Ctrl+V, wait for the read receipt, restore) and Type (Unicode key events in chunks of 20 UTF-16 units). Checks the foreground window and its integrity level first. |
 | `paste_receipt` | When did the target app read the text. Copied from the macOS crate. |
-| `context` | Frontmost app, running apps (visible app windows, one per exe), app icon as PNG at a given size, process integrity levels. |
+| `context` | Frontmost app, running apps (visible app windows, one per exe), app icon as PNG at a given size, process integrity levels. `installed_apps` (the App Paths registry keys plus the running apps), `reads_page_url` (always true), and `page_url` (the address bar of a known browser in front, read with UI Automation). |
 | `permissions` | Microphone from the privacy consent store. Accessibility and Input Monitoring are always granted. |
 | `audio`, `resample` | `cpal` (WASAPI) input, mono mix, streaming windowed-sinc resampler to 16 kHz, 20 ms frames, display level. Copied from the macOS crate. |
 | `sounds` | `rodio` on a worker thread. Copied from the macOS crate. |
 | `login_item` | The `Run` key of the current user, plus the Task Manager switch in `StartupApproved\Run`. |
 | `prefs` | Dark mode from `AppsUseLightTheme`. Reduce motion from `SPI_GETCLIENTAREAANIMATION`. |
-| `win32` | Wide strings, registry values, owned handles. |
+| `win32` | Wide strings, environment variables, registry values and key names, owned handles. |
 
 The app-shell window glue (`window`) is not part of this crate yet.
 
 `examples/smoke_windows.rs` prints the state of every service, probes a few chords,
-records from each input device, and plays the sounds.
+records from each input device, and plays the sounds. Its "style rules" section prints
+the installed apps, then waits 5 s and prints `page_url` with its time for the app in
+front and for each running browser.
 
 ## Verified on hardware (this PC, Windows 11 Pro 26200, terminal host)
 
@@ -78,10 +80,51 @@ records from each input device, and plays the sounds.
 - Microphone level: the terminal mic gave silence. Level scaling has unit tests.
 - Audible playback. Nobody listened.
 
+## Not verified on hardware
+
+The code for style rules (`installed_apps`, `page_url`, and the `win32` helpers
+`subkey_names` and `expand_env`) was written on a Mac. It compiles for
+`x86_64-pc-windows-msvc` and passes clippy there. It never ran, and its unit tests
+never ran. Check these on a Windows PC, with `cargo test -p sayso-platform-windows`
+and the "style rules" section of the smoke example:
+
+- `page_url` returns the address for Chrome, Edge, and Firefox when the browser
+  window is in front. Then try Brave, Opera, Vivaldi, Arc, and Zen if they are there.
+- `page_url` takes less than about 300 ms, also for the first call after the browser
+  starts, and returns `None` at once for an app that is not a browser.
+- The read does not turn on the accessibility mode of Chromium for web pages. Open
+  `chrome://accessibility` (or `edge://accessibility`) before and after a read. "Native
+  accessibility API support" is expected to turn on. "Web accessibility" and the modes
+  after it must stay off.
+- The address bar is what the walk finds first. Check with the find bar open, with a
+  side panel open, with vertical tabs in Edge, and with the search box added to the
+  Firefox toolbar.
+- The value of the address bar. Browsers can hide `https://` and `www.` there. Write
+  down what the value is for a plain page and while the user types.
+- `installed_apps` lists the apps a user expects (Chrome, Office, VS Code), names
+  them well, and returns in a time that is fine for a picker. The first call reads
+  the version resource of every exe.
+- `app_icon_png` gives an icon for an installed app that does not run.
+
 ## Known gaps and decisions
 
 - **Ids and names.** `AppInfo.bundle_id` is the lowercase exe file name (`code.exe`).
   The name is the exe's FileDescription, else the file name without `.exe`.
+- **Installed apps.** Windows has no list of apps with their exe. `installed_apps`
+  reads `App Paths` under HKCU and HKLM, where most installers register an exe, and
+  adds the running apps. An app with no entry that does not run is missing (many
+  Store apps, portable apps). Some entries are tools and not apps. The id is the file
+  name of the exe the entry points to, not the key name, because the key name can be
+  an alias and a running app is known by its real exe.
+- **Page address.** Only for the browsers in `browser_kind`, and only when the browser
+  owns the foreground window. A tree walker goes through the controls of the window
+  depth first, in window order, and stops at the first Edit control (Chromium) or the
+  Edit with the id `urlbar-input` (Firefox). It does not enter a Document (a web page)
+  or the tab strip, looks at 300 controls at most, starts no call after 250 ms, and
+  sets the UI Automation timeouts to 250 ms. A `FindFirst` over all descendants was
+  rejected: it makes the browser search the web page too. Vivaldi draws its whole
+  window as a web page, so it is expected to give `None`. A value with white space
+  (a search the user types) gives `None`.
 - **Fn** never reaches Windows. A hotkey with Fn is reported in `failed`.
 - **Mask key.** Releasing Alt alone opens the menu bar of the focused app, and
   releasing Win alone opens Start. When Right Alt, Left Alt, or Right Win goes down as

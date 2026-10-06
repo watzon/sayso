@@ -55,7 +55,7 @@ A named AI enhancement with a prompt and optional provider, model, and timeout o
 The style of a dictation when no style rule applies. The user chooses it in the popover, on the Styles page, or with the next-style hotkey.
 
 **Style rule**
-The apps and sites that use one style. A dictation into one of them gets that style, not the default style. An app or a site has one style only. A site is a host with an optional path (`facebook.com/messages`); it also applies to its subdomains and to the paths below it. A site rule wins over the rule of the browser. The rules are in `config.toml` (`ai.style_rules`), because an app id is different on each system. They are off by default, and the first time the user turns them on, Sayso adds a starter set. Sayso reads the page of a browser on macOS only.
+The apps and sites that use one style. A dictation into one of them gets that style, not the default style. An app or a site has one style only. A site is a host with an optional path (`facebook.com/messages`); it also applies to its subdomains and to the paths below it. A site rule wins over the rule of the browser. The rules are in `config.toml` (`ai.style_rules`), because an app id is different on each system. They are off by default, and the first time the user turns them on, Sayso adds a starter set. Sayso reads the page of a browser on macOS and Windows, not on Linux.
 
 **App id**
 The name of an app for the system: the bundle id on macOS, the file name of the exe on Windows, and the name of the desktop entry on Linux.

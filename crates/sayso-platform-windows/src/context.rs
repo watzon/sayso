@@ -1,4 +1,5 @@
-//! [`ContextProvider`]: frontmost app, running apps, and app icons.
+//! [`ContextProvider`]: frontmost app, running apps, installed apps, app
+//! icons, and the address of the page in a browser.
 //!
 //! Windows has no bundle ids. An app is known by the lowercase file name of
 //! its exe (for example `code.exe`), and that is its [`AppInfo::bundle_id`].
@@ -7,14 +8,19 @@
 //!
 //! Store apps run inside `ApplicationFrameHost.exe`. Their real process owns
 //! a child window of the frame, so the frame is looked through.
+//!
+//! The page address comes from the address bar of the browser, read with UI
+//! Automation. The walk goes through the browser's own controls in the order
+//! of the window and stops at the address bar. It never enters the web page.
 
 use image::ImageEncoder;
 use parking_lot::Mutex;
 use sayso_platform::{AppInfo, ContextProvider};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
-use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HWND, LPARAM};
+use std::time::{Duration, Instant};
+use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, HWND, LPARAM, RPC_E_CHANGED_MODE};
 use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAP, BITMAPINFO, BITMAPINFOHEADER, CreateCompatibleDC, DIB_RGB_COLORS, DeleteDC, DeleteObject,
@@ -22,12 +28,23 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::Security::{GetSidSubAuthority, GetSidSubAuthorityCount, GetTokenInformation, TOKEN_MANDATORY_LABEL, TOKEN_QUERY, TokenIntegrityLevel};
 use windows::Win32::Storage::FileSystem::{FILE_FLAGS_AND_ATTRIBUTES, GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW};
+use windows::Win32::System::Com::{
+    CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
+};
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
 };
+use windows::Win32::System::Registry::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
 use windows::Win32::System::Threading::{
     GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
     QueryFullProcessImageNameW,
+};
+use windows::Win32::UI::Accessibility::{
+    CUIAutomation8, IUIAutomation, IUIAutomation2, IUIAutomationCacheRequest, IUIAutomationElement,
+    IUIAutomationTreeWalker, IUIAutomationValuePattern, UIA_AutomationIdPropertyId, UIA_ButtonControlTypeId,
+    UIA_ControlTypePropertyId, UIA_DocumentControlTypeId, UIA_EditControlTypeId, UIA_ImageControlTypeId,
+    UIA_MenuBarControlTypeId, UIA_MenuItemControlTypeId, UIA_TabControlTypeId, UIA_TextControlTypeId,
+    UIA_ValuePatternId,
 };
 use windows::Win32::UI::Shell::{SHDefExtractIconW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -35,9 +52,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongW, GetWindowTextLengthW, GetWindowThreadProcessId, HICON, ICONINFO, IsWindowVisible,
     PrivateExtractIconsW, WS_EX_TOOLWINDOW,
 };
-use windows::core::{BOOL, PCWSTR, PWSTR};
+use windows::core::{BOOL, Interface, PCWSTR, PWSTR};
 
-use crate::win32::{OwnedHandle, from_wide, wide};
+use crate::win32::{OwnedHandle, expand_env, from_wide, read_string, subkey_names, wide};
 
 /// The host process of Store app windows.
 const FRAME_HOST: &str = "applicationframehost.exe";
@@ -304,6 +321,291 @@ fn find_process_path(app: &str) -> Option<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
+// Installed apps
+// ---------------------------------------------------------------------------
+
+/// The registry key where an installer registers an exe by its file name.
+const APP_PATHS: &str = r"Software\Microsoft\Windows\CurrentVersion\App Paths";
+
+/// The exe path in the default value of an App Paths key, without quotes and
+/// without the text after a quoted path. `None` when nothing is left.
+pub fn clean_app_path(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let path = match raw.strip_prefix('"') {
+        Some(rest) => rest.split('"').next().unwrap_or_default(),
+        None => raw,
+    };
+    let path = path.trim();
+    (!path.is_empty()).then(|| path.to_string())
+}
+
+/// The exe files that App Paths lists, for the current user and then for
+/// the computer. Entries whose file does not exist are skipped.
+fn app_path_exes() -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for root in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        for name in subkey_names(root, APP_PATHS) {
+            let raw = read_string(root, &format!(r"{APP_PATHS}\{name}"), "");
+            let Some(path) = raw.and_then(|raw| clean_app_path(&raw)) else { continue };
+            // Windows expands a `REG_EXPAND_SZ` value on read. Some installers write `%VAR%` into a plain string.
+            let path = if path.contains('%') { expand_env(&path) } else { path };
+            let path = PathBuf::from(path);
+            if path.is_file() {
+                found.push(path);
+            }
+        }
+    }
+    found
+}
+
+/// Remove duplicate ids (the first one wins) and sort by lowercase name.
+/// Apps with an empty id or an empty name are dropped.
+pub fn dedup_and_sort(apps: Vec<AppInfo>) -> Vec<AppInfo> {
+    let mut seen = HashSet::new();
+    let mut apps: Vec<AppInfo> = apps
+        .into_iter()
+        .filter(|a| !a.bundle_id.is_empty() && !a.name.is_empty() && seen.insert(a.bundle_id.clone()))
+        .collect();
+    apps.sort_by_cached_key(|a| a.name.to_lowercase());
+    apps
+}
+
+/// The apps in App Paths plus the apps that run now, each with its exe path.
+/// The id is the file name of the exe the entry points to, as for a running
+/// app. The key name can be an alias (`pbrush.exe` starts `mspaint.exe`).
+fn installed() -> Vec<(AppInfo, PathBuf)> {
+    let mut apps: Vec<(AppInfo, PathBuf)> =
+        app_path_exes().into_iter().map(|path| (app_info(0, &path), path)).collect();
+    // Store apps and apps with no App Paths entry show up when they run.
+    apps.extend(running().into_iter().map(|(info, path)| (AppInfo { pid: 0, ..info }, path)));
+    apps
+}
+
+pub fn installed_apps() -> Vec<AppInfo> {
+    dedup_and_sort(installed().into_iter().map(|(info, _)| info).collect())
+}
+
+// ---------------------------------------------------------------------------
+// Page address
+// ---------------------------------------------------------------------------
+
+/// How a browser shows its address bar to UI Automation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserKind {
+    /// The address bar is the first Edit control of the window. Its name is
+    /// translated, so the name is not used.
+    Chromium,
+    /// The address bar is the Edit control with the id `urlbar-input`.
+    Firefox,
+}
+
+/// The id Firefox gives its address bar.
+const FIREFOX_ADDRESS_BAR: &str = "urlbar-input";
+
+/// The browsers whose address bar `page_url` reads, by app id.
+pub fn browser_kind(bundle_id: &str) -> Option<BrowserKind> {
+    match bundle_id.to_lowercase().as_str() {
+        "chrome.exe" | "msedge.exe" | "brave.exe" | "vivaldi.exe" | "opera.exe" | "arc.exe" | "chromium.exe"
+        | "thorium.exe" => Some(BrowserKind::Chromium),
+        "firefox.exe" | "zen.exe" | "librewolf.exe" | "waterfox.exe" => Some(BrowserKind::Firefox),
+        _ => None,
+    }
+}
+
+/// What the walk does with one control.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WalkStep {
+    /// This is the address bar.
+    Take,
+    /// Go on with the controls inside this one.
+    Descend,
+    /// Go on with the next control and leave the inside of this one alone.
+    Skip,
+}
+
+/// Decide the step for a control from its UI Automation control type and id.
+///
+/// A Document is a web page and is never entered. A Tab is the tab strip,
+/// which can hold hundreds of tabs. The other skipped types have nothing
+/// inside that can be the address bar.
+pub fn walk_step(kind: BrowserKind, control_type: i32, automation_id: &str) -> WalkStep {
+    const SKIPPED: [i32; 8] = [
+        UIA_DocumentControlTypeId.0,
+        UIA_TabControlTypeId.0,
+        UIA_EditControlTypeId.0,
+        UIA_ButtonControlTypeId.0,
+        UIA_MenuBarControlTypeId.0,
+        UIA_MenuItemControlTypeId.0,
+        UIA_TextControlTypeId.0,
+        UIA_ImageControlTypeId.0,
+    ];
+    if control_type == UIA_EditControlTypeId.0 {
+        let is_address_bar = match kind {
+            BrowserKind::Chromium => true,
+            BrowserKind::Firefox => automation_id == FIREFOX_ADDRESS_BAR,
+        };
+        if is_address_bar {
+            return WalkStep::Take;
+        }
+    }
+    if SKIPPED.contains(&control_type) { WalkStep::Skip } else { WalkStep::Descend }
+}
+
+/// The text of the address bar as a page address: trimmed, and only when it
+/// is not empty and has no white space. Text with a space is a search the
+/// user types. The scheme can be missing (`mail.google.com/mail`).
+pub fn clean_address(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty() && !value.contains(char::is_whitespace)).then(|| value.to_string())
+}
+
+/// The longest time one UI Automation call waits for the browser.
+const UIA_TIMEOUT_MS: u32 = 250;
+/// The time after which the walk starts no new call.
+const WALK_BUDGET: Duration = Duration::from_millis(250);
+/// The most controls the walk looks at.
+const WALK_MAX_CONTROLS: usize = 300;
+
+/// COM on the calling thread, for as long as this lives.
+struct ComInit {
+    /// False when the thread already ran COM in the other mode. COM works
+    /// then, and the count is not ours to give back.
+    uninit: bool,
+}
+
+impl ComInit {
+    fn new() -> Option<Self> {
+        // SAFETY: plain call. Each success (also "already initialized") is
+        // paired with CoUninitialize in `drop`.
+        let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+        if hr.is_ok() {
+            Some(Self { uninit: true })
+        } else if hr == RPC_E_CHANGED_MODE {
+            Some(Self { uninit: false })
+        } else {
+            None
+        }
+    }
+}
+
+impl Drop for ComInit {
+    fn drop(&mut self) {
+        if self.uninit {
+            // SAFETY: pairs with the CoInitializeEx that succeeded on this thread.
+            unsafe { CoUninitialize() };
+        }
+    }
+}
+
+/// Walks the controls of one window in the order of the window.
+struct ControlWalk {
+    walker: IUIAutomationTreeWalker,
+    /// Asks for the control type (and for Firefox the id) with each control,
+    /// so that reading them needs no more calls to the browser.
+    cache: IUIAutomationCacheRequest,
+}
+
+impl ControlWalk {
+    fn first_child(&self, of: &IUIAutomationElement) -> Option<IUIAutomationElement> {
+        // SAFETY: COM call on live interfaces. No child and a timeout are both an error here.
+        unsafe { self.walker.GetFirstChildElementBuildCache(of, &self.cache) }.ok()
+    }
+
+    fn next_sibling(&self, of: &IUIAutomationElement) -> Option<IUIAutomationElement> {
+        // SAFETY: as in `first_child`.
+        unsafe { self.walker.GetNextSiblingElementBuildCache(of, &self.cache) }.ok()
+    }
+
+    /// The address bar under `root`. Goes depth first, so it never touches a
+    /// control that comes after the address bar (the web page does).
+    fn find_address_bar(
+        &self,
+        root: &IUIAutomationElement,
+        kind: BrowserKind,
+        deadline: Instant,
+    ) -> Option<IUIAutomationElement> {
+        // The controls whose inside is being walked, outermost first.
+        let mut open: Vec<IUIAutomationElement> = Vec::new();
+        let mut current = self.first_child(root);
+        let mut seen = 0usize;
+        loop {
+            if Instant::now() >= deadline {
+                return None;
+            }
+            let Some(element) = current else {
+                // This level is done. Go on after the control that holds it.
+                current = self.next_sibling(&open.pop()?);
+                continue;
+            };
+            seen += 1;
+            if seen > WALK_MAX_CONTROLS {
+                return None;
+            }
+            // SAFETY: reads from the cache that came with the element.
+            let control_type = unsafe { element.CachedControlType() }.map(|t| t.0).unwrap_or_default();
+            let id = match kind {
+                // SAFETY: as above. The id is in the cache for Firefox only.
+                BrowserKind::Firefox => {
+                    unsafe { element.CachedAutomationId() }.map(|s| s.to_string()).unwrap_or_default()
+                }
+                BrowserKind::Chromium => String::new(),
+            };
+            match walk_step(kind, control_type, &id) {
+                WalkStep::Take => return Some(element),
+                WalkStep::Descend => {
+                    current = self.first_child(&element);
+                    open.push(element);
+                }
+                WalkStep::Skip => current = self.next_sibling(&element),
+            }
+        }
+    }
+}
+
+/// The text in the address bar of a browser window. Waits for the browser
+/// for about [`WALK_BUDGET`] at most, plus one call that is under way.
+fn address_bar_text(hwnd: HWND, kind: BrowserKind) -> Option<String> {
+    // Declared first, so every COM interface below is released before COM is.
+    let _com = ComInit::new()?;
+    let deadline = Instant::now() + WALK_BUDGET;
+    // SAFETY: COM calls on this thread, where COM is initialized. Every
+    // interface is owned by a local and released when it drops.
+    let (walk, root) = unsafe {
+        let automation: IUIAutomation = CoCreateInstance(&CUIAutomation8, None, CLSCTX_INPROC_SERVER).ok()?;
+        // Without these, a browser that hangs holds a call for many seconds.
+        if let Ok(automation) = automation.cast::<IUIAutomation2>() {
+            let _ = automation.SetConnectionTimeout(UIA_TIMEOUT_MS);
+            let _ = automation.SetTransactionTimeout(UIA_TIMEOUT_MS);
+        }
+        let cache = automation.CreateCacheRequest().ok()?;
+        cache.AddProperty(UIA_ControlTypePropertyId).ok()?;
+        if kind == BrowserKind::Firefox {
+            cache.AddProperty(UIA_AutomationIdPropertyId).ok()?;
+        }
+        let walker = automation.ControlViewWalker().ok()?;
+        (ControlWalk { walker, cache }, automation.ElementFromHandle(hwnd).ok()?)
+    };
+    let bar = walk.find_address_bar(&root, kind, deadline)?;
+    // SAFETY: COM calls on a live element. The value is read now, from the browser.
+    let value = unsafe {
+        bar.GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId).ok()?.CurrentValue().ok()?
+    };
+    Some(value.to_string())
+}
+
+/// The address in the address bar of `app`, when `app` is a known browser
+/// and owns the foreground window. Every other app costs no system call.
+pub fn page_url(app: &AppInfo) -> Option<String> {
+    let kind = browser_kind(&app.bundle_id)?;
+    // SAFETY: plain query.
+    let hwnd = unsafe { GetForegroundWindow() };
+    if hwnd.is_invalid() || app.pid <= 0 || window_pid(hwnd) != app.pid as u32 {
+        return None;
+    }
+    clean_address(&address_bar_text(hwnd, kind)?)
+}
+
+// ---------------------------------------------------------------------------
 // Integrity level
 // ---------------------------------------------------------------------------
 
@@ -567,6 +869,25 @@ impl ContextProvider for WinContext {
         }
         png
     }
+
+    fn installed_apps(&self) -> Vec<AppInfo> {
+        let apps = installed();
+        // Keep the paths, so `app_icon_png` works for an app that does not run.
+        let mut paths = self.paths.lock();
+        for (info, path) in &apps {
+            paths.entry(info.bundle_id.clone()).or_insert_with(|| path.clone());
+        }
+        drop(paths);
+        dedup_and_sort(apps.into_iter().map(|(info, _)| info).collect())
+    }
+
+    fn reads_page_url(&self) -> bool {
+        true
+    }
+
+    fn page_url(&self, app: &AppInfo) -> Option<String> {
+        page_url(app)
+    }
 }
 
 #[cfg(test)]
@@ -579,6 +900,90 @@ mod tests {
     fn app_ids_are_lowercase_exe_names() {
         assert_eq!(app_id(Path::new(r"C:\Program Files\Microsoft VS Code\Code.exe")), "code.exe");
         assert_eq!(fallback_name(Path::new(r"C:\Tools\MyTool.exe")), "MyTool");
+    }
+
+    fn info(bundle_id: &str, name: &str) -> AppInfo {
+        AppInfo { bundle_id: bundle_id.into(), name: name.into(), pid: 0 }
+    }
+
+    #[test]
+    fn app_paths_lose_quotes_and_arguments() {
+        assert_eq!(clean_app_path(r"C:\Apps\a.exe").as_deref(), Some(r"C:\Apps\a.exe"));
+        assert_eq!(clean_app_path(r#" "C:\Program Files\A\a.exe" "#).as_deref(), Some(r"C:\Program Files\A\a.exe"));
+        assert_eq!(clean_app_path(r#""C:\Program Files\A\a.exe" --flag"#).as_deref(), Some(r"C:\Program Files\A\a.exe"));
+        assert_eq!(clean_app_path(r"%ProgramFiles%\A\a.exe").as_deref(), Some(r"%ProgramFiles%\A\a.exe"));
+        assert_eq!(clean_app_path(""), None);
+        assert_eq!(clean_app_path(r#" "" "#), None);
+    }
+
+    #[test]
+    fn dedup_keeps_first_drops_empty_and_sorts_by_lowercase_name() {
+        let apps = vec![
+            info("zed.exe", "zed"),
+            info("code.exe", "Visual Studio Code"),
+            info("", "No id"),
+            info("noname.exe", ""),
+            info("code.exe", "Code again"),
+            info("chrome.exe", "Google Chrome"),
+        ];
+        let out = dedup_and_sort(apps);
+        let names: Vec<&str> = out.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, ["Google Chrome", "Visual Studio Code", "zed"]);
+    }
+
+    #[test]
+    fn only_known_browsers_have_a_kind() {
+        assert_eq!(browser_kind("chrome.exe"), Some(BrowserKind::Chromium));
+        assert_eq!(browser_kind("MSEdge.exe"), Some(BrowserKind::Chromium));
+        assert_eq!(browser_kind("firefox.exe"), Some(BrowserKind::Firefox));
+        assert_eq!(browser_kind("zen.exe"), Some(BrowserKind::Firefox));
+        for other in ["code.exe", "explorer.exe", "chrome", "notchrome.exe", ""] {
+            assert_eq!(browser_kind(other), None, "{other}");
+        }
+    }
+
+    #[test]
+    fn the_walk_takes_the_address_bar_and_stays_out_of_pages() {
+        use BrowserKind::{Chromium, Firefox};
+        let edit = UIA_EditControlTypeId.0;
+        assert_eq!(walk_step(Chromium, edit, ""), WalkStep::Take);
+        assert_eq!(walk_step(Firefox, edit, "urlbar-input"), WalkStep::Take);
+        assert_eq!(walk_step(Firefox, edit, ""), WalkStep::Skip);
+        assert_eq!(walk_step(Firefox, edit, "searchbar"), WalkStep::Skip);
+        for kind in [Chromium, Firefox] {
+            assert_eq!(walk_step(kind, UIA_DocumentControlTypeId.0, ""), WalkStep::Skip);
+            assert_eq!(walk_step(kind, UIA_TabControlTypeId.0, ""), WalkStep::Skip);
+            assert_eq!(walk_step(kind, UIA_ButtonControlTypeId.0, ""), WalkStep::Skip);
+            // Pane, ToolBar, and Group hold the address bar.
+            for container in [50033, 50021, 50026] {
+                assert_eq!(walk_step(kind, container, ""), WalkStep::Descend);
+            }
+        }
+    }
+
+    #[test]
+    fn addresses_have_no_white_space() {
+        assert_eq!(clean_address(" mail.google.com/mail/u/0/#inbox ").as_deref(), Some("mail.google.com/mail/u/0/#inbox"));
+        assert_eq!(clean_address("https://example.com/a?b=c").as_deref(), Some("https://example.com/a?b=c"));
+        assert_eq!(clean_address("how to bake bread"), None);
+        assert_eq!(clean_address("two\tparts"), None);
+        assert_eq!(clean_address("   "), None);
+        assert_eq!(clean_address(""), None);
+    }
+
+    #[test]
+    fn other_apps_have_no_page_address() {
+        let app = AppInfo { bundle_id: "explorer.exe".into(), name: "Windows Explorer".into(), pid: std::process::id() as i32 };
+        assert_eq!(page_url(&app), None);
+    }
+
+    #[test]
+    fn installed_apps_are_unique_and_sorted() {
+        let apps = installed_apps();
+        let ids: HashSet<&str> = apps.iter().map(|a| a.bundle_id.as_str()).collect();
+        assert_eq!(ids.len(), apps.len());
+        assert!(apps.iter().all(|a| !a.name.is_empty() && a.pid == 0));
+        assert!(apps.is_sorted_by_key(|a| a.name.to_lowercase()));
     }
 
     #[test]
