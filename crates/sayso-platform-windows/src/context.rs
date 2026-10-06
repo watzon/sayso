@@ -48,8 +48,8 @@ use windows::Win32::UI::Accessibility::{
 };
 use windows::Win32::UI::Shell::{SHDefExtractIconW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGetFileInfoW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    DestroyIcon, EnumChildWindows, EnumWindows, GW_OWNER, GWL_EXSTYLE, GetForegroundWindow, GetIconInfo, GetWindow,
-    GetWindowLongW, GetWindowTextLengthW, GetWindowThreadProcessId, HICON, ICONINFO, IsWindowVisible,
+    DestroyIcon, EnumChildWindows, EnumWindows, GA_ROOTOWNER, GW_OWNER, GWL_EXSTYLE, GetAncestor, GetForegroundWindow,
+    GetIconInfo, GetWindow, GetWindowLongW, GetWindowTextLengthW, GetWindowThreadProcessId, HICON, ICONINFO, IsWindowVisible,
     PrivateExtractIconsW, WS_EX_TOOLWINDOW,
 };
 use windows::core::{BOOL, Interface, PCWSTR, PWSTR};
@@ -231,9 +231,19 @@ pub fn display_name(path: &Path) -> String {
     if let Some(name) = NAMES.lock().get(path) {
         return name.clone();
     }
-    let name = file_description(path).unwrap_or_else(|| fallback_name(path));
+    let name = file_description(path).and_then(|d| without_exe(&d)).unwrap_or_else(|| fallback_name(path));
     NAMES.lock().insert(path.to_path_buf(), name.clone());
     name
+}
+
+/// A file description without `.exe` at its end. Some apps (Notepad, Paint)
+/// give their file name as the description. `None` when nothing is left.
+pub fn without_exe(description: &str) -> Option<String> {
+    let name = match description.len().checked_sub(4).and_then(|at| description.split_at_checked(at)) {
+        Some((stem, ext)) if ext.eq_ignore_ascii_case(".exe") => stem.trim_end(),
+        _ => description,
+    };
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 /// Display name of the process with this PID.
@@ -602,7 +612,12 @@ pub fn page_url(app: &AppInfo) -> Option<String> {
     if hwnd.is_invalid() || app.pid <= 0 || window_pid(hwnd) != app.pid as u32 {
         return None;
     }
-    clean_address(&address_bar_text(hwnd, kind)?)
+    // The find bar, a bubble, and a dialog of a browser are windows of their
+    // own. The browser window owns them, and it has the address bar.
+    // SAFETY: plain query.
+    let owner = unsafe { GetAncestor(hwnd, GA_ROOTOWNER) };
+    let window = if owner.is_invalid() { hwnd } else { owner };
+    clean_address(&address_bar_text(window, kind)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -991,6 +1006,15 @@ mod tests {
         assert_eq!(version_lookups(&[]), ["040904b0", "040904e4"]);
         assert_eq!(version_lookups(&[(0x0407, 0x04b0)]), ["040704b0", "040904b0", "040904e4"]);
         assert_eq!(version_lookups(&[(0x0409, 0x04b0)]), ["040904b0", "040904e4"]);
+    }
+
+    #[test]
+    fn descriptions_lose_the_exe_ending() {
+        assert_eq!(without_exe("Notepad.exe").as_deref(), Some("Notepad"));
+        assert_eq!(without_exe("SnippingTool.EXE").as_deref(), Some("SnippingTool"));
+        assert_eq!(without_exe("Windows Explorer").as_deref(), Some("Windows Explorer"));
+        assert_eq!(without_exe("exe").as_deref(), Some("exe"));
+        assert_eq!(without_exe(".exe"), None);
     }
 
     #[test]

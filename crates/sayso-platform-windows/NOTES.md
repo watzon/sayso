@@ -80,36 +80,48 @@ front and for each running browser.
 - Microphone level: the terminal mic gave silence. Level scaling has unit tests.
 - Audible playback. Nobody listened.
 
-## Not verified on hardware
+## Style rules: verified with Edge (this PC, Windows 11 Pro 26200)
 
 The code for style rules (`installed_apps`, `page_url`, and the `win32` helpers
-`subkey_names` and `expand_env`) was written on a Mac. It compiles for
-`x86_64-pc-windows-msvc` and passes clippy there. It never ran, and its unit tests
-never ran. Check these on a Windows PC, with `cargo test -p sayso-platform-windows`
-and the "style rules" section of the smoke example:
+`subkey_names` and `expand_env`) was written on a Mac. It then ran here, with Edge
+as the only browser on the PC:
 
-- `page_url` returns the address for Chrome, Edge, and Firefox when the browser
-  window is in front. Then try Brave, Opera, Vivaldi, Arc, and Zen if they are there.
-- `page_url` takes less than about 300 ms, also for the first call after the browser
-  starts, and returns `None` at once for an app that is not a browser.
-- The read does not turn on the accessibility mode of Chromium for web pages. Open
-  `chrome://accessibility` (or `edge://accessibility`) before and after a read. "Native
-  accessibility API support" is expected to turn on. "Web accessibility" and the modes
-  after it must stay off.
-- The address bar is what the walk finds first. Check with the find bar open, with a
-  side panel open, with vertical tabs in Edge, and with the search box added to the
-  Firefox toolbar.
-- The value of the address bar. Browsers can hide `https://` and `www.` there. Write
-  down what the value is for a plain page and while the user types.
-- `installed_apps` lists the apps a user expects (Chrome, Office, VS Code), names
-  them well, and returns in a time that is fine for a picker. The first call reads
-  the version resource of every exe.
-- `app_icon_png` gives an icon for an installed app that does not run.
+- `page_url` returns the address of the page in Edge in 8 to 45 ms, also for the
+  first call after Edge starts, and `None` in less than 1 ms for an app that is not
+  a browser.
+- The value of the address bar in Edge is the whole address with `https://`
+  (`https://www.example.com`, without the slash at the end). While the user types,
+  it is the typed text: a text with a space gives `None`, and one word (`wikipe`)
+  comes back as it is and fits no site rule.
+- After many reads, `edge://accessibility` shows "Native accessibility API support"
+  on, and "Web accessibility" and the modes after it off.
+- Vertical tabs in Edge: the read gives the address.
+- The find bar, the tab search bubble, and the sign-in dialog of Edge are windows of
+  their own, owned by the browser window. With one of them in front, the first
+  version read the text of the find bar or nothing. `page_url` now walks the owner
+  window (`GA_ROOTOWNER`). It gives the address with the find bar or the tab search
+  bubble in front. The sign-in dialog was not tried again.
+- `installed_apps` gave 35 apps in 6 ms (1 ms for the second call). The list has
+  Edge, Outlook, VS Code, Discord, and Notepad, and also tools that are not apps
+  (`op-ssh-sign.exe`, `winget.exe`). Three exes have the name "1Password".
+- `app_icon_png` gave an icon for each of the 35, and most of them did not run.
+- In the app: the switch in Settings, the starter set, the app list and a typed
+  address in the style editor, a dictation into an app with a rule, and a dictation
+  into Edge on a site with a rule. The overlay showed the style tag, and the text
+  came in the style of the rule.
+
+## Not verified on hardware
+
+- `page_url` for Chrome and Firefox, and for Brave, Opera, Vivaldi, Arc, and Zen.
+  None of them is on this PC.
+- A side panel open in Edge, and the search box added to the Firefox toolbar.
+- A dictation into a Gmail tab. It needs a Google login.
 
 ## Known gaps and decisions
 
 - **Ids and names.** `AppInfo.bundle_id` is the lowercase exe file name (`code.exe`).
-  The name is the exe's FileDescription, else the file name without `.exe`.
+  The name is the exe's FileDescription, else the file name without `.exe`. A
+  description that ends with `.exe` loses it (Notepad's is "Notepad.exe").
 - **Installed apps.** Windows has no list of apps with their exe. `installed_apps`
   reads `App Paths` under HKCU and HKLM, where most installers register an exe, and
   adds the running apps. An app with no entry that does not run is missing (many
@@ -117,7 +129,8 @@ and the "style rules" section of the smoke example:
   name of the exe the entry points to, not the key name, because the key name can be
   an alias and a running app is known by its real exe.
 - **Page address.** Only for the browsers in `browser_kind`, and only when the browser
-  owns the foreground window. A tree walker goes through the controls of the window
+  owns the foreground window. When that window is a find bar, a bubble, or a dialog,
+  the walk starts at the browser window that owns it. A tree walker goes through the controls of the window
   depth first, in window order, and stops at the first Edit control (Chromium) or the
   Edit with the id `urlbar-input` (Firefox). It does not enter a Document (a web page)
   or the tab strip, looks at 300 controls at most, starts no call after 250 ms, and

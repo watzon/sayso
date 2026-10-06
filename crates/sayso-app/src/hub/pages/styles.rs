@@ -187,7 +187,8 @@ impl StylesPage {
         };
         let target = cx.new(|cx| {
             InputState::new(window, cx).placeholder(match (sites_ok, cfg!(target_os = "macos")) {
-                (true, _) => "Add an app, a site, or a bundle ID",
+                (true, true) => "Add an app, a site, or a bundle ID",
+                (true, false) => "Add an app, a site, or an app ID",
                 (false, true) => "Add an app or a bundle ID",
                 (false, false) => "Add an app or an app ID",
             })
