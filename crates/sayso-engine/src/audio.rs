@@ -164,11 +164,13 @@ mod tests {
     }
 
     #[test]
-    fn the_real_test_clip_is_readable() {
-        let path =
-            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../spikes/engine/audio/short.wav");
+    fn reads_a_wav_file_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("clip.wav");
+        std::fs::write(&path, wav(1, 16_000, &vec![8192; SAMPLE_RATE + 1])).unwrap();
         let samples = read_wav(&path).unwrap();
         assert!(samples.len() > SAMPLE_RATE, "{} samples", samples.len());
+        assert!(read_wav(&dir.path().join("missing.wav")).is_err());
     }
 
     #[test]
