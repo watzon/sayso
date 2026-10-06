@@ -115,7 +115,7 @@ pub(crate) mod test_util {
     }
 
     pub fn app(bundle_id: &str, name: &str) -> Option<TargetApp> {
-        Some(TargetApp { bundle_id: bundle_id.into(), name: name.into() })
+        Some(TargetApp { bundle_id: bundle_id.into(), name: name.into(), site: None })
     }
 }
 

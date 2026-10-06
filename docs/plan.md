@@ -163,7 +163,7 @@ Settings shows the active path for each kind.
 - One TOML file per style in `<config>/styles/`.
   - Fields: id, name, ink tag, prompt, and optional provider, model, temperature, and timeout.
   - A user file with a built-in id overrides that style. "Reset" deletes the override.
-- Later: an `apps` field binds a style to bundle ids.
+- Style rules bind apps and sites to a style. They are in `config.toml` (`ai.style_rules`), not in the style file (changed on 2026-10-05; see "Style rule" in CONTEXT.md).
 
 ### History and retention
 

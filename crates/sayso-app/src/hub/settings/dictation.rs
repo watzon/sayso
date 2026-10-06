@@ -373,6 +373,25 @@ impl DictationSettings {
             .child(row("Play a sound for", "Choose the moments that make a sound.", chips.when(!s.enabled, |d| d.opacity(0.45)), cx))
     }
 
+    fn styles_group(&mut self, cx: &mut Context<Self>) -> Div {
+        let on = self.model.read(cx).config.ai.style_rules.enabled;
+        let model = self.model.clone();
+        let switch = Switch::new("style-rules", on).on_toggle(move |on, _, cx| model.update(cx, |m, cx| m.set_style_rules(on, cx)));
+        let sites = self.model.read(cx).services.platform.context.reads_page_url();
+        let (title, description) = if sites {
+            (
+                "Choose the style by app and site",
+                "Sayso uses the style that you set for the app or site you dictate into. All other apps use your default style. Edit a style to change its apps and sites.",
+            )
+        } else {
+            (
+                "Choose the style by app",
+                "Sayso uses the style that you set for the app you dictate into. All other apps use your default style. Edit a style to change its apps.",
+            )
+        };
+        group("Styles", cx).child(row(title, description, switch, cx))
+    }
+
     fn ai_group(&mut self, cx: &mut Context<Self>) -> Div {
         let ai = self.model.read(cx).config.ai.clone();
         let http_s = ai.http_timeout_ms / 1000;
@@ -400,6 +419,7 @@ impl Render for DictationSettings {
             .child(self.hotkeys_group(cx))
             .child(self.insertion_group(cx))
             .child(self.sounds_group(cx))
+            .child(self.styles_group(cx))
             .child(self.ai_group(cx));
         div()
             .size_full()

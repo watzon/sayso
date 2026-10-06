@@ -221,7 +221,7 @@ fn read_dictations(conn: &Connection) -> Result<Vec<PindropDictation>> {
         let duration_s: f64 = r.get::<_, Option<f64>>(2)?.unwrap_or(0.0).max(0.0);
         let final_text: String = r.get(4)?;
         let app = match (r.get::<_, Option<String>>(7)?, r.get::<_, Option<String>>(8)?) {
-            (Some(name), Some(bundle_id)) if !bundle_id.is_empty() => Some(TargetApp { bundle_id, name }),
+            (Some(name), Some(bundle_id)) if !bundle_id.is_empty() => Some(TargetApp { bundle_id, name, site: None }),
             _ => None,
         };
         Ok(PindropDictation {
@@ -381,7 +381,7 @@ mod tests {
         assert_eq!(first.duration_ms, 4_000);
         // The saved time minus the duration.
         assert_eq!(first.created_at, Utc.with_ymd_and_hms(2026, 4, 7, 17, 47, 21).unwrap());
-        assert_eq!(first.app, Some(TargetApp { bundle_id: "com.tinyspeck.slackmacgap".into(), name: "Slack".into() }));
+        assert_eq!(first.app, Some(TargetApp { bundle_id: "com.tinyspeck.slackmacgap".into(), name: "Slack".into(), site: None }));
         let second = &data.dictations[1];
         assert_eq!(second.transcript, "plain text", "without an AI pass the final text is the transcript");
         assert_eq!((second.enhanced_with.clone(), second.app.clone()), (None, None));

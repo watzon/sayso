@@ -28,7 +28,8 @@ pub fn run() {
     }
     let loaded = Config::load(&paths.config_file()).unwrap_or_else(|e| {
         eprintln!("sayso: {e}");
-        sayso_core::config::LoadedConfig { config: Config::default(), issues: vec![], created: true }
+        // The file stays as it is, and Settings shows the problem.
+        sayso_core::config::LoadedConfig::unreadable(&e)
     });
     init_logging(&paths, loaded.config.advanced.log_level.as_deref());
     crate::shell::prepare();
@@ -52,7 +53,9 @@ pub fn run() {
             (options, found)
         });
 
-    gpui_kit::application().with_assets(sayso_ui::assets::Assets).run(move |cx| {
+    // Sayso lives in the tray. Without this, GPUI quits on Windows and Linux
+    // when the last window closes.
+    gpui_kit::application().with_quit_mode(QuitMode::Explicit).with_assets(sayso_ui::assets::Assets).run(move |cx| {
         gpui_kit::init(cx);
         sayso_ui::init(cx);
         // The Insertion sends Shift+Insert on Linux, and the text fields bind

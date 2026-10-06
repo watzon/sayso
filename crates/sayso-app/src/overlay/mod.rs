@@ -347,6 +347,7 @@ impl Render for OverlayView {
 
         let blocked = m.blocked_notice.as_ref().map(|(s, _)| s.clone());
         let incognito = m.incognito;
+        let recording_style = m.recording_style().map(|s| s.name);
         let preview = m.preview.clone();
         let show_preview = m.config.overlay.show_preview;
         let toggle_caps = m.config.hotkeys.toggle.map(|h| h.keycaps()).unwrap_or_default();
@@ -418,8 +419,10 @@ impl Render for OverlayView {
                                         .child(halo(12. * k, (3. + 2. * pulse) * k, c.accent.opacity(0.16 + 0.1 * pulse)))
                                 }),
                         )
-                        .child(ink_waveform(levels, t, c.ink).w(z(232.)).h(z(36.)))
+                        // The window has room for one tag next to the full waveform.
+                        .child(ink_waveform(levels, t, c.ink).w(z(if incognito && recording_style.is_some() { 150. } else { 232. })).h(z(36.)))
                         .child(text::mono(clock(elapsed), 13. * tk, c.graphite).w(px(36. * tk)).text_right())
+                        .when_some(recording_style, |d, s| d.child(StyleTag::new(s, Some(c.ink))))
                         .when(incognito, |d| {
                             d.child(
                                 div()

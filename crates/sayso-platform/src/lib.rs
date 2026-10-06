@@ -146,6 +146,21 @@ pub trait ContextProvider: Send + Sync {
     fn running_apps(&self) -> Vec<AppInfo>;
     /// PNG bytes of an app icon, for History rows.
     fn app_icon_png(&self, bundle_id: &str, size: u32) -> Option<Vec<u8>>;
+    /// The apps on this computer, for the picker of a style rule. A system
+    /// that cannot list them gives the apps that run now.
+    fn installed_apps(&self) -> Vec<AppInfo> {
+        self.running_apps()
+    }
+    /// True when [`ContextProvider::page_url`] can give an address on this system.
+    fn reads_page_url(&self) -> bool {
+        false
+    }
+    /// The address of the web page in the focused window of `app`, for an
+    /// app that shows one. It can wait on the app for a short time, so do
+    /// not call it on the main thread.
+    fn page_url(&self, _app: &AppInfo) -> Option<String> {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------

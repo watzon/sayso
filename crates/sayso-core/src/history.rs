@@ -29,6 +29,9 @@ pub enum InsertOutcome {
 pub struct TargetApp {
     pub bundle_id: String,
     pub name: String,
+    /// The host of the page, when the app showed a web page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub site: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

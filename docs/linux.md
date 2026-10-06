@@ -107,6 +107,8 @@ Sayso runs on X11 and on Wayland. The parts that touch other apps (hotkeys, inse
 | Clipboard | X11 selections | X11 selections, through XWayland | Data-control protocol | Data-control protocol |
 | Tray icon | Most panels | With the AppIndicator extension | Yes | With a tray in the bar (for example Waybar) |
 | Focused app in History | Yes | No | No | No |
+| Style by app | Yes | No | No | No |
+| Style by site | No | No | No | No |
 
 On a Wayland desktop the pill cannot be dragged, because only the compositor can place a layer surface.
 

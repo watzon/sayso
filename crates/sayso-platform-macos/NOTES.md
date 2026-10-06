@@ -14,7 +14,7 @@ macOS implementations of the `sayso-platform` traits. Build all of them with
 | `conflicts` | System shortcuts from `CopySymbolicHotKeys` (Carbon mask), a name table, and a table of apps (ChatGPT, Raycast, Alfred) checked against running apps. |
 | `secure_input` | `IsSecureEventInputEnabled` plus the PID from `CGSessionCopyCurrentDictionary`, turned into an app name. |
 | `inserter` | Paste (save and restore every pasteboard item, Cmd+V) and Type (Unicode strings in chunks of 20 UTF-16 units). Checks Accessibility, Secure Input, and focus first. |
-| `context` | Frontmost app, running apps (regular and accessory), app icon as PNG at a given size. |
+| `context` | Frontmost app, running apps (regular and accessory), app icon as PNG at a given size. Installed apps: `*.app` in `/Applications`, the system folders, and `~/Applications`, plus one level of sub-folders in the two user-visible roots, plus running apps. Page URL: `AXDocument` of the focused window. |
 | `permissions` | Microphone (AVFoundation), Accessibility, Input Monitoring, and System Settings deep links. |
 | `audio`, `resample` | `cpal` input, mono mix, own streaming windowed-sinc resampler to 16 kHz, 20 ms frames, display level. |
 | `sounds` | `rodio` on a worker thread. It opens the output on the first sound and closes it after 30 s of silence. |
@@ -51,6 +51,8 @@ macOS implementations of the `sayso-platform` traits. Build all of them with
 - Chords that include `fn` work for push-to-talk only. Arrow keys and F keys set the Fn flag on their own, so the key recorder ignores it.
 - Secure Event Input hides key events from the tap. Solo-modifier push-to-talk still works. Chord push-to-talk, Esc, and the key recorder do not (spike result). The Carbon chords still work.
 - `Accessibility` and `InputMonitoring` report `Denied`, never `NotDetermined`. macOS gives no way to tell them apart.
+- `page_url` reads one attribute on the app and one on the window with a 0.25 s Accessibility timeout. It never walks the tree (a walk took 18 s on Mail). Chromium browsers answer. Electron apps answer an empty string, which is `None`. It needs Accessibility.
+- `installed_apps` looks only one level into sub-folders of `/Applications` and `~/Applications`. An app deeper than that shows up only while it runs.
 - A missing focused element is `NoFocusedField` only when Accessibility answers "no value". Other Accessibility errors (some Electron apps) are treated as "a field may be focused".
 - While the key recorder is open, Carbon chord events are dropped, so the toggle does not fire while the user sets a new key.
 - If a push-to-talk key is held when the system disables the tap, the logic sends `PushToTalkUp` after the tap is back.

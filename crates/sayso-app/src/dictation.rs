@@ -27,6 +27,13 @@ use std::time::{Duration, Instant};
 #[derive(Default)]
 pub struct Session {
     pub app: Option<AppInfo>,
+    /// The host of the page in the app, when a style rule read it.
+    pub site: Option<String>,
+    /// The style that a style rule chose for the app or the site.
+    pub rule_style: Option<String>,
+    /// The style from the next-style hotkey during the recording. It wins
+    /// over the rule and applies to this dictation only.
+    pub picked_style: Option<String>,
     pub samples: Arc<Mutex<Vec<f32>>>,
     pub capture: Option<Box<dyn CaptureHandle>>,
     /// True while the live preview gets the audio. It can start after the
@@ -213,13 +220,40 @@ impl AppModel {
             }
         };
         let incognito = self.incognito;
+        let rule_style = self.config.ai.style_rules.resolve(app.as_ref().map(|a| a.bundle_id.as_str()), None).map(str::to_string);
+        self.read_page(session, app.as_ref(), cx);
         let s = self.session(session);
         s.incognito = incognito;
+        s.rule_style = rule_style;
         s.app = app;
         s.samples = samples;
         s.capture = capture;
         s.streaming = streaming;
         s.started = Some(Instant::now());
+    }
+
+    /// Ask the app for its web page, and let a site rule choose the style.
+    /// The answer comes while the microphone records. Sayso asks only when
+    /// the style rules are on.
+    fn read_page(&mut self, session: SessionId, app: Option<&AppInfo>, cx: &mut Context<Self>) {
+        let context = self.services.platform.context.clone();
+        let Some(app) = app.filter(|a| a.pid != std::process::id() as i32).cloned() else { return };
+        if !self.config.ai.style_rules.enabled || !context.reads_page_url() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            let page = app.clone();
+            let Some(url) = cx.background_spawn(async move { context.page_url(&page) }).await else { return };
+            let _ = this.update(cx, |m, cx| {
+                let style = m.config.ai.style_rules.resolve(Some(&app.bundle_id), Some(&url)).map(str::to_string);
+                if let Some(s) = m.sessions.get_mut(&session) {
+                    s.site = sayso_core::style_rules::host_of(&url);
+                    s.rule_style = style;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     /// Open the live preview stream of a dictation. False when the preview is
@@ -332,7 +366,7 @@ impl AppModel {
     }
 
     fn apply_style(&mut self, session: SessionId, text: String, cx: &mut Context<Self>) {
-        let style = self.active_style();
+        let style = self.session_style(session);
         self.session(session).style_id = style.id.clone();
         let provider = self.provider_for(&style).cloned();
         let Some(provider) = provider.filter(|_| style.uses_ai()) else {
@@ -479,7 +513,7 @@ impl AppModel {
             id: 0,
             created_at: chrono::Utc::now(),
             duration_ms: s.duration_ms,
-            app: s.app.map(|a| TargetApp { bundle_id: a.bundle_id, name: a.name }),
+            app: s.app.map(|a| TargetApp { bundle_id: a.bundle_id, name: a.name, site: s.site }),
             final_text: s.final_text.clone().unwrap_or_else(|| transcript.clone()),
             transcript,
             style_id: if s.style_id.is_empty() { self.config.ai.active_style.clone() } else { s.style_id },

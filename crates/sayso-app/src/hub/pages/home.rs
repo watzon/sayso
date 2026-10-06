@@ -342,7 +342,7 @@ impl HomePage {
                             .items_center()
                             .justify_between()
                             .h(px(22.))
-                            .child(caps("Active style", 12., c.graphite))
+                            .child(caps("Default style", 12., c.graphite))
                             .when_some(badge, |d, b| d.child(b)),
                     )
                     .child(text::display(style.name.clone(), 28., &c))

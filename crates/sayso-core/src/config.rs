@@ -358,6 +358,8 @@ pub struct Ai {
     pub providers: Vec<Provider>,
     pub http_timeout_ms: u64,
     pub cli_timeout_ms: u64,
+    /// The apps and sites that choose a style.
+    pub style_rules: crate::style_rules::StyleRules,
 }
 
 impl Default for Ai {
@@ -369,6 +371,7 @@ impl Default for Ai {
             providers: Vec::new(),
             http_timeout_ms: 4000,
             cli_timeout_ms: 8000,
+            style_rules: Default::default(),
         }
     }
 }
@@ -476,6 +479,15 @@ pub struct LoadedConfig {
     pub issues: Vec<ConfigIssue>,
     /// The file did not exist. Sayso writes the defaults on first save.
     pub created: bool,
+}
+
+impl LoadedConfig {
+    /// The defaults for a file that is there but cannot be read. Not
+    /// `created`, so the app does not write the defaults over the file.
+    pub fn unreadable(error: &ConfigError) -> Self {
+        let issue = ConfigIssue { field: "config.toml".into(), message: error.to_string() };
+        Self { config: Config::default(), issues: vec![issue], created: false }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -607,6 +619,20 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_that_cannot_be_read_is_reported_and_not_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        // Not UTF-8.
+        std::fs::write(&path, [0xff, 0xfe, 0x00]).unwrap();
+        let error = Config::load(&path).unwrap_err();
+        let loaded = LoadedConfig::unreadable(&error);
+        assert!(!loaded.created);
+        assert_eq!(loaded.issues.len(), 1);
+        assert!(loaded.issues[0].message.contains("config.toml"), "{}", loaded.issues[0].message);
+        assert_eq!(loaded.config, Config::default());
+    }
 
     #[test]
     fn empty_file_gives_defaults() {
