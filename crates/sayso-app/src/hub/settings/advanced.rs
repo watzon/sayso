@@ -74,6 +74,10 @@ impl Render for AdvancedSettings {
             keep_desc.push_str(" The live preview of that dictation also starts later.");
         }
 
+        let m3 = self.model.clone();
+        let preload = Switch::new("preload-model", m.config.dictation.preload_model)
+            .on_toggle(move |on, _, cx| m3.update(cx, |m, cx| m.edit_config(cx, |c| c.dictation.preload_model = on)));
+
         let field = div()
             .flex()
             .items_center()
@@ -97,6 +101,12 @@ impl Render for AdvancedSettings {
         } else if self.engine_saved {
             engine = engine.child(kit::banner(BannerKind::Info, "Saved. Quit Sayso and open it again to use this engine.", cx));
         }
+        engine = engine.child(row(
+            "Load the model when Sayso starts",
+            "The first dictation does not wait for the speech model. When this is off, the first dictation loads the model, and Sayso uses less memory until then.",
+            preload,
+            cx,
+        ));
         engine = engine.child(kit::row_s("Keep the model in memory".into(), keep_desc, keep, cx));
         engine = engine.child(row("Log level", "How much Sayso writes to its log. Takes effect when Sayso starts again.", levels, cx));
 

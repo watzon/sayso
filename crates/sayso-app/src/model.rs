@@ -63,8 +63,8 @@ pub struct AppModel {
     pub last_app: Option<String>,
 
     pub model_status: HashMap<ModelId, ModelStatus>,
-    /// The idle time ended and the active model left memory. The next
-    /// dictation loads it again.
+    /// The active model is not in memory: its idle time ended, or the load
+    /// at the start is off and no dictation ran yet. The next dictation loads it.
     pub model_idle: bool,
     /// When a dictation last ran or the active model loaded. The idle time
     /// counts from here.
@@ -189,6 +189,9 @@ impl AppModel {
         crate::dictation::start_background_loops(hotkeys, engine_events, cx);
         model.start_updater(cx);
         model.detect_providers(cx);
+        // Without the load at the start, the active model is out of memory as
+        // after its idle time: the first dictation loads it.
+        model.model_idle = !model.config.dictation.preload_model;
         model.load_active_models(cx);
         // Model names for the provider cards and style lines. The CLIs answer
         // without a prompt, so this costs no tokens.
@@ -383,7 +386,9 @@ impl AppModel {
             && let Err(e) = self.services.platform.login_item.set_enabled(self.config.general.launch_at_login) {
                 log::warn!("launch at login: {e}");
             }
-        let keep_changed = before.dictation.keep_model_minutes != self.config.dictation.keep_model_minutes;
+        let keep_changed = before.dictation.keep_model_minutes != self.config.dictation.keep_model_minutes
+            // The user turned on the load at the start: the model loads now.
+            || (self.config.dictation.preload_model && !before.dictation.preload_model);
         if before.dictation.model != self.config.dictation.model || keep_changed {
             // A new model or a new idle time starts with the model in memory.
             self.model_idle = false;

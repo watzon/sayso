@@ -469,7 +469,8 @@ impl Render for OverlayView {
                 }
                 State::Processing { stage, .. } => {
                     let label = match (stage, &model_status) {
-                        (_, ModelStatus::Optimizing | ModelStatus::Downloaded) => crate::shell::OPTIMIZING,
+                        // The final pass waits for a model that is not in memory yet.
+                        (_, ModelStatus::Optimizing | ModelStatus::Downloaded) => "Loading the model",
                         (Stage::Enhancing, _) => "Applying style",
                         (Stage::Inserting, _) => "Inserting",
                         _ => "Transcribing",

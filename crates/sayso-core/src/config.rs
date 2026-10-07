@@ -140,6 +140,9 @@ pub struct Dictation {
     /// dictation. None keeps it in memory always. The live-preview model
     /// always stays in memory.
     pub keep_model_minutes: Option<u32>,
+    /// Load the active local model when Sayso starts. When false, the first
+    /// dictation loads it.
+    pub preload_model: bool,
 }
 
 impl Default for Dictation {
@@ -152,6 +155,7 @@ impl Default for Dictation {
             min_duration_ms: 300,
             max_duration_s: 600,
             keep_model_minutes: None,
+            preload_model: true,
         }
     }
 }
@@ -672,6 +676,17 @@ mod tests {
         let back = Config::parse(&c.to_toml());
         assert!(back.issues.is_empty(), "{:?}", back.issues);
         assert_eq!(back.config.dictation.keep_model_minutes, Some(15));
+    }
+
+    #[test]
+    fn the_model_loads_at_the_start_unless_the_file_says_no() {
+        // A config file from before the setting.
+        let old = Config::parse("[dictation]\nlanguage = \"de\"\n");
+        assert!(old.issues.is_empty(), "{:?}", old.issues);
+        assert!(old.config.dictation.preload_model);
+        let off = Config::parse("[dictation]\npreload_model = false\n");
+        assert!(off.issues.is_empty(), "{:?}", off.issues);
+        assert!(!off.config.dictation.preload_model);
     }
 
     #[test]
