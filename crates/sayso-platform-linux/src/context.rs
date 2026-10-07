@@ -2,8 +2,10 @@
 //!
 //! An app's id is the name of its desktop entry without `.desktop` (for
 //! example `org.gnome.TextEditor` or `firefox`), the Linux form of a bundle
-//! id. On X11 the active window gives the app. A Wayland session has no
-//! common way to ask for the focused app, so the answer there is None.
+//! id. On X11 the active window gives the app. On a Wayland compositor with
+//! the wlr foreign-toplevel protocol (sway, Hyprland, and others), the
+//! activated toplevel gives it. GNOME and KDE have no way to ask for the
+//! focused app, so the answer there is None.
 
 use crate::session::{Session, SessionKind};
 use sayso_platform::{AppInfo, ContextProvider};
@@ -25,12 +27,16 @@ impl LinuxContext {
 
 impl ContextProvider for LinuxContext {
     fn frontmost_app(&self) -> Option<AppInfo> {
-        if self.session.kind != SessionKind::X11 {
-            return None;
-        }
-        let window = x11_active_window()?;
+        let window = match self.session.kind {
+            SessionKind::X11 => x11_active_window()?,
+            SessionKind::Wayland if self.session.has_global(toplevel::MANAGER) => {
+                ActiveWindow { class: Some(toplevel::active_app_id()?), pid: None }
+            }
+            _ => return None,
+        };
         let entries = desktop_entries();
-        let entry = window.class.as_deref().and_then(|c| entries.for_class(c));
+        // A Wayland app id is the id of the desktop entry. An X11 class goes through `StartupWMClass`.
+        let entry = window.class.as_deref().and_then(|c| entries.by_id.get(c).or_else(|| entries.for_class(c)));
         let bundle_id = entry.map(|e| e.id.clone()).or_else(|| window.class.clone())?;
         let name = entry.map(|e| e.name.clone()).or_else(|| window.class.clone()).unwrap_or_else(|| bundle_id.clone());
         Some(AppInfo { bundle_id, name, pid: window.pid.unwrap_or(0) })
@@ -47,6 +53,18 @@ impl ContextProvider for LinuxContext {
         let path = find_icon(&icon, size)?;
         std::fs::read(path).ok()
     }
+
+    fn installed_apps(&self) -> Vec<AppInfo> {
+        listed_apps(desktop_entries())
+    }
+}
+
+/// The apps that the launcher of the desktop shows, by name.
+pub fn listed_apps(entries: &DesktopEntries) -> Vec<AppInfo> {
+    let mut apps: Vec<AppInfo> =
+        entries.by_id.values().filter(|e| e.listed).map(|e| AppInfo { bundle_id: e.id.clone(), name: e.name.clone(), pid: 0 }).collect();
+    apps.sort_by_key(|a| (a.name.to_lowercase(), a.bundle_id.clone()));
+    apps
 }
 
 // ---------------------------------------------------------------------------
@@ -54,7 +72,7 @@ impl ContextProvider for LinuxContext {
 // ---------------------------------------------------------------------------
 
 struct ActiveWindow {
-    /// The class part of `WM_CLASS`.
+    /// The class part of `WM_CLASS`, or the app id of a Wayland toplevel.
     class: Option<String>,
     pid: Option<i32>,
 }
@@ -93,6 +111,77 @@ pub fn parse_wm_class(value: &[u8]) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Wayland activated toplevel
+// ---------------------------------------------------------------------------
+
+/// The app id of the activated window, from the wlr foreign-toplevel protocol.
+mod toplevel {
+    use std::collections::HashMap;
+    use wayland_client::backend::ObjectId;
+    use wayland_client::globals::{GlobalListContents, registry_queue_init};
+    use wayland_client::protocol::wl_registry::WlRegistry;
+    use wayland_client::{Connection, Dispatch, Proxy, QueueHandle, event_created_child};
+    use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_handle_v1::{self as handle, ZwlrForeignToplevelHandleV1 as Handle};
+    use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::{self as manager, ZwlrForeignToplevelManagerV1 as Manager};
+
+    /// The name of the global that this needs.
+    pub const MANAGER: &str = "zwlr_foreign_toplevel_manager_v1";
+
+    #[derive(Default)]
+    struct Toplevel {
+        app_id: Option<String>,
+        activated: bool,
+    }
+
+    #[derive(Default)]
+    struct State {
+        toplevels: HashMap<ObjectId, Toplevel>,
+    }
+
+    /// One short connection: the compositor sends all toplevels with their
+    /// state when a client binds the manager. None when no window is active.
+    pub fn active_app_id() -> Option<String> {
+        let conn = Connection::connect_to_env().ok()?;
+        let (globals, mut queue) = registry_queue_init::<State>(&conn).ok()?;
+        let _manager: Manager = globals.bind(&queue.handle(), 1..=3, ()).ok()?;
+        let mut state = State::default();
+        // The first round gives the handles, the second their app ids and states.
+        queue.roundtrip(&mut state).ok()?;
+        queue.roundtrip(&mut state).ok()?;
+        state.toplevels.into_values().find(|t| t.activated).and_then(|t| t.app_id).filter(|id| !id.is_empty())
+    }
+
+    /// The `state` event is an array of 32-bit values in the byte order of this computer.
+    pub(super) fn is_activated(state: &[u8]) -> bool {
+        state.as_chunks::<4>().0.iter().any(|v| u32::from_ne_bytes(*v) == handle::State::Activated as u32)
+    }
+
+    impl Dispatch<WlRegistry, GlobalListContents> for State {
+        fn event(_: &mut Self, _: &WlRegistry, _: <WlRegistry as Proxy>::Event, _: &GlobalListContents, _: &Connection, _: &QueueHandle<Self>) {}
+    }
+
+    impl Dispatch<Manager, ()> for State {
+        fn event(_: &mut Self, _: &Manager, _: manager::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+
+        event_created_child!(State, Manager, [manager::EVT_TOPLEVEL_OPCODE => (Handle, ())]);
+    }
+
+    impl Dispatch<Handle, ()> for State {
+        fn event(state: &mut Self, toplevel: &Handle, event: handle::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+            let entry = state.toplevels.entry(toplevel.id()).or_default();
+            match event {
+                handle::Event::AppId { app_id } => entry.app_id = Some(app_id),
+                handle::Event::State { state } => entry.activated = is_activated(&state),
+                handle::Event::Closed => {
+                    state.toplevels.remove(&toplevel.id());
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Desktop entries
 // ---------------------------------------------------------------------------
 
@@ -102,6 +191,8 @@ pub struct DesktopEntry {
     pub name: String,
     pub icon: Option<String>,
     pub wm_class: Option<String>,
+    /// An app that the launcher shows: not `NoDisplay`, not `Hidden`, and of type `Application`.
+    pub listed: bool,
 }
 
 pub struct DesktopEntries {
@@ -175,11 +266,14 @@ pub fn parse_desktop_entry(id: &str, text: &str) -> Option<DesktopEntry> {
         }
     }
     let name = values.get("Name")?.to_string();
+    let is_true = |key: &str| values.get(key).is_some_and(|v| v.eq_ignore_ascii_case("true"));
+    let listed = values.get("Type").is_none_or(|t| *t == "Application") && !is_true("NoDisplay") && !is_true("Hidden");
     Some(DesktopEntry {
         id: id.to_string(),
         name,
         icon: values.get("Icon").map(|s| s.to_string()),
         wm_class: values.get("StartupWMClass").map(|s| s.to_string()),
+        listed,
     })
 }
 
@@ -225,8 +319,44 @@ mod tests {
     }
 
     #[test]
+    fn the_app_list_has_only_what_the_launcher_shows() {
+        let text = |extra: &str| format!("[Desktop Entry]\nName=Files\n{extra}");
+        assert!(parse_desktop_entry("a", &text("Type=Application\n")).unwrap().listed);
+        assert!(parse_desktop_entry("a", &text("")).unwrap().listed);
+        assert!(!parse_desktop_entry("a", &text("NoDisplay=true\n")).unwrap().listed);
+        assert!(!parse_desktop_entry("a", &text("Hidden=true\n")).unwrap().listed);
+        assert!(!parse_desktop_entry("a", &text("Type=Link\n")).unwrap().listed);
+
+        let entry = |id: &str, name: &str, listed: bool| (id.to_string(), DesktopEntry { id: id.into(), name: name.into(), icon: None, wm_class: None, listed });
+        let entries = DesktopEntries { by_id: [entry("b", "beta", true), entry("a", "Alpha", true), entry("c", "Helper", false)].into_iter().collect() };
+        let names: Vec<String> = listed_apps(&entries).into_iter().map(|a| a.name).collect();
+        assert_eq!(names, ["Alpha", "beta"]);
+    }
+
+    #[test]
+    fn the_activated_state_is_found_in_the_state_array() {
+        let array = |values: &[u32]| values.iter().flat_map(|v| v.to_ne_bytes()).collect::<Vec<u8>>();
+        // 0 maximized, 1 minimized, 2 activated, 3 fullscreen.
+        assert!(toplevel::is_activated(&array(&[0, 2])));
+        assert!(!toplevel::is_activated(&array(&[0, 3])));
+        assert!(!toplevel::is_activated(&[]));
+    }
+
+    /// Needs a wlroots compositor with one focused window:
+    /// `SAYSO_EXPECT_APP_ID=foot cargo test -p sayso-platform-linux live_wayland_active_app -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn live_wayland_active_app() {
+        let expected = std::env::var("SAYSO_EXPECT_APP_ID").expect("set SAYSO_EXPECT_APP_ID");
+        let started = std::time::Instant::now();
+        let app = toplevel::active_app_id();
+        println!("active app id: {app:?} in {:?}", started.elapsed());
+        assert_eq!(app.as_deref(), Some(expected.as_str()));
+    }
+
+    #[test]
     fn class_lookup_uses_wm_class_then_the_id() {
-        let entry = |id: &str, wm: Option<&str>| DesktopEntry { id: id.into(), name: id.into(), icon: None, wm_class: wm.map(Into::into) };
+        let entry = |id: &str, wm: Option<&str>| DesktopEntry { id: id.into(), name: id.into(), icon: None, wm_class: wm.map(Into::into), listed: true };
         let entries = DesktopEntries {
             by_id: [
                 ("org.gnome.Nautilus".to_string(), entry("org.gnome.Nautilus", None)),

@@ -28,9 +28,6 @@ pub struct Style {
     pub temperature: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
-    /// Bundle ids that select this style automatically. Reserved for after v0.1.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub apps: Vec<String>,
     /// True leaves the base prompt out, for a style that is not a cleanup
     /// (a translation, for example).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -86,7 +83,6 @@ pub fn builtin_styles() -> Vec<Style> {
         model: None,
         temperature: None,
         timeout_ms: None,
-        apps: Vec::new(),
         standalone: false,
     };
     // The base prompt has the cleanup rules. A style says only what it adds.

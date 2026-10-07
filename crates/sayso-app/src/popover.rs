@@ -482,7 +482,6 @@ impl Render for PopoverView {
         let (status, _detail, dot) = m.engine_summary();
         let recording = matches!(m.state(), State::Recording { .. });
         let toggle_caps = m.config.hotkeys.toggle.map(|h| h.keycaps()).unwrap_or_default();
-        let paste_caps = m.config.hotkeys.paste_last.map(|h| h.compact_label()).unwrap_or_default();
         let history_on = m.config.history.enabled;
         let incognito = m.incognito;
         // The label and the text of the last history entry. A dictation that Sayso
@@ -586,7 +585,6 @@ impl Render for PopoverView {
         // Last transcript.
         if let Some((label, last_text)) = last {
             let text_copy = last_text.clone();
-            let text_paste = last_text.clone();
             let model_copy = self.model.clone();
             sheet = sheet.child(
                 div()
@@ -606,28 +604,13 @@ impl Render for PopoverView {
                             .child(text::caps(label, &c))
                             .child(
                                 div()
-                                    .flex()
-                                    .gap(px(10.))
-                                    .child(
-                                        div()
-                                            .id("copy-last")
-                                            .cursor_pointer()
-                                            .on_click(move |_, _, cx| {
-                                                model_copy.read(cx).copy_text(&text_copy);
-                                                hide(cx);
-                                            })
-                                            .child(text::ui("Copy", 12., FontWeight::SEMIBOLD, c.accent)),
-                                    )
-                                    .child(
-                                        div()
-                                            .id("paste-last")
-                                            .cursor_pointer()
-                                            .on_click(cx.listener(move |this, _, _, cx| {
-                                                let t = text_paste.clone();
-                                                this.act(cx, move |m, cx| m.insert_text(t, cx))
-                                            }))
-                                            .child(text::ui(format!("Paste {paste_caps}"), 12., FontWeight::SEMIBOLD, c.accent)),
-                                    ),
+                                    .id("copy-last")
+                                    .cursor_pointer()
+                                    .on_click(move |_, _, cx| {
+                                        model_copy.read(cx).copy_text(&text_copy);
+                                        hide(cx);
+                                    })
+                                    .child(text::ui("Copy", 12., FontWeight::SEMIBOLD, c.accent)),
                             ),
                     )
                     .child(text::serif(last_text.replace('\n', " "), 14., c.ink).line_clamp(3).text_ellipsis()),

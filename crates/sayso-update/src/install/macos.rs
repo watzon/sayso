@@ -16,6 +16,10 @@ const REQUIREMENT: &str = "=anchor apple generic and certificate 1[field.1.2.840
 
 /// The variables that a start through `open` must get again. `open` gives
 /// the app the environment of the login session, not of this process.
+/// The name of the bundle in the disk image. The installed bundle can have
+/// another name ("Sayso copy.app"), and keeps it.
+const IMAGE_APP: &str = "Sayso.app";
+
 const PASS_ENV: &[&str] = &["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "SAYSO_UPDATE_URL", "SAYSO_UPDATE_KEY"];
 
 pub struct MacInstall {
@@ -91,21 +95,30 @@ impl MacInstall {
     }
 
     fn copy_from_image(&self, image: &Path) -> Result<(), String> {
-        let name = self.app.file_name().unwrap_or_default();
         let root = self.staging_dir().join(".mount");
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir(&root).map_err(|e| format!("cannot make {}: {e}", root.display()))?;
         run(Command::new("/usr/bin/hdiutil").args(["attach", "-nobrowse", "-readonly", "-noautoopen", "-mountroot"]).arg(&root).arg(image))?;
         let volume = std::fs::read_dir(&root).ok().and_then(|mut entries| entries.find_map(|e| e.ok().map(|e| e.path())));
         let copied = match &volume {
-            Some(volume) if volume.join(name).is_dir() => run(Command::new("/usr/bin/ditto").arg(volume.join(name)).arg(self.staged_app())),
-            _ => Err(format!("the disk image has no {}", name.to_string_lossy())),
+            Some(volume) => self.copy_from_volume(volume),
+            None => Err(format!("the disk image has no {IMAGE_APP}")),
         };
         if let Some(volume) = &volume {
             let _ = run(Command::new("/usr/bin/hdiutil").args(["detach", "-force"]).arg(volume));
         }
         let _ = std::fs::remove_dir_all(&root);
         copied
+    }
+
+    /// Copy the bundle of a mounted disk image to the staging folder, with
+    /// the name of the installed bundle.
+    fn copy_from_volume(&self, volume: &Path) -> Result<(), String> {
+        let source = volume.join(IMAGE_APP);
+        if !source.is_dir() {
+            return Err(format!("the disk image has no {IMAGE_APP}"));
+        }
+        run(Command::new("/usr/bin/ditto").arg(source).arg(self.staged_app()))
     }
 }
 
@@ -294,6 +307,20 @@ mod tests {
         assert_ne!(a.staging_dir(), b.staging_dir());
         assert_ne!(a.record_path(), b.record_path());
         assert_ne!(a.lock_path(), b.lock_path());
+    }
+
+    #[test]
+    fn a_renamed_install_gets_the_bundle_of_the_image_under_its_own_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let volume = root.join("volume");
+        bundle(&volume, "new");
+        let install = MacInstall { app: root.join("Sayso copy.app") };
+        install.make_staging_dir().unwrap();
+        install.copy_from_volume(&volume).unwrap();
+        assert_eq!(install.staged_app().file_name().unwrap(), "Sayso copy.app");
+        assert_eq!(std::fs::read_to_string(install.staged_app().join("Contents/MacOS/Sayso")).unwrap(), "new");
+        assert!(install.copy_from_volume(&root.join("empty")).is_err());
     }
 
     #[test]

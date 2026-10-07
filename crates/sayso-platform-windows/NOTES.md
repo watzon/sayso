@@ -19,18 +19,20 @@ dependency sits under `[target.'cfg(windows)'.dependencies]`).
 | `input` | `SendInput` key lists (paste, typing, mask key, releasing held modifiers). |
 | `inserter` | Paste (save every memory clipboard format, publish with delayed rendering, Ctrl+V, wait for the read receipt, restore) and Type (Unicode key events in chunks of 20 UTF-16 units). Checks the foreground window and its integrity level first. |
 | `paste_receipt` | When did the target app read the text. Copied from the macOS crate. |
-| `context` | Frontmost app, running apps (visible app windows, one per exe), app icon as PNG at a given size, process integrity levels. |
+| `context` | Frontmost app, running apps (visible app windows, one per exe), app icon as PNG at a given size, process integrity levels. `installed_apps` (the App Paths registry keys plus the running apps), `reads_page_url` (always true), and `page_url` (the address bar of a known browser in front, read with UI Automation). |
 | `permissions` | Microphone from the privacy consent store. Accessibility and Input Monitoring are always granted. |
 | `audio`, `resample` | `cpal` (WASAPI) input, mono mix, streaming windowed-sinc resampler to 16 kHz, 20 ms frames, display level. Copied from the macOS crate. |
 | `sounds` | `rodio` on a worker thread. Copied from the macOS crate. |
 | `login_item` | The `Run` key of the current user, plus the Task Manager switch in `StartupApproved\Run`. |
 | `prefs` | Dark mode from `AppsUseLightTheme`. Reduce motion from `SPI_GETCLIENTAREAANIMATION`. |
-| `win32` | Wide strings, registry values, owned handles. |
+| `win32` | Wide strings, environment variables, registry values and key names, owned handles. |
 
 The app-shell window glue (`window`) is not part of this crate yet.
 
 `examples/smoke_windows.rs` prints the state of every service, probes a few chords,
-records from each input device, and plays the sounds.
+records from each input device, and plays the sounds. Its "style rules" section prints
+the installed apps, then waits 5 s and prints `page_url` with its time for the app in
+front and for each running browser.
 
 ## Verified on hardware (this PC, Windows 11 Pro 26200, terminal host)
 
@@ -78,10 +80,64 @@ records from each input device, and plays the sounds.
 - Microphone level: the terminal mic gave silence. Level scaling has unit tests.
 - Audible playback. Nobody listened.
 
+## Style rules: verified with Edge (this PC, Windows 11 Pro 26200)
+
+The code for style rules (`installed_apps`, `page_url`, and the `win32` helpers
+`subkey_names` and `expand_env`) was written on a Mac. It then ran here, with Edge
+as the only browser on the PC:
+
+- `page_url` returns the address of the page in Edge in 8 to 45 ms, also for the
+  first call after Edge starts, and `None` in less than 1 ms for an app that is not
+  a browser.
+- The value of the address bar in Edge is the whole address with `https://`
+  (`https://www.example.com`, without the slash at the end). While the user types,
+  it is the typed text: a text with a space gives `None`, and one word (`wikipe`)
+  comes back as it is and fits no site rule.
+- After many reads, `edge://accessibility` shows "Native accessibility API support"
+  on, and "Web accessibility" and the modes after it off.
+- Vertical tabs in Edge: the read gives the address.
+- The find bar, the tab search bubble, and the sign-in dialog of Edge are windows of
+  their own, owned by the browser window. With one of them in front, the first
+  version read the text of the find bar or nothing. `page_url` now walks the owner
+  window (`GA_ROOTOWNER`). It gives the address with the find bar or the tab search
+  bubble in front. The sign-in dialog was not tried again.
+- `installed_apps` gave 35 apps in 6 ms (1 ms for the second call). The list has
+  Edge, Outlook, VS Code, Discord, and Notepad, and also tools that are not apps
+  (`op-ssh-sign.exe`, `winget.exe`). Three exes have the name "1Password".
+- `app_icon_png` gave an icon for each of the 35, and most of them did not run.
+- In the app: the switch in Settings, the starter set, the app list and a typed
+  address in the style editor, a dictation into an app with a rule, and a dictation
+  into Edge on a site with a rule. The overlay showed the style tag, and the text
+  came in the style of the rule.
+
+## Not verified on hardware
+
+- `page_url` for Chrome and Firefox, and for Brave, Opera, Vivaldi, Arc, and Zen.
+  None of them is on this PC.
+- A side panel open in Edge, and the search box added to the Firefox toolbar.
+- A dictation into a Gmail tab. It needs a Google login.
+
 ## Known gaps and decisions
 
 - **Ids and names.** `AppInfo.bundle_id` is the lowercase exe file name (`code.exe`).
-  The name is the exe's FileDescription, else the file name without `.exe`.
+  The name is the exe's FileDescription, else the file name without `.exe`. A
+  description that ends with `.exe` loses it (Notepad's is "Notepad.exe").
+- **Installed apps.** Windows has no list of apps with their exe. `installed_apps`
+  reads `App Paths` under HKCU and HKLM, where most installers register an exe, and
+  adds the running apps. An app with no entry that does not run is missing (many
+  Store apps, portable apps). Some entries are tools and not apps. The id is the file
+  name of the exe the entry points to, not the key name, because the key name can be
+  an alias and a running app is known by its real exe.
+- **Page address.** Only for the browsers in `browser_kind`, and only when the browser
+  owns the foreground window. When that window is a find bar, a bubble, or a dialog,
+  the walk starts at the browser window that owns it. A tree walker goes through the controls of the window
+  depth first, in window order, and stops at the first Edit control (Chromium) or the
+  Edit with the id `urlbar-input` (Firefox). It does not enter a Document (a web page)
+  or the tab strip, looks at 300 controls at most, starts no call after 250 ms, and
+  sets the UI Automation timeouts to 250 ms. A `FindFirst` over all descendants was
+  rejected: it makes the browser search the web page too. Vivaldi draws its whole
+  window as a web page, so it is expected to give `None`. A value with white space
+  (a search the user types) gives `None`.
 - **Fn** never reaches Windows. A hotkey with Fn is reported in `failed`.
 - **Mask key.** Releasing Alt alone opens the menu bar of the focused app, and
   releasing Win alone opens Start. When Right Alt, Left Alt, or Right Win goes down as

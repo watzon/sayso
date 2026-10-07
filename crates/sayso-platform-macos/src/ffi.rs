@@ -136,6 +136,8 @@ unsafe extern "C" {
     pub fn AXUIElementCreateSystemWide() -> CFTypeRef;
     pub fn AXUIElementCreateApplication(pid: i32) -> CFTypeRef;
     pub fn AXUIElementCopyAttributeValue(element: CFTypeRef, attribute: CFTypeRef, value: *mut CFTypeRef) -> AXError;
+    /// Limit how long one call to this element may wait for the app.
+    pub fn AXUIElementSetMessagingTimeout(element: CFTypeRef, timeoutInSeconds: f32) -> AXError;
 }
 
 pub const kAXErrorSuccess: AXError = 0;

@@ -92,7 +92,7 @@ pub fn seed_demo(store: &sayso_store::Store) {
             id: 0,
             created_at: now - chrono::Duration::minutes(minutes_ago),
             duration_ms: ms,
-            app: Some(TargetApp { bundle_id: bundle.into(), name: name.into() }),
+            app: Some(TargetApp { bundle_id: bundle.into(), name: name.into(), site: None }),
             transcript: text.to_lowercase().replace(['.', ',', '’'], "").replace("standup", "stand up"),
             final_text: text.into(),
             style_id: style.into(),

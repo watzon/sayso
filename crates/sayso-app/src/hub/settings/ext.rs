@@ -57,11 +57,15 @@ impl AppModel {
     }
 
     /// A display name for a bundle id: the running app's name, else the last part of the id.
+    /// A Windows id is the name of an exe file, and its name is the part before `.exe`.
     pub fn app_name_for(&self, bundle_id: &str, running: &[AppInfo]) -> String {
         if let Some(a) = running.iter().find(|a| a.bundle_id == bundle_id) {
             return a.name.clone();
         }
-        let last = bundle_id.rsplit('.').next().unwrap_or(bundle_id);
+        let last = match bundle_id.len().checked_sub(4).and_then(|at| bundle_id.split_at_checked(at)) {
+            Some((stem, ext)) if ext.eq_ignore_ascii_case(".exe") => stem,
+            _ => bundle_id.rsplit('.').next().unwrap_or(bundle_id),
+        };
         let mut chars = last.chars();
         match chars.next() {
             Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),

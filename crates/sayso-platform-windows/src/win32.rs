@@ -1,12 +1,13 @@
-//! Small helpers around the `windows` crate: wide strings, registry values,
-//! and handles that close themselves.
+//! Small helpers around the `windows` crate: wide strings, environment
+//! variables, registry values and keys, and handles that close themselves.
 
 use windows::Win32::Foundation::{CloseHandle, ERROR_FILE_NOT_FOUND, ERROR_SUCCESS, HANDLE, WIN32_ERROR};
+use windows::Win32::System::Environment::ExpandEnvironmentStringsW;
 use windows::Win32::System::Registry::{
-    HKEY, REG_BINARY, REG_ROUTINE_FLAGS, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
-    RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW,
+    HKEY, KEY_READ, REG_BINARY, REG_ROUTINE_FLAGS, REG_SZ, RRF_RT_REG_BINARY, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
+    RegCloseKey, RegDeleteKeyValueW, RegEnumKeyExW, RegGetValueW, RegOpenKeyExW, RegSetKeyValueW,
 };
-use windows::core::PCWSTR;
+use windows::core::{PCWSTR, PWSTR};
 
 /// A NUL-terminated UTF-16 copy of `s`.
 pub fn wide(s: &str) -> Vec<u16> {
@@ -28,6 +29,26 @@ impl Drop for OwnedHandle {
             // SAFETY: we own this handle and close it once.
             let _ = unsafe { CloseHandle(self.0) };
         }
+    }
+}
+
+/// `s` with every `%NAME%` replaced by the value of that environment
+/// variable. A name that is not set stays as it is.
+pub fn expand_env(s: &str) -> String {
+    let src = wide(s);
+    // SAFETY: `src` is NUL-terminated. The first call only asks for the
+    // size; the second writes at most the length of the buffer.
+    unsafe {
+        let size = ExpandEnvironmentStringsW(PCWSTR(src.as_ptr()), None);
+        if size == 0 {
+            return s.to_string();
+        }
+        let mut buf = vec![0u16; size as usize];
+        let written = ExpandEnvironmentStringsW(PCWSTR(src.as_ptr()), Some(&mut buf));
+        if written == 0 || written as usize > buf.len() {
+            return s.to_string();
+        }
+        from_wide(&buf)
     }
 }
 
@@ -61,6 +82,32 @@ fn read_raw(root: HKEY, subkey: &str, value: &str, flags: REG_ROUTINE_FLAGS) -> 
 pub fn read_string(root: HKEY, subkey: &str, value: &str) -> Option<String> {
     let bytes = read_raw(root, subkey, value, RRF_RT_REG_SZ)?;
     Some(from_wide(&units_from_bytes(&bytes)))
+}
+
+/// The names of the keys directly under a key. Empty when the key is missing.
+pub fn subkey_names(root: HKEY, subkey: &str) -> Vec<String> {
+    let path = wide(subkey);
+    let mut key = HKEY::default();
+    // SAFETY: the string is NUL-terminated, and `key` is an out-pointer to a local.
+    if unsafe { RegOpenKeyExW(root, PCWSTR(path.as_ptr()), None, KEY_READ, &mut key) } != ERROR_SUCCESS {
+        return Vec::new();
+    }
+    let mut names = Vec::new();
+    // A key name has at most 255 characters.
+    let mut buf = [0u16; 256];
+    for index in 0.. {
+        let mut len = buf.len() as u32;
+        // SAFETY: `buf` holds `len` units, and the call writes at most that many.
+        let status =
+            unsafe { RegEnumKeyExW(key, index, Some(PWSTR(buf.as_mut_ptr())), &mut len, None, None, None, None) };
+        if status != ERROR_SUCCESS {
+            break;
+        }
+        names.push(String::from_utf16_lossy(&buf[..len as usize]));
+    }
+    // SAFETY: we opened this key and close it once.
+    let _ = unsafe { RegCloseKey(key) };
+    names
 }
 
 /// Little-endian bytes as UTF-16 units.
@@ -151,6 +198,21 @@ mod tests {
         assert_eq!(read_dword(HKEY_CURRENT_USER, key, "Nothing"), None);
         assert_eq!(read_binary(HKEY_CURRENT_USER, key, "Nothing"), None);
         assert_eq!(delete_value(HKEY_CURRENT_USER, key, "Nothing"), Ok(()));
+        assert!(subkey_names(HKEY_CURRENT_USER, key).is_empty());
+    }
+
+    #[test]
+    fn lists_the_keys_under_a_key_every_windows_has() {
+        let names = subkey_names(HKEY_CURRENT_USER, "Software");
+        assert!(names.iter().any(|n| n.eq_ignore_ascii_case("Microsoft")));
+    }
+
+    #[test]
+    fn environment_variables_are_expanded() {
+        let expanded = expand_env(r"%WINDIR%\explorer.exe");
+        assert!(!expanded.contains('%') && expanded.ends_with("explorer.exe"));
+        assert_eq!(expand_env("%SaysoNoSuchVariable%"), "%SaysoNoSuchVariable%");
+        assert_eq!(expand_env("plain"), "plain");
     }
 
     #[test]

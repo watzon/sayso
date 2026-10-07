@@ -21,4 +21,5 @@ pub mod spelled;
 pub mod spoken_punctuation;
 pub mod stats;
 pub mod style;
+pub mod style_rules;
 pub mod stt;

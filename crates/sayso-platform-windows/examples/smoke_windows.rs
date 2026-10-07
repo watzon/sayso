@@ -2,7 +2,8 @@
 //!
 //! Run: `cargo run -p sayso-platform-windows --example smoke_windows`
 //!
-//! It reads state, registers and releases the hotkeys, records 2 s from the
+//! It reads state (also the address bar of a browser in front, with UI
+//! Automation), registers and releases the hotkeys, records 2 s from the
 //! default microphone, and plays each sound once. It never changes system
 //! settings, never touches the clipboard, and never sends a key.
 
@@ -66,6 +67,24 @@ fn main() {
     if let Some(app) = running.iter().find(|a| a.bundle_id != "explorer.exe") {
         let png = p.context.app_icon_png(&app.bundle_id, 32);
         println!("icon of {}: {:?} bytes", app.name, png.as_ref().map(Vec::len));
+    }
+
+    println!("== style rules");
+    let installed = p.context.installed_apps();
+    println!("installed apps: {}", installed.len());
+    for app in installed.iter().take(10) {
+        println!("  {} ({})", app.name, app.bundle_id);
+    }
+    println!("reads page url: {}", p.context.reads_page_url());
+    // Only the app in front gives an address. A browser that is not in front gives None at once.
+    println!("put a browser window in front now: reading in 5 s");
+    std::thread::sleep(Duration::from_secs(5));
+    let browsers = p.context.running_apps();
+    let browsers = browsers.iter().filter(|a| sayso_platform_windows::context::browser_kind(&a.bundle_id).is_some());
+    for app in p.context.frontmost_app().iter().chain(browsers) {
+        let start = std::time::Instant::now();
+        let url = p.context.page_url(app);
+        println!("page url of {} (pid {}): {url:?} in {} ms", app.bundle_id, app.pid, start.elapsed().as_millis());
     }
 
     println!("== hotkey registration (main thread)");

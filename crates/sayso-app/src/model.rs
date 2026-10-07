@@ -741,9 +741,38 @@ impl AppModel {
         self.edit_config(cx, |c| c.ai.active_style = id);
     }
 
-    /// Move to the next style (the cycle-style hotkey).
+    /// The style of a dictation: the style from the hotkey, then the style
+    /// of a style rule, then the default style.
+    pub(crate) fn session_style(&self, session: sayso_core::dictation::SessionId) -> Style {
+        self.sessions
+            .get(&session)
+            .and_then(|s| s.picked_style.as_ref().or(s.rule_style.as_ref()))
+            .and_then(|id| self.styles.get(id))
+            .cloned()
+            .unwrap_or_else(|| self.active_style())
+    }
+
+    /// The style of the dictation that records now, when it is not the
+    /// default style. The overlay shows it.
+    pub fn recording_style(&self) -> Option<Style> {
+        let State::Recording { session, .. } = self.machine.state else { return None };
+        let style = self.session_style(session);
+        (style.id != self.active_style().id).then_some(style)
+    }
+
+    /// Move to the next style (the cycle-style hotkey). During a recording
+    /// this changes the style of that dictation only.
     pub fn cycle_style(&mut self, cx: &mut Context<Self>) {
         let ids: Vec<String> = self.styles.styles().map(|s| s.id.clone()).collect();
+        if let State::Recording { session, .. } = self.machine.state {
+            let current = self.session_style(session).id;
+            let i = ids.iter().position(|id| *id == current).unwrap_or(0);
+            if let Some(s) = self.sessions.get_mut(&session) {
+                s.picked_style = Some(ids[(i + 1) % ids.len()].clone());
+            }
+            cx.notify();
+            return;
+        }
         let i = ids.iter().position(|id| *id == self.config.ai.active_style).unwrap_or(0);
         let next = ids[(i + 1) % ids.len()].clone();
         self.set_active_style(&next, cx);
@@ -781,9 +810,25 @@ impl AppModel {
         cx.notify();
     }
 
+    /// Turn the style rules on or off. The first time, on adds the starter set.
+    pub fn set_style_rules(&mut self, on: bool, cx: &mut Context<Self>) {
+        let sites = self.services.platform.context.reads_page_url();
+        self.edit_config(cx, |c| {
+            if on {
+                c.ai.style_rules.turn_on(sayso_core::style_rules::starter_rules(std::env::consts::OS, sites));
+            } else {
+                c.ai.style_rules.enabled = false;
+            }
+        });
+    }
+
     /// Delete a user style file. Built-in ids are reset instead.
     pub fn delete_style(&mut self, id: &str, cx: &mut Context<Self>) {
         self.reset_style(id, cx);
+        if self.styles.get(id).is_none() {
+            let id = id.to_string();
+            self.edit_config(cx, |c| c.ai.style_rules.remove_style(&id));
+        }
         if self.config.ai.active_style == id && self.styles.get(id).is_none() {
             self.set_active_style(sayso_core::style::DEFAULT_STYLE_ID, cx);
         }
