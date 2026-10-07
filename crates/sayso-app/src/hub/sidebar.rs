@@ -93,7 +93,7 @@ fn main_nav(model: &Entity<AppModel>, route: Route, rail: bool, cx: &App) -> imp
         (Route::Dictionary, Icon::Dictionary, "Dictionary"),
         (Route::Styles, Icon::Styles, "Styles"),
         (Route::Models, Icon::Models, "Models"),
-        (Route::Settings(SettingsPage::Dictation), Icon::Settings, "Settings"),
+        (Route::Settings(SettingsPage::General), Icon::Settings, "Settings"),
     ];
     let mut nav = div().flex().flex_col().gap(px(2.));
     for (i, (r, ic, label)) in items.into_iter().enumerate().filter(|(_, (r, ..))| history || *r != Route::History) {

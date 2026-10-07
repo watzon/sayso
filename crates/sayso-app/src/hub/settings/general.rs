@@ -13,10 +13,14 @@ use sayso_ui::text;
 
 pub struct GeneralSettings {
     model: Entity<AppModel>,
+    /// The login item state. The system call for it takes more than 100 ms,
+    /// so the page reads it when the state can change, not in each frame.
+    login_state: LoginItemState,
     /// A login item error from the last toggle.
     login_error: Option<String>,
     name: Entity<InputState>,
     _name_sub: Subscription,
+    _activation: Subscription,
 }
 
 impl GeneralSettings {
@@ -35,7 +39,22 @@ impl GeneralSettings {
                 this.model.update(cx, |m, cx| m.edit_config(cx, |c| c.general.name = v));
             }
         });
-        Self { model, login_error: None, name, _name_sub: sub }
+        // The user approves the login item in System Settings, then comes back.
+        let activation = cx.observe_window_activation(window, |this, window, cx| {
+            if window.is_window_active() {
+                this.refresh_login_state(cx);
+            }
+        });
+        let login_state = model.read(cx).login_item_state();
+        Self { model, login_state, login_error: None, name, _name_sub: sub, _activation: activation }
+    }
+
+    fn refresh_login_state(&mut self, cx: &mut Context<Self>) {
+        let state = self.model.read(cx).login_item_state();
+        if state != self.login_state {
+            self.login_state = state;
+            cx.notify();
+        }
     }
 }
 
@@ -170,7 +189,7 @@ impl Render for GeneralSettings {
         let m = self.model.read(cx);
         let launch = m.config.general.launch_at_login;
         let dock = m.config.general.dock_icon_with_hub;
-        let state = m.login_item_state();
+        let state = self.login_state;
         let issues = m.config_issues.clone();
         let path = m.config_path_display();
         let (engine_title, engine_detail, engine_color) = m.engine_summary();
@@ -189,8 +208,8 @@ impl Render for GeneralSettings {
                 move |on, _, cx| {
                 let _ = view.update(cx, |this, cx| {
                 this.model.update(cx, |m, cx| m.edit_config(cx, |c| c.general.launch_at_login = on));
-                let now = this.model.read(cx).login_item_state();
-                this.login_error = match (on, now) {
+                this.refresh_login_state(cx);
+                this.login_error = match (on, this.login_state) {
                     (true, LoginItemState::Disabled) if cfg!(target_os = "macos") => {
                         Some("macOS did not add Sayso to the login items. Move Sayso to the Applications folder, then try again.".into())
                     }
