@@ -127,6 +127,12 @@ pub fn popover_kind() -> WindowKind {
     WindowKind::PopUp
 }
 
+/// True when the popover window covers the screen. Here it does not: the
+/// global click monitor sees a click outside the popover.
+pub fn popover_covers_screen() -> bool {
+    false
+}
+
 /// The window kind of a list that opens from a trigger, when the system
 /// places it. None: the app places it.
 pub fn popup_kind(_parent: AnyWindowHandle, _anchor: Bounds<Pixels>, _offset: gpui_kit::Point<Pixels>) -> Option<WindowKind> {

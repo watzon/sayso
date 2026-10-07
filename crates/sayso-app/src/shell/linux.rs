@@ -166,7 +166,8 @@ pub fn overlay_kind() -> WindowKind {
     })
 }
 
-/// The popover: an X11 pop-up, or a layer surface at the top right.
+/// The popover: an X11 pop-up, or a layer surface over the whole screen with
+/// the sheet at the top right.
 pub fn popover_kind() -> WindowKind {
     if on_x11() {
         return WindowKind::PopUp;
@@ -174,11 +175,18 @@ pub fn popover_kind() -> WindowKind {
     WindowKind::LayerShell(LayerShellOptions {
         namespace: "sayso-popover".into(),
         layer: Layer::Overlay,
-        anchor: Anchor::TOP | Anchor::RIGHT,
-        margin: Some((px(6.), px(6.), px(0.), px(0.))),
+        anchor: Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT,
         keyboard_interactivity: KeyboardInteractivity::OnDemand,
         ..Default::default()
     })
+}
+
+/// True when the popover window covers the screen. A Wayland app cannot see
+/// a click in another app, and a layer surface does not always get the
+/// keyboard focus, so the clear part of the popover takes the click that
+/// closes it.
+pub fn popover_covers_screen() -> bool {
+    !on_x11()
 }
 
 /// A list that opens from a trigger: a Wayland popup under it, which the
@@ -275,7 +283,9 @@ pub fn focused_window_frame() -> Option<Rect> {
     if on_x11() { xw::active_window_frame() } else { None }
 }
 
-/// Linux has no global click monitor. The popover closes when it loses focus.
+/// Linux has no global click monitor. The popover closes when it loses
+/// focus, and on Wayland also on a click on its clear part
+/// ([`popover_covers_screen`]).
 pub fn install_global_click_monitor(_callback: impl Fn(Point) + 'static) -> MonitorToken {
     MonitorToken
 }

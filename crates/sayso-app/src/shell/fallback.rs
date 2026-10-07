@@ -90,6 +90,9 @@ pub fn overlay_kind() -> WindowKind {
 pub fn popover_kind() -> WindowKind {
     WindowKind::PopUp
 }
+pub fn popover_covers_screen() -> bool {
+    false
+}
 
 pub fn popup_kind(_parent: AnyWindowHandle, _anchor: Bounds<Pixels>, _offset: gpui_kit::Point<Pixels>) -> Option<WindowKind> {
     None

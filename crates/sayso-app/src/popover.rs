@@ -31,9 +31,13 @@ const WINDOW_W: f32 = WIDTH + SUBMENU_GAP + SUBMENU_W + SUBMENU_SHADOW;
 /// Room past a submenu for its shadow.
 const SUBMENU_SHADOW: f32 = 16.;
 const WINDOW_H: f32 = 760.;
+/// The space between the sheet and the screen edges, where the window covers the screen.
+const SCREEN_MARGIN: f32 = 6.;
 
 struct Tray {
-    icon: mac::Tray,
+    /// None when the system shows no tray icon (Linux with no tray host).
+    /// The popover still opens there, from a right-click on the overlay.
+    icon: Option<mac::Tray>,
     popover: Option<AnyWindowHandle>,
     visible: bool,
     _monitor: Option<mac::MonitorToken>,
@@ -76,12 +80,15 @@ thread_local! {
 pub fn install(model: &Entity<AppModel>, cx: &mut App) {
     let (tx, rx) = std::sync::mpsc::channel::<TrayEvent>();
     let tx = std::sync::Mutex::new(tx);
-    let Some(icon) = mac::Tray::install(move |event| {
+    let icon = mac::Tray::install(move |event| {
         let _ = tx.lock().map(|t| t.send(event));
-    }) else {
-        return;
-    };
+    });
+    let has_icon = icon.is_some();
+    // The popover keeps its state here, with or without an icon.
     TRAY.with(|t| *t.borrow_mut() = Some(Tray { icon, popover: None, visible: false, _monitor: None }));
+    if !has_icon {
+        return;
+    }
 
     // The icon is gray while incognito is on.
     let mut shown = false;
@@ -90,8 +97,8 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
         if incognito != shown {
             shown = incognito;
             TRAY.with(|t| {
-                if let Some(tray) = t.borrow().as_ref() {
-                    tray.icon.set_incognito(incognito);
+                if let Some(icon) = t.borrow().as_ref().and_then(|t| t.icon.as_ref()) {
+                    icon.set_incognito(incognito);
                 }
             });
         }
@@ -117,7 +124,7 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
 }
 
 fn icon_rect() -> Option<mac::Rect> {
-    TRAY.with(|t| t.borrow().as_ref()?.icon.icon_rect())
+    TRAY.with(|t| t.borrow().as_ref()?.icon.as_ref()?.icon_rect())
 }
 
 pub fn toggle(model: &Entity<AppModel>, cx: &mut App) {
@@ -175,9 +182,11 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
             // Plain GPUI, not `gpui_kit::open_window`: the kit's root paints the
             // theme background over the whole window, and this window is
             // larger than the sheet.
+            // A window that covers the screen asks for no size: the system gives it one.
+            let window_size = if mac::popover_covers_screen() { size(px(0.), px(0.)) } else { size(px(WINDOW_W), px(WINDOW_H)) };
             let opened = cx.open_window(
                 WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(Bounds { origin: point(px(0.), px(0.)), size: size(px(WINDOW_W), px(WINDOW_H)) })),
+                    window_bounds: Some(WindowBounds::Windowed(Bounds { origin: point(px(0.), px(0.)), size: window_size })),
                     titlebar: None,
                     focus: true,
                     show: false,
@@ -730,13 +739,25 @@ impl Render for PopoverView {
 
         // The sheet takes the side of the window under the icon. The other
         // side is clear and holds the open submenu.
-        div()
-            .size_full()
+        let area = div()
             .flex()
             .map(|d| if OPENS_ABOVE.with(|a| a.get()) { d.items_end() } else { d.items_start() })
             .when(side == SubmenuSide::Left, |d| d.justify_end())
-            .on_mouse_down(MouseButton::Left, |_, _, cx| hide(cx))
-            .child(sheet)
+            .child(sheet);
+        if !mac::popover_covers_screen() {
+            return area.size_full().on_mouse_down(MouseButton::Left, |_, _, cx| hide(cx)).into_any_element();
+        }
+        // The window covers the screen: the sheet and its submenus keep their
+        // place at the top right, and a click anywhere else closes the popover.
+        div()
+            .size_full()
+            .flex()
+            .justify_end()
+            .pt(px(SCREEN_MARGIN))
+            .pr(px(SCREEN_MARGIN))
+            .on_any_mouse_down(|_, _, cx| hide(cx))
+            .child(area.flex_none().w(px(WINDOW_W)).h(px(WINDOW_H)).max_h_full())
+            .into_any_element()
     }
 }
 
