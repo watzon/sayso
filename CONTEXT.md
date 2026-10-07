@@ -94,7 +94,7 @@ The smallest size at which a window draws its content. A tiling window manager c
 The floating window that shows a dictation in progress (ink waveform, timer, live preview, errors).
 
 **Pill**
-The small, calm overlay state when no dictation runs. The user can drag it, and it snaps softly to edges and centers.
+The small, calm overlay state when no dictation runs. The user can drag it, and it snaps softly to edges and centers. In the bottom half of a display the overlay grows up from the pill, and the live preview shows above it. In the top half the overlay grows down, and the live preview shows below it.
 
 **Hub**
 The main window. Its sections are Home, History, Dictionary, Styles, Models, and Settings.

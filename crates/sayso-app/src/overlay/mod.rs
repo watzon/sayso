@@ -9,7 +9,7 @@ mod placement;
 
 use crate::model::AppModel;
 use gpui_kit::*;
-use placement::{Follow, Placement};
+use placement::{Anchor, Follow, Placement};
 use sayso_core::dictation::{Notice, Stage, State};
 use sayso_core::stt::ModelStatus;
 use sayso_core::config::OverlaySize;
@@ -23,15 +23,16 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-/// The overlay window size. Content is drawn bottom-center inside it.
+/// The overlay window size. Content is drawn inside it at the bottom center,
+/// or at the top center when the pill is in the top half of a display.
 pub const WIDTH: f32 = 520.;
 pub const HEIGHT: f32 = 300.;
-/// Space between the card and the bottom of the window.
+/// Space between the card and the edge of the window that holds it.
 const MARGIN: f32 = 16.;
 
 pub fn open(model: &Entity<AppModel>, cx: &mut App) {
     let placement = Placement::load(&model.read(cx).paths);
-    let origin = placement.window_origin(cx);
+    let (origin, anchor) = placement.window_origin(cx);
     let model2 = model.clone();
     let opened = cx.open_window(
         WindowOptions {
@@ -48,7 +49,7 @@ pub fn open(model: &Entity<AppModel>, cx: &mut App) {
             window_background: WindowBackgroundAppearance::Transparent,
             ..Default::default()
         },
-        move |window, cx| cx.new(|cx| OverlayView::new(model2, placement, window, cx)),
+        move |window, cx| cx.new(|cx| OverlayView::new(model2, placement, anchor, window, cx)),
     );
     if let Err(e) = opened {
         log::error!("could not open the overlay: {e:#}");
@@ -60,9 +61,10 @@ pub struct OverlayView {
     placement: Placement,
     /// The visible card in window coordinates, captured during layout.
     card: Rc<Cell<Bounds<Pixels>>>,
+    /// The window edge that holds the card. The live preview is on the other side of the pill.
+    anchor: Anchor,
     hovered: bool,
-    /// Mouse down on the pill: (start mouse point, start window origin, moved?)
-    drag: Option<(Point<Pixels>, Point<Pixels>, bool)>,
+    drag: Option<Drag>,
     start: Instant,
     /// When the current notice or stage started, for animations.
     phase_start: Instant,
@@ -74,6 +76,17 @@ pub struct OverlayView {
     /// A dictation was in the recording state at the last model change.
     recording: bool,
     _observe: Subscription,
+}
+
+/// A mouse press on the pill, which becomes a drag when the mouse moves.
+#[derive(Clone, Copy)]
+struct Drag {
+    /// The mouse at the press, in global points.
+    mouse: Point<Pixels>,
+    /// The left of the window and the top of the card at the press, in global points.
+    card: Point<Pixels>,
+    card_height: Pixels,
+    moved: bool,
 }
 
 /// The window bounds in global points, with the origin at the top left of the
@@ -89,7 +102,7 @@ fn global_bounds(window: &Window, ns: crate::shell::NativeWindow) -> Bounds<Pixe
 const FOLLOW_EVERY: Duration = Duration::from_millis(250);
 
 impl OverlayView {
-    fn new(model: Entity<AppModel>, placement: Placement, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(model: Entity<AppModel>, placement: Placement, anchor: Anchor, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe_in(&model, window, |view, _, window, cx| {
             view.reopen_when_recording_starts(window, cx);
             cx.notify();
@@ -99,6 +112,7 @@ impl OverlayView {
             model,
             placement,
             card: Rc::new(Cell::new(Bounds::default())),
+            anchor,
             hovered: false,
             drag: None,
             start: Instant::now(),
@@ -145,10 +159,19 @@ impl OverlayView {
         let screens = crate::shell::screens();
         let focus = crate::shell::focused_window_frame().and_then(|f| placement::display_at(&screens, f.x + f.width / 2.0, f.y + f.height / 2.0));
         let Some(target) = self.follow.target(placement::display_at(&screens, mouse.x, mouse.y), focus) else { return };
-        if self.placement.display_of(&screens, global_bounds(window, ns)) == Some(target) {
+        if self.placement.display_of(&screens, global_bounds(window, ns), self.anchor) == Some(target) {
             return;
         }
-        let Some(origin) = self.placement.origin_on(&screens, target) else { return };
+        let Some((origin, anchor)) = self.placement.origin_on(&screens, target) else { return };
+        self.move_to(ns, origin, anchor, cx);
+    }
+
+    /// Move the window, and draw the card at the edge of the window that goes with the new place.
+    fn move_to(&mut self, ns: crate::shell::NativeWindow, origin: Point<Pixels>, anchor: Anchor, cx: &mut Context<Self>) {
+        if anchor != self.anchor {
+            self.anchor = anchor;
+            cx.notify();
+        }
         let screen_h = placement::main_screen_height();
         let (x, y) = (origin.x.as_f32() as f64, (screen_h - origin.y.as_f32() - HEIGHT) as f64);
         crate::app::appkit_later(cx, move || crate::shell::set_frame_origin(ns, x, y));
@@ -199,18 +222,22 @@ impl OverlayView {
         let card = self.card.get();
         let inside = card.size.width > px(0.) && card.contains(&local);
 
-        if let Some((start_mouse, start_origin, moved)) = self.drag {
+        if let Some(mut drag) = self.drag {
             let now = point(px(mouse.x as f32), px(screen_h - mouse.y as f32));
-            let delta = now - start_mouse;
-            let moved = moved || delta.x.abs() > px(3.) || delta.y.abs() > px(3.);
-            self.drag = Some((start_mouse, start_origin, moved));
-            if moved {
-                let origin = start_origin + delta;
-                let (x, y) = (origin.x.as_f32() as f64, (screen_h - origin.y.as_f32() - HEIGHT) as f64);
-                crate::app::appkit_later(cx, move || crate::shell::set_frame_origin(ns, x, y));
+            let delta = now - drag.mouse;
+            drag.moved = drag.moved || delta.x.abs() > px(3.) || delta.y.abs() > px(3.);
+            self.drag = Some(drag);
+            let released = !crate::shell::mouse_button_down();
+            if drag.moved {
+                let (origin, anchor) = self.placement.drag(drag.card + delta, drag.card_height, mouse);
+                // At the release, snap and save the place that the drag gave.
+                let (origin, anchor) = if released { self.placement.snap_and_save(origin, anchor, drag.card_height, cx) } else { (origin, anchor) };
+                self.move_to(ns, origin, anchor, cx);
+            } else if released {
+                self.click(cx);
             }
-            if !crate::shell::mouse_button_down() {
-                self.end_drag(window, cx);
+            if released {
+                self.drag = None;
             }
             return true;
         }
@@ -287,21 +314,14 @@ impl OverlayView {
         let Some(ns) = crate::shell::native(window) else { return };
         let mouse = crate::shell::mouse_location();
         let screen_h = placement::main_screen_height();
-        self.drag = Some((point(px(mouse.x as f32), px(screen_h - mouse.y as f32)), global_bounds(window, ns).origin, false));
-    }
-
-    fn end_drag(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((_, _, moved)) = self.drag.take() else { return };
-        let Some(ns) = crate::shell::native(window) else { return };
-        if moved {
-            // Read the real frame after the move, snap, and save.
-            let snapped = self.placement.snap_and_save(global_bounds(window, ns), cx);
-            let screen_h = placement::main_screen_height();
-            let (x, y) = (snapped.x.as_f32() as f64, (screen_h - snapped.y.as_f32() - HEIGHT) as f64);
-            crate::app::appkit_later(cx, move || crate::shell::set_frame_origin(ns, x, y));
-        } else {
-            self.click(cx);
-        }
+        let origin = global_bounds(window, ns).origin;
+        let card_height = self.card.get().size.height;
+        self.drag = Some(Drag {
+            mouse: point(px(mouse.x as f32), px(screen_h - mouse.y as f32)),
+            card: point(origin.x, Placement::card_top(origin, self.anchor, card_height)),
+            card_height,
+            moved: false,
+        });
     }
 
     /// A click on the card that was not a drag.
@@ -359,6 +379,7 @@ impl Render for OverlayView {
         let (k, tk) = (size.scale(), size.text_scale());
         let z = move |v: f32| px(v * k);
 
+        let anchor = self.anchor;
         let card = self.card.clone();
         let capture = move || {
             let card = card.clone();
@@ -437,11 +458,14 @@ impl Render for OverlayView {
                             )
                         })
                         .child(capture());
-                    let mut col = div().flex().flex_col().items_center().gap(z(12.));
-                    if show_preview && !(preview.0.is_empty() && preview.1.is_empty()) {
-                        col = col.child(preview_slip(&preview.0, &preview.1, size, &c));
+                    // The live preview is on the side of the pill that has room on the display.
+                    let slip = (show_preview && !(preview.0.is_empty() && preview.1.is_empty())).then(|| preview_slip(&preview.0, &preview.1, size, &c));
+                    let col = div().flex().flex_col().items_center().gap(z(12.));
+                    match anchor {
+                        Anchor::Bottom => col.children(slip).child(pill),
+                        Anchor::Top => col.child(pill).children(slip),
                     }
-                    col.child(pill).into_any_element()
+                    .into_any_element()
                 }
                 State::Processing { stage, .. } => {
                     let label = match (stage, &model_status) {
@@ -564,9 +588,11 @@ impl Render for OverlayView {
             .size_full()
             .flex()
             .flex_col()
-            .justify_end()
             .items_center()
-            .pb(px(MARGIN))
+            .map(|d| match anchor {
+                Anchor::Bottom => d.justify_end().pb(px(MARGIN)),
+                Anchor::Top => d.justify_start().pt(px(MARGIN)),
+            })
             .font_family(UI)
             .child(
                 div()
