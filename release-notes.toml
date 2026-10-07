@@ -20,6 +20,30 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.6.0"
+title = "The right style for each app"
+
+[[release.item]]
+icon = "styles"
+title = "Style rules"
+text = "Give an app its own style, for example Message in Slack and Email in Mail. On macOS and Windows, a site in a browser can have one too. Turn the rules on in Settings, Dictation."
+
+[[release.item]]
+icon = "sparkle"
+title = "Better cleanup in all styles"
+text = "All styles now share one base prompt for filler words, self-corrections, numbers, and spelled words. You can edit it on the Styles page."
+
+[[release.item]]
+icon = "keyboard"
+title = "Spoken punctuation"
+text = "Say \"comma\", \"question mark\", or \"new line\" in English, and Sayso writes the mark. Turn it on in Settings, Dictation."
+
+[[release.item]]
+icon = "mic"
+title = "A space after each dictation"
+text = "Sayso adds a space after the text that it inserts, so two dictations in a row do not join. You can turn it off in Settings, Dictation."
+
+[[release]]
 version = "0.5.0"
 title = "More control over what Sayso keeps"
 
