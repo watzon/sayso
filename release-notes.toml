@@ -20,6 +20,32 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.7.0"
+title = "History shows the site, and the pill goes to the top"
+
+[[release.item]]
+icon = "history"
+title = "Site icons in History"
+text = "A dictation into a web page shows the icon of the site on the app icon. You can turn it off in Settings, History and privacy."
+systems = ["macos", "windows"]
+
+[[release.item]]
+icon = "overlay"
+title = "The pill at the top of the screen"
+text = "Drag the pill to the top edge of a display. The live preview then shows below it."
+
+[[release.item]]
+icon = "models"
+title = "Load the model later"
+text = "Sayso can load the speech model at the first dictation and not at the start, and uses less memory until then. Turn off \"Load the model when Sayso starts\" in Settings, Advanced."
+
+[[release.item]]
+icon = "download"
+title = "An AppImage for more systems"
+text = "The AppImage now starts on a system that does not have libxkbcommon-x11."
+systems = ["linux"]
+
+[[release]]
 version = "0.6.0"
 title = "The right style for each app"
 
