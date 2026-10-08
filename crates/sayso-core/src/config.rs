@@ -398,11 +398,15 @@ pub struct History {
     pub save_audio: bool,
     /// Days to keep audio. When audio expires only the audio file is deleted.
     pub keep_audio_days: Option<u32>,
+    /// Show the icon of the site on a history entry. Sayso gets the icon
+    /// from the site, or from the icon service of DuckDuckGo when the site
+    /// gives none.
+    pub site_icons: bool,
 }
 
 impl Default for History {
     fn default() -> Self {
-        Self { enabled: true, keep_text_days: None, save_audio: true, keep_audio_days: Some(30) }
+        Self { enabled: true, keep_text_days: None, save_audio: true, keep_audio_days: Some(30), site_icons: true }
     }
 }
 

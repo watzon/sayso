@@ -57,6 +57,9 @@ The style of a dictation when no style rule applies. The user chooses it in the 
 **Style rule**
 The apps and sites that use one style. A dictation into one of them gets that style, not the default style. An app or a site has one style only. A site is a host with an optional path (`facebook.com/messages`); it also applies to its subdomains and to the paths below it. A site rule wins over the rule of the browser. The rules are in `config.toml` (`ai.style_rules`), because an app id is different on each system. They are off by default, and the first time the user turns them on, Sayso adds a starter set. Sayso reads the page of a browser on macOS and Windows, not on Linux.
 
+**Site icon**
+The icon of the site of a history entry. It shows on the corner of the app icon. Sayso gets it from the site itself, or from the icon service of DuckDuckGo when the site gives none, and keeps it in the cache for 7 days. A setting turns it off (`history.site_icons`).
+
 **App id**
 The name of an app for the system: the bundle id on macOS, the file name of the exe on Windows, and the name of the desktop entry on Linux.
 
@@ -103,7 +106,7 @@ The main window. Its sections are Home, History, Dictionary, Styles, Models, and
 The themed panel that opens from the menu bar icon (the taskbar icon on Windows, the tray icon on Linux). It is not a native menu.
 
 **History entry**
-A stored dictation. It holds the transcript, the final text, the style, the target app (with the host of the page, when a style rule read it), the model, the time, the duration, and (until it expires) the audio. When history is off, Sayso stores no history entry for a new dictation. Entries from before stay until the user clears them.
+A stored dictation. It holds the transcript, the final text, the style, the target app (with the host of the page, when the app showed a web page), the model, the time, the duration, and (until it expires) the audio. When history is off, Sayso stores no history entry for a new dictation. Entries from before stay until the user clears them.
 
 **Incognito**
 A mode in which Sayso stores no history entry for a dictation. It stays on until the user turns it off or quits Sayso. It changes only what Sayso stores: a cloud model or the provider of a style still gets the audio or the transcript.

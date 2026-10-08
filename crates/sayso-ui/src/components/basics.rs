@@ -306,15 +306,21 @@ impl RenderOnce for Banner {
 pub struct AppBadge {
     name: SharedString,
     icon_png: Option<std::sync::Arc<Image>>,
+    site_png: Option<std::sync::Arc<Image>>,
     size: f32,
 }
 
 impl AppBadge {
     pub fn new(name: impl Into<SharedString>) -> Self {
-        Self { name: name.into(), icon_png: None, size: 28. }
+        Self { name: name.into(), icon_png: None, site_png: None, size: 28. }
     }
     pub fn icon(mut self, png: Option<std::sync::Arc<Image>>) -> Self {
         self.icon_png = png;
+        self
+    }
+    /// The icon of a site, on a small plate at the bottom right corner.
+    pub fn site(mut self, png: Option<std::sync::Arc<Image>>) -> Self {
+        self.site_png = png;
         self
     }
     pub fn size(mut self, size: f32) -> Self {
@@ -331,13 +337,31 @@ pub fn app_color(name: &str) -> Hsla {
 }
 
 impl RenderOnce for AppBadge {
-    fn render(self, _: &mut Window, _cx: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let size = px(self.size);
+        // The plate is white in each theme: a site makes its icon for a light tab.
+        let site = self.site_png.map(|png| {
+            let plate = (self.size * 0.54).round();
+            let c = cx.paper().colors;
+            div()
+                .absolute()
+                .right(px(-plate * 0.3))
+                .bottom(px(-plate * 0.3))
+                .flex()
+                .items_center()
+                .justify_center()
+                .size(px(plate))
+                .rounded(px(plate * 0.28))
+                .bg(gpui_kit::white())
+                .shadow(vec![BoxShadow::new(px(0.), px(1.), c.shadow(0.28)).blur_radius(px(2.))])
+                .child(img(png).size(px(plate - 3.)).rounded(px(plate * 0.2)))
+        });
         if let Some(png) = self.icon_png {
-            return div().flex_none().size(size).child(img(png).size(size)).into_any_element();
+            return div().relative().flex_none().size(size).child(img(png).size(size)).children(site).into_any_element();
         }
         let initial: SharedString = self.name.chars().next().map(|c| c.to_uppercase().to_string()).unwrap_or_default().into();
         div()
+            .relative()
             .flex()
             .flex_none()
             .items_center()
@@ -351,6 +375,7 @@ impl RenderOnce for AppBadge {
             .font_weight(FontWeight::BOLD)
             .text_color(gpui_kit::white())
             .child(initial)
+            .children(site)
             .into_any_element()
     }
 }

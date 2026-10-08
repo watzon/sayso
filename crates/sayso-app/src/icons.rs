@@ -45,7 +45,7 @@ impl AppIcons {
 
     fn load(&self, bundle_id: &str) -> Option<Vec<u8>> {
         let file = cache_file(&self.dir, bundle_id);
-        if is_fresh(&file)
+        if is_fresh(&file, MAX_AGE)
             && let Ok(png) = std::fs::read(&file)
         {
             return Some(png);
@@ -64,17 +64,17 @@ impl AppIcons {
     }
 }
 
-/// `<dir>/<bundle id>.png`, with anything outside `[A-Za-z0-9.-]` replaced.
-fn cache_file(dir: &Path, bundle_id: &str) -> PathBuf {
+/// `<dir>/<id>.png`, with anything outside `[A-Za-z0-9.-]` replaced.
+pub(crate) fn cache_file(dir: &Path, bundle_id: &str) -> PathBuf {
     let safe: String =
         bundle_id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '-' { c } else { '_' }).collect();
     dir.join(format!("{safe}.png"))
 }
 
-fn is_fresh(file: &Path) -> bool {
+pub(crate) fn is_fresh(file: &Path, max_age: Duration) -> bool {
     std::fs::metadata(file)
         .and_then(|m| m.modified())
-        .is_ok_and(|t| t.elapsed().is_ok_and(|age| age < MAX_AGE))
+        .is_ok_and(|t| t.elapsed().is_ok_and(|age| age < max_age))
 }
 
 #[cfg(test)]

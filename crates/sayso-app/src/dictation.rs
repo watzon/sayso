@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 #[derive(Default)]
 pub struct Session {
     pub app: Option<AppInfo>,
-    /// The host of the page in the app, when a style rule read it.
+    /// The host of the page in the app, when the app showed a web page.
     pub site: Option<String>,
     /// The style that a style rule chose for the app or the site.
     pub rule_style: Option<String>,
@@ -232,13 +232,15 @@ impl AppModel {
         s.started = Some(Instant::now());
     }
 
-    /// Ask the app for its web page, and let a site rule choose the style.
-    /// The answer comes while the microphone records. Sayso asks only when
-    /// the style rules are on.
+    /// Ask the app for its web page: a site rule can choose the style, and
+    /// the history entry keeps the host. The answer comes while the
+    /// microphone records. Sayso asks only when a style rule or a history
+    /// entry can use the answer.
     fn read_page(&mut self, session: SessionId, app: Option<&AppInfo>, cx: &mut Context<Self>) {
         let context = self.services.platform.context.clone();
         let Some(app) = app.filter(|a| a.pid != std::process::id() as i32).cloned() else { return };
-        if !self.config.ai.style_rules.enabled || !context.reads_page_url() {
+        let saves = saves_history(self.config.history.enabled, self.incognito, self.incognito);
+        if !(self.config.ai.style_rules.enabled || saves) || !context.reads_page_url() {
             return;
         }
         cx.spawn(async move |this, cx| {

@@ -21,6 +21,7 @@ mod pindrop_import;
 mod popover;
 mod services;
 mod shell;
+mod site_icons;
 mod update_ui;
 mod whats_new;
 mod widgets;

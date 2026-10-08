@@ -28,7 +28,11 @@ parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
-image = { version = "0.25", default-features = false, features = ["png"] }
+# The other formats are for site icons. GPUI already builds them.
+image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "gif", "webp", "bmp"] }
+regex.workspace = true
+ureq = "3"
+url = "2"
 raw-window-handle = "0.6"
 async-channel = "2"
 crossbeam-channel.workspace = true

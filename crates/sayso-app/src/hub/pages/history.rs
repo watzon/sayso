@@ -11,7 +11,7 @@ use gpui_kit::component::input::{InputEvent, InputState, MoveDown, MoveUp};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use sayso_core::history::{EnhanceOutcome, HistoryEntry, InsertOutcome};
+use sayso_core::history::{EnhanceOutcome, HistoryEntry, InsertOutcome, TargetApp};
 use sayso_store::{AppCount, HistoryQuery};
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
@@ -583,6 +583,7 @@ impl HistoryPage {
         let selected = self.selected == Some(e.id);
         let app = e.app.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "Unknown app".into());
         let app_icon = e.app.as_ref().and_then(|a| self.model.read(cx).icons.get(&a.bundle_id));
+        let site_icon = self.model.read(cx).site_icon(e);
         let id = e.id;
         div()
             .id(("entry", e.id as u64))
@@ -601,7 +602,7 @@ impl HistoryPage {
             })
             .when(!selected, |d| d.hover(|s| s.bg(c.deboss.opacity(0.4))))
             .on_click(cx.listener(move |this, _, _, cx| this.select(id, cx)))
-            .child(AppBadge::new(app.clone()).icon(app_icon))
+            .child(AppBadge::new(app.clone()).icon(app_icon).site(site_icon))
             .child(
                 div()
                     .flex()
@@ -631,6 +632,7 @@ impl HistoryPage {
         };
         let app = e.app.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "Unknown app".into());
         let app_icon = e.app.as_ref().and_then(|a| self.model.read(cx).icons.get(&a.bundle_id));
+        let site_icon = self.model.read(cx).site_icon(&e);
         let (can_enhance, engine) = {
             let m = self.model.read(cx);
             let style = m.active_style();
@@ -741,7 +743,7 @@ impl HistoryPage {
                     .items_center()
                     .gap(px(10.))
                     .min_w_0()
-                    .child(AppBadge::new(app.clone()).icon(app_icon).size(24.))
+                    .child(AppBadge::new(app.clone()).icon(app_icon).site(site_icon).size(24.))
                     .child(ui(app.clone(), 14., 18., FontWeight::SEMIBOLD, c.ink).truncate())
                     .child(
                         ui(
@@ -771,15 +773,19 @@ impl HistoryPage {
             .px(px(side))
             .child(self.final_text(&e.final_text, &c))
             .child(div().flex_none().child(self.player(&e, cx)))
+            // The scroll area clips to its bounds. It is 4 wider on each side
+            // (with matching padding, so the steps stay put) to leave room for
+            // the halo of the last dot.
             .child(
-                div()
-                    .id("history-trail")
-                    .flex_1()
-                    .min_h(px(120.))
-                    .overflow_y_scroll()
-                    .border_t_1()
-                    .border_color(c.rule)
-                    .child(div().pt(px(20.)).pb(px(32.)).child(self.trail(&e, cx))),
+                div().flex().flex_col().flex_1().min_h(px(120.)).border_t_1().border_color(c.rule).child(
+                    div()
+                        .id("history-trail")
+                        .flex_1()
+                        .min_h_0()
+                        .mx(px(-4.))
+                        .overflow_y_scroll()
+                        .child(div().px(px(4.)).pt(px(20.)).pb(px(32.)).child(self.trail(&e, cx))),
+                ),
             );
         div()
             .flex()
@@ -1090,13 +1096,18 @@ impl HistoryPage {
             )),
         }
 
-        let app = e.app.as_ref().map(|a| a.name.clone()).unwrap_or_else(|| "the app".into());
+        // With a site: "chatgpt.com in Aside".
+        let app = match &e.app {
+            Some(TargetApp { name, site: Some(site), .. }) => format!("{site} in {name}"),
+            Some(a) => a.name.clone(),
+            None => "the app".into(),
+        };
         let (last, last_color) = match &e.insert {
             InsertOutcome::Pasted { clipboard_restored } => (
-                format!("Inserted · Paste into {app} · {}", if *clipboard_restored { "clipboard restored" } else { "clipboard kept" }),
+                format!("Pasted into {app} · {}", if *clipboard_restored { "clipboard restored" } else { "clipboard kept" }),
                 c.accent,
             ),
-            InsertOutcome::Typed => (format!("Inserted · Typed into {app}"), c.accent),
+            InsertOutcome::Typed => (format!("Typed into {app}"), c.accent),
             InsertOutcome::Failed { reason } => (format!("Not inserted · {reason}"), c.danger),
             InsertOutcome::NotInserted => ("Not inserted · The dictation was cancelled".into(), c.pencil),
         };

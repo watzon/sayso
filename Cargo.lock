@@ -7311,6 +7311,7 @@ dependencies = [
  "objc2 0.6.4",
  "parking_lot",
  "raw-window-handle",
+ "regex",
  "sayso-core",
  "sayso-engine-client",
  "sayso-enhance",
@@ -7328,6 +7329,8 @@ dependencies = [
  "tempfile",
  "toml 0.9.12+spec-1.1.0",
  "tray-icon",
+ "ureq 3.4.2",
+ "url",
 ]
 
 [[package]]

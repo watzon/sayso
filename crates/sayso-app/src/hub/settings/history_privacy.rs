@@ -50,7 +50,7 @@ impl Render for HistorySettings {
 
         let text_index = TEXT_DAYS.iter().position(|d| *d == h.keep_text_days).unwrap_or(0);
         let audio_index = AUDIO_DAYS.iter().position(|d| Some(*d) == h.keep_audio_days).unwrap_or(0);
-        let (m0, m1, m2, m3) = (self.model.clone(), self.model.clone(), self.model.clone(), self.model.clone());
+        let (m0, m1, m2, m3, m4) = (self.model.clone(), self.model.clone(), self.model.clone(), self.model.clone(), self.model.clone());
         let save_history = Switch::new("save-history", h.enabled).on_toggle(move |on, _, cx| {
             m0.update(cx, |m, cx| m.edit_config(cx, |c| c.history.enabled = on));
         });
@@ -64,6 +64,10 @@ impl Render for HistorySettings {
             .on_select(move |i, _, cx| {
                 m3.update(cx, |m, cx| m.edit_config(cx, |c| c.history.keep_audio_days = Some(AUDIO_DAYS[i])));
             });
+
+        let site_icons = Switch::new("site-icons", h.site_icons).on_toggle(move |on, _, cx| {
+            m4.update(cx, |m, cx| m.edit_config(cx, |c| c.history.site_icons = on));
+        });
 
         // The limits have no effect on new dictations while history is off.
         let dim = |r: Div| r.when(!h.enabled, |d| d.opacity(0.45));
@@ -85,15 +89,27 @@ impl Render for HistorySettings {
                 "When audio expires, only the audio file is deleted. The text stays.",
                 div().when(h.enabled && !h.save_audio, |d| d.opacity(0.45)).child(keep_audio),
                 cx,
-            )));
+            )))
+            .child(row(
+                "Show site icons",
+                "For a dictation into a web page. Sayso gets the icon from the site. If the site gives none, Sayso asks DuckDuckGo, which sees the name of the site.",
+                site_icons,
+                cx,
+            ));
 
+        // A site icon is a request to the site, so the text names it.
+        let rest = if h.site_icons {
+            "For a dictation into a web page, Sayso asks the site for its icon, and DuckDuckGo if the site gives none. Nothing else is sent."
+        } else {
+            "Nothing else is sent."
+        };
         let mut leaves = div().flex().flex_col().gap(px(10.)).py(px(14.)).child(
             text::body(
                 match &speech_provider {
                     Some(name) => format!(
-                        "Your model is a cloud model. Sayso sends the audio of each dictation and your dictionary words to {name}. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. Nothing else is sent."
+                        "Your model is a cloud model. Sayso sends the audio of each dictation and your dictionary words to {name}. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. {rest}"
                     ),
-                    None => format!("Speech recognition runs on this {}. Your audio never leaves it. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. Nothing else is sent.", crate::shell::COMPUTER),
+                    None => format!("Speech recognition runs on this {}. Your audio never leaves it. When a style uses AI, Sayso sends the transcript, the style prompt, and your dictionary words to the provider of that style. {rest}", crate::shell::COMPUTER),
                 },
                 &c,
             )

@@ -98,6 +98,8 @@ pub struct AppModel {
     pub(crate) system_dark: bool,
     /// App icons for badges, cached on disk.
     pub icons: crate::icons::AppIcons,
+    /// Site icons for badges, cached on disk.
+    site_icons: crate::site_icons::SiteIcons,
     /// Model lists by provider id (or a draft key during onboarding).
     pub model_lists: HashMap<String, ModelList>,
     /// True when this Mac has Pindrop data to import.
@@ -135,6 +137,19 @@ impl AppModel {
         };
         let config_mtime = std::fs::metadata(paths.config_file()).and_then(|m| m.modified()).ok();
         let icons = crate::icons::AppIcons::new(paths.cache_dir.join("icons"), services.platform.context.clone());
+        let (site_icons, fetched_icons) = crate::site_icons::SiteIcons::new(paths.cache_dir.join("site-icons"));
+        cx.spawn(async move |this, cx| {
+            while let Ok((host, png)) = fetched_icons.recv().await {
+                let shown = this.update(cx, |m, cx| {
+                    m.site_icons.fetched(&host, png);
+                    cx.notify();
+                });
+                if shown.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
         let mut model = AppModel {
             paths,
             config,
@@ -168,6 +183,7 @@ impl AppModel {
             config_mtime,
             system_dark: false,
             icons,
+            site_icons,
             model_lists: HashMap::new(),
             pindrop_found: sayso_store::pindrop::found(&crate::pindrop_import::pindrop_dir()),
             pindrop_import: Default::default(),
@@ -732,6 +748,13 @@ impl AppModel {
     // -----------------------------------------------------------------------
     // Styles and AI
     // -----------------------------------------------------------------------
+
+    /// The icon of the site that the entry went into, when it has one and
+    /// site icons are on.
+    pub fn site_icon(&self, entry: &HistoryEntry) -> Option<Arc<gpui_kit::Image>> {
+        let site = entry.app.as_ref()?.site.as_deref()?;
+        self.config.history.site_icons.then(|| self.site_icons.get(site)).flatten()
+    }
 
     pub fn active_style(&self) -> Style {
         self.styles
