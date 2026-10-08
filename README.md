@@ -45,18 +45,18 @@ Select a button to download the file of the newest release. The [Releases page](
 
 Linux runs on X11 and on Wayland. [docs/linux.md](docs/linux.md) lists what works on each desktop.
 
-[dmg]: https://github.com/watzon/sayso/releases/download/v0.6.0/Sayso-0.6.0-macos-arm64.dmg
-[exe]: https://github.com/watzon/sayso/releases/download/v0.6.0/Sayso-0.6.0-windows-x64-setup.exe
-[deb-x86_64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-linux-x86_64.deb
-[deb-aarch64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-linux-aarch64.deb
-[rpm-x86_64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-linux-x86_64.rpm
-[rpm-aarch64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-linux-aarch64.rpm
-[flatpak-x86_64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-linux-x86_64.flatpak
-[flatpak-aarch64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-linux-aarch64.flatpak
-[appimage-x86_64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-x86_64.AppImage
-[appimage-aarch64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-aarch64.AppImage
-[tarball-x86_64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-linux-x86_64.tar.gz
-[tarball-aarch64]: https://github.com/watzon/sayso/releases/download/v0.6.0/sayso-0.6.0-linux-aarch64.tar.gz
+[dmg]: https://github.com/watzon/sayso/releases/download/v0.7.0/Sayso-0.7.0-macos-arm64.dmg
+[exe]: https://github.com/watzon/sayso/releases/download/v0.7.0/Sayso-0.7.0-windows-x64-setup.exe
+[deb-x86_64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-linux-x86_64.deb
+[deb-aarch64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-linux-aarch64.deb
+[rpm-x86_64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-linux-x86_64.rpm
+[rpm-aarch64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-linux-aarch64.rpm
+[flatpak-x86_64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-linux-x86_64.flatpak
+[flatpak-aarch64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-linux-aarch64.flatpak
+[appimage-x86_64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-x86_64.AppImage
+[appimage-aarch64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-aarch64.AppImage
+[tarball-x86_64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-linux-x86_64.tar.gz
+[tarball-aarch64]: https://github.com/watzon/sayso/releases/download/v0.7.0/sayso-0.7.0-linux-aarch64.tar.gz
 
 ### macOS
 
