@@ -11,7 +11,7 @@ Each release has five files for x86_64 and five for aarch64. All of them hold th
 | `.deb` | `/usr/lib/sayso`, with the link `/usr/bin/sayso` | `apt` installs the libraries that Sayso needs. |
 | `.rpm` | `/usr/lib/sayso`, with the link `/usr/bin/sayso` | It names libraries, not packages, so one file works with `dnf` and `zypper`. The file is not signed: `zypper` needs `--allow-unsigned-rpm`. |
 | `.flatpak` | The Flatpak folder of your user (`--user`) or of the system | It brings its libraries with the runtime `org.freedesktop.Platform` from Flathub. See "Flatpak". |
-| `.AppImage` | Nothing | It uses the libraries of your system, the same ones as the tarball. It cannot install the udev rule for `/dev/uinput` (see "Paste access"). |
+| `.AppImage` | Nothing | It uses the libraries of your system. It has a copy of `libxkbcommon`, `libxkbcommon-x11`, and `libxcb-xkb`, and uses a copy only when your system does not have that library. The file name has no `linux`: `sayso-<version>-<arch>.AppImage`. It cannot install the udev rule for `/dev/uinput` (see "Paste access"). |
 | `.tar.gz` | `~/.local`, or `/usr/local` with `--system` | `./install.sh --uninstall` removes a user install. |
 
 The AUR package [`sayso-bin`](https://aur.archlinux.org/packages/sayso-bin) installs the binaries of the tarball to `/usr/lib/sayso`, for x86_64 and aarch64.
@@ -31,7 +31,7 @@ Without the Flatpak, the binaries need glibc 2.35 and the libstdc++ of GCC 12, o
 
 The install was tested in a container of each of these, except Tumbleweed and Arch Linux on aarch64. A start of Sayso was tested on Ubuntu 22.04 and 26.04 and on Debian 12.
 
-Without a `.deb` or `.rpm`, your system must have these libraries: ALSA (`libasound`), `libxcb`, `libxkbcommon`, `libxkbcommon-x11`, fontconfig, FreeType, and the Vulkan loader (`libvulkan`) or EGL. A Wayland session also needs `libwayland-client`.
+Without a `.deb` or `.rpm`, your system must have these libraries: ALSA (`libasound`), `libxcb`, `libxkbcommon`, `libxkbcommon-x11`, fontconfig, FreeType, and the Vulkan loader (`libvulkan`) or EGL. The AppImage does not need `libxkbcommon` and `libxkbcommon-x11` on your system. A Wayland session also needs `libwayland-client`.
 
 No package updates by itself. Sayso shows a new version and opens the download page.
 

@@ -126,6 +126,8 @@ jobs:
         run: |
           apt-get update
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl git binutils file flatpak
+          # The AppImage holds a copy of the libraries of appimage_fallback_libs (scripts/package-linux.sh).
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libasound2 libxcb1 libfontconfig1 libxkbcommon0 libxkbcommon-x11-0
 
       - name: Checkout
         uses: actions/checkout@v4

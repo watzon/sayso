@@ -315,8 +315,10 @@ jobs:
           packages = [
               f"sayso-{version}-linux-{arch}.{ext}"
               for arch in ("x86_64", "aarch64")
-              for ext in ("deb", "rpm", "AppImage", "flatpak")
+              for ext in ("deb", "rpm", "flatpak")
           ]
+          # The catalog at appimage.github.io wants no "linux" in this name.
+          packages += [f"sayso-{version}-{arch}.AppImage" for arch in ("x86_64", "aarch64")]
           missing = [name for name in [*files.values(), *packages] if not os.path.isfile(os.path.join("dist", name))]
           if missing:
               sys.exit(f"::error::These release files are missing: {', '.join(missing)}")

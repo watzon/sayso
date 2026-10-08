@@ -153,8 +153,9 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 6. Open the release and make sure that it is the latest release and has these files:
    - `Sayso-<version>-macos-arm64.dmg`
    - `Sayso-<version>-windows-x64-setup.exe`
-   - `sayso-<version>-linux-x86_64.tar.gz`, `.deb`, `.rpm`, `.AppImage`, and `.flatpak`
-   - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, `.AppImage`, and `.flatpak`
+   - `sayso-<version>-linux-x86_64.tar.gz`, `.deb`, `.rpm`, and `.flatpak`
+   - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, and `.flatpak`
+   - `sayso-<version>-x86_64.AppImage` and `sayso-<version>-aarch64.AppImage`
    - a `.sha256` file for each of the twelve
    - `latest.json`
 
@@ -208,7 +209,7 @@ powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
 The Linux jobs are in their own workflow, `linux.yml`, which the Release workflow calls. It has two jobs for each architecture:
 
 1. **Build** compiles the two binaries one time, in an Ubuntu 22.04 container, and makes the tarball (`scripts/bundle-linux.sh`). The container sets the oldest glibc that Sayso runs on: 2.35.
-2. **Packages** makes the `.deb`, the `.rpm`, the AppImage, and the Flatpak from the tarball (`scripts/package-linux.sh`), with no compiler. It then installs the `.deb` on Ubuntu 22.04 and starts Sayso on a virtual display.
+2. **Packages** makes the `.deb`, the `.rpm`, the AppImage, and the Flatpak from the tarball (`scripts/package-linux.sh`), with no compiler. The AppImage gets its copies of the fallback libraries from the packages of this container. It then installs the `.deb` on Ubuntu 22.04 and starts Sayso on a virtual display.
 
 `linux.yml` does not touch a release, so you can test a packaging change without one. A pull request that changes the packaging runs it. You can also start it by hand, and then download the files from the run:
 

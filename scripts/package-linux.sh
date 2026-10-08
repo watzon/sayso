@@ -5,10 +5,13 @@
 #   scripts/package-linux.sh <tarball> [deb] [rpm] [appimage] [flatpak]    default: all
 #
 # The packages go next to the tarball:
-#   sayso-<version>-linux-<arch>.deb, .rpm, .AppImage, .flatpak
+#   sayso-<version>-linux-<arch>.deb, .rpm, .flatpak
+#   sayso-<version>-<arch>.AppImage
 #
 # Run it on Linux, on the architecture of the tarball. It needs curl, file,
-# and binutils, and the flatpak command for the Flatpak. The tools (nfpm, appimagetool, the AppImage runtime) are
+# and binutils, and the flatpak command for the Flatpak. The AppImage needs a
+# Debian or Ubuntu system that has the libraries of appimage_fallback_libs.
+# The tools (nfpm, appimagetool, the AppImage runtime) are
 # downloaded to build/tools, or to $SAYSO_TOOLS_DIR, and checked against the
 # hashes below.
 set -euo pipefail
@@ -80,25 +83,43 @@ package_nfpm() {
     "$tools/nfpm" package --config "$root/packaging/linux/nfpm.yaml" --packager "$1" --target "$out/$name.$1")
 }
 
-# The AppImage holds only the two binaries, like the other packages, and takes
-# the libraries from the system. A copy of libxkbcommon from the build system
-# cannot read the keyboard data of a newer system.
+# The AppImage takes the libraries from the system, like the other packages.
+# A copy of libxkbcommon from the build system cannot read the keyboard data
+# of a newer system. But an AppImage cannot name packages to install, so it
+# has a copy of each library that a system can be without, and AppRun uses a
+# copy only when the system has no such library. These are the libraries of
+# the app that the AppImage excludelist does not name:
+# https://github.com/AppImageCommunity/pkg2appimage/blob/master/excludelist
+appimage_fallback_libs=(libxkbcommon.so.0 libxkbcommon-x11.so.0 libxcb-xkb.so.1)
+# The catalog at appimage.github.io wants no "linux" in the file name.
+appimage_name="sayso-$version-$arch.AppImage"
 package_appimage() {
   fetch "${appimagetool[@]}"
   fetch "${runtime[@]}"
   chmod +x "$tools/${appimagetool[0]}"
-  local appdir="$work/AppDir"
+  local appdir="$work/AppDir" lib path package
   mkdir -p "$appdir/usr"
   cp -R "$stage/bin" "$stage/share" "$appdir/usr/"
-  # AppRun is a link, so the app finds the engine next to itself.
-  ln -s usr/bin/sayso "$appdir/AppRun"
+  # One folder for each library, so AppRun can add one and not the others.
+  for lib in "${appimage_fallback_libs[@]}"; do
+    path=$(ldd "$stage/bin/sayso" | awk -v lib="$lib" '$1 == lib && $3 ~ /^\// { print $3 }')
+    [[ -n "$path" ]] || { echo "This system does not have $lib, which the AppImage must hold" >&2; exit 1; }
+    path=$(realpath "$path")
+    install -D -m 644 "$path" "$appdir/usr/lib/fallback/$lib/$lib"
+    # The license of the library goes with its copy.
+    package=$(dpkg -S "$path" | cut -d: -f1)
+    install -D -m 644 "/usr/share/doc/$package/copyright" "$appdir/usr/share/doc/$package/copyright"
+  done
+  install -m 755 "$root/packaging/linux/AppRun" "$appdir/AppRun"
   ln -s usr/share/applications/dev.sayso.Sayso.desktop "$appdir/dev.sayso.Sayso.desktop"
   ln -s usr/share/icons/hicolor/256x256/apps/dev.sayso.Sayso.png "$appdir/dev.sayso.Sayso.png"
   ln -s dev.sayso.Sayso.png "$appdir/.DirIcon"
+  # The catalog reads the AppStream data only from a file with this older name.
+  ln -s dev.sayso.Sayso.metainfo.xml "$appdir/usr/share/metainfo/dev.sayso.Sayso.appdata.xml"
   # No FUSE in a container, so the tool unpacks itself.
   APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch VERSION=$version \
-    "$tools/${appimagetool[0]}" --no-appstream --runtime-file "$tools/${runtime[0]}" "$appdir" "$out/$name.AppImage"
-  chmod +x "$out/$name.AppImage"
+    "$tools/${appimagetool[0]}" --no-appstream --runtime-file "$tools/${runtime[0]}" "$appdir" "$out/$appimage_name"
+  chmod +x "$out/$appimage_name"
 }
 
 # The Flatpak is one file that the user installs with `flatpak install`. It
@@ -135,4 +156,4 @@ for format in "${formats[@]}"; do
     *) echo "unknown format: $format (deb, rpm, appimage, flatpak)" >&2; exit 2 ;;
   esac
 done
-ls -l "$out"/"$name".*
+ls -l "$out"/sayso-"$version"-*"$arch".*
