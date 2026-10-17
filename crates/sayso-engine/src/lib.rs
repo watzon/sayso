@@ -61,5 +61,15 @@ pub fn run() -> ExitCode {
         ),
     );
     engine::serve(std::io::stdin().lock(), engine);
+    // A load, a final pass or a download can still run on another thread, and a normal exit
+    // runs the C++ global destructors under it: onnxruntime's CUDA provider then crashes.
+    // Those threads end unanswered either way, and a download renames only complete files
+    // into place, so the process ends here and skips the destructors.
+    #[cfg(all(unix, not(target_os = "macos")))]
+    // SAFETY: _exit has no preconditions.
+    unsafe {
+        libc::_exit(0)
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
     ExitCode::SUCCESS
 }
