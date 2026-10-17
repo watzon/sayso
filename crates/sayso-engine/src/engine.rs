@@ -319,6 +319,7 @@ impl Engine {
             Ok(loaded) => loaded,
             Err(e) => {
                 self.model_state(id, model, "failed", json!({ "message": format!("{e:#}"), "reason": "load_failed" }));
+                release_free_memory(); // a load that fails late has freed what it allocated, into glibc
                 return Err(e);
             }
         };
@@ -328,6 +329,7 @@ impl Engine {
         let load_ms = start.elapsed().as_millis() as u64;
         self.model_state(id, model, "ready", json!({ "load_ms": load_ms }));
         self.out.ok(id, json!({}));
+        release_free_memory(); // a load leaves 200-320 MB free inside glibc
         Ok(())
     }
 
@@ -474,7 +476,7 @@ fn final_pass_is_out(spec: &ModelSpec, loaded: &Loaded) -> bool {
 }
 
 /// Return freed heap memory to the system. Without this, glibc keeps the
-/// memory of a dropped model in the process.
+/// memory of a load or of a dropped model in the process.
 fn release_free_memory() {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     // SAFETY: malloc_trim has no preconditions.
