@@ -87,6 +87,16 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
     let has_icon = icon.is_some();
     // The popover keeps its state here, with or without an icon.
     TRAY.with(|t| *t.borrow_mut() = Some(Tray { icon, popover: None, visible: false, _monitor: None }));
+    // Close when the outside-click monitor asks (it runs outside GPUI). One
+    // pending request is enough, so the channel holds one.
+    let (hide_tx, hide_rx) = async_channel::bounded::<()>(1);
+    HIDE_REQUESTS.with(|h| *h.borrow_mut() = Some(hide_tx));
+    cx.spawn(async move |cx| {
+        while hide_rx.recv().await.is_ok() {
+            cx.update(hide);
+        }
+    })
+    .detach();
     if !has_icon {
         return;
     }
@@ -256,7 +266,11 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
             && p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height {
                 return;
             }
-        HIDE_REQUESTED.with(|h| h.set(true));
+        HIDE_REQUESTS.with(|h| {
+            if let Some(tx) = h.borrow().as_ref() {
+                let _ = tx.try_send(());
+            }
+        });
     });
     TRAY.with(|t| {
         if let Some(t) = t.borrow_mut().as_mut() {
@@ -271,7 +285,8 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
 }
 
 thread_local! {
-    static HIDE_REQUESTED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Where the outside-click monitor asks for a close. `install` sets it.
+    static HIDE_REQUESTS: RefCell<Option<async_channel::Sender<()>>> = const { RefCell::new(None) };
     /// The popover had the focus since it last opened.
     static WAS_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// When the popover last closed because it lost focus.
@@ -337,16 +352,6 @@ impl PopoverView {
         cx.observe_window_activation(window, |this: &mut Self, window, cx| {
             if !window.is_window_active() && this.submenu.take().is_some() {
                 cx.notify();
-            }
-        })
-        .detach();
-        // Close when the outside-click monitor asks (it runs outside GPUI).
-        cx.spawn(async move |_, cx| {
-            loop {
-                cx.background_executor().timer(Duration::from_millis(60)).await;
-                if HIDE_REQUESTED.with(|h| h.replace(false)) {
-                    cx.update(hide);
-                }
             }
         })
         .detach();
