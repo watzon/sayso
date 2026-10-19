@@ -5,11 +5,11 @@
 //!
 //! All methods may be called from any thread unless the doc says "main thread".
 
-use crossbeam_channel::Receiver;
+use crossbeam_channel::{Receiver, RecvTimeoutError};
 use sayso_core::hotkey::Hotkey;
 use sayso_core::models::{ModelId, ModelInfo};
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -288,6 +288,24 @@ pub trait SttBackend: Send + Sync {
     fn transcribe(&self, samples: &[f32], options: &SessionOptions) -> Result<Transcript>;
     /// A new receiver that gets every event from now on.
     fn subscribe(&self) -> Receiver<EngineEvent>;
+    /// Wait until `model` is `Ready` or `Failed`, or until `deadline`, and
+    /// return its status then. Each event wakes the wait, so it also follows
+    /// the model through a restart of the engine. A backend without events
+    /// gets a look at the status every 150 ms.
+    fn wait_ready(&self, model: &ModelId, deadline: Instant) -> ModelStatus {
+        // Subscribe first, so that no change between the look and the wait is lost.
+        let events = self.subscribe();
+        loop {
+            let status = self.status(model);
+            let left = deadline.saturating_duration_since(Instant::now());
+            if matches!(status, ModelStatus::Ready | ModelStatus::Failed { .. }) || left.is_zero() {
+                return status;
+            }
+            if let Err(RecvTimeoutError::Disconnected) = events.recv_timeout(left) {
+                std::thread::sleep(left.min(Duration::from_millis(150)));
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

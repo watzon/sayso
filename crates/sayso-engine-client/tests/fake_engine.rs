@@ -479,6 +479,64 @@ fn crash_restarts_the_engine_and_loads_models_again() {
 }
 
 #[test]
+fn wait_ready_wakes_when_the_model_is_ready() {
+    let f = fixture();
+    let model = default_model();
+    let client = f.client.clone();
+    let waited = model.clone();
+    let wait = thread::spawn(move || {
+        let started = Instant::now();
+        let status = client.wait_ready(&waited, started + Duration::from_secs(10));
+        (status, started.elapsed())
+    });
+    thread::sleep(Duration::from_millis(200));
+    f.client.load(&model).unwrap();
+    let (status, elapsed) = wait.join().unwrap();
+    assert_eq!(status, ModelStatus::Ready);
+    assert!(elapsed >= Duration::from_millis(200), "returned before the load, after {elapsed:?}");
+    assert!(elapsed < Duration::from_secs(5), "took {elapsed:?}");
+}
+
+#[test]
+fn wait_ready_follows_the_model_through_a_restart() {
+    let models = TempDir::new().unwrap();
+    let cache = TempDir::new().unwrap();
+    let options = Options {
+        backoff_initial: Duration::from_millis(300),
+        backoff_max: Duration::from_millis(300),
+        ..fast_options()
+    };
+    let client = EngineClient::spawn_with(
+        PathBuf::from(FAKE_ENGINE),
+        models.path().to_path_buf(),
+        cache.path().to_path_buf(),
+        options,
+    )
+    .unwrap();
+    let events = client.subscribe();
+    let model = default_model();
+    client.load(&model).unwrap();
+    let _ = client.transcribe(&[0.0; 160], &options_for("crash-once"));
+    // The crash takes the model out of memory; the restart loads it again.
+    wait_for(&events, "the model out of memory", |e| {
+        matches!(e, EngineEvent::ModelStatus { model: m, status: ModelStatus::Downloaded } if *m == model).then_some(())
+    });
+    let started = Instant::now();
+    assert_eq!(client.wait_ready(&model, started + Duration::from_secs(10)), ModelStatus::Ready);
+    assert!(started.elapsed() >= Duration::from_millis(100), "returned before the restart, after {:?}", started.elapsed());
+}
+
+#[test]
+fn wait_ready_gives_up_at_the_deadline() {
+    let f = fixture();
+    let started = Instant::now();
+    let status = f.client.wait_ready(&ModelId::new("whisper-small"), started + Duration::from_millis(200));
+    assert_eq!(status, ModelStatus::NotDownloaded);
+    assert!(started.elapsed() >= Duration::from_millis(200));
+    assert!(started.elapsed() < Duration::from_secs(2), "took {:?}", started.elapsed());
+}
+
+#[test]
 fn calls_fail_fast_while_the_engine_is_down() {
     let models = TempDir::new().unwrap();
     let cache = TempDir::new().unwrap();

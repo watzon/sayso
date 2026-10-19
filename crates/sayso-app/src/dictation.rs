@@ -844,14 +844,10 @@ impl FinalPass {
             FinalPass::Local { engine, model } => {
                 // Wait for the model: the first load compiles it for the Neural Engine.
                 let wait_started = Instant::now();
-                let deadline = wait_started + Duration::from_secs(300);
-                loop {
-                    match engine.status(model) {
-                        ModelStatus::Ready => break,
-                        ModelStatus::Failed { message, reason } => return Err(crate::engine_text::describe(reason, &message)),
-                        _ if Instant::now() > deadline => return Err(t!("overlay.error.model_load_timeout")),
-                        _ => std::thread::sleep(Duration::from_millis(150)),
-                    }
+                match engine.wait_ready(model, wait_started + Duration::from_secs(300)) {
+                    ModelStatus::Ready => {}
+                    ModelStatus::Failed { message, reason } => return Err(crate::engine_text::describe(reason, &message)),
+                    _ => return Err(t!("overlay.error.model_load_timeout")),
                 }
                 let model_wait_ms = wait_started.elapsed().as_millis() as u64;
                 let transcript = engine.transcribe(samples, options).map_err(|e| e.to_string())?;
