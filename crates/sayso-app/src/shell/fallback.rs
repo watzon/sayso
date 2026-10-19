@@ -45,8 +45,8 @@ pub type NativeWindow = ();
 pub fn hand_off() {}
 pub fn prepare() {}
 
-pub fn open_requested() -> bool {
-    false
+pub fn open_requests() -> Option<async_channel::Receiver<()>> {
+    None
 }
 
 pub fn platform(sounds_dir: PathBuf) -> Platform {

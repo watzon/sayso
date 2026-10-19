@@ -12,15 +12,17 @@ use sayso_platform::Platform;
 use sayso_platform_windows::window as win;
 use std::ffi::{OsStr, c_void};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::LazyLock;
 
 pub use win::{MonitorToken, Point, Rect, ScreenInfo, play_wav, stop_wav};
 
 /// The `HWND` of a GPUI window.
 pub type NativeWindow = *mut c_void;
 
-/// A later start of Sayso asked this one to open its Hub.
-static OPEN_REQUESTED: AtomicBool = AtomicBool::new(false);
+/// A later start of Sayso asked this one to open its Hub. One pending
+/// request is enough, so the channel holds one.
+static OPEN_REQUESTS: LazyLock<(async_channel::Sender<()>, async_channel::Receiver<()>)> =
+    LazyLock::new(|| async_channel::bounded(1));
 
 /// The first startup step, before logging starts. Only one Sayso runs for
 /// each data folder. A later start tells the running Sayso to open its Hub
@@ -31,7 +33,9 @@ pub fn hand_off() {
         PathSource::PlatformDefault => String::new(),
         _ => paths.data_dir.display().to_string(),
     };
-    if !win::claim_single_instance(&scope, || OPEN_REQUESTED.store(true, Ordering::SeqCst)) {
+    if !win::claim_single_instance(&scope, || {
+        let _ = OPEN_REQUESTS.0.try_send(());
+    }) {
         std::process::exit(0);
     }
 }
@@ -39,9 +43,9 @@ pub fn hand_off() {
 /// Startup work before GPUI starts. Nothing on Windows.
 pub fn prepare() {}
 
-/// True once for each start of Sayso that asked the running Sayso to open.
-pub fn open_requested() -> bool {
-    OPEN_REQUESTED.swap(false, Ordering::SeqCst)
+/// One message for each start of Sayso that asked the running Sayso to open.
+pub fn open_requests() -> Option<async_channel::Receiver<()>> {
+    Some(OPEN_REQUESTS.1.clone())
 }
 
 pub fn platform(sounds_dir: PathBuf) -> Platform {

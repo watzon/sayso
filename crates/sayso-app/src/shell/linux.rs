@@ -68,13 +68,22 @@ pub fn platform(sounds_dir: PathBuf) -> Platform {
     sayso_platform_linux::LinuxPlatform::new(sounds_dir)
 }
 
-/// True once for each `sayso` start that asked the running Sayso to open.
-pub fn open_requested() -> bool {
-    let mut asked = false;
-    while let Ok(Command::Open) = ipc::app_commands().try_recv() {
-        asked = true;
-    }
-    asked
+/// One message for each `sayso` start that asked the running Sayso to open.
+/// A thread waits on the command channel and forwards the open commands.
+pub fn open_requests() -> Option<async_channel::Receiver<()>> {
+    let (tx, rx) = async_channel::unbounded();
+    let commands = ipc::app_commands();
+    std::thread::Builder::new()
+        .name("sayso-open-requests".into())
+        .spawn(move || {
+            while let Ok(command) = commands.recv() {
+                if matches!(command, Command::Open) && tx.send_blocking(()).is_err() {
+                    break;
+                }
+            }
+        })
+        .ok()?;
+    Some(rx)
 }
 
 pub fn native(window: &Window) -> Option<NativeWindow> {

@@ -91,17 +91,16 @@ pub fn run() {
         crate::overlay::open(&model, cx);
         crate::popover::install(&model, cx);
         crate::a11y::start(cx);
-        // A second start of Sayso (Linux) asks this one to open the Hub.
-        let m = model.clone();
-        cx.spawn(async move |cx| {
-            loop {
-                cx.background_executor().timer(std::time::Duration::from_millis(250)).await;
-                if crate::shell::open_requested() {
+        // A second start of Sayso (Windows, Linux) asks this one to open the Hub.
+        if let Some(requests) = crate::shell::open_requests() {
+            let m = model.clone();
+            cx.spawn(async move |cx| {
+                while requests.recv().await.is_ok() {
                     cx.update(|cx| open_hub(&m, Route::Home, cx));
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
+        }
         if crate::dev::flag("popover") {
             let m = model.clone();
             cx.spawn(async move |cx| {

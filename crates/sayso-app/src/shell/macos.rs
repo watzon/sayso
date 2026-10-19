@@ -22,8 +22,8 @@ pub fn hand_off() {}
 pub fn prepare() {}
 
 /// macOS starts one copy of the app on its own, so nobody asks.
-pub fn open_requested() -> bool {
-    false
+pub fn open_requests() -> Option<async_channel::Receiver<()>> {
+    None
 }
 
 pub fn platform(sounds_dir: PathBuf) -> Platform {
