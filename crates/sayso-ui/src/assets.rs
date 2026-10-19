@@ -8,7 +8,8 @@ use std::borrow::Cow;
 #[include = "icons/*.svg"]
 #[include = "textures/*.png"]
 #[include = "sounds/*.wav"]
-#[include = "app/*.png"]
+#[include = "app/tray.png"]
+#[include = "app/icon-64.png"]
 struct SaysoAssets;
 
 /// Pass to `Application::with_assets`.
@@ -36,6 +37,19 @@ impl AssetSource for Assets {
 /// Raw bytes of an embedded asset, for code that needs them directly (sounds, textures).
 pub fn bytes(path: &str) -> Option<Cow<'static, [u8]>> {
     SaysoAssets::get(path).map(|f| f.data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn embeds_the_tray_and_window_icons_only() {
+        assert!(bytes("app/tray.png").is_some());
+        assert!(bytes("app/icon-64.png").is_some());
+        // The iconset is for the bundle scripts. Embedding it adds over 1 MB.
+        assert!(SaysoAssets::iter().all(|name| !name.starts_with("app/AppIcon.iconset")));
+    }
 }
 
 /// Icon names. Each maps to `icons/<name>.svg`.
