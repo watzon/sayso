@@ -568,7 +568,8 @@ impl AppModel {
             // No entry, no audio, and no replacement counts.
             return;
         }
-        let samples = s.samples.lock().clone();
+        // The session is gone from the map, so nothing reads its recording again.
+        let samples = std::mem::take(&mut *s.samples.lock());
         let save_audio = self.config.history.save_audio && !samples.is_empty();
         let model = s.model.clone().unwrap_or_else(|| self.config.dictation.model.clone());
         let transcript = s.transcript.clone().unwrap_or_default();
