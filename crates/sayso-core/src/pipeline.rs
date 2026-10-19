@@ -51,17 +51,21 @@ impl TextPipeline<'_> {
         };
         // The model gets spelled words as words. A failure returns the text without this step.
         let spoken = crate::spelled::apply(&replaced);
-        let request = EnhanceRequest {
+        let timeout = self.style.timeout_ms.map(Duration::from_millis).unwrap_or(self.timeout);
+        let mut request = EnhanceRequest {
             system_prompt: system_prompt(self.style, self.base_prompt, self.vocabulary, &spoken),
             transcript: spoken,
             model: self.style.model.clone(),
             temperature: self.style.temperature,
-            timeout: self.style.timeout_ms.map(Duration::from_millis).unwrap_or(self.timeout),
+            timeout,
         };
+        // One time limit for all attempts. A zero timeout gives the default of
+        // the provider, so then there is no deadline here.
+        let deadline = (!timeout.is_zero()).then(|| Instant::now() + timeout);
         let mut attempts = Vec::new();
-        let mut attempt = || {
+        let mut attempt = |request: &EnhanceRequest| {
             let started = Instant::now();
-            let result = enhancer.enhance(&request).and_then(|response| {
+            let result = enhancer.enhance(request).and_then(|response| {
                 if is_runaway(&replaced, &response.text) {
                     return Err(EnhanceError::InvalidOutput("the reply is much longer than the text".into()));
                 }
@@ -75,15 +79,24 @@ impl TextPipeline<'_> {
             });
             result
         };
-        // One retry when the reply has the wrong shape. Timeouts are not retried.
-        let mut result = attempt();
-        if matches!(result, Err(EnhanceError::InvalidOutput(_))) {
-            result = attempt();
+        // One retry when the reply has the wrong shape, with the time that is
+        // left. Timeouts are not retried.
+        let mut result = attempt(&request);
+        let left = deadline.map(|deadline| deadline.saturating_duration_since(Instant::now()));
+        if matches!(result, Err(EnhanceError::InvalidOutput(_))) && left != Some(Duration::ZERO) {
+            if let Some(left) = left {
+                request.timeout = left;
+            }
+            result = attempt(&request);
+            // The retry ran out of the time limit of the whole step.
+            if deadline.is_some() && matches!(result, Err(EnhanceError::Timeout(_))) {
+                result = Err(EnhanceError::Timeout(timeout.as_millis() as u64));
+            }
         }
         // The time the user waited: a retry counts too.
         let elapsed_ms = attempts.iter().map(|a| a.elapsed_ms).sum();
         let timings = Some(EnhanceTimings {
-            timeout_ms: request.timeout.as_millis() as u64,
+            timeout_ms: timeout.as_millis() as u64,
             prompt_chars: request.system_prompt.chars().count() + request.transcript.chars().count(),
             attempts,
             ..Default::default()
@@ -218,6 +231,63 @@ mod tests {
         assert_eq!(timings.attempts.len(), 2);
         assert!(timings.attempts[0].error.as_deref().is_some_and(|e| e.contains("schema")));
         assert_eq!((timings.attempts[1].error.as_deref(), timings.attempts[1].mode.as_deref()), (None, Some("json_schema")));
+    }
+
+    /// A provider that answers with the wrong shape after `delay`, and keeps
+    /// to the timeout of the request like a real one.
+    struct SlowInvalid {
+        delay: Duration,
+        timeouts: Mutex<Vec<Duration>>,
+    }
+
+    impl Enhancer for SlowInvalid {
+        fn id(&self) -> &str {
+            "slow"
+        }
+        fn is_cloud(&self) -> bool {
+            false
+        }
+        fn enhance(&self, request: &EnhanceRequest) -> Result<EnhanceResponse, EnhanceError> {
+            self.timeouts.lock().unwrap().push(request.timeout);
+            if self.delay >= request.timeout {
+                std::thread::sleep(request.timeout);
+                return Err(EnhanceError::Timeout(request.timeout.as_millis() as u64));
+            }
+            std::thread::sleep(self.delay);
+            Err(EnhanceError::InvalidOutput("x".into()))
+        }
+    }
+
+    #[test]
+    fn the_retry_gets_only_the_time_that_is_left() {
+        let slow = SlowInvalid { delay: Duration::from_millis(300), timeouts: Mutex::new(vec![]) };
+        let replacer = Replacer::new(&[]);
+        let clean = style("clean");
+        let timeout = Duration::from_millis(400);
+        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&slow), timeout };
+        let started = Instant::now();
+        let out = p.run("keep this text");
+        // Two full attempts would take 600 ms.
+        assert!(started.elapsed() < timeout + Duration::from_millis(100), "took {:?}", started.elapsed());
+        assert_eq!(out.text, "keep this text");
+        assert_eq!(out.enhance_error, Some(("slow".to_string(), EnhanceError::Timeout(400))), "the limit of the whole step");
+        let timeouts = slow.timeouts.lock().unwrap();
+        assert_eq!(timeouts.len(), 2);
+        assert_eq!(timeouts[0], timeout);
+        assert!(timeouts[1] <= Duration::from_millis(100), "the retry got {:?}", timeouts[1]);
+        assert_eq!(out.timings.unwrap().timeout_ms, 400);
+    }
+
+    #[test]
+    fn no_retry_when_the_time_is_gone() {
+        let fake = Fake::new(vec![Err(EnhanceError::InvalidOutput("x".into())), ok("Too late.")]);
+        let replacer = Replacer::new(&[]);
+        let clean = style("clean");
+        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), timeout: Duration::from_nanos(1) };
+        let out = p.run("keep this text");
+        assert_eq!(out.text, "keep this text");
+        assert_eq!(fake.seen.lock().unwrap().len(), 1);
+        assert!(matches!(out.enhance_error, Some((_, EnhanceError::InvalidOutput(_)))));
     }
 
     #[test]
