@@ -2,6 +2,7 @@
 
 use super::ext::StyleRoute;
 use super::kit::{self, caps, ui};
+use crate::devices::ViewWatch;
 use crate::hub::{Route, SettingsPage};
 use crate::model::AppModel;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -32,13 +33,20 @@ fn stat_value(text: impl Into<SharedString>, size: f32, c: &Colors) -> Div {
 
 pub struct HomePage {
     model: Entity<AppModel>,
+    /// The checklist shows the microphone, so the device list stays fresh while this page shows.
+    devices: ViewWatch,
     _observe: Subscription,
 }
 
 impl HomePage {
     pub fn new(model: Entity<AppModel>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let observe = cx.observe(&model, |_, _, cx| cx.notify());
-        Self { model, _observe: observe }
+        let observe = cx.observe(&model, |this: &mut Self, model, cx| {
+            this.devices.set(model.read(cx).route == Route::Home, &model, cx);
+            cx.notify();
+        });
+        let mut devices = ViewWatch::default();
+        devices.set(model.read(cx).route == Route::Home, &model, cx);
+        Self { model, devices, _observe: observe }
     }
 
     fn header(&self, narrow: bool, cx: &App) -> Div {

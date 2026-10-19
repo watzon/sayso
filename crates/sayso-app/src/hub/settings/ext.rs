@@ -4,7 +4,7 @@ use crate::live::LiveAudio;
 use crate::model::AppModel;
 use gpui_kit::*;
 use sayso_core::hotkey::Hotkey;
-use sayso_platform::{AppInfo, CaptureHandle, LoginItemState, SoundKind};
+use sayso_platform::{AppInfo, AudioDevice, CaptureHandle, LoginItemState, SoundKind};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,6 +15,17 @@ pub enum Recorded {
     /// The system key listener could not start (no Input Monitoring).
     Unavailable,
     TimedOut,
+}
+
+/// The id of the device that a config value names. The value may hold an id
+/// or a name. None when no device matches, which means the system default.
+fn resolve_device(devices: &[AudioDevice], value: Option<&str>) -> Option<String> {
+    let value = value?;
+    devices
+        .iter()
+        .find(|d| d.id == value)
+        .or_else(|| devices.iter().find(|d| d.name == value))
+        .map(|d| d.id.clone())
 }
 
 impl AppModel {
@@ -89,21 +100,17 @@ impl AppModel {
         std::fs::write(&path, text).map_err(|e| e.to_string())
     }
 
-    /// The device id for a config value. Config may hold an id or a name.
+    /// The device id for a config value, from the cached device list. Config
+    /// may hold an id or a name.
     pub fn resolve_input_device(&self, value: Option<&str>) -> Option<String> {
-        let value = value?;
-        let devices = self.input_devices();
-        devices
-            .iter()
-            .find(|d| d.id == value)
-            .or_else(|| devices.iter().find(|d| d.name == value))
-            .map(|d| d.id.clone())
+        resolve_device(&self.input_devices(), value)
     }
 
     /// Open the microphone for a level meter (mic test). Levels go to `live`,
     /// not to the dictation levels. Drop the handle to stop.
     pub fn start_level_meter(&self, device: Option<&str>, live: Arc<LiveAudio>) -> Result<Box<dyn CaptureHandle>, String> {
-        let id = self.resolve_input_device(device);
+        // A fresh scan, not the cache: a meter starts once, and the cache may be empty at startup.
+        let id = resolve_device(&self.services.platform.audio.devices(), device);
         self.services
             .platform
             .audio
@@ -114,5 +121,24 @@ impl AppModel {
     /// Play the start sound at the configured volume, for the volume slider.
     pub fn preview_sound(&self) {
         self.services.platform.sounds.play(SoundKind::Start, self.config.sounds.volume);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_device;
+    use sayso_platform::AudioDevice;
+
+    fn device(id: &str, name: &str) -> AudioDevice {
+        AudioDevice { id: id.into(), name: name.into(), is_default: false }
+    }
+
+    #[test]
+    fn a_config_value_names_a_device_by_id_or_by_name() {
+        let devices = [device("uid-1", "Built-in"), device("uid-2", "USB Mic")];
+        assert_eq!(resolve_device(&devices, Some("uid-2")).as_deref(), Some("uid-2"));
+        assert_eq!(resolve_device(&devices, Some("USB Mic")).as_deref(), Some("uid-2"));
+        assert_eq!(resolve_device(&devices, Some("gone")), None);
+        assert_eq!(resolve_device(&devices, None), None);
     }
 }

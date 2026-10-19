@@ -55,6 +55,8 @@ pub struct OnboardingView {
     locale: String,
     /// The window has no room for two columns (set at each render).
     narrow: bool,
+    /// The device list stays fresh on the step that shows the microphone.
+    devices: crate::devices::ViewWatch,
     _observe: Subscription,
 }
 
@@ -93,6 +95,7 @@ impl OnboardingView {
             language_menu: None,
             locale: sayso_i18n::locale(),
             narrow: false,
+            devices: Default::default(),
             _observe: observe,
         };
         this.entered(step, window, cx);
@@ -113,6 +116,7 @@ impl OnboardingView {
         if step != 3 {
             self.stop_meter();
         }
+        self.devices.set(step == 3, &self.model, cx);
         if step == 5 {
             self.practice.enter(window, cx);
         }

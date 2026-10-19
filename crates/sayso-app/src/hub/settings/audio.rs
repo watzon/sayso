@@ -1,6 +1,7 @@
 //! Settings › Audio: input device, a live level meter, live preview, max length.
 
 use super::kit::{self, group, row};
+use crate::devices::ViewWatch;
 use crate::hub::{Route, SettingsPage};
 use crate::live::LiveAudio;
 use crate::model::AppModel;
@@ -24,6 +25,8 @@ pub struct AudioSettings {
     meter: Option<(Option<String>, Box<dyn CaptureHandle>)>,
     meter_error: Option<String>,
     started: Instant,
+    /// The device list stays fresh while this page shows.
+    devices: ViewWatch,
     _observe: Subscription,
 }
 
@@ -31,12 +34,16 @@ impl AudioSettings {
     pub fn new(model: Entity<AppModel>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         // Stop the microphone as soon as the page is not shown.
         let observe = cx.observe(&model, |this: &mut Self, model, cx| {
-            if model.read(cx).route != Route::Settings(SettingsPage::Audio) {
+            let shown = model.read(cx).route == Route::Settings(SettingsPage::Audio);
+            if !shown {
                 this.stop_meter();
             }
+            this.devices.set(shown, &model, cx);
             cx.notify();
         });
-        Self { model, live: Arc::new(LiveAudio::default()), meter: None, meter_error: None, started: Instant::now(), _observe: observe }
+        let mut devices = ViewWatch::default();
+        devices.set(model.read(cx).route == Route::Settings(SettingsPage::Audio), &model, cx);
+        Self { model, live: Arc::new(LiveAudio::default()), meter: None, meter_error: None, started: Instant::now(), devices, _observe: observe }
     }
 
     fn stop_meter(&mut self) {

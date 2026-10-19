@@ -8,6 +8,7 @@ mod app;
 mod caption;
 mod chrome;
 mod dev;
+mod devices;
 mod diagnostics;
 mod dictation;
 mod engine_text;

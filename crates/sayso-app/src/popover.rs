@@ -43,6 +43,8 @@ struct Tray {
     popover: Option<AnyWindowHandle>,
     visible: bool,
     _monitor: Option<mac::MonitorToken>,
+    /// Keeps the device list fresh while the popover shows.
+    _devices: Option<crate::devices::DeviceWatch>,
 }
 
 /// Where the popover window goes for a menu bar icon at `icon`, and the side
@@ -86,7 +88,7 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
     });
     let has_icon = icon.is_some();
     // The popover keeps its state here, with or without an icon.
-    TRAY.with(|t| *t.borrow_mut() = Some(Tray { icon, popover: None, visible: false, _monitor: None }));
+    TRAY.with(|t| *t.borrow_mut() = Some(Tray { icon, popover: None, visible: false, _monitor: None, _devices: None }));
     // Close when the outside-click monitor asks (it runs outside GPUI). One
     // pending request is enough, so the channel holds one.
     let (hide_tx, hide_rx) = async_channel::bounded::<()>(1);
@@ -170,6 +172,7 @@ fn hide_popover(cx: &mut App) {
         let t = t.as_mut()?;
         t.visible = false;
         t._monitor = None;
+        t._devices = None;
         // Where a window cannot be hidden, it is closed and opened again.
         if keep { t.popover } else { t.popover.take() }
     });
@@ -272,15 +275,17 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
             }
         });
     });
+    let devices = model.update(cx, |m, cx| {
+        m.refresh_permissions();
+        cx.notify();
+        m.watch_input_devices(cx)
+    });
     TRAY.with(|t| {
         if let Some(t) = t.borrow_mut().as_mut() {
             t.visible = true;
             t._monitor = Some(monitor);
+            t._devices = Some(devices);
         }
-    });
-    model.update(cx, |m, cx| {
-        m.refresh_permissions();
-        cx.notify();
     });
 }
 

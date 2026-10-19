@@ -21,7 +21,7 @@ use sayso_core::paths::Paths;
 use sayso_core::stats::{self, Stats};
 use sayso_core::stt::ModelStatus;
 use sayso_core::style::{Style, StyleLibrary};
-use sayso_platform::{AudioDevice, HotkeyConflict, Permission, PermissionState};
+use sayso_platform::{HotkeyConflict, Permission, PermissionState};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -156,6 +156,8 @@ pub struct AppModel {
     pub(crate) updater: Option<sayso_update::Updater>,
     /// The version of the last update, until the user saw "Sayso is now X".
     pub update_notice: Option<sayso_update::manifest::Version>,
+    /// The input devices, scanned off the UI thread. See `devices.rs`.
+    pub(crate) devices: crate::devices::InputDevices,
 }
 
 impl EventEmitter<AppEvent> for AppModel {}
@@ -267,11 +269,13 @@ impl AppModel {
             update: sayso_update::Status::Idle { last_check: None },
             updater: None,
             update_notice: None,
+            devices: Default::default(),
         };
         model.system_dark = model.services.platform.prefs.dark_mode();
         model.reload_dictionary();
         model.reload_history();
         model.refresh_permissions();
+        model.refresh_input_devices(cx);
         // Local models only. The status of a cloud model comes from its provider.
         for m in sayso_core::models::catalog() {
             let status = model.services.engine.as_ref().map(|e| e.status(&m.id)).unwrap_or(ModelStatus::NotDownloaded);
@@ -1533,10 +1537,6 @@ impl AppModel {
 
     pub fn dismiss_notice(&mut self, cx: &mut Context<Self>) {
         self.dispatch(Event::Dismiss, cx);
-    }
-
-    pub fn input_devices(&self) -> Vec<AudioDevice> {
-        self.services.platform.audio.devices()
     }
 
     /// One-line engine status for the sidebar: (title, detail, color).
