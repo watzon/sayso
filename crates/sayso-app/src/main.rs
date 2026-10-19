@@ -27,6 +27,7 @@ mod popover;
 mod services;
 mod shell;
 mod site_icons;
+mod style_files;
 mod update_ui;
 mod whats_new;
 mod widgets;

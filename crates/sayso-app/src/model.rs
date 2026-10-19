@@ -137,6 +137,8 @@ pub struct AppModel {
     pub(crate) media: crate::media::MediaPause,
     pub(crate) started: Instant,
     pub(crate) config_mtime: Option<std::time::SystemTime>,
+    /// The styles folder when `styles` was last checked. A change reloads the styles.
+    pub(crate) styles_fingerprint: crate::style_files::Fingerprint,
     /// The macOS appearance last applied, for "Auto" theme mode.
     pub(crate) system_dark: bool,
     /// App icons for badges, cached on disk.
@@ -205,6 +207,7 @@ pub enum AppEvent {
 
 impl AppModel {
     pub fn new(paths: Paths, config: Config, issues: Vec<ConfigIssue>, services: Services, cx: &mut Context<Self>) -> Self {
+        let styles_fingerprint = crate::style_files::Fingerprint::of(&paths.styles_dir());
         let styles = StyleLibrary::load(&paths.styles_dir());
         let timing = Timing {
             min_duration_ms: config.dictation.min_duration_ms,
@@ -259,6 +262,7 @@ impl AppModel {
             media,
             started: Instant::now(),
             config_mtime,
+            styles_fingerprint,
             system_dark: false,
             icons,
             site_icons,

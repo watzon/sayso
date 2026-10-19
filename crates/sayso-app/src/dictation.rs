@@ -784,13 +784,18 @@ impl AppModel {
                     cx.notify();
                 }
         }
-        let styles = sayso_core::style::StyleLibrary::load(&self.paths.styles_dir());
-        if styles.entries != self.styles.entries
-            || styles.errors != self.styles.errors
-            || styles.user_base_prompt != self.styles.user_base_prompt
-        {
-            self.styles = styles;
-            cx.notify();
+        // Loading parses every style, so load only when the folder changed.
+        let fingerprint = crate::style_files::Fingerprint::of(&self.paths.styles_dir());
+        if fingerprint != self.styles_fingerprint {
+            self.styles_fingerprint = fingerprint;
+            let styles = sayso_core::style::StyleLibrary::load(&self.paths.styles_dir());
+            if styles.entries != self.styles.entries
+                || styles.errors != self.styles.errors
+                || styles.user_base_prompt != self.styles.user_base_prompt
+            {
+                self.styles = styles;
+                cx.notify();
+            }
         }
     }
 
