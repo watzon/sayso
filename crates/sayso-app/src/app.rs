@@ -240,7 +240,6 @@ pub fn open_hub(model: &Entity<AppModel>, route: Route, cx: &mut App) {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: titlebar(),
             window_min_size: crate::dev::size().is_none().then_some(crate::layout::min_size(crate::layout::HUB_MIN)),
-            inactive_frame_interval: None,
             // The window class on Linux, which matches the desktop entry.
             app_id: Some(crate::shell::APP_ID.into()),
             window_decorations: crate::chrome::decorations(&model.read(cx).config),
@@ -291,7 +290,6 @@ pub fn open_onboarding(model: &Entity<AppModel>, cx: &mut App) {
             window_decorations: crate::chrome::decorations(&model.read(cx).config),
             window_background: crate::chrome::background(),
             show: true,
-            inactive_frame_interval: None,
             ..Default::default()
         },
         cx,

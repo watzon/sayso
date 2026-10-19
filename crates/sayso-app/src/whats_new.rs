@@ -193,7 +193,6 @@ fn open_release(model: &Entity<AppModel>, release: Option<Release>, cx: &mut App
             window_decorations: crate::chrome::decorations(&model.read(cx).config),
             window_background: crate::chrome::background(),
             show: true,
-            inactive_frame_interval: None,
             ..Default::default()
         },
         cx,
