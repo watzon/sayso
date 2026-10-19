@@ -286,9 +286,18 @@ impl AppModel {
         // after its idle time: the first dictation loads it.
         model.model_idle = !model.config.dictation.preload_model;
         model.load_active_models(cx);
-        // Model names for the provider cards and style lines. The CLIs answer
-        // without a prompt, so this costs no tokens.
-        let ids: Vec<String> = model.config.ai.providers.iter().map(|p| p.id.clone()).collect();
+        // Model names for the provider cards and style lines. A CLI provider
+        // starts its tool for the list, so its list loads on first need: when
+        // the Hub opens (the Providers page checks the sign-in, then loads it)
+        // or a model picker opens. Until then a label is the short id.
+        let ids: Vec<String> = model
+            .config
+            .ai
+            .providers
+            .iter()
+            .filter(|p| !matches!(p.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::CodexCli { .. }))
+            .map(|p| p.id.clone())
+            .collect();
         for id in ids {
             model.load_provider_models(&id, false, cx);
         }
