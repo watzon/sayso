@@ -25,9 +25,13 @@ impl Global for Textures {}
 /// Logical size of one tile.
 const TILE: f32 = 512.0;
 
-fn decode(path: &str) -> Option<Arc<RenderImage>> {
+fn decode_rgba(path: &str) -> Option<image::RgbaImage> {
     let bytes = crate::assets::bytes(path)?;
-    let mut img = image::load_from_memory(&bytes).ok()?.into_rgba8();
+    Some(image::load_from_memory(&bytes).ok()?.into_rgba8())
+}
+
+fn decode(path: &str) -> Option<Arc<RenderImage>> {
+    let mut img = decode_rgba(path)?;
     // GPUI sprites are BGRA.
     for px in img.pixels_mut() {
         px.0.swap(0, 2);
@@ -81,4 +85,24 @@ pub fn grain(kind: Grain, radius: Pixels, cx: &App) -> AnyElement {
     .left_0()
     .size_full()
     .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    // Not `super::*`: it brings in the `test` macro of gpui.
+    use super::{TILE, decode_rgba};
+
+    /// The textures are palette PNGs. A decoder that ignores the tRNS chunk
+    /// would paint every pixel opaque.
+    #[test]
+    fn textures_decode_with_their_alpha() {
+        for name in ["board-light", "board-dark", "sheet-light", "sheet-dark"] {
+            let img = decode_rgba(&format!("textures/{name}.png")).unwrap_or_else(|| panic!("{name} does not decode"));
+            assert_eq!(img.dimensions(), (TILE as u32, TILE as u32), "{name}");
+            let alphas = img.pixels().map(|p| p.0[3]);
+            assert!(alphas.clone().any(|a| a == 0), "{name} has no clear pixel");
+            assert!(alphas.clone().any(|a| a > 0 && a < 255), "{name} has no partial alpha");
+            assert!(alphas.max() < Some(255), "{name} has an opaque pixel");
+        }
+    }
 }

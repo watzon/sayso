@@ -69,7 +69,24 @@ def overlay(luma, dark_rgb, light_rgb, strength):
     rgba[darker, :3] = dark_rgb
     rgba[~darker, :3] = light_rgb
     rgba[..., 3] = np.clip(np.abs(luma) * strength * 255, 0, 255).astype(np.uint8)
-    return Image.fromarray(rgba, "RGBA")
+    return rgba
+
+
+def save_palette(rgba, path):
+    """Save an RGBA overlay as a palette PNG, with the alpha in the tRNS chunk.
+
+    An overlay has few distinct colors (one RGB per tone, and the alpha steps),
+    so the palette form is about 40 % smaller and decodes to the same pixels.
+    Fully transparent pixels all get one entry, since their RGB is never seen.
+    """
+    rgba = rgba.copy()
+    rgba[rgba[..., 3] == 0, :3] = 0
+    colors, index = np.unique(rgba.reshape(-1, 4), axis=0, return_inverse=True)
+    if len(colors) > 256:
+        raise ValueError(f"{path.name} has {len(colors)} colors, and a palette holds 256")
+    image = Image.fromarray(index.reshape(rgba.shape[:2]).astype(np.uint8), "P")
+    image.putpalette(colors[:, :3].reshape(-1).tolist())
+    image.save(path, optimize=True, transparency=bytes(colors[:, 3]))
 
 
 def unit(field):
@@ -91,13 +108,13 @@ def paper_field(seed, mottle, grain, fiber, fiber_count, fleck_count):
 def main():
     # Content sheet: almost clean. Text sits here, so the texture stays very soft.
     sheet = paper_field(seed=7, mottle=0.3, grain=1.0, fiber=0.35, fiber_count=120, fleck_count=4)
-    overlay(sheet, (92, 74, 48), (255, 253, 248), 0.05).save(OUT / "sheet-light.png")
-    overlay(sheet, (0, 0, 0), (236, 230, 218), 0.03).save(OUT / "sheet-dark.png")
+    save_palette(overlay(sheet, (92, 74, 48), (255, 253, 248), 0.05), OUT / "sheet-light.png")
+    save_palette(overlay(sheet, (0, 0, 0), (236, 230, 218), 0.03), OUT / "sheet-dark.png")
 
     # Board (window background and sidebar): this carries the paper texture.
     board = paper_field(seed=11, mottle=0.5, grain=1.1, fiber=0.7, fiber_count=220, fleck_count=16)
-    overlay(board, (84, 66, 40), (255, 250, 240), 0.14).save(OUT / "board-light.png")
-    overlay(board, (0, 0, 0), (236, 230, 218), 0.055).save(OUT / "board-dark.png")
+    save_palette(overlay(board, (84, 66, 40), (255, 250, 240), 0.14), OUT / "board-light.png")
+    save_palette(overlay(board, (0, 0, 0), (236, 230, 218), 0.055), OUT / "board-dark.png")
 
 
 if __name__ == "__main__":
