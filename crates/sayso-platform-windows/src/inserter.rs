@@ -20,7 +20,7 @@
 
 use crate::context::{self, Integrity};
 use crate::input;
-use crate::paste_receipt::{Receipts, Verdict};
+use crate::paste_receipt::{Finish, Finisher, Receipts, Verdict};
 use crate::win32::wide;
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
@@ -166,24 +166,41 @@ pub(crate) trait Board {
     fn write_text(&self, text: &str) -> bool;
 }
 
+/// Wait until `receipts` give a verdict with `quiet`.
+fn wait_for(receipts: &Mutex<Receipts>, quiet: Duration) -> Verdict {
+    loop {
+        match receipts.lock().verdict(Instant::now(), quiet) {
+            Verdict::Wait => {}
+            done => return done,
+        }
+        sleep(RECEIPT_POLL);
+    }
+}
+
 /// Paste `text` through `board` and wait for the receipt.
 ///
-/// `send_paste` sends the paste key. `quiet` is how long the reads must have
-/// stopped before the old clipboard comes back. `after_read` runs once at the
-/// first read after the key, while the text is still on the clipboard; its
-/// failure does not fail the paste.
+/// `send_paste` sends the paste key. `after_read` runs once at the first read
+/// after the key, while the text is still on the clipboard; its failure does
+/// not fail the paste. The paste returns after it, so the text is in the app
+/// before the old clipboard comes back.
+///
+/// The returned [`Finish`] does the rest: it waits until the reads have
+/// stopped for `quiet` (some apps read several times for one paste), then
+/// puts the old clipboard back, or plain text in place of the delayed one.
+/// `clipboard_restored` is the plan, not the outcome: a copy made during the
+/// quiet time still wins.
 ///
 /// With no read, the app did not take the text. The old clipboard then stays
 /// away and the text stays on the clipboard, for two reasons: the user can
 /// paste it by hand, and an app that reads very late cannot get stale content.
-pub(crate) fn paste_with_receipt(
-    board: &impl Board,
+pub(crate) fn paste_with_receipt<B: Board + Send + Sync + 'static>(
+    board: Arc<B>,
     text: &str,
     restore_clipboard: bool,
     quiet: Duration,
     send_paste: impl FnOnce() -> Result<(), InsertError>,
     after_read: Option<&dyn Fn() -> Result<(), InsertError>>,
-) -> Result<InsertResult, InsertError> {
+) -> Result<(InsertResult, Option<Finish>), InsertError> {
     let saved = if restore_clipboard { Some(board.snapshot()?) } else { None };
     let receipts = Arc::new(Mutex::new(Receipts::default()));
     board.publish(text, receipts.clone())?;
@@ -193,50 +210,42 @@ pub(crate) fn paste_with_receipt(
         board.write_text(text);
         return Err(e);
     }
-    let mut after_read = after_read;
-    let verdict = loop {
-        let now = Instant::now();
-        let (read, verdict) = {
-            let r = receipts.lock();
-            (r.verdict(now, Duration::ZERO) == Verdict::Taken, r.verdict(now, quiet))
-        };
-        if read
-            && let Some(step) = after_read.take()
-            && let Err(e) = step()
-        {
-            log::warn!("the step after the paste failed: {e}");
+    // A zero quiet time: the first read after the key is enough to return.
+    if wait_for(&receipts, Duration::ZERO) != Verdict::Taken {
+        if board.still_ours() {
+            board.write_text(text);
         }
-        match verdict {
-            Verdict::Wait => {}
-            done => break done,
-        }
-        sleep(RECEIPT_POLL);
-    };
-    // Still our text on the clipboard? If not, the user or another app
-    // copied something newer, and that content must stay.
-    let still_ours = board.still_ours();
-    match verdict {
-        Verdict::Taken => {
-            let clipboard_restored = match &saved {
-                Some(saved) => still_ours && board.restore(saved),
-                None => {
-                    if still_ours {
-                        // Plain text in place of the delayed one, so it can
-                        // go into clipboard history now.
-                        board.write_text(text);
-                    }
-                    false
-                }
-            };
-            Ok(InsertResult::Pasted { clipboard_restored })
-        }
-        Verdict::NotTaken | Verdict::Wait => {
-            if still_ours {
-                board.write_text(text);
-            }
-            Err(InsertError::NotTaken)
-        }
+        return Err(InsertError::NotTaken);
     }
+    if let Some(step) = after_read
+        && let Err(e) = step()
+    {
+        log::warn!("the step after the paste failed: {e}");
+    }
+    let clipboard_restored = saved.is_some() && board.still_ours();
+    let text = text.to_string();
+    let finish: Finish = Box::new(move || {
+        wait_for(&receipts, quiet);
+        let _one_at_a_time = PASTE.lock();
+        // Still our text on the clipboard? If not, the user or another app
+        // copied something newer, and that content must stay.
+        if !board.still_ours() {
+            return;
+        }
+        match &saved {
+            Some(saved) => {
+                if !board.restore(saved) {
+                    log::warn!("cannot restore the clipboard");
+                }
+            }
+            // Plain text in place of the delayed one, so it can go into
+            // clipboard history now.
+            None => {
+                board.write_text(&text);
+            }
+        }
+    });
+    Ok((InsertResult::Pasted { clipboard_restored }, Some(finish)))
 }
 
 // ---------------------------------------------------------------------------
@@ -706,31 +715,36 @@ fn press_return() -> Result<(), InsertError> {
     type_text("\n")
 }
 
+/// The finish of the last paste. The next insert waits for it.
+static FINISHER: Finisher = Finisher::new();
+
 impl WinInserter {
     /// Insert `text`, and with `submit` press Return after it.
     fn insert_then(&self, text: &str, method: InsertMethod, submit: bool) -> Result<InsertResult, InsertError> {
-        preflight()?;
-        let submit_step: &dyn Fn() -> Result<(), InsertError> = &press_return;
-        match method {
-            InsertMethod::Type => {
-                type_text(text)?;
-                if submit && let Err(e) = press_return() {
-                    log::warn!("cannot press Return after the text: {e}");
+        FINISHER.insert(|| {
+            preflight()?;
+            let submit_step: &dyn Fn() -> Result<(), InsertError> = &press_return;
+            match method {
+                InsertMethod::Type => {
+                    type_text(text)?;
+                    if submit && let Err(e) = press_return() {
+                        log::warn!("cannot press Return after the text: {e}");
+                    }
+                    Ok((InsertResult::Typed, None))
                 }
-                Ok(InsertResult::Typed)
+                InsertMethod::Paste { restore_clipboard, restore_delay } => {
+                    let _one_at_a_time = PASTE.lock();
+                    paste_with_receipt(
+                        Arc::new(SystemClipboard),
+                        text,
+                        restore_clipboard,
+                        restore_delay,
+                        post_ctrl_v,
+                        submit.then_some(submit_step),
+                    )
+                }
             }
-            InsertMethod::Paste { restore_clipboard, restore_delay } => {
-                let _one_at_a_time = PASTE.lock();
-                paste_with_receipt(
-                    &SystemClipboard,
-                    text,
-                    restore_clipboard,
-                    restore_delay,
-                    post_ctrl_v,
-                    submit.then_some(submit_step),
-                )
-            }
-        }
+        })
     }
 }
 
@@ -911,11 +925,73 @@ mod tests {
 
     const QUIET: Duration = Duration::from_millis(30);
 
+    /// A paste whose finish runs before it returns, as if its thread had ended.
+    fn paste<B: Board + Send + Sync + 'static>(
+        board: &Arc<B>,
+        text: &str,
+        restore: bool,
+        quiet: Duration,
+        send_paste: impl FnOnce() -> Result<(), InsertError>,
+        after_read: Option<&dyn Fn() -> Result<(), InsertError>>,
+    ) -> Result<InsertResult, InsertError> {
+        let (result, finish) = paste_with_receipt(board.clone(), text, restore, quiet, send_paste, after_read)?;
+        finish.expect("a paste that an app read has a finish")();
+        Ok(result)
+    }
+
+    #[test]
+    fn the_paste_returns_at_the_first_read_and_restores_after_the_quiet_time() {
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
+        let quiet = Duration::from_millis(300);
+        let started = Instant::now();
+        let (result, finish) = paste_with_receipt(board.clone(), "dictated text", true, quiet, || {
+            board.read();
+            Ok(())
+        }, None)
+        .unwrap();
+        assert!(started.elapsed() < quiet, "returned after {:?}", started.elapsed());
+        assert_eq!(result, InsertResult::Pasted { clipboard_restored: true });
+        assert_eq!(board.read().as_deref(), Some("dictated text"), "a second read still gets the text");
+        finish.expect("a finish")();
+        assert!(started.elapsed() >= quiet);
+        assert_eq!(board.read().as_deref(), Some("what the user copied"));
+    }
+
+    #[test]
+    fn without_restore_the_paste_returns_at_the_first_read() {
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
+        let quiet = Duration::from_millis(300);
+        let started = Instant::now();
+        let (result, finish) = paste_with_receipt(board.clone(), "dictated text", false, quiet, || {
+            board.read();
+            Ok(())
+        }, None)
+        .unwrap();
+        assert!(started.elapsed() < quiet, "returned after {:?}", started.elapsed());
+        assert_eq!(result, InsertResult::Pasted { clipboard_restored: false });
+        finish.expect("a finish that leaves plain text")();
+        assert_eq!(board.read().as_deref(), Some("dictated text"));
+    }
+
+    #[test]
+    fn a_copy_after_the_return_is_not_overwritten() {
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
+        let (result, finish) = paste_with_receipt(board.clone(), "dictated text", true, QUIET, || {
+            board.read();
+            Ok(())
+        }, None)
+        .unwrap();
+        assert_eq!(result, InsertResult::Pasted { clipboard_restored: true }, "the plan at the return");
+        board.copy("copied after the paste");
+        finish.expect("a finish")();
+        assert_eq!(board.read().as_deref(), Some("copied after the paste"));
+    }
+
     #[test]
     fn a_paste_that_an_app_reads_succeeds_and_restores_the_clipboard() {
-        let board = FakeBoard::with_text("what the user copied");
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
         let mut read = None;
-        let result = paste_with_receipt(&board, "dictated text", true, QUIET, || {
+        let result = paste(&board, "dictated text", true, QUIET, || {
             // The target app reads the clipboard when it gets Ctrl+V.
             read = board.read();
             Ok(())
@@ -928,9 +1004,9 @@ mod tests {
 
     #[test]
     fn a_paste_that_no_app_reads_fails_and_leaves_the_text_on_the_clipboard() {
-        let board = FakeBoard::with_text("what the user copied");
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
         let started = Instant::now();
-        let result = paste_with_receipt(&board, "dictated text", true, QUIET, || Ok(()), None);
+        let result = paste(&board, "dictated text", true, QUIET, || Ok(()), None);
         assert_eq!(result, Err(InsertError::NotTaken));
         assert!(started.elapsed() >= crate::paste_receipt::NO_READ_TIMEOUT);
         assert_eq!(board.read().as_deref(), Some("dictated text"), "the user can paste it by hand");
@@ -938,8 +1014,8 @@ mod tests {
 
     #[test]
     fn without_restore_the_text_stays_on_the_clipboard_after_the_paste() {
-        let board = FakeBoard::with_text("what the user copied");
-        let result = paste_with_receipt(&board, "dictated text", false, QUIET, || {
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
+        let result = paste(&board, "dictated text", false, QUIET, || {
             board.read();
             Ok(())
         }, None);
@@ -949,8 +1025,8 @@ mod tests {
 
     #[test]
     fn a_newer_copy_during_the_paste_is_not_overwritten() {
-        let board = FakeBoard::with_text("what the user copied");
-        let result = paste_with_receipt(&board, "dictated text", true, QUIET, || {
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
+        let result = paste(&board, "dictated text", true, QUIET, || {
             board.read();
             board.copy("copied during the paste");
             Ok(())
@@ -961,9 +1037,9 @@ mod tests {
 
     #[test]
     fn a_copy_before_any_read_ends_the_wait_at_once() {
-        let board = FakeBoard::with_text("what the user copied");
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
         let started = Instant::now();
-        let result = paste_with_receipt(&board, "dictated text", true, QUIET, || {
+        let result = paste(&board, "dictated text", true, QUIET, || {
             board.copy("copied during the paste");
             Ok(())
         }, None);
@@ -974,21 +1050,21 @@ mod tests {
 
     #[test]
     fn a_paste_key_that_cannot_be_sent_leaves_the_text_on_the_clipboard() {
-        let board = FakeBoard::with_text("what the user copied");
-        let result = paste_with_receipt(&board, "dictated text", true, QUIET, || Err(InsertError::Failed("no key".into())), None);
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
+        let result = paste(&board, "dictated text", true, QUIET, || Err(InsertError::Failed("no key".into())), None);
         assert_eq!(result, Err(InsertError::Failed("no key".into())));
         assert_eq!(board.read().as_deref(), Some("dictated text"));
     }
 
     #[test]
     fn the_step_after_the_read_runs_once_before_the_restore() {
-        let board = FakeBoard::with_text("what the user copied");
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
         let seen = Mutex::new(Vec::new());
         let step = || {
             seen.lock().push(board.read());
             Ok(())
         };
-        let result = paste_with_receipt(&board, "dictated text", true, QUIET, || {
+        let result = paste(&board, "dictated text", true, QUIET, || {
             board.read();
             Ok(())
         }, Some(&step));
@@ -999,22 +1075,22 @@ mod tests {
 
     #[test]
     fn with_no_read_the_step_after_the_read_does_not_run() {
-        let board = FakeBoard::with_text("what the user copied");
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
         let ran = Mutex::new(false);
         let step = || {
             *ran.lock() = true;
             Ok(())
         };
-        let result = paste_with_receipt(&board, "dictated text", true, QUIET, || Ok(()), Some(&step));
+        let result = paste(&board, "dictated text", true, QUIET, || Ok(()), Some(&step));
         assert_eq!(result, Err(InsertError::NotTaken));
         assert!(!*ran.lock());
     }
 
     #[test]
     fn a_failed_step_after_the_read_does_not_fail_the_paste() {
-        let board = FakeBoard::with_text("what the user copied");
+        let board = Arc::new(FakeBoard::with_text("what the user copied"));
         let step = || Err(InsertError::Failed("no Return".into()));
-        let result = paste_with_receipt(&board, "dictated text", true, QUIET, || {
+        let result = paste(&board, "dictated text", true, QUIET, || {
             board.read();
             Ok(())
         }, Some(&step));
@@ -1137,7 +1213,7 @@ mod tests {
         SystemClipboard.write_text("before the paste");
         let mut read = None;
         let mut skipped = false;
-        let result = paste_with_receipt(&SystemClipboard, "dictated text ✓", true, QUIET, || {
+        let result = paste(&Arc::new(SystemClipboard), "dictated text ✓", true, QUIET, || {
             skipped = clipboard_has("ExcludeClipboardContentFromMonitorProcessing")
                 && clipboard_has("CanIncludeInClipboardHistory");
             read = read_like_an_app();
@@ -1162,7 +1238,7 @@ mod tests {
         SystemClipboard.write_text("before the paste");
         let mut monitor_read = Some(String::new());
         let mut target_read = None;
-        let result = paste_with_receipt(&SystemClipboard, "dictated text", true, QUIET, || {
+        let result = paste(&Arc::new(SystemClipboard), "dictated text", true, QUIET, || {
             // A clipboard monitor: a window of a process that is not in front.
             monitor_read = read_with_window();
             // Then the target, which cannot be told apart, so it is served.
@@ -1218,7 +1294,7 @@ mod tests {
         let _ = env_logger::builder().is_test(true).try_init();
         let _saved = SavedClipboard::take();
         SystemClipboard.write_text("before the paste");
-        let result = paste_with_receipt(&SystemClipboard, "dictated text", true, QUIET, || Ok(()), None);
+        let result = paste(&Arc::new(SystemClipboard), "dictated text", true, QUIET, || Ok(()), None);
         assert_eq!(result, Err(InsertError::NotTaken));
         assert_eq!(read_like_an_app().as_deref(), Some("dictated text"));
         assert!(!clipboard_has("ExcludeClipboardContentFromMonitorProcessing"), "the left text is plain");
@@ -1230,7 +1306,7 @@ mod tests {
         let _one = REAL.lock();
         let _saved = SavedClipboard::take();
         SystemClipboard.write_text("before the paste");
-        let result = paste_with_receipt(&SystemClipboard, "dictated text", true, QUIET, || {
+        let result = paste(&Arc::new(SystemClipboard), "dictated text", true, QUIET, || {
             read_like_an_app();
             // Another app copies: it opens the clipboard with no window and empties it.
             // SAFETY: open, empty, set, close, all here.
@@ -1276,11 +1352,12 @@ mod tests {
         let pasted = WinInserter.insert("pasted ✓ ", paste);
         assert_eq!(pasted, Ok(InsertResult::Pasted { clipboard_restored: true }));
         assert_eq!(window.wait_for("pasted ✓ "), "pasted ✓ ");
-        assert_eq!(read_like_an_app().as_deref(), Some("before the paste"));
 
         assert!(window.is_in_front());
         let typed = WinInserter.insert("typed 😀\nline two", InsertMethod::Type);
         assert_eq!(typed, Ok(InsertResult::Typed));
+        // The insert waited for the restore of the paste before it.
+        assert_eq!(read_like_an_app().as_deref(), Some("before the paste"));
         let want = "pasted ✓ typed 😀\r\nline two";
         assert_eq!(window.wait_for(want), want);
     }

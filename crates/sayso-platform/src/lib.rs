@@ -127,6 +127,8 @@ pub enum InsertMethod {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InsertResult {
+    /// `clipboard_restored` is the plan: the old clipboard comes back after
+    /// the call, when the app stops reading. A copy made before then wins.
     Pasted { clipboard_restored: bool },
     Typed,
 }

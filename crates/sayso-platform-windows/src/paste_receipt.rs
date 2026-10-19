@@ -4,8 +4,11 @@
 //! The paste publishes the text as a promise. macOS then tells us each time
 //! an app reads it. A read after Cmd+V is the receipt: an app took the text.
 //! This module holds the times and decides what they mean. It has no macOS
-//! code, so the rules are tested directly.
+//! code, so the rules are tested directly. The [`Finisher`] runs the rest of
+//! a paste after the insert returns.
 
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 /// How long to wait for the first read after Cmd+V. A busy app reads within
@@ -69,6 +72,56 @@ impl Receipts {
             _ if now.duration_since(sent_at) >= NO_READ_TIMEOUT => Verdict::NotTaken,
             _ => Verdict::Wait,
         }
+    }
+}
+
+/// The rest of a paste after its receipt: wait until the reads stop, then put
+/// the old clipboard back or leave the text. It runs after the insert returns.
+pub type Finish = Box<dyn FnOnce() + Send>;
+
+/// Runs the finish of each paste on a thread of its own, one at a time.
+///
+/// The next insert waits for the finish of the last paste, so that its
+/// snapshot never takes the dictated text for the user's clipboard, and two
+/// pastes never use the clipboard at the same time.
+#[derive(Debug, Default)]
+pub struct Finisher {
+    last: Mutex<Option<JoinHandle<()>>>,
+}
+
+impl Finisher {
+    pub const fn new() -> Self {
+        Self { last: Mutex::new(None) }
+    }
+
+    /// Wait for the finish of the last paste, then run `insert`. A finish that
+    /// `insert` gives back runs after this call returns.
+    pub fn insert<R, E>(&self, insert: impl FnOnce() -> Result<(R, Option<Finish>), E>) -> Result<R, E> {
+        let mut last = self.last.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(pending) = last.take() {
+            let _ = pending.join();
+        }
+        let (result, finish) = insert()?;
+        if let Some(finish) = finish {
+            // Shared, so that the finish still runs here when no thread starts.
+            let slot = Arc::new(Mutex::new(Some(finish)));
+            let theirs = Arc::clone(&slot);
+            match std::thread::Builder::new().name("sayso-clipboard-restore".into()).spawn(move || run_once(&theirs)) {
+                Ok(handle) => *last = Some(handle),
+                Err(e) => {
+                    log::warn!("cannot start the clipboard restore, so it runs now: {e}");
+                    run_once(&slot);
+                }
+            }
+        }
+        Ok(result)
+    }
+}
+
+fn run_once(slot: &Mutex<Option<Finish>>) {
+    let finish = slot.lock().unwrap_or_else(PoisonError::into_inner).take();
+    if let Some(finish) = finish {
+        finish();
     }
 }
 
@@ -156,5 +209,37 @@ mod tests {
         read.record_read(t + ms(5));
         read.mark_replaced();
         assert_eq!(read.verdict(t + ms(6), QUIET), Verdict::Taken);
+    }
+
+    #[test]
+    fn the_insert_returns_before_its_finish_and_the_next_insert_waits_for_it() {
+        let finisher = Finisher::new();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let theirs = Arc::clone(&events);
+        let started = Instant::now();
+        let first: Result<u8, ()> = finisher.insert(|| {
+            let finish: Finish = Box::new(move || {
+                std::thread::sleep(ms(150));
+                theirs.lock().unwrap().push("first finished");
+            });
+            Ok((1, Some(finish)))
+        });
+        assert_eq!(first, Ok(1));
+        assert!(started.elapsed() < ms(150), "returned after {:?}", started.elapsed());
+        events.lock().unwrap().push("first returned");
+        let second: Result<u8, ()> = finisher.insert(|| {
+            events.lock().unwrap().push("second started");
+            Ok((2, None))
+        });
+        assert_eq!(second, Ok(2));
+        assert_eq!(*events.lock().unwrap(), ["first returned", "first finished", "second started"]);
+    }
+
+    #[test]
+    fn a_failed_insert_leaves_nothing_to_wait_for() {
+        let finisher = Finisher::new();
+        let result: Result<(), &str> = finisher.insert(|| Err("no key"));
+        assert_eq!(result, Err("no key"));
+        assert!(finisher.last.lock().unwrap().is_none());
     }
 }

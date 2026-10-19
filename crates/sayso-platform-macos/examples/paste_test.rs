@@ -18,5 +18,7 @@ mod mac {
         let method = if std::env::args().any(|a| a == "--type") { InsertMethod::Type } else {
             InsertMethod::Paste { restore_clipboard: true, restore_delay: std::time::Duration::from_millis(450) } };
         println!("{:?}", platform.inserter.insert("hello from sayso ", method));
+        // The old clipboard comes back after the call, on another thread.
+        std::thread::sleep(sayso_platform_macos::paste_receipt::MAX_SETTLE);
     }
 }

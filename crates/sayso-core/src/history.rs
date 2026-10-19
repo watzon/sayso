@@ -141,10 +141,8 @@ pub struct EnhanceAttempt {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct InsertTimings {
-    /// The whole call. On macOS and Windows a paste also waits
-    /// `restore_delay_ms` after the app read the text, before the old
-    /// clipboard comes back. On Linux it returns at the first read, and the
-    /// old clipboard comes back after the call.
+    /// The whole call. A paste returns at the first read, and the old
+    /// clipboard comes back after the call.
     pub elapsed_ms: u64,
     /// "paste" or "type": what Sayso asked for.
     pub method: String,
