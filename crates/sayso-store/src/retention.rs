@@ -51,15 +51,18 @@ impl Store {
 
         if let Some(days) = keep_audio_days {
             let cutoff = cutoff_millis(now, days);
-            let files = audio_files(&self.conn.lock(), "created_at < ?", cutoff)?;
-            for file in files {
-                // Clear the column first. A file with no row is an orphan, which is
-                // harmless. A row that points at a deleted file would be a broken player.
-                self.conn.lock().execute("UPDATE history SET audio_file = NULL WHERE audio_file = ?", params![file])?;
-                if self.remove_audio_file(&file) {
-                    report.audio_deleted += 1;
-                }
-            }
+            // Clear the column first, in one transaction. A file with no row is an
+            // orphan, which is harmless. A row that points at a deleted file would
+            // be a broken player.
+            let files = {
+                let mut conn = self.conn.lock();
+                let tx = conn.transaction()?;
+                let files = audio_files(&tx, "created_at < ?", cutoff)?;
+                tx.execute("UPDATE history SET audio_file = NULL WHERE audio_file IS NOT NULL AND created_at < ?", params![cutoff])?;
+                tx.commit()?;
+                files
+            };
+            report.audio_deleted += files.iter().filter(|f| self.remove_audio_file(f)).count();
         }
         Ok(report)
     }
@@ -137,6 +140,25 @@ mod tests {
         let report = store.apply_retention(Some(90), Some(30), base_time()).unwrap();
         assert_eq!(report, RetentionReport { entries_deleted: 1, audio_deleted: 2 });
         assert_eq!(store.get(mid_id).unwrap().unwrap().audio_file, None);
+    }
+
+    #[test]
+    fn many_expired_files_go_in_one_run() {
+        let (_dir, store) = temp_store();
+        let old: Vec<(i64, String)> = (0..300).map(|i| with_audio(&store, &format!("old {i}"), Duration::days(31 + i))).collect();
+        let (new_id, new_file) = with_audio(&store, "new", Duration::days(29));
+        store.insert_entry(&entry("old without audio", Duration::days(60))).unwrap();
+
+        let report = store.apply_retention(None, Some(30), base_time()).unwrap();
+        assert_eq!(report, RetentionReport { entries_deleted: 0, audio_deleted: 300 });
+        for (id, file) in &old {
+            assert_eq!(store.get(*id).unwrap().expect("the entry stays").audio_file, None);
+            assert!(!store.audio_path(file).exists());
+        }
+        assert_eq!(store.get(new_id).unwrap().unwrap().audio_file, Some(new_file.clone()));
+        assert!(store.audio_path(&new_file).exists());
+        // A second run finds nothing left to do.
+        assert_eq!(store.apply_retention(None, Some(30), base_time()).unwrap(), RetentionReport::default());
     }
 
     #[test]

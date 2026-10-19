@@ -794,14 +794,27 @@ impl AppModel {
         }
     }
 
-    fn apply_retention(&mut self) {
+    fn apply_retention(&mut self, cx: &mut Context<Self>) {
         let Some(store) = self.services.store.clone() else { return };
         let h = &self.config.history;
+        let text_days = h.keep_text_days;
         let audio_days = if h.save_audio { h.keep_audio_days } else { Some(0) };
-        match store.apply_retention(h.keep_text_days, audio_days, chrono::Utc::now()) {
-            Ok(r) => log::info!("retention: {r:?}"),
-            Err(e) => log::warn!("retention: {e}"),
-        }
+        cx.spawn(async move |this, cx| {
+            let result = cx.background_spawn(async move { store.apply_retention(text_days, audio_days, chrono::Utc::now()) }).await;
+            match result {
+                Ok(r) => {
+                    log::info!("retention: {r:?}");
+                    if r != sayso_store::RetentionReport::default() {
+                        let _ = this.update(cx, |m, cx| {
+                            m.reload_history();
+                            cx.notify();
+                        });
+                    }
+                }
+                Err(e) => log::warn!("retention: {e}"),
+            }
+        })
+        .detach();
     }
 }
 
@@ -983,9 +996,9 @@ pub fn start_background_loops(
     .detach();
     // Slow checks.
     cx.spawn(async move |this, cx| {
-        let _ = this.update(cx, |m, _| {
+        let _ = this.update(cx, |m, cx| {
             m.register_hotkeys();
-            m.apply_retention();
+            m.apply_retention(cx);
         });
         let mut n = 0u64;
         loop {
@@ -1007,7 +1020,7 @@ pub fn start_background_loops(
                     }
                     m.unload_unused_models(cx);
                     if n.is_multiple_of(2400) {
-                        m.apply_retention();
+                        m.apply_retention(cx);
                     }
                 })
                 .is_ok();
