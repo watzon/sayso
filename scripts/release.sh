@@ -75,8 +75,11 @@ fi
 
 echo "==> dmg ($dmg)"
 rm -f "$dmg"
+# ULMO (LZMA) makes the image about a fifth smaller than the default UDZO.
+# It needs macOS 10.15 or later, and Sayso needs 14.
 create-dmg \
   --volname "Sayso" \
+  --format ULMO \
   --volicon "$app/Contents/Resources/AppIcon.icns" \
   --window-pos 200 120 \
   --window-size 600 400 \
