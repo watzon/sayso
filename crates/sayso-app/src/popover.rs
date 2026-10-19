@@ -80,10 +80,9 @@ thread_local! {
 }
 
 pub fn install(model: &Entity<AppModel>, cx: &mut App) {
-    let (tx, rx) = std::sync::mpsc::channel::<TrayEvent>();
-    let tx = std::sync::Mutex::new(tx);
+    let (tx, rx) = async_channel::unbounded::<TrayEvent>();
     let icon = mac::Tray::install(move |event| {
-        let _ = tx.lock().map(|t| t.send(event));
+        let _ = tx.try_send(event);
     });
     let has_icon = icon.is_some();
     // The popover keeps its state here, with or without an icon.
@@ -107,19 +106,16 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
     })
     .detach();
 
-    let model = model.clone();
+    let events_model = model.clone();
     cx.spawn(async move |cx| {
-        loop {
-            cx.background_executor().timer(Duration::from_millis(50)).await;
-            while let Ok(event) = rx.try_recv() {
-                let model = model.clone();
-                cx.update(|cx| match event {
-                    TrayEvent::Click => toggle(&model, cx),
-                    TrayEvent::ToggleDictation => model.update(cx, |m, cx| m.toggle_dictation(cx)),
-                    TrayEvent::OpenHub => crate::app::open_hub(&model, Route::Home, cx),
-                    TrayEvent::Quit => cx.quit(),
-                });
-            }
+        while let Ok(event) = rx.recv().await {
+            let model = events_model.clone();
+            cx.update(|cx| match event {
+                TrayEvent::Click => toggle(&model, cx),
+                TrayEvent::ToggleDictation => model.update(cx, |m, cx| m.toggle_dictation(cx)),
+                TrayEvent::OpenHub => crate::app::open_hub(&model, Route::Home, cx),
+                TrayEvent::Quit => cx.quit(),
+            });
         }
     })
     .detach();
