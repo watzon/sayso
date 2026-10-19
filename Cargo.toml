@@ -51,3 +51,12 @@ debug = "line-tables-only"
 
 [profile.dev.package."*"]
 debug = false
+
+# Release builds trade build time for size: fat LTO and one codegen unit make
+# the sayso binary about a third smaller, and strip drops the symbol table.
+# Do not set panic = "abort": the hotkey hooks recover from panics with
+# catch_unwind. Thin LTO gives a larger binary than fat LTO here.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
