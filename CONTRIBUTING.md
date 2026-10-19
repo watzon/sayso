@@ -11,7 +11,7 @@ This file tells you how to build Sayso, run it during development, check a chang
 
 ## Requirements
 
-- macOS 14 or later on Apple Silicon, with Xcode 16 or later (Swift 6 toolchain) for the speech engine.
+- macOS 14 or later on Apple Silicon, with Xcode 26 or later (Swift 6.2 toolchain) for the speech engine.
 - Or Linux (x86_64 or aarch64) with the packages in `scripts/linux-deps.sh` (Debian and Ubuntu names).
 - Or Windows 10 or 11 (x64), with the Visual Studio 2022 Build Tools ("Desktop development with C++" and a Windows SDK), and CMake and libclang for the speech engine (`LIBCLANG_PATH`; see [native/portable/NOTES.md](native/portable/NOTES.md)).
 - Rust 1.98.1. `rust-toolchain.toml` selects it.

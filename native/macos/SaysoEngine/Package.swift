@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
@@ -9,7 +9,10 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift", exact: "1.1.0"),
-        .package(url: "https://github.com/FluidInference/FluidAudio", exact: "0.17.5"),
+        // No traits: the default trait links the NeMo text normalizer, a Rust
+        // staticlib of 8 MB that only the TTS frontends and ITN use. The engine
+        // needs neither. Traits need tools 6.2.
+        .package(url: "https://github.com/FluidInference/FluidAudio", exact: "0.17.5", traits: []),
     ],
     targets: [
         .executableTarget(

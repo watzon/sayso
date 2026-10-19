@@ -30,6 +30,8 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
 cp "target/$profile/sayso" "$app/Contents/MacOS/Sayso"
 cp native/macos/SaysoEngine/.build/release/SaysoEngine "$app/Contents/MacOS/SaysoEngine"
+# SwiftPM leaves the symbol table in the release binary: 6 MB.
+strip "$app/Contents/MacOS/SaysoEngine"
 cp assets/app/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 # Pause media while recording: /usr/bin/perl runs the script, and the script
 # loads the framework (crates/sayso-platform-macos/src/media.rs).

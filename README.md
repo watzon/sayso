@@ -151,7 +151,7 @@ A one-time amount and a monthly amount are both possible. A sponsorship gives yo
 
 ### macOS
 
-You need Xcode 16 or later and Rust 1.98.1. `rust-toolchain.toml` selects the Rust version.
+You need Xcode 26 or later and Rust 1.98.1. `rust-toolchain.toml` selects the Rust version.
 
 ```sh
 git clone https://github.com/watzon/sayso.git
