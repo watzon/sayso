@@ -11,7 +11,7 @@ import numpy as np
 OUT = Path(__file__).parent
 
 
-def png(path, rgba):
+def png_bytes(rgba):
     h, w, _ = rgba.shape
     raw = b"".join(b"\x00" + rgba[y].tobytes() for y in range(h))
     def chunk(tag, data):
@@ -19,7 +19,11 @@ def png(path, rgba):
         return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
     data = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
     data += chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
-    path.write_bytes(data)
+    return data
+
+
+def png(path, rgba):
+    path.write_bytes(png_bytes(rgba))
 
 
 def wave(size, stroke):
@@ -82,22 +86,70 @@ def app_icon(size=1024):
     return np.clip(rgba, 0, 255).astype(np.uint8)
 
 
+# The icns type of each iconset file. The 16 and 32 px images at 1x use the
+# ARGB type, and the others hold the PNG as is.
+ICNS_TYPES = {
+    "icon_16x16.png": b"ic04", "icon_32x32.png": b"ic05",
+    "icon_128x128.png": b"ic07", "icon_256x256.png": b"ic08", "icon_512x512.png": b"ic09",
+    "icon_16x16@2x.png": b"ic11", "icon_32x32@2x.png": b"ic12", "icon_128x128@2x.png": b"ic13",
+    "icon_256x256@2x.png": b"ic14", "icon_512x512@2x.png": b"ic10",
+}
+
+
+def icns_rle(channel):
+    """The run-length coding of one channel in an icns ARGB entry."""
+    out = bytearray()
+    i, n = 0, len(channel)
+    while i < n:
+        run = 1
+        while i + run < n and run < 130 and channel[i + run] == channel[i]:
+            run += 1
+        if run >= 3:
+            out += bytes((run + 125, channel[i]))
+            i += run
+            continue
+        # A literal run ends before the next run of three equal bytes.
+        j = i + 1
+        while j < n and j - i < 128 and not (j + 2 < n and channel[j] == channel[j + 1] == channel[j + 2]):
+            j += 1
+        out += bytes((j - i - 1,)) + bytes(channel[i:j])
+        i = j
+    return bytes(out)
+
+
+def icns_argb(rgba):
+    """An ARGB entry: the magic, then the coded alpha, red, green, and blue planes."""
+    planes = (rgba[..., c].reshape(-1).tobytes() for c in (3, 0, 1, 2))
+    return b"ARGB" + b"".join(icns_rle(plane) for plane in planes)
+
+
+def write_icns(path, entries):
+    """Pack the entries ((type, data) pairs) in an icns file. The images come from
+    the iconset as they are. iconutil codes the 1024 px image again, and the result
+    is 40 % larger than the PNG."""
+    body = b"".join(kind + struct.pack(">I", 8 + len(data)) + data for kind, data in entries)
+    path.write_bytes(b"icns" + struct.pack(">I", 8 + len(body)) + body)
+
+
 def iconset():
-    import subprocess
     d = OUT / "AppIcon.iconset"
     d.mkdir(exist_ok=True)
     big = app_icon(1024)
+    entries = []
     for n in (16, 32, 128, 256, 512):
         for scale in (1, 2):
             px = n * scale
             step = 1024 // px if 1024 % px == 0 else None
             img = big.reshape(px, 1024 // px, px, 1024 // px, 4).mean(axis=(1, 3)).astype(np.uint8) if step else big
             name = f"icon_{n}x{n}{'@2x' if scale == 2 else ''}.png"
-            png(d / name, img)
+            data = png_bytes(img)
+            (d / name).write_bytes(data)
+            kind = ICNS_TYPES[name]
+            entries.append((kind, icns_argb(img) if kind in (b"ic04", b"ic05") else data))
             # The colored tray icon on Linux, where panels can be light or dark.
             if px == 64:
                 png(OUT / "icon-64.png", img)
-    subprocess.run(["iconutil", "-c", "icns", str(d), "-o", str(OUT / "AppIcon.icns")], check=True)
+    write_icns(OUT / "AppIcon.icns", entries)
     print("wrote AppIcon.icns")
 
 
