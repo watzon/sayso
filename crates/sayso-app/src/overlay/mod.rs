@@ -412,6 +412,17 @@ fn is_pill(state: &State) -> bool {
     matches!(state, State::Idle | State::Recording { .. })
 }
 
+/// True in the states that draw motion: the waveform and pulse, the ink line
+/// of the processing stage, and the countdown of the undo. The other notices
+/// are still, so the overlay draws them once and not on every frame.
+fn animates(state: &State) -> bool {
+    match state {
+        State::Recording { .. } | State::Processing { .. } => true,
+        State::Showing { notice, .. } => matches!(notice, Notice::Cancelled),
+        State::Idle => false,
+    }
+}
+
 /// The style settings that need a new overlay window when they change.
 fn style_key(o: &config::Overlay) -> (OverlayStyle, bool) {
     (o.style, o.notch_on_other_displays)
@@ -451,8 +462,7 @@ impl Render for OverlayView {
             self.last_key = key;
             self.phase_start = Instant::now();
         }
-        let animating = !matches!(state, State::Idle | State::Showing { notice: Notice::InsertFailed { .. }, .. });
-        if animating {
+        if animates(&state) {
             window.request_animation_frame();
         }
         let c = cx.paper().colors;
@@ -948,7 +958,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 
 #[cfg(test)]
 mod tests {
-    use super::needs_space;
+    use super::{animates, needs_space};
+    use sayso_core::dictation::{Notice, Stage, State, Trigger};
 
     #[test]
     fn space_between_the_committed_text_and_the_tail() {
@@ -957,5 +968,20 @@ mod tests {
         assert!(!needs_space("今日は", "いい天気"));
         assert!(!needs_space("I said", "こんにちは"));
         assert!(!needs_space("สวัสดี", "ครับ"));
+    }
+
+    #[test]
+    fn only_moving_states_ask_for_frames() {
+        let showing = |notice| State::Showing { session: 1, notice, until_ms: Some(3000) };
+        assert!(animates(&State::Recording { session: 1, trigger: Trigger::Toggle, started_ms: 0 }));
+        assert!(animates(&State::Processing { session: 1, stage: Stage::Transcribing, recorded_ms: 0 }));
+        assert!(animates(&showing(Notice::Cancelled)));
+        assert!(!animates(&State::Idle));
+        assert!(!animates(&showing(Notice::Inserted { style_name: None })));
+        assert!(!animates(&showing(Notice::InsertedRaw { reason: "x".into() })));
+        assert!(!animates(&showing(Notice::InsertFailed { text: "x".into(), reason: "y".into() })));
+        assert!(!animates(&showing(Notice::Error { message: "x".into() })));
+        assert!(!animates(&showing(Notice::NoSpeech)));
+        assert!(!animates(&showing(Notice::Discarded)));
     }
 }
