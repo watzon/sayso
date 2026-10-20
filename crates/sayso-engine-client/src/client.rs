@@ -3,13 +3,14 @@
 //! Threads, per client:
 //! - **supervisor**: reads the sidecar's stdout. When the pipe closes it reports
 //!   `Crashed`, restarts the sidecar with backoff, and starts a recovery thread.
-//! - **writer** (one per sidecar process): owns the sidecar's stdin and drains an
-//!   unbounded queue, so callers (including the audio thread) never wait on the pipe.
+//! - **writer** (one per sidecar process): owns the sidecar's stdin and drains one
+//!   queue (see `writer`), so callers (including the audio thread) never wait on the pipe.
 //! - **stderr** (one per sidecar process): forwards the sidecar's stderr to `log`.
 //! - **recovery** (after a restart): says hello, refreshes statuses, reloads the
 //!   models that were loaded before the crash, then reports `Restarted`.
 
 use crate::protocol::{self, Message, pcm_base64, request_line};
+use crate::writer::{AudioPush, Outgoing, WriterQueue};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use parking_lot::Mutex;
 use sayso_core::enhance::{EnhanceError, Generated, LanguageModel, Unavailable};
@@ -22,14 +23,9 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
-
-/// Audio frames that may wait in the writer queue before new frames are dropped.
-/// 500 frames of 20 ms are 10 seconds. The live preview can lose audio. The final
-/// pass reads the full recording from a file.
-const MAX_QUEUED_AUDIO: usize = 500;
 
 /// The sidecar's file name beside the app executable: the Swift engine on
 /// macOS, the portable engine (`native/portable`) on Windows, and
@@ -81,13 +77,6 @@ fn failed(message: impl Into<String>) -> PlatformError {
     PlatformError::Failed(message.into())
 }
 
-/// What the writer thread sends to the sidecar. Audio is encoded on the writer
-/// thread, so `push_audio` only converts samples and queues them.
-enum Outgoing {
-    Line(String),
-    Audio { session: u64, pcm: Vec<i16> },
-}
-
 /// Why a request failed. `code` is the `code` field of an `error` reply, or
 /// `timeout` when the engine did not answer in time.
 struct Failure {
@@ -108,8 +97,14 @@ enum Pending {
 
 /// A live sidecar process, as seen by senders.
 struct Conn {
-    tx: Sender<Outgoing>,
-    audio_queued: Arc<AtomicUsize>,
+    tx: Arc<WriterQueue>,
+}
+
+impl Drop for Conn {
+    /// The writer sends what is queued, closes stdin, and ends.
+    fn drop(&mut self) {
+        self.tx.close();
+    }
 }
 
 /// Connection and pending requests share one lock, so a request is either
@@ -417,6 +412,9 @@ impl SttBackend for EngineClient {
         let Some(preview) = &options.preview_model else {
             return Ok(()); // Live preview is off.
         };
+        if let Some(conn) = self.inner.core.lock().conn.as_ref() {
+            conn.tx.begin_stream(session);
+        }
         let fields = json!({
             "session": session,
             "model": preview,
@@ -433,17 +431,28 @@ impl SttBackend for EngineClient {
         let Some(conn) = core.conn.as_ref() else {
             return Err(failed("engine is not running"));
         };
-        if conn.audio_queued.load(Ordering::Relaxed) >= MAX_QUEUED_AUDIO {
-            self.inner.dropped_audio.fetch_add(1, Ordering::Relaxed);
-            return Ok(());
+        match conn.tx.push_audio(session, pcm) {
+            Ok(AudioPush::Queued | AudioPush::Ended) => Ok(()),
+            Ok(AudioPush::Full) => {
+                self.inner.dropped_audio.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }
+            Err(_) => Err(failed("engine is not running")),
         }
-        conn.audio_queued.fetch_add(1, Ordering::Relaxed);
-        conn.tx
-            .send(Outgoing::Audio { session, pcm })
-            .map_err(|_| failed("engine is not running"))
     }
 
+    /// End the live preview of `session`. The preview audio that waits in the writer
+    /// queue is dropped, so the requests behind it do not wait for it. `stream_end`
+    /// still follows every frame that the writer already took.
     fn end_stream(&self, session: u64) {
+        if let Some(conn) = self.inner.core.lock().conn.as_ref() {
+            let dropped = conn.tx.end_stream(session);
+            if dropped > 0 {
+                log::debug!(
+                    "stream {session} ended with {dropped} audio frames not yet sent, dropped"
+                );
+            }
+        }
         let sent = self.inner.send(
             "stream_end",
             json!({"session": session}),
@@ -740,16 +749,15 @@ impl Inner {
                 }
             })?;
 
-        let (tx, rx) = unbounded();
-        let audio_queued = Arc::new(AtomicUsize::new(0));
-        let queued = Arc::clone(&audio_queued);
+        let tx = Arc::new(WriterQueue::default());
+        let queue = Arc::clone(&tx);
         thread::Builder::new()
             .name("sayso-engine-writer".into())
-            .spawn(move || write_loop(stdin, &rx, &queued))?;
+            .spawn(move || write_loop(stdin, &queue))?;
 
         self.generation.fetch_add(1, Ordering::SeqCst);
         *self.child.lock() = Some(child);
-        self.core.lock().conn = Some(Conn { tx, audio_queued });
+        self.core.lock().conn = Some(Conn { tx });
         Ok(stdout)
     }
 
@@ -913,18 +921,15 @@ fn sleep_unless_shutdown(inner: &Inner, total: Duration) {
 }
 
 /// Write queued messages to the sidecar. Ends when the queue closes or the pipe breaks.
-fn write_loop(mut stdin: ChildStdin, queue: &Receiver<Outgoing>, audio_queued: &AtomicUsize) {
-    for item in queue {
+fn write_loop(mut stdin: ChildStdin, queue: &WriterQueue) {
+    while let Some(item) = queue.next() {
         let mut line = match item {
             Outgoing::Line(line) => line,
-            Outgoing::Audio { session, pcm } => {
-                audio_queued.fetch_sub(1, Ordering::Relaxed);
-                request_line(
-                    "stream_audio",
-                    None,
-                    json!({"session": session, "pcm": pcm_base64(&pcm)}),
-                )
-            }
+            Outgoing::Audio { session, pcm } => request_line(
+                "stream_audio",
+                None,
+                json!({"session": session, "pcm": pcm_base64(&pcm)}),
+            ),
         };
         line.push('\n');
         if stdin

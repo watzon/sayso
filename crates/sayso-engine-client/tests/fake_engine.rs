@@ -612,6 +612,85 @@ fn push_audio_does_not_wait_for_the_engine() {
     );
 }
 
+/// The index of the first request line of this type.
+fn position_of(log: &[String], kind: &str) -> Option<usize> {
+    log.iter()
+        .position(|line| line.contains(&format!("\"type\":\"{kind}\"")))
+}
+
+#[test]
+fn stop_drops_the_preview_audio_that_waits_and_the_final_pass_keeps_the_whole_recording() {
+    const FRAMES: usize = 300;
+    let f = fixture();
+    // An engine that falls behind: 20 ms for each frame, so 300 frames need 6 s.
+    std::fs::write(f.models.path().join("slow-audio"), "20").unwrap();
+    let options = options_for("final-model");
+    f.client.start_stream(1, &options).unwrap();
+    let recording = vec![0.1f32; FRAMES * 320];
+    for frame in recording.chunks(320) {
+        f.client.push_audio(1, frame).unwrap();
+    }
+
+    // The user stops. The preview ends, and the final pass starts at once.
+    f.client.end_stream(1);
+    // A frame that arrives after the stop is not queued.
+    f.client.push_audio(1, &[0.1; 320]).unwrap();
+    let started = Instant::now();
+    let transcript = f.client.transcribe(&recording, &options).unwrap();
+    let waited = started.elapsed();
+
+    // The final pass reads a WAV file with the whole recording, not the preview stream.
+    assert_eq!(
+        transcript.text,
+        format!("model=final-model bytes={}", 44 + 2 * recording.len())
+    );
+
+    let log = requests(&f.models);
+    let audio = |range: &[String]| {
+        range
+            .iter()
+            .filter(|line| line.contains("\"type\":\"stream_audio\""))
+            .count()
+    };
+    let end = position_of(&log, "stream_end").expect("the engine got stream_end");
+    let transcribe = position_of(&log, "transcribe").expect("the engine got transcribe");
+    assert!(end < transcribe, "stream_end comes before the final pass");
+    assert_eq!(audio(&log[end..]), 0, "no audio follows stream_end");
+    // The engine had read some frames already (the pipe holds them). The rest never went out.
+    let sent = audio(&log[..end]);
+    assert!(
+        sent < FRAMES / 2,
+        "{sent} of {FRAMES} frames went out before the stop; the final pass waited {waited:?}"
+    );
+}
+
+#[test]
+fn a_stream_that_starts_again_after_its_stop_gets_audio() {
+    let f = fixture();
+    let options = options_for("final-model");
+    f.client.start_stream(1, &options).unwrap();
+    f.client.push_audio(1, &[0.1; 320]).unwrap();
+    f.client.end_stream(1);
+    f.client.start_stream(1, &options).unwrap();
+    f.client.push_audio(1, &[0.1; 320]).unwrap();
+    f.client.end_stream(1);
+    f.client.transcribe(&[0.1; 320], &options).unwrap();
+    let log = requests(&f.models);
+    // Both streams ended before the final pass, and the second one got its frame.
+    let kinds: Vec<&str> = log
+        .iter()
+        .filter_map(|line| {
+            ["stream_start", "stream_audio", "stream_end"]
+                .into_iter()
+                .find(|k| line.contains(&format!("\"type\":\"{k}\"")))
+        })
+        .collect();
+    assert_eq!(kinds.iter().filter(|k| **k == "stream_start").count(), 2);
+    assert_eq!(kinds.iter().filter(|k| **k == "stream_end").count(), 2);
+    let second_start = kinds.iter().rposition(|k| *k == "stream_start").unwrap();
+    assert!(kinds[second_start..].contains(&"stream_audio"), "{kinds:?}");
+}
+
 #[test]
 fn default_engine_path_names_the_sidecar() {
     // Without SAYSO_ENGINE_PATH the dev path or a bundled copy comes back.

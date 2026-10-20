@@ -15,6 +15,9 @@
 //! The file `fail-load` does the same for `load`. The text of the file is the `reason` code
 //! (empty: no `reason`).
 //!
+//! The file `slow-audio` makes it read each `stream_audio` line slowly: it waits that many
+//! milliseconds (the text of the file) after each one, like an engine that falls behind.
+//!
 //! `download` reports 50 % at once, waits 300 ms, then reports `downloaded`.
 
 use serde_json::{Value, json};
@@ -58,6 +61,9 @@ fn main() {
             "stream_audio" => {
                 // Handled in order, like the real engine.
                 chunks += 1;
+                if let Some(ms) = fs::read_to_string(dir.join("slow-audio")).ok().and_then(|t| t.trim().parse().ok()) {
+                    thread::sleep(Duration::from_millis(ms));
+                }
                 let len = request["pcm"].as_str().map_or(0, str::len);
                 send(
                     &out,

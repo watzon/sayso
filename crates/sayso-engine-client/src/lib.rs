@@ -6,5 +6,6 @@
 
 mod client;
 mod protocol;
+mod writer;
 
 pub use client::{EngineClient, Options};
