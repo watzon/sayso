@@ -98,7 +98,9 @@ impl AppModel {
 
     /// Check what a dictation needs. Shows a notice and returns false when something is missing.
     fn check_can_start(&mut self, cx: &mut Context<Self>) -> bool {
-        match self.permission(Permission::Microphone) {
+        // Each start reads the permissions again, so the cached state does not get old.
+        self.refresh_permissions(cx);
+        match self.microphone_permission_now() {
             _ if crate::dev::fake_mic().is_some() => {}
             PermissionState::Granted => {}
             PermissionState::NotDetermined => {
@@ -881,7 +883,7 @@ impl AppModel {
                     log::info!("retention: {r:?}");
                     if r != sayso_store::RetentionReport::default() {
                         let _ = this.update(cx, |m, cx| {
-                            m.reload_history();
+                            m.reload_history(cx);
                             cx.notify();
                         });
                     }
@@ -1026,8 +1028,8 @@ fn forward<T: Send + 'static>(rx: crossbeam_channel::Receiver<T>) -> async_chann
 ///
 /// Hotkey and engine events wake the UI only when they arrive. The state
 /// machine clock runs every 100 ms only while a dictation is active.
-/// Permissions, config files, and the system appearance are checked every
-/// 1.5 s, and retention runs hourly.
+/// Config files and the system appearance are checked every 1.5 s, the
+/// permissions too while a window shows them, and retention runs hourly.
 pub fn start_background_loops(
     hotkeys: crossbeam_channel::Receiver<HotkeyEvent>,
     engine: Option<crossbeam_channel::Receiver<EngineEvent>>,
@@ -1086,8 +1088,8 @@ pub fn start_background_loops(
             n += 1;
             let ok = this
                 .update(cx, |m, cx| {
-                    if m.refresh_permissions() {
-                        cx.notify();
+                    if m.permissions_shown(cx) {
+                        m.refresh_permissions(cx);
                     }
                     m.check_files(cx);
                     let dark = m.services.platform.prefs.dark_mode();

@@ -110,6 +110,8 @@ pub struct AppModel {
     /// counts from here.
     pub(crate) last_dictation: Instant,
     pub permissions: HashMap<Permission, PermissionState>,
+    /// A permission check runs on the background executor.
+    permissions_checking: bool,
     pub detected: Detected,
 
     pub recent: Vec<HistoryEntry>,
@@ -252,6 +254,7 @@ impl AppModel {
             model_idle: false,
             last_dictation: Instant::now(),
             permissions: HashMap::new(),
+            permissions_checking: false,
             detected: Detected::default(),
             recent: Vec::new(),
             stats: Stats::default(),
@@ -286,7 +289,7 @@ impl AppModel {
         model.system_dark = model.services.platform.prefs.dark_mode();
         model.reload_dictionary();
         model.reload_history(cx);
-        model.refresh_permissions();
+        model.refresh_permissions(cx);
         model.refresh_input_devices(cx);
         let engine_events = model.services.engine_events.take();
         model.engine_starting = engine_events.is_some();
@@ -593,15 +596,57 @@ impl AppModel {
         self.permissions.get(&p).copied().unwrap_or(PermissionState::NotDetermined)
     }
 
-    pub fn refresh_permissions(&mut self) -> bool {
-        let mut changed = false;
-        for p in [Permission::Microphone, Permission::Accessibility, Permission::InputMonitoring] {
-            let s = self.services.platform.permissions.status(p);
-            if self.permissions.insert(p, s) != Some(s) {
-                changed = true;
-            }
+    /// Read the permissions again on the background executor. On macOS each
+    /// read is a call to the privacy service of the system.
+    pub fn refresh_permissions(&mut self, cx: &mut Context<Self>) {
+        if self.permissions_checking {
+            return;
         }
-        changed
+        self.permissions_checking = true;
+        let guide = self.services.platform.permissions.clone();
+        cx.spawn(async move |this, cx| {
+            let states = cx
+                .background_spawn(async move {
+                    [Permission::Microphone, Permission::Accessibility, Permission::InputMonitoring].map(|p| (p, guide.status(p)))
+                })
+                .await;
+            let _ = this.update(cx, |m, cx| {
+                m.permissions_checking = false;
+                let mut changed = false;
+                for (p, s) in states {
+                    changed |= m.permissions.insert(p, s) != Some(s);
+                }
+                if changed {
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// The microphone permission as the system says it now. A dictation
+    /// that the cached state would block asks here first: the user may have
+    /// just allowed the microphone.
+    pub(crate) fn microphone_permission_now(&mut self) -> PermissionState {
+        let state = self.permission(Permission::Microphone);
+        if state == PermissionState::Granted {
+            return state;
+        }
+        let state = self.services.platform.permissions.status(Permission::Microphone);
+        self.permissions.insert(Permission::Microphone, state);
+        state
+    }
+
+    /// True when a window shows the permissions: onboarding, or the Hub on
+    /// Home or on a Settings page with a permission on it.
+    pub(crate) fn permissions_shown(&self, cx: &App) -> bool {
+        use crate::hub::SettingsPage;
+        let Some(windows) = cx.try_global::<crate::app::Windows>() else { return false };
+        let page = matches!(
+            self.route,
+            Route::Home | Route::Settings(SettingsPage::Permissions | SettingsPage::Audio | SettingsPage::Dictation)
+        );
+        windows.onboarding.is_some() || (windows.hub.is_some() && page)
     }
 
     pub fn request_permission(&mut self, p: Permission) {

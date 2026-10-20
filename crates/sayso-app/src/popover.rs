@@ -276,8 +276,7 @@ fn show(model: &Entity<AppModel>, cx: &mut App) {
         });
     });
     let devices = model.update(cx, |m, cx| {
-        m.refresh_permissions();
-        cx.notify();
+        m.refresh_permissions(cx);
         m.watch_input_devices(cx)
     });
     TRAY.with(|t| {
