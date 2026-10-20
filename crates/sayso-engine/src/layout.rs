@@ -48,6 +48,48 @@ pub enum OfflineFiles {
     },
 }
 
+impl OfflineFiles {
+    /// Every file of the model.
+    pub fn paths(&self) -> Vec<&Path> {
+        let paths: Vec<&PathBuf> = match self {
+            OfflineFiles::Transducer {
+                encoder,
+                decoder,
+                joiner,
+                tokens,
+            } => vec![encoder, decoder, joiner, tokens],
+            OfflineFiles::NemoCtc { model, tokens }
+            | OfflineFiles::SenseVoice { model, tokens } => {
+                vec![model, tokens]
+            }
+            OfflineFiles::Whisper {
+                encoder,
+                decoder,
+                tokens,
+            } => vec![encoder, decoder, tokens],
+            OfflineFiles::MoonshineV2 {
+                encoder,
+                merged_decoder,
+                tokens,
+            } => vec![encoder, merged_decoder, tokens],
+            OfflineFiles::MoonshineV1 {
+                preprocessor,
+                encoder,
+                uncached_decoder,
+                cached_decoder,
+                tokens,
+            } => vec![
+                preprocessor,
+                encoder,
+                uncached_decoder,
+                cached_decoder,
+                tokens,
+            ],
+        };
+        paths.into_iter().map(PathBuf::as_path).collect()
+    }
+}
+
 /// The files of a streaming transducer (the live preview).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OnlineFiles {
@@ -273,6 +315,18 @@ mod tests {
         };
         assert!(uncached_decoder.ends_with("uncached_decode.int8.onnx"));
         assert!(cached_decoder.ends_with("cached_decode.int8.onnx"));
+    }
+
+    #[test]
+    fn paths_lists_every_file_of_the_model() {
+        let dir = folder(&["encoder.onnx", "decoder.onnx", "tokens.txt"]);
+        let files = offline_files(Recipe::Whisper, dir.path()).unwrap();
+        let names: Vec<_> = files
+            .paths()
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["encoder.onnx", "decoder.onnx", "tokens.txt"]);
     }
 
     #[test]

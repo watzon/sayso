@@ -6,7 +6,7 @@ use crate::recognizer::{
     FinalPass, LazyPreview, LivePreview, Loaded, Loader, ModelDirs, PreviewStream,
 };
 use crate::spec::{ModelSpec, Recipe};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use sherpa_onnx::{
     OfflineModelConfig, OfflineMoonshineModelConfig, OfflineNemoEncDecCtcModelConfig,
     OfflineRecognizer, OfflineRecognizerConfig, OfflineSenseVoiceModelConfig,
@@ -91,18 +91,28 @@ impl Loader for SherpaLoader {
 /// recognizer is made, so they get a new recognizer when the language changes.
 struct Offline {
     files: OfflineFiles,
-    current: Mutex<(String, Arc<OfflineRecognizer>)>,
+    recognizers: ByLanguage<OfflineRecognizer>,
 }
 
 impl Offline {
     fn load(recipe: Recipe, dir: &Path) -> Result<Offline> {
         let files = layout::offline_files(recipe, dir)?;
-        let language = "auto".to_string();
-        let recognizer = Arc::new(create_offline(&files, &language)?);
-        Ok(Offline {
+        let offline = Offline {
             files,
-            current: Mutex::new((language, recognizer)),
-        })
+            recognizers: ByLanguage::default(),
+        };
+        if offline.uses_language() {
+            // The language is not known yet. A recognizer made now for "auto" would give
+            // way to a second one at the first dictation in a language, and the model
+            // would load twice. The first `transcribe` makes it. The files are checked
+            // now, so a missing or empty file shows at the load.
+            check_readable(&offline.files)?;
+        } else {
+            // The recognizer does not depend on the language, so make it now. A model
+            // that sherpa-onnx cannot read fails at the load.
+            offline.recognizer("auto")?;
+        }
+        Ok(offline)
     }
 
     fn uses_language(&self) -> bool {
@@ -113,12 +123,81 @@ impl Offline {
     }
 
     fn recognizer(&self, language: &str) -> Result<Arc<OfflineRecognizer>> {
-        let mut current = self.current.lock().unwrap_or_else(|e| e.into_inner());
-        if self.uses_language() && current.0 != language {
-            let recognizer = Arc::new(create_offline(&self.files, language)?);
-            *current = (language.to_string(), recognizer);
+        let key = recognizer_language(&self.files, language);
+        self.recognizers
+            .get(&key, || create_offline(&self.files, &key))
+    }
+}
+
+/// The language codes that SenseVoice takes. It detects the language for any other.
+const SENSE_VOICE_LANGUAGES: [&str; 5] = ["zh", "en", "ja", "ko", "yue"];
+
+/// A language code with no region, in lower case: "en-US" and "en_us" are "en". An
+/// empty value is "auto".
+fn base_language(requested: &str) -> String {
+    let code = requested
+        .trim()
+        .split(['-', '_'])
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if code.is_empty() { "auto".into() } else { code }
+}
+
+/// The language that the recognizer for a request is made for. Two requests that give
+/// the same value share one recognizer. Whisper takes the language code, and detects the
+/// language for "auto". SenseVoice takes five codes and detects the language for the
+/// others, so those share the "auto" recognizer. The other models ignore the language.
+fn recognizer_language(files: &OfflineFiles, requested: &str) -> String {
+    let code = base_language(requested);
+    match files {
+        OfflineFiles::Whisper { .. } => code,
+        OfflineFiles::SenseVoice { .. } if SENSE_VOICE_LANGUAGES.contains(&code.as_str()) => code,
+        _ => "auto".into(),
+    }
+}
+
+/// Fail when a model file is missing or empty.
+fn check_readable(files: &OfflineFiles) -> Result<()> {
+    for file in files.paths() {
+        let size = std::fs::metadata(file)
+            .with_context(|| format!("cannot read {}", file.display()))?
+            .len();
+        if size == 0 {
+            bail!("{} is empty", file.display());
         }
-        Ok(Arc::clone(&current.1))
+    }
+    Ok(())
+}
+
+/// The one value built for the language of the last request. A request for another
+/// language builds a new value, and a failed build keeps the old one.
+struct ByLanguage<T> {
+    current: Mutex<Option<(String, Arc<T>)>>,
+}
+
+impl<T> Default for ByLanguage<T> {
+    fn default() -> Self {
+        ByLanguage {
+            current: Mutex::new(None),
+        }
+    }
+}
+
+impl<T> ByLanguage<T> {
+    /// The value for `language`. `build` runs when there is none for it. The lock stays
+    /// during the build, so a second request for the same language waits and does not
+    /// build again.
+    fn get(&self, language: &str, build: impl FnOnce() -> Result<T>) -> Result<Arc<T>> {
+        let mut current = self.current.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some((built_for, value)) = &*current
+            && built_for == language
+        {
+            return Ok(Arc::clone(value));
+        }
+        let value = Arc::new(build()?);
+        *current = Some((language.to_string(), Arc::clone(&value)));
+        Ok(value)
     }
 }
 
@@ -135,6 +214,7 @@ impl FinalPass for Offline {
     }
 }
 
+/// Make a recognizer. `language` is the value of `recognizer_language`.
 fn create_offline(files: &OfflineFiles, language: &str) -> Result<OfflineRecognizer> {
     let mut model = OfflineModelConfig {
         num_threads: final_pass_threads(),
@@ -186,10 +266,9 @@ fn create_offline(files: &OfflineFiles, language: &str) -> Result<OfflineRecogni
             model: file,
             tokens,
         } => {
-            let known = ["zh", "en", "ja", "ko", "yue"].contains(&language);
             model.sense_voice = OfflineSenseVoiceModelConfig {
                 model: path(file),
-                language: Some(if known { language } else { "auto" }.to_string()),
+                language: Some(language.to_string()),
                 // Inverse text normalization: punctuation, capitals, and digits.
                 use_itn: true,
             };
@@ -332,5 +411,144 @@ impl PreviewStream for OnlineSession {
             text: self.text(),
             endpoint: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn whisper() -> OfflineFiles {
+        OfflineFiles::Whisper {
+            encoder: PathBuf::from("encoder.onnx"),
+            decoder: PathBuf::from("decoder.onnx"),
+            tokens: PathBuf::from("tokens.txt"),
+        }
+    }
+
+    fn sense_voice() -> OfflineFiles {
+        OfflineFiles::SenseVoice {
+            model: PathBuf::from("model.onnx"),
+            tokens: PathBuf::from("tokens.txt"),
+        }
+    }
+
+    fn nemo_ctc() -> OfflineFiles {
+        OfflineFiles::NemoCtc {
+            model: PathBuf::from("model.onnx"),
+            tokens: PathBuf::from("tokens.txt"),
+        }
+    }
+
+    #[test]
+    fn equal_languages_get_one_recognizer() {
+        for same in ["en", "en-US", "en_GB", "EN", " en "] {
+            assert_eq!(recognizer_language(&whisper(), same), "en", "{same}");
+        }
+        for auto in ["", "auto", "AUTO", "  "] {
+            assert_eq!(recognizer_language(&whisper(), auto), "auto", "{auto:?}");
+        }
+        assert_eq!(recognizer_language(&whisper(), "zh-CN"), "zh");
+        assert_ne!(
+            recognizer_language(&whisper(), "en"),
+            recognizer_language(&whisper(), "de")
+        );
+    }
+
+    #[test]
+    fn sense_voice_shares_the_auto_recognizer_for_languages_it_does_not_know() {
+        assert_eq!(recognizer_language(&sense_voice(), "ja-JP"), "ja");
+        assert_eq!(recognizer_language(&sense_voice(), "yue"), "yue");
+        for other in ["de", "fr-CA", "", "auto"] {
+            assert_eq!(
+                recognizer_language(&sense_voice(), other),
+                "auto",
+                "{other}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_model_without_a_language_has_one_recognizer() {
+        for language in ["en", "de", "", "auto"] {
+            assert_eq!(recognizer_language(&nemo_ctc(), language), "auto");
+        }
+    }
+
+    #[test]
+    fn a_recognizer_is_built_when_first_asked_for_and_once_per_language() {
+        let cache = ByLanguage::<String>::default();
+        let builds = AtomicUsize::new(0);
+        let build = |name: &str| {
+            builds.fetch_add(1, Ordering::SeqCst);
+            Ok(name.to_string())
+        };
+        assert_eq!(
+            builds.load(Ordering::SeqCst),
+            0,
+            "nothing builds at the load"
+        );
+
+        assert_eq!(*cache.get("en", || build("en")).unwrap(), "en");
+        assert_eq!(*cache.get("en", || build("again")).unwrap(), "en");
+        assert_eq!(
+            builds.load(Ordering::SeqCst),
+            1,
+            "the same language builds once"
+        );
+
+        assert_eq!(*cache.get("de", || build("de")).unwrap(), "de");
+        assert_eq!(builds.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            *cache.get("en", || build("en again")).unwrap(),
+            "en again",
+            "only the last language is kept"
+        );
+    }
+
+    #[test]
+    fn a_failed_build_keeps_the_recognizer_that_works() {
+        let cache = ByLanguage::<String>::default();
+        cache.get("en", || Ok("en".to_string())).unwrap();
+        assert!(cache.get("de", || Err(anyhow!("broken"))).is_err());
+        let builds = AtomicUsize::new(0);
+        let kept = cache
+            .get("en", || {
+                builds.fetch_add(1, Ordering::SeqCst);
+                Ok("rebuilt".to_string())
+            })
+            .unwrap();
+        assert_eq!(*kept, "en");
+        assert_eq!(builds.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn a_missing_or_empty_file_fails_at_the_load() {
+        let dir = tempfile::tempdir().unwrap();
+        let write = |name: &str, body: &[u8]| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, body).unwrap();
+            path
+        };
+        let files = OfflineFiles::SenseVoice {
+            model: write("model.onnx", b"x"),
+            tokens: write("tokens.txt", b"x"),
+        };
+        assert!(check_readable(&files).is_ok());
+
+        let empty = OfflineFiles::SenseVoice {
+            model: write("model.onnx", b""),
+            tokens: write("tokens.txt", b"x"),
+        };
+        let error = check_readable(&empty).unwrap_err().to_string();
+        assert!(error.ends_with("is empty"), "{error}");
+
+        let missing = OfflineFiles::SenseVoice {
+            model: dir.path().join("gone.onnx"),
+            tokens: write("tokens.txt", b"x"),
+        };
+        assert!(check_readable(&missing).is_err());
     }
 }
