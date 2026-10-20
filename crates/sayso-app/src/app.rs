@@ -160,7 +160,8 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
         .clone()
         .map(std::path::PathBuf::from)
         .unwrap_or_else(sayso_engine_client::EngineClient::default_engine_path);
-    let client = match sayso_engine_client::EngineClient::spawn(engine_path.clone(), paths.models_dir(), paths.cache_dir.clone()) {
+    let options = sayso_engine_client::Options { env: crate::shell::engine_env(), ..Default::default() };
+    let client = match sayso_engine_client::EngineClient::spawn_with(engine_path.clone(), paths.models_dir(), paths.cache_dir.clone(), options) {
         Ok(e) => Some(e),
         Err(e) => {
             log::error!("could not start the engine at {}: {e:#}", engine_path.display());

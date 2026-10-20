@@ -69,6 +69,8 @@ scripts/bundle-linux.sh                        # build/sayso-<version>-linux-<ar
 scripts/package-linux.sh build/sayso-*.tar.gz  # the .deb, the .rpm, the AppImage, and the Flatpak, from the tarball
 ```
 
+The engine's `parakeet` feature, on by default, builds parakeet.cpp for the GPU model (Fluid Speech Mini on Vulkan). It downloads two pinned source archives and needs CMake, `glslc`, and the Vulkan headers: `scripts/linux-deps.sh` installs them, and on Ubuntu 22.04, which lacks them, `scripts/linux-vulkan-deps.sh` builds them. Without them, add `--no-default-features` (to `cargo build`, and to the checks below): the engine then runs the CPU models only. `SAYSO_PARAKEET_CPP_DIR=/path/to/parakeet.cpp` builds a local checkout instead, with ggml in its `third_party/ggml`.
+
 On Linux the permissions are capabilities, not grants, so a terminal run behaves like an installed app. [docs/linux.md](docs/linux.md) explains the desktops, the permissions, and the `sayso --toggle` command. `SAYSO_UI_BACKEND=x11` or `=wayland` forces the display server of the UI.
 
 `SAYSO_FAKE_MIC=/path/to/16k-mono.wav` replaces the microphone with a WAV file played in real time, for end-to-end tests without a microphone grant. `SAYSO_ENGINE_PATH` selects another engine binary.
@@ -134,7 +136,7 @@ cargo test -p sayso-enhance --test real_cli -- --ignored   # real claude command
 
 CI runs `scripts/check-deps.sh` on each push to `main` and on each pull request. It does not run the tests or clippy, because a GPUI build takes minutes. A maintainer starts the test jobs (macOS, Linux, and Windows) by hand with `gh workflow run ci.yml`. So run the checks above on your computer, and say in the pull request which checks you ran, and on which platform.
 
-A pull request that changes the Linux packaging (`packaging/linux`, `scripts/bundle-linux.sh`, `scripts/package-linux.sh`, `scripts/linux-deps.sh`, or `linux.yml`) also runs the Linux packages workflow. It builds the packages for both architectures, installs the `.deb`, and starts Sayso on a virtual display.
+A pull request that changes the Linux packaging (`packaging/linux`, `scripts/bundle-linux.sh`, `scripts/package-linux.sh`, `scripts/linux-deps.sh`, `scripts/linux-vulkan-deps.sh`, or `linux.yml`) also runs the Linux packages workflow. It builds the packages for both architectures, installs the `.deb`, and starts Sayso on a virtual display.
 
 ## Layout
 

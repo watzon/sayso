@@ -2,8 +2,10 @@
 //!
 //! On these systems the engine is `sayso-engine`, a Rust sidecar on
 //! sherpa-onnx that runs on the CPU. Each model is one archive from the
-//! sherpa-onnx `asr-models` release. A model with a live preview also gets a
-//! small streaming model, downloaded with it.
+//! sherpa-onnx `asr-models` release, except a `ParakeetCpp` model: one GGUF
+//! file on Hugging Face that parakeet.cpp runs on the GPU through Vulkan. A
+//! model with a live preview also gets a small streaming model, downloaded
+//! with it.
 //!
 //! The ids match the macOS catalog where the model is the same, so a config
 //! file and the history mean the same model on every system.
@@ -92,6 +94,36 @@ pub fn catalog() -> Vec<ModelInfo> {
                 speed: 4,
             }
             .build()
+        },
+        // On the GPU: FluidVoice's quantized Parakeet Ultra, in the GGUF it publishes for parakeet.cpp.
+        {
+            const REPO: &str = "FluidVoice-Labs/fluid-speech-mini-gguf";
+            let info = Entry {
+                id: "fluid-speech-mini",
+                name: "Fluid Speech Mini",
+                vendor: "FluidVoice",
+                description: t!("core.model.fluid_speech_mini_onnx"),
+                engine: EngineKind::ParakeetCpp {
+                    repo: REPO.into(),
+                    revision: "490bcd5de891f5efd0e732434dfb0a4b0899aead".into(),
+                    file: "fluid-speech-mini-q2k-q4k.gguf".into(),
+                    preview_archive: Some(PREVIEW_ARCHIVE.into()),
+                },
+                size_mb: 347 + 57,
+                languages: en(),
+                speed: 5, // 213x real time on an RTX 4070 (docs/benchmark.md, "Linux")
+            }
+            .build();
+            ModelInfo {
+                live_preview: true,
+                // This GGUF on parakeet.cpp, measured on Linux; the shared figure is the Core ML build's.
+                wer_percent: Some(6.56),
+                // The shared facts name the Core ML build that macOS runs.
+                card_url: Some(format!("https://huggingface.co/{REPO}")),
+                // The MIT License of the runtime asks for its notice too.
+                credit: info.credit.map(|c| format!("{c} Runs on parakeet.cpp and ggml (MIT License).")),
+                ..info
+            }
         },
         Entry {
             id: "parakeet-tdt-v3",
@@ -229,19 +261,21 @@ mod tests {
     }
 
     #[test]
-    fn every_model_names_a_sherpa_archive() {
+    fn every_model_names_a_sherpa_archive_or_a_gguf() {
         for m in catalog() {
-            let EngineKind::Sherpa { recipe, archive, preview_archive } = &m.engine else {
-                panic!("{} is not a sherpa-onnx model", m.id);
-            };
-            assert!(!recipe.is_empty() && archive.starts_with("sherpa-onnx-"), "{}", m.id);
             // A model with a live preview streams itself or brings the preview model.
-            assert_eq!(
-                m.live_preview,
-                recipe == "zipformer_streaming" || preview_archive.is_some(),
-                "{}: live_preview must match the archives",
-                m.id
-            );
+            let streams_itself = match &m.engine {
+                EngineKind::Sherpa { recipe, archive, preview_archive } => {
+                    assert!(!recipe.is_empty() && archive.starts_with("sherpa-onnx-"), "{}", m.id);
+                    recipe == "zipformer_streaming" || preview_archive.is_some()
+                }
+                EngineKind::ParakeetCpp { repo, revision, file, preview_archive } => {
+                    assert!(repo.contains('/') && !revision.is_empty() && file.ends_with(".gguf"), "{}", m.id);
+                    preview_archive.is_some()
+                }
+                _ => panic!("{} is not a model the Rust engine runs", m.id),
+            };
+            assert_eq!(m.live_preview, streams_itself, "{}: live_preview must match the archives", m.id);
             assert!(m.size_bytes > 0 && !m.languages.is_empty() && (1..=5).contains(&m.speed), "{}", m.id);
             assert!(!m.id.as_str().contains(':'), "{}: a colon marks a cloud model", m.id);
         }

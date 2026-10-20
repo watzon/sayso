@@ -35,4 +35,5 @@ package() {
   # The app finds the AUR package by this folder, and then names an AUR helper
   # as the way to update (crates/sayso-update/src/install/package.rs).
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 -t "$pkgdir/usr/share/licenses/$pkgname" share/licenses/sayso/*.txt
 }

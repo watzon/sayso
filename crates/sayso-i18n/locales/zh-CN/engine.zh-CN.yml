@@ -4,6 +4,7 @@ engine:
   incomplete_download: "下载已完成，但缺少部分模型文件。请重新下载。"
   download_failed: "下载未完成：%{detail}。"
   load_failed: "Sayso 无法载入模型：%{detail}。"
+  no_gpu: "此模型需要带 Vulkan 驱动的独立显卡，但 Sayso 没有找到。请在“模型”中选择一个在 CPU 上运行的模型。"
   device_not_eligible: "这台 Mac 不支持 Apple Intelligence。"
   intelligence_off: "Apple Intelligence 已关闭。请在系统设置中打开它。"
   model_not_ready: "macOS 仍在下载 Apple Intelligence 模型。请几分钟后重试。"

@@ -40,6 +40,7 @@ core:
     whisper_medium_portable: "small과 large 사이예요. 5비트로 양자화했어요."
     whisper_tiny_portable: "가장 작은 모델이에요. 테스트와 아주 오래된 컴퓨터용이에요."
     parakeet_tdt_v2_onnx: "영어에 빠르고 정확해요. 말하는 동안 단어를 실시간으로 보여 줘요."
+    fluid_speech_mini_onnx: "그래픽 카드에서 실행되는 작고 빠른 영어용 Parakeet이에요. 말하는 동안 단어를 실시간으로 보여 줘요."
     parakeet_tdt_v3_onnx: "유럽 언어 25개를 자동 감지로 지원해요."
     parakeet_tdt_ctc_110m_onnx: "작고 빨라요. 오래된 컴퓨터용이에요."
     kroko_en: "실시간 미리보기가 없는 모델을 위한 소형 미리보기예요."

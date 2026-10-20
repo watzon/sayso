@@ -1,7 +1,7 @@
 //! The `engine` field of a request: how to download and load one model.
 //!
 //! The field is `EngineKind` from `sayso-core`, serialized. This engine runs
-//! only the `sherpa` kind.
+//! the `sherpa` and `parakeet_cpp` kinds.
 
 use anyhow::{Result, anyhow, bail};
 use sayso_core::models::EngineKind;
@@ -14,6 +14,8 @@ pub enum Recipe {
     ParakeetTdt,
     /// NeMo Parakeet TDT-CTC: the CTC head, one model file.
     ParakeetTdtCtc,
+    /// A Parakeet TDT GGUF, run by parakeet.cpp (`parakeet_cpp` kind).
+    ParakeetGguf,
     /// A streaming zipformer transducer. Live preview only.
     ZipformerStreaming,
     Whisper,
@@ -47,7 +49,7 @@ impl Recipe {
             Recipe::Whisper => 28,
             Recipe::SenseVoice => 25,
             Recipe::Moonshine => 7,
-            Recipe::ParakeetTdt | Recipe::ParakeetTdtCtc => 60,
+            Recipe::ParakeetTdt | Recipe::ParakeetTdtCtc | Recipe::ParakeetGguf => 60,
             Recipe::ZipformerStreaming => usize::MAX,
         }
     }
@@ -57,10 +59,22 @@ impl Recipe {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelSpec {
     pub recipe: Recipe,
-    /// Archive name in the sherpa-onnx `asr-models` release, without `.tar.bz2`.
+    /// The main archive's folder in the model's store: the archive name in the
+    /// sherpa-onnx `asr-models` release, without `.tar.bz2`, or the GGUF's commit.
     pub archive: String,
+    /// Where the main archive comes from.
+    pub source: Source,
     /// The streaming archive that gives the live preview, if the main one cannot.
     pub preview_archive: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    /// A `.tar.bz2` in the sherpa-onnx release.
+    SherpaRelease,
+    /// `file` in a Hugging Face repository at the commit `archive`. A new commit gets a new folder, so
+    /// it downloads again even when the file keeps its name.
+    HuggingFace { repo: String, file: String },
 }
 
 impl ModelSpec {
@@ -68,24 +82,42 @@ impl ModelSpec {
     pub fn from_json(value: &Value) -> Result<ModelSpec> {
         let kind: EngineKind = serde_json::from_value(value.clone())
             .map_err(|e| anyhow!("invalid engine field: {e}"))?;
-        let EngineKind::Sherpa {
-            recipe,
-            archive,
-            preview_archive,
-        } = kind
-        else {
-            let name = value.get("kind").and_then(Value::as_str).unwrap_or("?");
-            bail!("engine kind {name} does not run in this engine");
+        let spec = match kind {
+            EngineKind::Sherpa {
+                recipe,
+                archive,
+                preview_archive,
+            } => ModelSpec {
+                recipe: Recipe::parse(&recipe)?,
+                archive,
+                source: Source::SherpaRelease,
+                preview_archive,
+            },
+            EngineKind::ParakeetCpp {
+                repo,
+                revision,
+                file,
+                preview_archive,
+            } => {
+                check_repo(&repo)?;
+                check_archive_name(&file)?;
+                ModelSpec {
+                    recipe: Recipe::ParakeetGguf,
+                    archive: revision,
+                    source: Source::HuggingFace { repo, file },
+                    preview_archive,
+                }
+            }
+            _ => {
+                let name = value.get("kind").and_then(Value::as_str).unwrap_or("?");
+                bail!("engine kind {name} does not run in this engine");
+            }
         };
-        check_archive_name(&archive)?;
-        if let Some(preview) = &preview_archive {
+        check_archive_name(&spec.archive)?;
+        if let Some(preview) = &spec.preview_archive {
             check_archive_name(preview)?;
         }
-        Ok(ModelSpec {
-            recipe: Recipe::parse(&recipe)?,
-            archive,
-            preview_archive,
-        })
+        Ok(spec)
     }
 
     /// Every archive to download, main archive first.
@@ -108,6 +140,14 @@ impl ModelSpec {
         } else {
             self.preview_archive.as_deref()
         }
+    }
+}
+
+/// A Hugging Face repository id becomes part of a URL: `owner/name`, each one plain path part.
+fn check_repo(repo: &str) -> Result<()> {
+    match repo.split_once('/') {
+        Some((owner, name)) if check_archive_name(owner).is_ok() && check_archive_name(name).is_ok() => Ok(()),
+        _ => bail!("invalid Hugging Face repository {repo:?}"),
     }
 }
 
@@ -151,6 +191,18 @@ mod tests {
     }
 
     #[test]
+    fn parses_a_parakeet_cpp_engine() {
+        let spec = ModelSpec::from_json(&json!({
+            "kind": "parakeet_cpp", "repo": "o/r", "revision": "c0ffee", "file": "m.gguf", "preview_archive": "p"
+        }))
+        .unwrap();
+        assert_eq!(spec.recipe, Recipe::ParakeetGguf);
+        assert_eq!(spec.source, Source::HuggingFace { repo: "o/r".into(), file: "m.gguf".into() });
+        assert_eq!(spec.archives(), vec!["c0ffee", "p"]);
+        assert_eq!(spec.stream_archive(), Some("p"));
+    }
+
+    #[test]
     fn the_catalog_serializes_to_specs_this_engine_reads() {
         for info in sayso_core::models_onnx::catalog() {
             let value = serde_json::to_value(&info.engine).unwrap();
@@ -177,6 +229,18 @@ mod tests {
         for bad in ["../x", "a/b", ".hidden", ""] {
             let value = json!({"kind": "sherpa", "recipe": "whisper", "archive": bad, "preview_archive": null});
             assert!(ModelSpec::from_json(&value).is_err(), "{bad}");
+        }
+        let bad = [
+            ("o", "c0ffee", "m.gguf"),
+            ("o/r/x", "c0ffee", "m.gguf"),
+            ("../r", "c0ffee", "m.gguf"),
+            ("o/r", "c0ffee", "../m.gguf"),
+            ("o/r", "../main", "m.gguf"),
+            ("o/r", "", "m.gguf"),
+        ];
+        for (repo, revision, file) in bad {
+            let value = json!({"kind": "parakeet_cpp", "repo": repo, "revision": revision, "file": file, "preview_archive": null});
+            assert!(ModelSpec::from_json(&value).is_err(), "{repo} {revision} {file}");
         }
         let value =
             json!({"kind": "sherpa", "recipe": "nope", "archive": "a", "preview_archive": null});

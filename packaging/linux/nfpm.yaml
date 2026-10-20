@@ -43,6 +43,9 @@ contents:
     type: tree
   - src: lib/udev/rules.d/70-sayso-uinput.rules
     dst: /usr/lib/udev/rules.d/70-sayso-uinput.rules
+  - src: share/licenses/sayso
+    dst: /usr/share/licenses/sayso
+    type: tree
   - src: LICENSE
     dst: /usr/share/licenses/sayso/LICENSE
     packager: rpm

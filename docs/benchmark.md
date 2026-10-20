@@ -9,7 +9,7 @@ The accuracy and speed figures on the Models page come from this benchmark. Says
 - **Accuracy:** the text and the reference go through Whisper's English normalizer, as on the leaderboard, so punctuation and capitals do not count. WER is over all words of a set. The page shows 100 minus the mean of the seven set WERs.
 - **Speed:** audio time over processing time (RTFx), from the time that the sidecar reports.
 - **Live preview:** for Parakeet Unified EN, whose preview runs another decoder than its final pass, a second run streams each clip and scores the last preview text.
-- **Machine:** Apple M5 Pro, macOS 27.0. Windows and Linux run other builds. They show the same accuracy figures and no speed figures.
+- **Machine:** Apple M5 Pro, macOS 27.0. Windows and Linux run other builds. They show the same accuracy figures and no speed figures. Fluid Speech Mini on Linux shows its own accuracy figure (see "Linux").
 
 ## Run it again
 
@@ -63,3 +63,14 @@ Measured on 2026-10-16. WER per set in percent. Speed is audio time over process
 | whisper-base | 88.4% | 11.62 | 63× | 19.17 | 17.61 | 12.63 | 4.59 | 12.57 | 4.38 | 10.39 |
 | parakeet-eou-120m | 85.9% | 14.08 | 18× | 18.53 | 21.56 | 18.06 | 7.66 | 13.01 | 7.16 | 12.60 |
 | whisper-tiny | 85.3% | 14.70 | 92× | 22.61 | 22.08 | 14.62 | 6.25 | 16.91 | 7.97 | 12.50 |
+
+## Linux
+
+Fluid Speech Mini runs another build on Linux: FluidVoice's GGUF on parakeet.cpp, on the GPU through Vulkan. The Linux catalog shows its own figures for it. Parakeet TDT v2 on the CPU is here for comparison only; the Linux catalog shows the macOS figures for it, like the other models.
+
+Measured on 2026-10-18 with the same 1,400 clips and harness, `SAYSO_ENGINE_PATH` set to the Linux engine. Machine: NixOS, Ryzen 7 7700X, RTX 4070 (driver 595.104.02, Vulkan through NVIDIA's driver only). The GPU ran the clips back to back; after the GPU idles for a few seconds, as between dictations, NVIDIA's driver needs longer to raise its clocks, so one dictation is slower than this speed suggests.
+
+| Model | Accuracy | WER | Speed | AMI | Earnings22 | GigaSpeech | LS clean | LS other | SPGISpeech | VoxPopuli |
+|---|---|---|---|---|---|---|---|---|---|---|
+| fluid-speech-mini (GGUF, Vulkan) | 93.4% | 6.56 | 213× | 8.98 | 10.33 | 9.49 | 1.73 | 3.71 | 4.67 | 7.04 |
+| parakeet-tdt-v2 (sherpa-onnx, CPU) | 93.3% | 6.72 | 40× | 9.85 | 11.99 | 10.24 | 1.55 | 3.99 | 2.95 | 6.48 |

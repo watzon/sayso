@@ -22,15 +22,25 @@ pub(super) fn suggested(language: &str) -> ModelId {
 }
 
 /// The three models onboarding offers. The first is the suggested model for
-/// the dictation language. The others come from the best models for
-/// English, for European languages, and for every other language: first the
-/// ones that understand the dictation language.
+/// the dictation language. Next comes a GPU model that understands the
+/// language, when this computer can run one. The others come from the best
+/// models for English, for European languages, and for every other language:
+/// first the ones that understand the dictation language.
 fn choices(language: &str) -> Vec<ModelId> {
+    choices_with(language, crate::shell::model_runs_here)
+}
+
+/// [`choices`] for a computer whose `model_runs_here` is `runs_here`.
+fn choices_with(language: &str, runs_here: impl Fn(&ModelInfo) -> bool) -> Vec<ModelId> {
     let (english, european) = crate::shell::os_text!(("parakeet-unified-en", "parakeet-ultra"), ("parakeet-tdt-v2", "parakeet-tdt-v3"));
     let mut rest = [english, european, "whisper-large-v3-turbo"].map(ModelId::new);
     rest.sort_by_key(|id| !sayso_core::models::find(id).is_some_and(|m| m.understands(language)));
-    let mut list = vec![suggested(language)];
-    for id in rest {
+    let gpu = sayso_core::models::catalog()
+        .into_iter()
+        .find(|m| m.engine.needs_gpu() && m.understands(language) && runs_here(m))
+        .map(|m| m.id);
+    let mut list = vec![sayso_core::models::suggested_for(language, &runs_here)];
+    for id in gpu.into_iter().chain(rest) {
         if !list.contains(&id) {
             list.push(id);
         }
@@ -294,8 +304,8 @@ pub(super) fn track(fraction: f32, height: f32, label: String, c: &Colors) -> St
 
 #[cfg(test)]
 mod tests {
-    use super::{choices, suggested};
-    use sayso_core::models::{default_model, find};
+    use super::{choices, choices_with, suggested};
+    use sayso_core::models::{ModelInfo, default_model, find};
 
     #[test]
     fn choices_are_three_different_models_with_the_suggested_one_first() {
@@ -307,6 +317,26 @@ mod tests {
             assert_eq!(ids[0], suggested(language));
         }
         assert_eq!(choices("en")[0], default_model());
+    }
+
+    #[test]
+    fn a_gpu_model_comes_second_for_its_language_only_when_it_runs_here() {
+        let cpu_only = |m: &ModelInfo| !m.engine.needs_gpu();
+        let with_gpu = |_: &ModelInfo| true;
+        for language in ["en", "de", "auto"] {
+            assert!(choices_with(language, cpu_only).iter().all(|id| !find(id).unwrap().engine.needs_gpu()), "{language}");
+        }
+        let ids = choices_with("en", with_gpu);
+        assert_eq!(ids[0], default_model());
+        let gpu_models: Vec<_> = sayso_core::models::catalog().into_iter().filter(|m| m.engine.needs_gpu()).collect();
+        if let Some(gpu) = gpu_models.first() {
+            assert_eq!(ids[1], gpu.id, "{ids:?}");
+            assert_eq!(ids.len(), 3);
+            // English only: no other language is offered it.
+            for language in ["de", "auto"] {
+                assert!(!choices_with(language, with_gpu).contains(&gpu.id), "{language}");
+            }
+        }
     }
 
     #[test]

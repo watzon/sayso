@@ -2,13 +2,15 @@
 //!
 //! `sayso-engine` is a sidecar process. It speaks the same NDJSON protocol (v1)
 //! as the Swift engine on macOS, so `sayso-engine-client` works with it
-//! unchanged. It runs sherpa-onnx models on the CPU.
+//! unchanged. It runs sherpa-onnx models on the CPU, and `parakeet_cpp` models
+//! on a GPU with parakeet.cpp.
 //!
 //! Modules:
 //! - [`protocol`]: request parsing and the output writer.
 //! - [`spec`]: the `engine` field of a request (recipe and archives).
 //! - [`store`]: the model folders on disk.
-//! - [`download`]: download and extract a model archive.
+//! - [`download`]: download and extract a model archive, or download one file.
+//! - [`parakeet`]: the final pass of a `parakeet_cpp` model, on parakeet.cpp.
 //! - [`engine`]: the request handlers and the stream worker.
 //! - [`recognizer`]: the traits that hide sherpa-onnx, so tests can use a fake.
 //! - [`sherpa`]: the sherpa-onnx implementation of the recognizer traits.
@@ -21,6 +23,7 @@ pub mod audio;
 pub mod download;
 pub mod engine;
 pub mod layout;
+pub mod parakeet;
 pub mod partials;
 pub mod protocol;
 pub mod recognizer;

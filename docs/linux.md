@@ -209,6 +209,10 @@ A second `sayso` start without a command opens the Hub of the Sayso that runs.
 
 The Linux engine, `sayso-engine`, runs the models on the CPU with sherpa-onnx. The default model is Parakeet TDT v2 (English). It comes with Kroko, a small streaming model for the live preview. On an arm64 virtual machine, Parakeet TDT v2 took 170 ms for 8 s of speech and 590 ms for 29 s. The live preview changes about every 1.4 s.
 
+Fluid Speech Mini (English) runs on the GPU instead: parakeet.cpp runs FluidVoice's GGUF through Vulkan, so a discrete GPU with a Vulkan driver works (NVIDIA, AMD, Intel Arc). The Models page and onboarding show it only when Sayso finds one. Integrated GPUs do not count, and neither do Mesa's llvmpipe and lavapipe, which run on the CPU. Without a discrete GPU the model also refuses to load, because parakeet.cpp on the CPU took 19 s for 58 s of speech. The live preview stays on Kroko.
+
+On an RTX 4070 the final pass took 77 ms for 5 s of speech and 347 ms for 58 s, and the engine held about 190 MB of memory. Integrated GPUs were about 3 times slower than Parakeet TDT v2 on the same computer's CPU: the Radeon in a Ryzen 7 7700X took 4.0 s for the same 58 s, and the Intel UHD Graphics in a Core i5-10210U laptop took 13.5 s, where that laptop's CPU took 4.7 s. The first load after a new Sayso version or GPU driver takes about 14 s, while the driver compiles its shaders, so the first dictation does not wait for them.
+
 ## Files
 
 | Kind | Location |
@@ -225,6 +229,7 @@ The Linux engine, `sayso-engine`, runs the models on the CPU with sherpa-onnx. T
 |---|---|
 | `SAYSO_UI_BACKEND` | `x11` or `wayland` forces the display server of the UI. |
 | `SAYSO_ENGINE_PATH` | Selects another engine binary. |
+| `GGML_VK_VISIBLE_DEVICES` | The GPU for Fluid Speech Mini, by its index in the Vulkan device list: `1` is the second GPU. Without it, Sayso picks the first discrete GPU. |
 | `SAYSO_PASTE_KEY` | `shift+insert` (default), `ctrl+v`, or `ctrl+shift+v`. |
 | `SAYSO_SETTLE_MS` | Milliseconds between taking the clipboard and the paste key (default 50), so that clipboard managers that read at once do not look like the paste. 0 suits a manager that polls. |
 | `SAYSO_CLIPBOARD` | `x11`, `ext`, or `wlr` forces the clipboard method, for tests. |

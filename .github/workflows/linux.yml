@@ -28,6 +28,7 @@ on:
       - 'scripts/bundle-linux.sh'
       - 'scripts/package-linux.sh'
       - 'scripts/linux-deps.sh'
+      - 'scripts/linux-vulkan-deps.sh'
 
 permissions:
   contents: read
@@ -55,6 +56,9 @@ jobs:
     timeout-minutes: 90
     env:
       SAYSO_OFFICIAL_BUILD: ${{ inputs.official_build && '1' || '' }}
+      # The Vulkan headers and glslc of scripts/linux-vulkan-deps.sh. CMake's
+      # FindVulkan and ggml look in VULKAN_SDK first.
+      VULKAN_SDK: /opt/vulkan-deps
     steps:
       # The container has no tools. git lets the checkout keep the repository.
       - name: Install the base tools
@@ -69,6 +73,29 @@ jobs:
 
       - name: Install the build packages
         run: DEBIAN_FRONTEND=noninteractive scripts/linux-deps.sh
+
+      # Ubuntu 22.04 has no glslc package, and its Vulkan headers are too old
+      # for ggml's Vulkan backend. The script pins the versions, so a change
+      # to it makes a new key. glslc runs only on the architecture it was
+      # built on.
+      - name: Get the Vulkan headers and glslc from the cache
+        id: vulkan-deps
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.VULKAN_SDK }}
+          key: vulkan-deps-ubuntu22.04-${{ matrix.arch }}-${{ hashFiles('scripts/linux-vulkan-deps.sh') }}
+
+      - name: Build the Vulkan headers and glslc
+        if: steps.vulkan-deps.outputs.cache-hit != 'true'
+        run: scripts/linux-vulkan-deps.sh "$VULKAN_SDK"
+
+      # Save now, not at the end of the job, so a failed cargo build keeps it.
+      - name: Keep the Vulkan headers and glslc in the cache
+        if: steps.vulkan-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.VULKAN_SDK }}
+          key: ${{ steps.vulkan-deps.outputs.cache-primary-key }}
 
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: |

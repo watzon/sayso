@@ -45,6 +45,7 @@ An engine that sends no `reason` (an older engine) still works: the app shows a 
 | `incomplete_download` | `model_state failed` | A download ended, but the model files are not complete. | all three engines |
 | `download_failed` | `model_state failed` | A download stopped with an error (network, disk, HTTP status). | all three engines |
 | `load_failed` | `model_state failed` | The model is on disk, but loading it failed. | all three engines |
+| `no_gpu` | `model_state failed` | The model needs a discrete GPU with a Vulkan driver, and the engine found none. | Linux |
 | `device_not_eligible` | `language_model`, `generate` error | This Mac does not support Apple Intelligence. | Swift |
 | `intelligence_off` | `language_model`, `generate` error | Apple Intelligence is off in System Settings. | Swift |
 | `model_not_ready` | `language_model`, `generate` error | macOS still downloads the Apple Intelligence model. | Swift |

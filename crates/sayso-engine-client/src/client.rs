@@ -64,6 +64,8 @@ pub struct Options {
     pub backoff_initial: Duration,
     /// Longest restart delay.
     pub backoff_max: Duration,
+    /// Extra environment for the sidecar, also after a restart.
+    pub env: Vec<(String, String)>,
 }
 
 impl Default for Options {
@@ -73,6 +75,7 @@ impl Default for Options {
             long_timeout: Duration::from_secs(600),
             backoff_initial: Duration::from_millis(500),
             backoff_max: Duration::from_secs(5),
+            env: Vec::new(),
         }
     }
 }
@@ -181,7 +184,7 @@ impl EngineClient {
         Self::spawn_with(engine_path, models_dir, cache_dir, Options::default())
     }
 
-    /// Like [`EngineClient::spawn`], with explicit timing options.
+    /// Like [`EngineClient::spawn`], with explicit options: timing, and environment for the sidecar.
     pub fn spawn_with(
         engine_path: PathBuf,
         models_dir: PathBuf,
@@ -721,6 +724,7 @@ impl Inner {
         }
         let mut child = command
             .env("SAYSO_MODELS_DIR", &self.models_dir)
+            .envs(self.options.env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

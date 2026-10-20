@@ -25,6 +25,7 @@ fn fast_options() -> Options {
         long_timeout: Duration::from_secs(30),
         backoff_initial: Duration::from_millis(20),
         backoff_max: Duration::from_millis(100),
+        ..Options::default()
     }
 }
 

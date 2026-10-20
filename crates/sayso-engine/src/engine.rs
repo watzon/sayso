@@ -16,7 +16,7 @@ use crate::layout;
 use crate::partials::Partials;
 use crate::protocol::{Output, PROTOCOL_VERSION, Request};
 use crate::recognizer::{LivePreview, Loaded, Loader, ModelDirs, PreviewStream};
-use crate::spec::ModelSpec;
+use crate::spec::{ModelSpec, Recipe, Source};
 use crate::store::ModelStore;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
@@ -34,6 +34,8 @@ pub struct Config {
     pub models_dir: PathBuf,
     /// Where the archives come from. `SAYSO_MODELS_URL` overrides the sherpa-onnx release.
     pub base_url: String,
+    /// Where a GGUF file comes from. `SAYSO_HF_ENDPOINT` overrides Hugging Face, as in the Windows engine.
+    pub hf_endpoint: String,
     /// Shortest time between two decodes of a live preview stream.
     pub decode_interval: Duration,
 }
@@ -44,9 +46,14 @@ impl Config {
             .ok()
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| download::DEFAULT_BASE_URL.to_string());
+        let hf_endpoint = std::env::var("SAYSO_HF_ENDPOINT")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| download::DEFAULT_HF_ENDPOINT.to_string());
         Config {
             models_dir,
             base_url,
+            hf_endpoint,
             decode_interval: Duration::from_millis(150),
         }
     }
@@ -241,8 +248,13 @@ impl Engine {
                 continue; // A complete archive from a download that stopped later.
             }
             let staging = self.store.staging_dir(model, archive)?;
-            let url = download::archive_url(&self.config.base_url, archive);
-            download::fetch_archive(&self.agent, &url, &staging, &dest, &mut |bytes| {
+            let (url, file) = match &spec.source {
+                Source::HuggingFace { repo, file } if archive == spec.archive => {
+                    (download::hf_file_url(&self.config.hf_endpoint, repo, archive, file), Some(file.as_str()))
+                }
+                _ => (download::archive_url(&self.config.base_url, archive), None),
+            };
+            download::fetch(&self.agent, &url, file, &staging, &dest, &mut |bytes| {
                 progress.add(bytes);
                 if progress.due(Instant::now()) {
                     self.report(id, model, progress, progress.fraction());
@@ -318,7 +330,8 @@ impl Engine {
         let loaded = match result {
             Ok(loaded) => loaded,
             Err(e) => {
-                self.model_state(id, model, "failed", json!({ "message": format!("{e:#}"), "reason": "load_failed" }));
+                let reason = if e.is::<crate::parakeet::NoGpu>() { "no_gpu" } else { "load_failed" };
+                self.model_state(id, model, "failed", json!({ "message": format!("{e:#}"), "reason": reason }));
                 drop(busy);
                 release_free_memory(); // a load that fails late has freed what it allocated, into glibc
                 return Err(e);
@@ -464,7 +477,8 @@ impl std::error::Error for Incomplete {}
 
 /// Check that each archive holds the files its recipe needs.
 fn check_files(spec: &ModelSpec, dirs: &ModelDirs) -> Result<()> {
-    if spec.recipe.final_pass() {
+    // A GGUF is one file, checked by its size as it downloads.
+    if spec.recipe.final_pass() && spec.recipe != Recipe::ParakeetGguf {
         layout::offline_files(spec.recipe, &dirs.main)?;
     }
     if let Some(stream) = &dirs.stream {

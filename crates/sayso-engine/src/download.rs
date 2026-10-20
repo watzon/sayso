@@ -1,9 +1,9 @@
-//! Download a model archive (`.tar.bz2`) and extract it.
+//! Download a model archive (`.tar.bz2`) and extract it, or download one file.
 //!
 //! The archive streams from the network through the bzip2 decoder into the tar
 //! reader, so a download needs no temporary archive file. The files go to a
-//! staging folder first. Only a complete extraction with the full byte count
-//! moves into place.
+//! staging folder first. Only a complete extraction (or file) with the full
+//! byte count moves into place.
 
 use anyhow::{Context, Result, bail};
 use bzip2::read::MultiBzDecoder;
@@ -18,8 +18,15 @@ pub const DEFAULT_BASE_URL: &str =
 /// Time between two progress messages.
 pub const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
+/// Hugging Face, where a `ParakeetCpp` model's GGUF file comes from.
+pub const DEFAULT_HF_ENDPOINT: &str = "https://huggingface.co";
+
 pub fn archive_url(base_url: &str, archive: &str) -> String {
     format!("{}/{archive}.tar.bz2", base_url.trim_end_matches('/'))
+}
+
+pub fn hf_file_url(hf_endpoint: &str, repo: &str, revision: &str, file: &str) -> String {
+    format!("{}/{repo}/resolve/{revision}/{file}", hf_endpoint.trim_end_matches('/'))
 }
 
 /// An HTTP agent for archives. It follows redirects (GitHub release files redirect).
@@ -32,12 +39,14 @@ pub fn agent() -> ureq::Agent {
     ureq::Agent::new_with_config(config)
 }
 
-/// Download the archive at `url` and extract it to `dest`. `staging` is a
+/// Download the archive at `url` and extract it to `dest`, or with `file`, put
+/// the file at `url` in the folder `dest` under that name. `staging` is a
 /// temporary folder beside `dest`. `on_bytes` gets the size of each piece
 /// that arrives.
-pub fn fetch_archive(
+pub fn fetch(
     agent: &ureq::Agent,
     url: &str,
+    file: Option<&str>,
     staging: &Path,
     dest: &Path,
     on_bytes: &mut dyn FnMut(u64),
@@ -45,20 +54,38 @@ pub fn fetch_archive(
     remove_dir_if_exists(staging)?;
     std::fs::create_dir_all(staging)
         .with_context(|| format!("cannot create {}", staging.display()))?;
-    let result = download_and_extract(agent, url, staging, on_bytes)
-        .and_then(|()| move_into_place(staging, dest));
+    let result = match file {
+        Some(name) => download_to_file(agent, url, &staging.join(name), on_bytes),
+        None => download_and_extract(agent, url, staging, on_bytes),
+    }
+    .and_then(|()| move_into_place(staging, dest));
     if result.is_err() {
         let _ = std::fs::remove_dir_all(staging);
     }
     result
 }
 
-fn download_and_extract(
+fn download_to_file(
     agent: &ureq::Agent,
     url: &str,
-    staging: &Path,
+    path: &Path,
     on_bytes: &mut dyn FnMut(u64),
 ) -> Result<()> {
+    let (mut body, expected) = get(agent, url, on_bytes)?;
+    let mut file = std::fs::File::create(path)
+        .with_context(|| format!("cannot create {}", path.display()))?;
+    std::io::copy(&mut body, &mut file).with_context(|| format!("cannot download {url}"))?;
+    file.sync_all()
+        .with_context(|| format!("cannot write {}", path.display()))?;
+    check_size(url, body.count, expected)
+}
+
+/// The response body, counted, and the size the server announced.
+fn get<'a>(
+    agent: &ureq::Agent,
+    url: &str,
+    on_bytes: &'a mut dyn FnMut(u64),
+) -> Result<(Counting<'a, impl Read + use<'a>>, Option<u64>)> {
     let response = agent
         .get(url)
         .call()
@@ -68,11 +95,30 @@ fn download_and_extract(
         .get("content-length")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse().ok());
-    let mut body = Counting {
+    let body = Counting {
         inner: response.into_body().into_reader(),
         count: 0,
         on_bytes,
     };
+    Ok((body, expected))
+}
+
+fn check_size(url: &str, count: u64, expected: Option<u64>) -> Result<()> {
+    if let Some(expected) = expected
+        && count != expected
+    {
+        bail!("download of {url} is incomplete: {count} of {expected} bytes");
+    }
+    Ok(())
+}
+
+fn download_and_extract(
+    agent: &ureq::Agent,
+    url: &str,
+    staging: &Path,
+    on_bytes: &mut dyn FnMut(u64),
+) -> Result<()> {
+    let (mut body, expected) = get(agent, url, on_bytes)?;
     {
         let mut archive = tar::Archive::new(MultiBzDecoder::new(&mut body));
         archive.set_preserve_permissions(false);
@@ -83,15 +129,7 @@ fn download_and_extract(
     // Read to the end, so that the size check counts every byte.
     std::io::copy(&mut body, &mut std::io::sink())
         .with_context(|| format!("cannot download {url}"))?;
-    if let Some(expected) = expected
-        && body.count != expected
-    {
-        bail!(
-            "download of {url} is incomplete: {} of {expected} bytes",
-            body.count
-        );
-    }
-    Ok(())
+    check_size(url, body.count, expected)
 }
 
 /// Move the extracted files to `dest`. An archive usually holds one top
@@ -220,5 +258,6 @@ mod tests {
     fn urls_join_base_and_archive() {
         assert_eq!(archive_url("http://h/x/", "a-b"), "http://h/x/a-b.tar.bz2");
         assert!(archive_url(DEFAULT_BASE_URL, "a").starts_with("https://github.com/"));
+        assert_eq!(hf_file_url("http://h/", "o/r", "c0ffee", "m.gguf"), "http://h/o/r/resolve/c0ffee/m.gguf");
     }
 }
