@@ -37,6 +37,22 @@ const OPENAI_KINDS: [SpeechProviderKind; 4] = [
     SpeechProviderKind::OpenAiCompatible,
 ];
 
+// Connection reuse
+
+#[test]
+fn two_calls_reuse_one_connection() {
+    let server = MockServer::start(|_, _| Reply::ok(json!({"text": "Hello."})));
+    let provider = provider(SpeechProviderKind::OpenAiCompatible, &server);
+    let vocabulary = words(&[]);
+    for _ in 0..3 {
+        assert_eq!(transcribe(&provider, None, &request("m", None, &vocabulary)).unwrap(), "Hello.");
+    }
+    let requests = server.requests();
+    assert_eq!(requests.len(), 3);
+    let peers: std::collections::HashSet<_> = requests.iter().map(|r| r.peer.expect("a peer address")).collect();
+    assert_eq!(peers.len(), 1, "every call used the connection of the first: {peers:?}");
+}
+
 // OpenAI-compatible
 
 #[test]

@@ -29,6 +29,8 @@ pub struct Recorded {
     /// Header names in lower case.
     pub headers: HashMap<String, String>,
     pub body: Vec<u8>,
+    /// The address of the client. Two requests on one connection have the same port.
+    pub peer: Option<std::net::SocketAddr>,
 }
 
 impl Recorded {
@@ -159,8 +161,13 @@ impl MockServer {
                     .iter()
                     .map(|h| (h.field.as_str().as_str().to_ascii_lowercase(), h.value.as_str().to_string()))
                     .collect();
-                let recorded_request =
-                    Recorded { method: request.method().to_string(), path: request.url().to_string(), headers, body };
+                let recorded_request = Recorded {
+                    method: request.method().to_string(),
+                    path: request.url().to_string(),
+                    headers,
+                    body,
+                    peer: request.remote_addr().copied(),
+                };
                 let index = {
                     let mut all = recorded.lock().unwrap();
                     all.push(recorded_request.clone());

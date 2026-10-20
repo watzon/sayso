@@ -7,6 +7,8 @@
 use sayso_core::config::is_local_url;
 use sayso_core::speech::{MissingSetup, SpeechError, SpeechProvider, SpeechProviderKind, SpeechRequest};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 /// The deadline for a call that has a zero timeout.
@@ -112,10 +114,50 @@ impl<'a> Target<'a> {
     }
 }
 
-/// An HTTP agent. Local servers bypass any system proxy.
+/// What changes how an agent connects. The agent config has two inputs only: a
+/// local server bypasses the system proxy, and every other server uses it.
+/// Timeouts and credentials go on each request, so they are not part of the key.
+/// TLS settings are the ureq defaults for every agent. When a setting that
+/// changes the config appears, it must join this key.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct AgentKey {
+    bypass_proxy: bool,
+}
+
+impl AgentKey {
+    fn for_url(base_url: &str) -> Self {
+        Self { bypass_proxy: is_local_url(base_url) }
+    }
+}
+
+/// Long-lived agents, so a dictation reuses the connection of the one before.
+/// One agent holds many hosts: its pool keys connections by host and port.
+#[derive(Default)]
+struct AgentCache {
+    agents: Mutex<HashMap<AgentKey, ureq::Agent>>,
+}
+
+impl AgentCache {
+    fn get(&self, key: AgentKey) -> ureq::Agent {
+        self.agents.lock().unwrap_or_else(PoisonError::into_inner).entry(key).or_insert_with(|| build_agent(key)).clone()
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.agents.lock().unwrap().len()
+    }
+}
+
+static AGENTS: LazyLock<AgentCache> = LazyLock::new(AgentCache::default);
+
+/// The shared HTTP agent for a server. Local servers bypass any system proxy.
 fn agent(base_url: &str) -> ureq::Agent {
+    AGENTS.get(AgentKey::for_url(base_url))
+}
+
+fn build_agent(key: AgentKey) -> ureq::Agent {
     let mut config = ureq::Agent::config_builder().user_agent("Sayso");
-    if is_local_url(base_url) {
+    if key.bypass_proxy {
         config = config.proxy(None);
     }
     config.build().into()
@@ -191,6 +233,30 @@ pub(crate) fn words<'a>(request: &'a SpeechRequest) -> Vec<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_key_follows_the_proxy_rule() {
+        let local = ["http://localhost:8000/v1", "http://127.0.0.1:11434", "http://studio.local/v1"];
+        for url in local {
+            assert_eq!(AgentKey::for_url(url), AgentKey { bypass_proxy: true }, "{url}");
+        }
+        for url in ["https://api.openai.com/v1", "https://api.groq.com/openai/v1", "http://192.168.1.20:8000/v1"] {
+            assert_eq!(AgentKey::for_url(url), AgentKey { bypass_proxy: false }, "{url}");
+        }
+    }
+
+    #[test]
+    fn cache_holds_one_agent_for_each_key() {
+        let cache = AgentCache::default();
+        let local = AgentKey::for_url("http://localhost:8000");
+        let cloud = AgentKey::for_url("https://api.openai.com/v1");
+        cache.get(local);
+        cache.get(AgentKey::for_url("http://127.0.0.1:1234"));
+        assert_eq!(cache.len(), 1, "two local servers share one agent");
+        cache.get(cloud);
+        cache.get(AgentKey::for_url("https://api.groq.com"));
+        assert_eq!(cache.len(), 2, "a cloud server gets its own agent, with the system proxy");
+    }
 
     #[test]
     fn zero_timeout_means_thirty_seconds() {
