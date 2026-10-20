@@ -14,3 +14,6 @@ spikes/engine/runs/*.stderr
 
 # The portable speech engine is its own Cargo workspace.
 native/portable/target
+
+# Agent worktrees of Claude Code.
+.claude/worktrees/
