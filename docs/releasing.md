@@ -155,8 +155,8 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
    - `Sayso-<version>-windows-x64-setup.exe`
    - `sayso-<version>-linux-x86_64.tar.gz`, `.deb`, `.rpm`, and `.flatpak`
    - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, and `.flatpak`
-   - `sayso-<version>-x86_64.AppImage` and `sayso-<version>-aarch64.AppImage`
-   - a `.sha256` file for each of the twelve
+   - `sayso-<version>-x86_64.AppImage` and `sayso-<version>-aarch64.AppImage`, each with its `.AppImage.zsync` file
+   - a `.sha256` file for each of the fourteen
    - `latest.json`
 
    The tap `watzon/homebrew-tap` must also have a new commit, `sayso <version>`.

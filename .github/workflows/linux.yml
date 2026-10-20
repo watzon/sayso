@@ -195,6 +195,7 @@ jobs:
             dist/*.deb
             dist/*.rpm
             dist/*.AppImage
+            dist/*.AppImage.zsync
             dist/*.flatpak
           if-no-files-found: error
           overwrite: true

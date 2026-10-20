@@ -318,7 +318,7 @@ jobs:
               for ext in ("deb", "rpm", "flatpak")
           ]
           # The catalog at appimage.github.io wants no "linux" in this name.
-          packages += [f"sayso-{version}-{arch}.AppImage" for arch in ("x86_64", "aarch64")]
+          packages += [f"sayso-{version}-{arch}.AppImage{ext}" for arch in ("x86_64", "aarch64") for ext in ("", ".zsync")]
           missing = [name for name in [*files.values(), *packages] if not os.path.isfile(os.path.join("dist", name))]
           if missing:
               sys.exit(f"::error::These release files are missing: {', '.join(missing)}")

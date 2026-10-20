@@ -6,7 +6,7 @@
 #
 # The packages go next to the tarball:
 #   sayso-<version>-linux-<arch>.deb, .rpm, .flatpak
-#   sayso-<version>-<arch>.AppImage
+#   sayso-<version>-<arch>.AppImage, and its .zsync file
 #
 # Run it on Linux, on the architecture of the tarball. It needs curl, file,
 # and binutils, and the flatpak command for the Flatpak. The AppImage needs a
@@ -47,6 +47,7 @@ esac
 
 tools=${SAYSO_TOOLS_DIR:-$root/build/tools}
 mkdir -p "$tools"
+tools=$(cd "$tools" && pwd)
 # fetch <name> <url> <sha256>: download the tool unless the file with that hash is there.
 fetch() {
   local file="$tools/$1"
@@ -93,6 +94,9 @@ package_nfpm() {
 appimage_fallback_libs=(libxkbcommon.so.0 libxkbcommon-x11.so.0 libxcb-xkb.so.1)
 # The catalog at appimage.github.io wants no "linux" in the file name.
 appimage_name="sayso-$version-$arch.AppImage"
+# AppImageUpdate and similar tools read this text in the AppImage and get the
+# .zsync file of the latest release on GitHub. The .zsync file must keep this name.
+appimage_update="gh-releases-zsync|watzon|sayso|latest|sayso-*-$arch.AppImage.zsync"
 package_appimage() {
   fetch "${appimagetool[@]}"
   fetch "${runtime[@]}"
@@ -116,9 +120,12 @@ package_appimage() {
   ln -s dev.sayso.Sayso.png "$appdir/.DirIcon"
   # The catalog reads the AppStream data only from a file with this older name.
   ln -s dev.sayso.Sayso.metainfo.xml "$appdir/usr/share/metainfo/dev.sayso.Sayso.appdata.xml"
-  # No FUSE in a container, so the tool unpacks itself.
-  APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch VERSION=$version \
-    "$tools/${appimagetool[0]}" --no-appstream --runtime-file "$tools/${runtime[0]}" "$appdir" "$out/$appimage_name"
+  # No FUSE in a container, so the tool unpacks itself. With -u, the tool also
+  # makes $appimage_name.zsync, in the current folder.
+  (cd "$out" && APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch VERSION=$version \
+    "$tools/${appimagetool[0]}" --no-appstream --runtime-file "$tools/${runtime[0]}" \
+    -u "$appimage_update" "$appdir" "$appimage_name")
+  [[ -f "$out/$appimage_name.zsync" ]] || { echo "appimagetool did not make $appimage_name.zsync" >&2; exit 1; }
   chmod +x "$out/$appimage_name"
 }
 

@@ -103,7 +103,7 @@ If the installer is not signed, Windows SmartScreen asks first. Select **More in
    | AUR | Arch Linux and systems based on it | `yay -S sayso-bin`, or another AUR helper |
    | Nix flake | NixOS, and Nix on other distributions | `nix run github:watzon/sayso`. [docs/linux.md](docs/linux.md) has the NixOS configuration. |
    | `.flatpak` | Any distribution with Flatpak | `flatpak install --user ./sayso-<version>-linux-<arch>.flatpak` |
-   | `.AppImage` | Other distributions, no install | `chmod +x` the file, then start it |
+   | `.AppImage` | Other distributions, no install | `chmod +x` the file, then start it. Sayso is also in the [AppImage catalog](https://appimage.github.io/Sayso/). |
    | `.tar.gz` | Other distributions | Unpack it and run `./install.sh`. Sayso goes to `~/.local`. `sudo ./install.sh --system` installs it for all users, with the udev rule for Wayland key input. |
 
 2. Open Sayso from your app menu, or start the AppImage. Onboarding starts.

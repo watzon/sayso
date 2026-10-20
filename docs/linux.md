@@ -38,7 +38,7 @@ No package updates by itself. Sayso shows a new version and says where to get it
 | Install | How to update |
 |---|---|
 | `.deb`, `.rpm`, tarball | Download the new file and install it. |
-| `.AppImage` | Download the new file and use it in place of the old one. |
+| `.AppImage` | Download the new file and use it in place of the old one, or update the file with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) or an AppImage manager such as Gear Lever. |
 | `.flatpak` | Download the new file and install it as you installed the old one: `flatpak install --user ./<file>` for your user, or without `--user` for all users. |
 | AUR | Update `sayso-bin` with your AUR helper, for example `yay -S sayso-bin`. |
 | Nix flake | In a system configuration, update the flake input of Sayso (`nix flake update sayso` when its name is `sayso`) and build your system again. With `nix run`, add `--refresh`. In a profile, run `nix profile upgrade` with the name of Sayso in `nix profile list`. |
