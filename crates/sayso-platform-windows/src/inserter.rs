@@ -46,8 +46,12 @@ use windows::core::PCWSTR;
 
 /// How often the paste looks for a read of the text.
 const RECEIPT_POLL: Duration = Duration::from_millis(10);
-/// UTF-16 units per `SendInput` call when typing.
-pub const MAX_UNITS_PER_EVENT: usize = 20;
+/// UTF-16 units per `SendInput` call when typing. `SendInput` takes any
+/// number of key events (macOS has a limit of 20 units per event, Windows
+/// has none). The bound keeps one call short, so a key of the user can still
+/// land between two calls in a long text.
+pub const MAX_UNITS_PER_EVENT: usize = 128;
+/// The rest between two `SendInput` calls when typing.
 const CHUNK_DELAY: Duration = Duration::from_millis(5);
 const KEY_GAP: Duration = Duration::from_millis(8);
 /// Another app may hold the clipboard open for a moment.
@@ -699,13 +703,21 @@ fn post_ctrl_v() -> Result<(), InsertError> {
     input::send(&second).map_err(failed)
 }
 
+/// The `SendInput` chunks that type `text`: one Return per line break, also
+/// for Windows line ends.
+fn typing_chunks(text: &str) -> Vec<Vec<u16>> {
+    utf16_chunks(&text.replace("\r\n", "\n"), MAX_UNITS_PER_EVENT)
+}
+
+/// Type `text`, after the modifiers that the user still holds go up. The
+/// chunks have [`CHUNK_DELAY`] between them, and none after the last one.
 fn type_text(text: &str) -> Result<(), InsertError> {
     input::send(&input::release_strokes(&input::held_modifiers(true))).map_err(failed)?;
-    // One Return per line break, also for Windows line ends.
-    let text = text.replace("\r\n", "\n");
-    for chunk in utf16_chunks(&text, MAX_UNITS_PER_EVENT) {
-        input::send(&input::text_strokes(&chunk)).map_err(failed)?;
-        sleep(CHUNK_DELAY);
+    for (i, chunk) in typing_chunks(text).iter().enumerate() {
+        if i > 0 {
+            sleep(CHUNK_DELAY);
+        }
+        input::send(&input::text_strokes(chunk)).map_err(failed)?;
     }
     Ok(())
 }
@@ -727,8 +739,12 @@ impl WinInserter {
             match method {
                 InsertMethod::Type => {
                     type_text(text)?;
-                    if submit && let Err(e) = press_return() {
-                        log::warn!("cannot press Return after the text: {e}");
+                    if submit {
+                        // The same rest before Return as between two chunks.
+                        sleep(CHUNK_DELAY);
+                        if let Err(e) = press_return() {
+                            log::warn!("cannot press Return after the text: {e}");
+                        }
                     }
                     Ok((InsertResult::Typed, None))
                 }
@@ -1154,6 +1170,26 @@ mod tests {
         utf16_chunks("a", 1);
     }
 
+    #[test]
+    fn typing_sends_1000_units_in_few_calls() {
+        let chunks = typing_chunks(&"a".repeat(1000));
+        assert_eq!(chunks.len(), 1000usize.div_ceil(MAX_UNITS_PER_EVENT));
+        assert!(chunks.len() <= 8, "{} SendInput calls", chunks.len());
+    }
+
+    #[test]
+    fn typing_chunks_keep_emoji_and_line_breaks() {
+        // An emoji on each side of the chunk limit, and Windows line ends.
+        let text = format!("{}😀b\r\n{}😀\nend", "a".repeat(MAX_UNITS_PER_EVENT - 1), "c".repeat(MAX_UNITS_PER_EVENT - 4));
+        let chunks = typing_chunks(&text);
+        assert!(chunks.len() > 1);
+        for chunk in &chunks {
+            assert!(chunk.len() <= MAX_UNITS_PER_EVENT);
+            assert!(String::from_utf16(chunk).is_ok(), "a chunk split a surrogate pair");
+        }
+        assert_eq!(rejoin(&chunks), text.replace("\r\n", "\n"), "one Return per line break");
+    }
+
     // -- The real clipboard ---------------------------------------------------
     //
     // These touch the user's clipboard, so they are ignored by default. Each
@@ -1360,5 +1396,22 @@ mod tests {
         assert_eq!(read_like_an_app().as_deref(), Some("before the paste"));
         let want = "pasted ✓ typed 😀\r\nline two";
         assert_eq!(window.wait_for(want), want);
+    }
+
+    #[test]
+    #[ignore = "sends keys to a window of its own"]
+    fn types_a_long_text_with_emoji_and_line_breaks_into_an_edit_control() {
+        let _one = REAL.lock();
+        let window = crate::test_window::TestWindow::open();
+        assert!(window.wait_in_front(), "the test window could not come to the front; no keys were sent");
+        // 864 units with line breaks. The first emoji falls on the limit of 128 units.
+        let line = format!("{}😀 ünïcödé, 日本語.\n", "a".repeat(127));
+        let text = line.repeat(6);
+        let started = Instant::now();
+        assert_eq!(WinInserter.insert(&text, InsertMethod::Type), Ok(InsertResult::Typed));
+        let took = started.elapsed();
+        let want = text.replace('\n', "\r\n");
+        assert_eq!(window.wait_for(&want), want);
+        eprintln!("typed {} UTF-16 units in {took:?}", text.encode_utf16().count());
     }
 }

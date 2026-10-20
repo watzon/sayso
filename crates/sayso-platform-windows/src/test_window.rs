@@ -9,8 +9,8 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
-    BringWindowToTop, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, ES_MULTILINE, ES_WANTRETURN,
-    GetForegroundWindow, GetMessageW, GetWindowThreadProcessId, MSG, PostMessageW, PostQuitMessage, RegisterClassW,
+    BringWindowToTop, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, ES_AUTOVSCROLL, ES_MULTILINE,
+    ES_WANTRETURN, GetForegroundWindow, GetMessageW, GetWindowThreadProcessId, MSG, PostMessageW, PostQuitMessage, RegisterClassW,
     SW_SHOW, SendMessageW, SetForegroundWindow, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_CLOSE,
     WM_DESTROY, WM_GETTEXT, WM_GETTEXTLENGTH, WNDCLASSW, WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
@@ -74,11 +74,12 @@ impl TestWindow {
                 )
                 .unwrap();
                 let edit_class = wide("EDIT");
+                // ES_AUTOVSCROLL: without it, the control refuses text past its last visible line.
                 let edit = CreateWindowExW(
                     WINDOW_EX_STYLE(0),
                     PCWSTR(edit_class.as_ptr()),
                     PCWSTR::null(),
-                    WS_CHILD | WS_VISIBLE | WINDOW_STYLE((ES_MULTILINE | ES_WANTRETURN) as u32),
+                    WS_CHILD | WS_VISIBLE | WINDOW_STYLE((ES_MULTILINE | ES_WANTRETURN | ES_AUTOVSCROLL) as u32),
                     0,
                     0,
                     460,
