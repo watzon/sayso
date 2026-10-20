@@ -127,7 +127,8 @@ fn archive(name: &str, files: &[&str]) -> Vec<u8> {
     builder.into_inner().unwrap().finish().unwrap()
 }
 
-/// Serves `/files/<name>.tar.bz2`. `/redirect/<name>` redirects there, as GitHub does.
+/// Serves `/files/<name>.tar.bz2`, and a single file such as `<repo>/resolve/<revision>/<file>` at
+/// `/files/<path>`. `/redirect/<name>` redirects there, as GitHub and Hugging Face do.
 struct Server {
     base: String,
     requests: Arc<AtomicUsize>,
@@ -150,7 +151,7 @@ fn serve_archives(archives: Vec<(String, Vec<u8>)>) -> Server {
             }
             let found = archives
                 .iter()
-                .find(|(name, _)| url == format!("/files/{name}.tar.bz2"))
+                .find(|(name, _)| url == format!("/files/{name}.tar.bz2") || url == format!("/files/{name}"))
                 .map(|(_, bytes)| bytes.clone());
             let _ = match found {
                 Some(bytes) => request.respond(tiny_http::Response::from_data(bytes)),
@@ -186,6 +187,7 @@ fn harness(base_url: &str) -> Harness {
     let config = Config {
         models_dir: dir.path().join("models"),
         base_url: base_url.to_string(),
+        hf_endpoint: base_url.to_string(),
         decode_interval: Duration::ZERO,
     };
     let engine = Arc::new(Engine::new(
@@ -380,6 +382,45 @@ fn a_model_goes_from_not_downloaded_to_ready_and_back() {
     assert!(!folder.exists());
     let reply = h.call(json!({"v": 1, "type": "list_models", "id": "l4", "models": [{"id": "m", "engine": engine}]}));
     assert_eq!(states(&reply), ["not_downloaded"]);
+}
+
+#[test]
+fn a_gguf_model_downloads_its_file_from_hugging_face() {
+    let preview = "sherpa-onnx-fake-stream";
+    let server = serve_archives(vec![
+        (preview.into(), archive(preview, &["encoder.onnx", "decoder.onnx", "joiner.onnx", "tokens.txt"])),
+        ("o/r/resolve/c0ffee/m.gguf".into(), b"gguf".to_vec()),
+    ]);
+    let h = harness(&server.base);
+    let engine = json!({"kind": "parakeet_cpp", "repo": "o/r", "revision": "c0ffee", "file": "m.gguf", "preview_archive": preview});
+
+    let reply = h.call(json!({"v": 1, "type": "download", "id": "d1", "model": "m", "engine": engine}));
+    assert_eq!(last(&reply), &json!({"v": 1, "type": "ok", "id": "d1"}));
+    assert_eq!(states(&reply).last().map(String::as_str), Some("downloaded"));
+    let folder = h.models_dir().join("m");
+    assert_eq!(std::fs::read(folder.join("c0ffee").join("m.gguf")).unwrap(), b"gguf");
+    assert!(folder.join(preview).join("tokens.txt").is_file());
+
+    // A file the repository does not have fails the download and marks nothing complete.
+    let missing = json!({"kind": "parakeet_cpp", "repo": "o/r", "revision": "c0ffee", "file": "gone.gguf", "preview_archive": preview});
+    let reply = h.call(json!({"v": 1, "type": "download", "id": "d2", "model": "n", "engine": missing}));
+    assert_eq!(last(&reply)["type"], "error");
+    assert!(!h.models_dir().join("n").join(".complete").exists());
+}
+
+#[test]
+fn a_new_gguf_revision_downloads_again() {
+    let server = serve_archives(vec![
+        ("o/r/resolve/c0ffee/m.gguf".into(), b"old".to_vec()),
+        ("o/r/resolve/beef/m.gguf".into(), b"new".to_vec()),
+    ]);
+    let h = harness(&server.base);
+    for (id, revision) in [("d1", "c0ffee"), ("d2", "beef")] {
+        let engine = json!({"kind": "parakeet_cpp", "repo": "o/r", "revision": revision, "file": "m.gguf", "preview_archive": null});
+        let reply = h.call(json!({"v": 1, "type": "download", "id": id, "model": "m", "engine": engine}));
+        assert_eq!(last(&reply)["type"], "ok", "{reply:?}");
+    }
+    assert_eq!(std::fs::read(h.models_dir().join("m").join("beef").join("m.gguf")).unwrap(), b"new");
 }
 
 #[test]

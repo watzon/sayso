@@ -22,22 +22,33 @@ pub(super) fn suggested(language: &str) -> ModelId {
 }
 
 /// The three models onboarding offers. The first is the suggested model for
-/// the dictation language. The others come from the best models for
-/// English, for European languages, and for every other language: first the
-/// ones that understand the dictation language.
+/// the dictation language. Next comes a GPU model that understands the
+/// language, when this computer can run one. The others come from the best
+/// models for English, for European languages, and for every other language:
+/// first the ones that understand the dictation language.
 fn choices(language: &str) -> Vec<ModelId> {
-    let (english, european) = crate::shell::os_text!(("parakeet-unified-en", "parakeet-ultra"), ("parakeet-tdt-v2", "parakeet-tdt-v3"));
-    let rest = [english, european, "whisper-large-v3-turbo"].map(ModelId::new);
-    order_choices(suggested(language), rest, |id| sayso_core::models::find(id).is_some_and(|m| m.understands(language)))
+    choices_with(language, crate::shell::model_runs_here)
 }
 
-/// `suggested`, then the models of `rest` that `understands` the dictation
-/// language, then the others, each group in the order of `rest`, without
-/// repeats: three models at most.
-fn order_choices(suggested: ModelId, mut rest: [ModelId; 3], understands: impl Fn(&ModelId) -> bool) -> Vec<ModelId> {
+/// [`choices`] for a computer whose `model_runs_here` is `runs_here`.
+fn choices_with(language: &str, runs_here: impl Fn(&ModelInfo) -> bool) -> Vec<ModelId> {
+    let (english, european) = crate::shell::os_text!(("parakeet-unified-en", "parakeet-ultra"), ("parakeet-tdt-v2", "parakeet-tdt-v3"));
+    let rest = [english, european, "whisper-large-v3-turbo"].map(ModelId::new);
+    let gpu = sayso_core::models::catalog()
+        .iter()
+        .find(|m| m.engine.needs_gpu() && m.understands(language) && runs_here(m))
+        .map(|m| m.id.clone());
+    let suggested = sayso_core::models::suggested_for(language, &runs_here);
+    order_choices(suggested, gpu, rest, |id| sayso_core::models::find(id).is_some_and(|m| m.understands(language)))
+}
+
+/// `suggested`, then `gpu`, then the models of `rest` that `understands` the
+/// dictation language, then the others, each group in the order of `rest`,
+/// without repeats: three models at most.
+fn order_choices(suggested: ModelId, gpu: Option<ModelId>, mut rest: [ModelId; 3], understands: impl Fn(&ModelId) -> bool) -> Vec<ModelId> {
     rest.sort_by_key(|id| !understands(id));
     let mut list = vec![suggested];
-    for id in rest {
+    for id in gpu.into_iter().chain(rest) {
         if !list.contains(&id) {
             list.push(id);
         }
@@ -301,8 +312,8 @@ pub(super) fn track(fraction: f32, height: f32, label: String, c: &Colors) -> St
 
 #[cfg(test)]
 mod tests {
-    use super::{choices, order_choices, suggested};
-    use sayso_core::models::{ModelId, default_model, find};
+    use super::{choices, choices_with, order_choices, suggested};
+    use sayso_core::models::{ModelId, ModelInfo, default_model, find};
 
     #[test]
     fn choices_are_three_different_models_with_the_suggested_one_first() {
@@ -314,6 +325,26 @@ mod tests {
             assert_eq!(ids[0], suggested(language));
         }
         assert_eq!(choices("en")[0], default_model());
+    }
+
+    #[test]
+    fn a_gpu_model_comes_second_for_its_language_only_when_it_runs_here() {
+        let cpu_only = |m: &ModelInfo| !m.engine.needs_gpu();
+        let with_gpu = |_: &ModelInfo| true;
+        for language in ["en", "de", "auto"] {
+            assert!(choices_with(language, cpu_only).iter().all(|id| !find(id).unwrap().engine.needs_gpu()), "{language}");
+        }
+        let ids = choices_with("en", with_gpu);
+        assert_eq!(ids[0], default_model());
+        let gpu_models: Vec<_> = sayso_core::models::catalog().iter().filter(|m| m.engine.needs_gpu()).collect();
+        if let Some(gpu) = gpu_models.first() {
+            assert_eq!(ids[1], gpu.id, "{ids:?}");
+            assert_eq!(ids.len(), 3);
+            // English only: no other language is offered it.
+            for language in ["de", "auto"] {
+                assert!(!choices_with(language, with_gpu).contains(&gpu.id), "{language}");
+            }
+        }
     }
 
     #[test]
@@ -344,13 +375,13 @@ mod tests {
     fn the_second_choice_understands_the_dictation_language_when_one_can() {
         let rest = || ["english", "european", "many"].map(ModelId::new);
         for (language, suggested) in [("de", "european"), ("zh", "asian"), ("ja", "asian"), ("fr", "many")] {
-            let ids = order_choices(ModelId::new(suggested), rest(), understands(language));
+            let ids = order_choices(ModelId::new(suggested), None, rest(), understands(language));
             assert_eq!(ids.len(), 3, "{language}: {ids:?}");
             assert!(understands(language)(&ids[1]), "{language}: {ids:?}");
         }
         // The suggested model is the only one that understands Chinese, so no
         // second choice can. The others keep their order.
-        let ids = order_choices(ModelId::new("many"), rest(), understands("zh"));
+        let ids = order_choices(ModelId::new("many"), None, rest(), understands("zh"));
         assert_eq!(ids, ["many", "english", "european"].map(ModelId::new));
     }
 }

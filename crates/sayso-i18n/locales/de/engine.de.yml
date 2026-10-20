@@ -4,6 +4,7 @@ engine:
   incomplete_download: "Der Download ist fertig, aber einige Modelldateien fehlen. Lade das Modell erneut."
   download_failed: "Der Download wurde nicht abgeschlossen: %{detail}."
   load_failed: "Sayso konnte das Modell nicht laden: %{detail}."
+  no_gpu: "Dieses Modell braucht eine eigene Grafikkarte mit Vulkan-Treiber, und Sayso hat keine gefunden. Wähle unter Modelle ein Modell, das auf der CPU läuft."
   device_not_eligible: "Dieser Mac unterstützt Apple Intelligence nicht."
   intelligence_off: "Apple Intelligence ist aus. Schalte es in den Systemeinstellungen ein."
   model_not_ready: "macOS lädt das Apple-Intelligence-Modell noch herunter. Versuche es in ein paar Minuten erneut."

@@ -4,7 +4,7 @@
 //!
 //! ```text
 //! <model id>/
-//!   <archive>/            the extracted archive, renamed into place when complete
+//!   <archive>/            the extracted archive, or a GGUF's commit with the file, renamed into place when complete
 //!   <preview archive>/    the streaming archive, for a model with a live preview
 //!   .partial-<archive>/   an extraction in progress (deleted when it fails)
 //!   .complete             the archive names, one per line, written last
@@ -124,12 +124,13 @@ fn remove_file_if_exists(path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spec::Recipe;
+    use crate::spec::{Recipe, Source};
 
     fn spec() -> ModelSpec {
         ModelSpec {
             recipe: Recipe::ParakeetTdt,
             archive: "main".into(),
+            source: Source::SherpaRelease,
             preview_archive: Some("preview".into()),
         }
     }

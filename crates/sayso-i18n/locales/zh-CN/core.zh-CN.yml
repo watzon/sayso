@@ -40,6 +40,7 @@ core:
     whisper_medium_portable: "介于 small 和 large 之间。量化为 5 位。"
     whisper_tiny_portable: "最小的模型。适用于测试和非常旧的电脑。"
     parakeet_tdt_v2_onnx: "英语听写快速且准确。说话时实时显示你说的话。"
+    fluid_speech_mini_onnx: "在显卡上运行的小巧快速的英语 Parakeet。说话时实时显示你说的话。"
     parakeet_tdt_v3_onnx: "25 种欧洲语言，可自动检测语言。"
     parakeet_tdt_ctc_110m_onnx: "小巧快速，适合较旧的电脑。"
     kroko_en: "小型实时预览，供没有实时预览的模型使用。"

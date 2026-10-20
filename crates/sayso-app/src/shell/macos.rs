@@ -279,6 +279,11 @@ pub fn model_runs_here(info: &ModelInfo) -> bool {
     info.min_macos <= macos_major()
 }
 
+/// The Swift engine needs no extra environment.
+pub fn engine_env() -> Vec<(String, String)> {
+    Vec::new()
+}
+
 /// The major version of macOS ("15" from "15.6.1"). 14, the oldest macOS Sayso
 /// runs on, when the version cannot be read.
 fn macos_major() -> u32 {

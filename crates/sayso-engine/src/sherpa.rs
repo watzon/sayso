@@ -1,11 +1,11 @@
-//! The recognizer traits on sherpa-onnx. CPU only.
+//! The recognizer traits on sherpa-onnx, on the CPU. A GGUF model's final pass goes to `parakeet.rs`.
 
 use crate::layout::{self, OfflineFiles};
 use crate::partials::Segment;
 use crate::recognizer::{
     FinalPass, LazyPreview, LivePreview, Loaded, Loader, ModelDirs, PreviewStream,
 };
-use crate::spec::{ModelSpec, Recipe};
+use crate::spec::{ModelSpec, Recipe, Source};
 use anyhow::{Context, Result, anyhow, bail};
 use sherpa_onnx::{
     OfflineModelConfig, OfflineMoonshineModelConfig, OfflineNemoEncDecCtcModelConfig,
@@ -52,7 +52,9 @@ impl Loader for SherpaLoader {
         spec: &ModelSpec,
         dirs: &ModelDirs,
     ) -> Result<Option<Arc<dyn FinalPass>>> {
-        Ok(if spec.recipe.final_pass() {
+        Ok(if let Source::HuggingFace { file, .. } = &spec.source {
+            Some(crate::parakeet::load(&dirs.main.join(file))?)
+        } else if spec.recipe.final_pass() {
             Some(Arc::new(Offline::load(spec.recipe, &dirs.main)?))
         } else {
             None

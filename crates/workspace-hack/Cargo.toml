@@ -84,7 +84,6 @@ libc = { version = "0.2", features = ["extra_traits"] }
 linux-raw-sys = { version = "0.12", default-features = false, features = ["auxvec", "elf", "errno", "general", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "system", "xdp"] }
 num-rational = { version = "0.4", features = ["num-bigint-std"] }
 once_cell = { version = "1" }
-percent-encoding = { version = "2" }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "system", "time"] }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
@@ -108,7 +107,6 @@ getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3", default-f
 libc = { version = "0.2", features = ["extra_traits"] }
 linux-raw-sys = { version = "0.12", default-features = false, features = ["auxvec", "elf", "errno", "general", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "system", "xdp"] }
 once_cell = { version = "1" }
-percent-encoding = { version = "2" }
 rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "system", "time"] }
 simd-adler32 = { version = "0.3" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
@@ -117,6 +115,7 @@ syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", default-features = fals
 syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 toml_parser = { version = "1" }
+ureq = { version = "3", features = ["json"] }
 winnow-dff4ba8e3ae991db = { package = "winnow", version = "1" }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 
@@ -132,7 +131,6 @@ libc = { version = "0.2", features = ["extra_traits"] }
 linux-raw-sys = { version = "0.12", default-features = false, features = ["auxvec", "elf", "errno", "general", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "system", "xdp"] }
 num-rational = { version = "0.4", features = ["num-bigint-std"] }
 once_cell = { version = "1" }
-percent-encoding = { version = "2" }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "system", "time"] }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
@@ -156,7 +154,6 @@ getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3", default-f
 libc = { version = "0.2", features = ["extra_traits"] }
 linux-raw-sys = { version = "0.12", default-features = false, features = ["auxvec", "elf", "errno", "general", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "system", "xdp"] }
 once_cell = { version = "1" }
-percent-encoding = { version = "2" }
 rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "system", "time"] }
 simd-adler32 = { version = "0.3" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
@@ -165,6 +162,7 @@ syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", default-features = fals
 syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 toml_parser = { version = "1" }
+ureq = { version = "3", features = ["json"] }
 winnow-dff4ba8e3ae991db = { package = "winnow", version = "1" }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 

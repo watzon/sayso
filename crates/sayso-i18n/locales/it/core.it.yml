@@ -42,6 +42,7 @@ core:
     whisper_medium_portable: "Via di mezzo tra small e large. Quantizzato a 5 bit."
     whisper_tiny_portable: "Il modello più piccolo. Per i test e i computer molto vecchi."
     parakeet_tdt_v2_onnx: "Veloce e preciso per l'inglese. Mostra le tue parole in tempo reale mentre parli."
+    fluid_speech_mini_onnx: "Un Parakeet piccolo e veloce per l'inglese, che gira sulla scheda grafica. Mostra le tue parole in tempo reale mentre parli."
     parakeet_tdt_v3_onnx: "25 lingue europee, con rilevamento automatico."
     parakeet_tdt_ctc_110m_onnx: "Piccolo e rapido, per i computer meno recenti."
     kroko_en: "Piccola anteprima in tempo reale per i modelli che non ne hanno una."

@@ -161,7 +161,8 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
         .unwrap_or_else(sayso_engine_client::EngineClient::default_engine_path);
     // The engine answers on a thread of its own, so the tray and the overlay
     // do not wait for it. `AppModel` hears `Started` or `StartFailed`.
-    let (client, engine_events) = match sayso_engine_client::EngineClient::start(engine_path.clone(), paths.models_dir(), paths.cache_dir.clone()) {
+    let options = sayso_engine_client::Options { env: crate::shell::engine_env(), ..Default::default() };
+    let (client, engine_events) = match sayso_engine_client::EngineClient::start_with(engine_path.clone(), paths.models_dir(), paths.cache_dir.clone(), options) {
         Ok((e, events)) => (Some(e), Some(events)),
         Err(e) => {
             log::error!("could not start the engine at {}: {e:#}", engine_path.display());

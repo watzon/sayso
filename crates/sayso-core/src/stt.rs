@@ -35,6 +35,8 @@ pub enum EngineReason {
     DownloadFailed,
     /// The model is on disk, but loading it failed.
     LoadFailed,
+    /// The model needs a discrete GPU with a Vulkan driver, and the engine found none.
+    NoGpu,
     /// This Mac does not support Apple Intelligence.
     DeviceNotEligible,
     /// Apple Intelligence is off in System Settings.
@@ -66,6 +68,7 @@ impl EngineReason {
             EngineReason::IncompleteDownload => "incomplete_download",
             EngineReason::DownloadFailed => "download_failed",
             EngineReason::LoadFailed => "load_failed",
+            EngineReason::NoGpu => "no_gpu",
             EngineReason::DeviceNotEligible => "device_not_eligible",
             EngineReason::IntelligenceOff => "intelligence_off",
             EngineReason::ModelNotReady => "model_not_ready",
@@ -181,7 +184,7 @@ mod tests {
     fn reason_codes_round_trip_and_unknown_codes_are_none() {
         use EngineReason::*;
         for reason in [
-            IncompleteDownload, DownloadFailed, LoadFailed, DeviceNotEligible, IntelligenceOff,
+            IncompleteDownload, DownloadFailed, LoadFailed, NoGpu, DeviceNotEligible, IntelligenceOff,
             ModelNotReady, NeedsMacos26, Unavailable, Timeout, Refused, Failed,
         ] {
             assert_eq!(EngineReason::from_code(reason.code()), Some(reason));

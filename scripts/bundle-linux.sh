@@ -30,6 +30,8 @@ cp packaging/linux/dev.sayso.Sayso.metainfo.xml "$out/share/metainfo/"
 cp packaging/linux/70-sayso-uinput.rules "$out/lib/udev/rules.d/"
 install -m 755 packaging/linux/install.sh "$out/install.sh"
 cp LICENSE "$out/"
+# The MIT licenses of parakeet.cpp and ggml, which the engine links statically.
+install -D -m 644 -t "$out/share/licenses/sayso" crates/sayso-engine/licenses/*.txt
 # The macOS icon set has the sizes the hicolor theme uses.
 for size in 16 32 128 256 512; do
   mkdir -p "$out/share/icons/hicolor/${size}x${size}/apps"

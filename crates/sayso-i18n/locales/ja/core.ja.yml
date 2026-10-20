@@ -40,6 +40,7 @@ core:
     whisper_medium_portable: "small と large の中間です。5ビットに量子化されています。"
     whisper_tiny_portable: "最も小さいモデルです。テストや非常に古いコンピュータ向けです。"
     parakeet_tdt_v2_onnx: "英語で高速かつ正確です。話している間、言葉をリアルタイムに表示します。"
+    fluid_speech_mini_onnx: "GPU で動く、小さく高速な英語用の Parakeet です。話している間、言葉をリアルタイムに表示します。"
     parakeet_tdt_v3_onnx: "ヨーロッパの25言語に対応し、言語を自動で検出します。"
     parakeet_tdt_ctc_110m_onnx: "小さく高速で、古いコンピュータ向けです。"
     kroko_en: "ライブプレビューのないモデルに使う、小さなライブプレビューです。"
