@@ -5,7 +5,7 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer   also dist\Sayso-<version>-windows-x64-setup.exe
 #
 # The folder holds Sayso.exe, the speech engine SaysoEngine.exe with the
-# runtime files it needs (DirectML.dll and the Visual C++ runtime), and the license. It runs from where it is, so it is
+# runtime files it needs (the Visual C++ runtime), and the license. It runs from where it is, so it is
 # also the portable build. The installer needs Inno Setup 6 (ISCC.exe on PATH,
 # or in its default folder). Set SAYSO_BUNDLE_DIR to use another folder.
 #
@@ -45,9 +45,9 @@ New-Item -ItemType Directory -Force $app | Out-Null
 
 Copy-Item "target\$profile\sayso.exe" (Join-Path $app 'Sayso.exe')
 $engineDir = 'native\portable\target\release'
+# The engine delay-loads DirectML.dll and never calls it (it runs on the CPU),
+# so the DirectML.dll that the build puts beside it stays out of the app.
 Copy-Item (Join-Path $engineDir 'SaysoEngine.exe') $app
-# DirectML.dll, which the ONNX Runtime build of the engine loads at start, sits beside it.
-Get-ChildItem $engineDir -Filter *.dll | ForEach-Object { Copy-Item $_.FullName $app }
 # Both exes need the Visual C++ runtime. Ship it beside them (app-local), so
 # the app also runs where vc_redist is not installed.
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"

@@ -25,16 +25,11 @@ Prerequisites:
 
 ## Runtime files to ship
 
-ONNX Runtime is linked statically (`onnxruntime.lib` from the pyke build). whisper.cpp is linked statically. On Windows the pyke build includes the DirectML execution provider, so the exe imports `DirectML.dll` (not delay-loaded). Ship beside `SaysoEngine.exe`:
+ONNX Runtime is linked statically (`onnxruntime.lib` from the pyke build). whisper.cpp is linked statically. Ship `SaysoEngine.exe` (25 MB, from `target/release`) alone.
 
-| File | Size | Where it comes from |
-|---|---|---|
-| `SaysoEngine.exe` | 25 MB | `target/release` |
-| `DirectML.dll` | 18.5 MB (1.15.4) | The `ort-sys` build script (feature `copy-dylibs`) copies it to `target/release` on every build. The source is `%LOCALAPPDATA%\ort.pyke.io\dfbin\x86_64-pc-windows-msvc\<hash>\DirectML.dll`. |
+On Windows the pyke build includes the DirectML execution provider, so the exe imports `DirectML.dll`. The engine runs on the CPU and never creates that provider, so `build.rs` links with `/DELAYLOAD:DirectML.dll` and `delayimp.lib`: Windows loads the DLL only at the first call into it, and that call never comes. `llvm-readobj --coff-imports` (or `dumpbin /imports`) lists `DirectML.dll` under `DelayImport`, not `Import`. With no `DirectML.dll` beside the exe, the engine loads Parakeet and Whisper tiny and transcribes, and the process never loads a `DirectML.dll` (neither one beside it nor the one in `System32`; checked in its module list, 2026-10-19). The `ort-sys` build script (feature `copy-dylibs`) still copies `DirectML.dll` (18.5 MB, 1.15.4) to `target/release` on every build; `scripts/bundle-windows.ps1` leaves it out of the app. A GPU option (see below) must ship it again.
 
 The exe also needs the Visual C++ 2015-2022 runtime (`VCRUNTIME140.dll`, `VCRUNTIME140_1.dll`, `MSVCP140.dll`, `MSVCP140_1.dll`): install `vc_redist.x64.exe`, or copy the four DLLs beside the exe. `d3d12.dll` and `dxgi.dll` come with Windows.
-
-Windows 11 has `DirectML.dll` 1.15.5 in `System32`, and the loader would take it when the app folder has none. Older Windows 10 builds have an older one, so ship the copy. The loader looks in the folder of the exe first, so a `DirectML.dll` beside `SaysoEngine.exe` (in `target/release`, or in the app folder) is the one that loads.
 
 Linux: one binary, statically linked to ONNX Runtime and whisper.cpp; it needs `libstdc++` and glibc.
 
@@ -104,7 +99,7 @@ Two runs; the ranges cover both.
 ## Not tested
 
 - A Linux build and run. The code has no Windows-only parts except the `cfg(windows)` stdout redirect in `stdio.rs`. Its `cfg(unix)` twin type-checks for `x86_64-unknown-linux-gnu`, but no Linux build of the whole engine ran (the WSL Ubuntu here has no Rust, CMake, or `libssl-dev`).
-- The packaged app: `SaysoEngine.exe` and `DirectML.dll` in an installer, on a Windows 10 machine, or without the Visual C++ runtime.
+- The packaged app: `SaysoEngine.exe` in an installer, on a Windows 10 machine, or without the Visual C++ runtime.
 - Parakeet TDT v2, and the larger Whisper models (base to large-v3). Only Parakeet v3 and Whisper tiny ran.
 - Speech in other languages; a dictation of several minutes through the preview; a final pass over 90 s (the Parakeet piece split ran with synthetic audio only).
 - Resume of a real Hugging Face download after a network error (resume ran against the local server only).
