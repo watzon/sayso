@@ -1526,16 +1526,37 @@ impl Render for ModelsPage {
 #[cfg(test)]
 mod tests {
     use super::{SortKey, matches, sort_models};
-    use sayso_core::models::catalog;
+    use sayso_core::models::{ModelId, ModelInfo, catalog};
 
     fn ids(list: &[sayso_core::models::ModelInfo]) -> Vec<&str> {
         list.iter().map(|m| m.id.as_str()).collect()
     }
 
+    /// Models with and without a WER and a size, the same on every system.
+    fn fixture() -> Vec<ModelInfo> {
+        let base = catalog()[0].clone();
+        let model = |id: &str, wer_percent: Option<f32>, size_bytes: u64, speed: u8| ModelInfo {
+            id: ModelId::new(id),
+            wer_percent,
+            size_bytes,
+            speed,
+            ..base.clone()
+        };
+        vec![
+            model("unmeasured-big", None, 900, 2),
+            model("good", Some(5.5), 600, 3),
+            model("no-size", Some(9.0), 0, 5),
+            model("unmeasured-small", None, 100, 4),
+            model("best", Some(4.0), 300, 1),
+            model("weak", Some(12.0), 200, 3),
+        ]
+    }
+
     #[test]
     fn the_best_comes_first_and_unmeasured_models_stay_last() {
-        let mut list = catalog().to_vec();
+        let mut list = fixture();
         sort_models(&mut list, SortKey::Accuracy, false);
+        assert_eq!(ids(&list)[..4], ["best", "good", "no-size", "weak"]);
         let wers: Vec<Option<f32>> = list.iter().map(|m| m.wer_percent).collect();
         let measured = wers.iter().take_while(|w| w.is_some()).count();
         assert!(wers[measured..].iter().all(Option::is_none), "{:?}", ids(&list));
