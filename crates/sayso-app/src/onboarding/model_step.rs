@@ -316,6 +316,17 @@ mod tests {
         assert_eq!(choices("en")[0], default_model());
     }
 
+    #[test]
+    fn the_catalog_puts_a_model_for_the_language_second_when_one_can() {
+        for language in ["de", "fr", "zh", "ja", "ko"] {
+            let ids = choices(language);
+            let understands = |id: &ModelId| find(id).is_some_and(|m| m.understands(language));
+            if ids[1..].iter().any(understands) {
+                assert!(understands(&ids[1]), "{language}: {ids:?}");
+            }
+        }
+    }
+
     /// Models for the choice rule, the same on every system: an English model,
     /// a European model, a model for many languages, and an East Asian model.
     const MODELS: [(&str, &[&str]); 4] = [
