@@ -22,7 +22,7 @@ fn spawn_lists_every_catalog_model_as_not_downloaded() {
     let client = client(&dir);
     let catalog = models::catalog();
     assert!(!catalog.is_empty());
-    for info in &catalog {
+    for info in catalog {
         assert_eq!(
             client.status(&info.id),
             ModelStatus::NotDownloaded,
