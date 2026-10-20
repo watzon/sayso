@@ -40,9 +40,12 @@ pub struct Session {
     pub picked_style: Option<String>,
     pub samples: Arc<Mutex<Vec<f32>>>,
     pub capture: Option<Box<dyn CaptureHandle>>,
-    /// True while the live preview gets the audio. It can start after the
-    /// capture, when the model of the preview loads during the dictation.
+    /// True while the live preview gets the audio. It starts after the
+    /// capture, when the engine opened the stream, or later, when the model
+    /// of the preview loads during the dictation.
     pub streaming: Arc<AtomicBool>,
+    /// The engine opens the live preview stream now.
+    pub opening_preview: bool,
     pub started: Option<Instant>,
     /// When the recording stopped. The diagnostics count from here.
     pub stopped: Option<Instant>,
@@ -204,7 +207,8 @@ impl AppModel {
         self.preview = (String::new(), String::new());
         // The model loads while the microphone records, if the idle time unloaded it.
         self.wake_model(cx);
-        let streaming = Arc::new(AtomicBool::new(self.start_preview(session)));
+        // The live preview opens after the microphone, off the UI thread.
+        let streaming = Arc::new(AtomicBool::new(false));
         let samples = Arc::new(Mutex::new(Vec::<f32>::with_capacity(SAMPLE_RATE as usize * 30)));
         let live = self.live.clone();
         let buf = samples.clone();
@@ -239,6 +243,7 @@ impl AppModel {
                 None
             }
         };
+        let recording = capture.is_some();
         let incognito = self.incognito;
         let rule_style = self.config.ai.style_rules.resolve(app.as_ref().map(|a| a.bundle_id.as_str()), None).map(str::to_string);
         self.read_page(session, app.as_ref(), cx);
@@ -250,7 +255,12 @@ impl AppModel {
         s.capture = capture;
         s.streaming = streaming;
         s.started = Some(Instant::now());
-        s.diagnostics.start_to_capture_ms = Some(requested.elapsed().as_millis() as u64);
+        let ms = requested.elapsed().as_millis() as u64;
+        s.diagnostics.start_to_capture_ms = Some(ms);
+        log::debug!("dictation {session}: the microphone opened after {ms} ms");
+        if recording {
+            self.start_preview(session, true, cx);
+        }
     }
 
     /// Ask the app for its web page: a site rule can choose the style, and
@@ -279,29 +289,64 @@ impl AppModel {
         .detach();
     }
 
-    /// Open the live preview stream of a dictation. False when the preview is
-    /// off or its model is not in memory. After an idle unload, the engine can
-    /// have the live preview of the active model in memory without its final pass.
-    fn start_preview(&self, session: SessionId) -> bool {
+    /// Open the live preview stream of a dictation on the background
+    /// executor. Nothing happens when the preview is off or its model is not
+    /// in memory. After an idle unload, the engine can have the live preview
+    /// of the active model in memory without its final pass. With `backlog`,
+    /// the audio from before the stream opened goes to the engine first.
+    fn start_preview(&mut self, session: SessionId, backlog: bool, cx: &mut Context<Self>) {
         let options = self.session_options();
-        match (&self.services.engine, &options.preview_model) {
-            (Some(e), Some(p)) if self.config.overlay.show_preview && (self.status_of(p).is_usable() || e.preview_ready(p)) => {
-                e.start_stream(session, &options).is_ok()
-            }
-            _ => false,
-        }
+        let engine = match (&self.services.engine, &options.preview_model) {
+            (Some(e), Some(p)) if self.config.overlay.show_preview && (self.status_of(p).is_usable() || e.preview_ready(p)) => e.clone(),
+            _ => return,
+        };
+        let Some(s) = self.sessions.get_mut(&session) else { return };
+        s.opening_preview = true;
+        let asked = Instant::now();
+        cx.spawn(async move |this, cx| {
+            let opener = engine.clone();
+            let opened = cx.background_spawn(async move { opener.start_stream(session, &options).is_ok() }).await;
+            let _ = this.update(cx, |m, _| {
+                let recording = matches!(m.machine.state, State::Recording { session: s, .. } if s == session);
+                let mut s = m.sessions.get_mut(&session);
+                if let Some(s) = s.as_deref_mut() {
+                    s.opening_preview = false;
+                }
+                if !opened {
+                    return;
+                }
+                let Some(s) = s.filter(|_| recording) else {
+                    // The dictation stopped while the stream opened.
+                    engine.end_stream(session);
+                    return;
+                };
+                // The flag goes on under the lock of the buffer, after the
+                // backlog, so each frame that the callback sends comes after
+                // it. A frame that the callback holds at this moment can miss
+                // the preview; the final pass has it.
+                let samples = s.samples.lock();
+                if backlog {
+                    for chunk in samples.chunks(SAMPLE_RATE as usize / 10) {
+                        let _ = engine.push_audio(session, chunk);
+                    }
+                }
+                s.streaming.store(true, Ordering::Relaxed);
+                log::debug!("dictation {session}: the live preview opened after {} ms with {} ms of audio", asked.elapsed().as_millis(), samples.len() as u64 * 1000 / SAMPLE_RATE as u64);
+            });
+        })
+        .detach();
     }
 
     /// `model` is in memory now. If the dictation that records now waits for
     /// it, its live preview starts here, with the audio from this moment on.
-    pub(crate) fn start_late_preview(&mut self, model: &sayso_core::models::ModelId) {
+    pub(crate) fn start_late_preview(&mut self, model: &sayso_core::models::ModelId, cx: &mut Context<Self>) {
         let State::Recording { session, .. } = self.machine.state else { return };
         if self.preview_model().as_ref() != Some(model) {
             return;
         }
-        let Some(streaming) = self.sessions.get(&session).map(|s| s.streaming.clone()) else { return };
-        if !streaming.load(Ordering::Relaxed) && self.start_preview(session) {
-            streaming.store(true, Ordering::Relaxed);
+        let Some(s) = self.sessions.get(&session) else { return };
+        if !s.streaming.load(Ordering::Relaxed) && !s.opening_preview {
+            self.start_preview(session, false, cx);
         }
     }
 

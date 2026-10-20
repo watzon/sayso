@@ -758,7 +758,7 @@ impl AppModel {
                         m.last_dictation = Instant::now();
                     }
                     m.model_status.insert(id.clone(), status);
-                    m.start_late_preview(&id);
+                    m.start_late_preview(&id, cx);
                     cx.notify();
                 });
             })
