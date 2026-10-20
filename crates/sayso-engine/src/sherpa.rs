@@ -2,7 +2,9 @@
 
 use crate::layout::{self, OfflineFiles};
 use crate::partials::Segment;
-use crate::recognizer::{FinalPass, LivePreview, Loaded, Loader, ModelDirs, PreviewStream};
+use crate::recognizer::{
+    FinalPass, LazyPreview, LivePreview, Loaded, Loader, ModelDirs, PreviewStream,
+};
 use crate::spec::{ModelSpec, Recipe};
 use anyhow::{Result, anyhow};
 use sherpa_onnx::{
@@ -60,7 +62,18 @@ impl Loader for SherpaLoader {
     fn load(&self, spec: &ModelSpec, dirs: &ModelDirs) -> Result<Loaded> {
         let final_pass = self.load_final_pass(spec, dirs)?;
         let preview: Option<Arc<dyn LivePreview>> = match &dirs.stream {
-            Some(dir) => Some(Arc::new(Online::load(dir)?)),
+            // A streaming model with no final pass is the preview only: load it now.
+            Some(dir) if final_pass.is_none() => Some(Arc::new(Online::load(dir)?)),
+            // A model with both loads its streaming part at the first stream, so a
+            // model that is the final model only never holds it. The files are
+            // checked now: a missing file shows at the load, not at the first stream.
+            Some(dir) => {
+                layout::online_files(dir)?;
+                let dir = dir.clone();
+                Some(Arc::new(LazyPreview::new(move || {
+                    Ok(Arc::new(Online::load(&dir)?) as Arc<dyn LivePreview>)
+                })))
+            }
             None => None,
         };
         Ok(Loaded {
