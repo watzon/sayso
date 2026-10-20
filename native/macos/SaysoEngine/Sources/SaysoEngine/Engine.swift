@@ -5,9 +5,37 @@ import FluidAudio
 import Foundation
 import WhisperKit
 
+/// Parakeet Unified in memory. The two parts weigh about 595 MB (batch) and 578 MB
+/// (stream), and a model is often only the final model or only the preview model.
+///
+/// The batch part loads with the model, because the final pass waits for the model to be
+/// ready and must not wait for a load after that. The stream part loads at the first live
+/// preview (see `Engine.streamStart`), so a final model with no preview never holds it.
+final class UnifiedModel: @unchecked Sendable {
+    let batch: UnifiedAsrManager
+    let stream: LazyPart<StreamingUnifiedAsrManager>
+
+    init(batch: UnifiedAsrManager, config: UnifiedConfig, directory: URL) {
+        self.batch = batch
+        stream = LazyPart(
+            load: {
+                let manager = StreamingUnifiedAsrManager(config: config)
+                try await manager.loadModels(from: directory)
+                return manager
+            },
+            free: { await $0.cleanup() })
+    }
+
+    /// Free both parts.
+    func cleanup() async {
+        await batch.cleanup()
+        await stream.close()
+    }
+}
+
 /// A model that is held in memory.
 enum LoadedModel {
-    case parakeetUnified(batch: UnifiedAsrManager, stream: StreamingUnifiedAsrManager)
+    case parakeetUnified(UnifiedModel)
     case parakeetEou(StreamingEouAsrManager)
     case parakeetTdt(AsrManager)
     case nemotron(StreamingNemotronAsrManager)
@@ -20,10 +48,10 @@ enum LoadedModel {
     /// Apple Speech holds nothing in memory between dictations.
     case appleSpeech
 
-    /// The streaming side of the model, if it has one.
-    var streamer: Streamer? {
+    /// The streaming side of the model, if it has one. Loads a part that loads on first use.
+    func streamer() async throws -> Streamer? {
         switch self {
-        case .parakeetUnified(_, let stream): return .standard(stream)
+        case .parakeetUnified(let unified): return .standard(try await unified.stream.get())
         case .parakeetEou(let eou): return .standard(eou)
         case .nemotron(let nemotron): return .standard(nemotron)
         case .nemotronMultilingual(let nemotron): return .nemotronMultilingual(nemotron)
@@ -95,7 +123,14 @@ enum Streamer {
 
 /// One live preview stream.
 private struct StreamSession {
-    let streamer: Streamer
+    enum Phase {
+        case running(Streamer)
+        /// The stream part of the model loads. The audio waits here and goes to the model
+        /// with the first audio or the end of the stream that comes after the load.
+        case waiting(part: LazyPart<StreamingUnifiedAsrManager>, language: String, held: HeldAudio)
+    }
+
+    var phase: Phase
     let model: String
     let tracker: PartialTracker
 }
@@ -402,9 +437,8 @@ actor Engine {
         }
         guard let entry = loaded.removeValue(forKey: model) else { return false }
         switch entry {
-        case .parakeetUnified(let batch, let stream):
-            await batch.cleanup()
-            await stream.cleanup()
+        case .parakeetUnified(let unified):
+            await unified.cleanup()
         case .parakeetEou(let eou):
             await eou.cleanup()
         case .parakeetTdt(let manager):
@@ -466,9 +500,7 @@ actor Engine {
             }
             let batch = UnifiedAsrManager()
             try await batch.loadModels(from: store.unifiedDir)
-            let stream = StreamingUnifiedAsrManager(config: config)
-            try await stream.loadModels(from: store.unifiedDir)
-            return .parakeetUnified(batch: batch, stream: stream)
+            return .parakeetUnified(UnifiedModel(batch: batch, config: config, directory: store.unifiedDir))
         case .parakeetEou:
             let eou = StreamingEouAsrManager(chunkSize: .ms160)
             try await eou.loadModels(from: store.eouDir)
@@ -542,8 +574,8 @@ actor Engine {
         let start = nowMs()
         let text: String
         switch entry {
-        case .parakeetUnified(let batch, _):
-            text = try await transcribeParakeet(batch, samples: samples, vocabulary: vocabulary)
+        case .parakeetUnified(let unified):
+            text = try await transcribeParakeet(unified.batch, samples: samples, vocabulary: vocabulary)
         case .whisper(let kit):
             text = try await transcribeWhisper(
                 kit, samples: samples, language: language, vocabulary: vocabulary)
@@ -681,28 +713,87 @@ actor Engine {
 
     func streamStart(session: Int, model: String, language: String) async throws {
         guard let entry = loaded[model] else { throw EngineError("model \(model) is not loaded") }
-        guard let streamer = entry.streamer else {
+        if case .parakeetUnified(let unified) = entry {
+            guard !finalPasses.contains(model) else { throw EngineError("model \(model) is busy with a final pass") }
+            // The first preview of a loaded model loads the stream part. The load can take a
+            // minute after an update (Core ML compiles the model), and the app waits for this
+            // reply while the user starts to speak. So reply now, and let the audio wait.
+            if await !unified.stream.isLoaded {
+                guard loaded[model] != nil else { throw EngineError("model \(model) is not loaded") }
+                for (other, info) in sessions where info.model == model { sessions[other] = nil }
+                sessions[session] = StreamSession(
+                    phase: .waiting(part: unified.stream, language: language, held: HeldAudio()),
+                    model: model, tracker: PartialTracker())
+                warm(unified.stream, model: model)
+                return
+            }
+        }
+        guard let streamer = try await entry.streamer() else {
             throw EngineError("model \(model) has no live preview")
         }
         guard !finalPasses.contains(model) else { throw EngineError("model \(model) is busy with a final pass") }
         // One live stream per manager. A new session replaces an older one.
         for (other, info) in sessions where info.model == model { sessions[other] = nil }
-        let out = self.out
         let tracker = PartialTracker()
-        try await streamer.begin(language: language) { text in
+        try await streamer.begin(language: language, onPartial: partialHandler(session: session, tracker: tracker))
+        sessions[session] = StreamSession(phase: .running(streamer), model: model, tracker: tracker)
+    }
+
+    /// Load a part in the background. A failure goes to the log. The next stream tries again.
+    private func warm(_ part: LazyPart<StreamingUnifiedAsrManager>, model: String) {
+        let out = self.out
+        Task {
+            do { _ = try await part.get() } catch is LazyPartError {} catch {
+                out.log("warn", "live preview of \(model) did not load: \(error)")
+            }
+        }
+    }
+
+    /// The callback that turns text of the model into `partial` messages.
+    private func partialHandler(session: Int, tracker: PartialTracker) -> @Sendable (String) -> Void {
+        let out = self.out
+        return { text in
             // The tentative tail is the words heard last (see `PreviewTail`).
             guard let split = tracker.update(text) else { return }
             out.send("partial", ["session": session, "committed": split.committed, "tentative": split.tentative])
         }
-        sessions[session] = StreamSession(streamer: streamer, model: model, tracker: tracker)
+    }
+
+    /// The streamer of a session that waited for its model, started and given the audio
+    /// that came before. Nil while the model is not in memory yet.
+    private func startWaiting(session: Int, info: StreamSession) async throws -> Streamer? {
+        guard case .waiting(let part, let language, var held) = info.phase,
+            let manager = await part.loadedValue
+        else { return nil }
+        let streamer = Streamer.standard(manager)
+        try await streamer.begin(language: language, onPartial: partialHandler(session: session, tracker: info.tracker))
+        let audio = held.take()
+        if !audio.isEmpty { try await streamer.feed(audio) }
+        return streamer
     }
 
     func streamAudio(session: Int, pcm: String) async throws {
-        guard let info = sessions[session] else {
+        guard var info = sessions[session] else {
             throw EngineError("unknown stream session \(session)")
         }
         guard let data = Data(base64Encoded: pcm) else { throw EngineError("pcm is not base64") }
-        try await info.streamer.feed(Self.samples(fromInt16LE: data))
+        let samples = Self.samples(fromInt16LE: data)
+        switch info.phase {
+        case .running(let streamer):
+            try await streamer.feed(samples)
+        case .waiting(let part, let language, var held):
+            // Put the new audio behind the audio that waits, then run both when the model is in memory.
+            held.append(samples)
+            info.phase = .waiting(part: part, language: language, held: held)
+            guard let streamer = try await startWaiting(session: session, info: info) else {
+                if sessions[session] != nil { sessions[session] = info }
+                return
+            }
+            // The stream may have ended or been replaced while the model started.
+            guard sessions[session] != nil else { return }
+            info.phase = .running(streamer)
+            sessions[session] = info
+        }
     }
 
     /// Finish a stream. Returns the final preview text.
@@ -713,7 +804,17 @@ actor Engine {
         // The session stays registered until the manager is done, so a final pass on the
         // same manager waits for it.
         defer { sessions[session] = nil }
-        let text = try await info.streamer.finish()
+        let streamer: Streamer
+        switch info.phase {
+        case .running(let running):
+            streamer = running
+        case .waiting:
+            // A stream that ends before its model loads gives no text. The preview is for the
+            // overlay only, and the next stream must not wait for the load behind this request.
+            guard let started = try await startWaiting(session: session, info: info) else { return "" }
+            streamer = started
+        }
+        let text = try await streamer.finish()
         if let committed = info.tracker.finish(text) {
             out.send("partial", ["session": session, "committed": committed, "tentative": ""])
         }
