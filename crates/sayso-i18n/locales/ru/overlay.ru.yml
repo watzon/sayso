@@ -24,6 +24,7 @@ overlay:
     applying_style: "Применение стиля"
     inserting: "Вставка"
     transcribing: "Расшифровка"
+  preview_loading: "Загрузка живого предпросмотра"
   inserted: "Вставлено"
   inserted_raw: "Вставлено без улучшения"
   cancelled: "Отменено"

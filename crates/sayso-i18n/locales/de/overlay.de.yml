@@ -24,6 +24,7 @@ overlay:
     applying_style: "Wende Stil an"
     inserting: "Füge ein"
     transcribing: "Transkribiere"
+  preview_loading: "Lade die Live-Vorschau"
   inserted: "Eingefügt"
   inserted_raw: "Ohne Verbesserung eingefügt"
   cancelled: "Abgebrochen"

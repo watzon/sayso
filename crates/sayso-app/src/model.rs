@@ -21,7 +21,7 @@ use sayso_core::paths::Paths;
 use sayso_core::stats::{self, Stats};
 use sayso_core::stt::ModelStatus;
 use sayso_core::style::{Style, StyleLibrary};
-use sayso_platform::{HotkeyConflict, Permission, PermissionState};
+use sayso_platform::{HotkeyConflict, PartReadiness, Permission, PermissionState};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -788,6 +788,20 @@ impl AppModel {
                 log::warn!("prepare model {id}: {e}");
             }
         }
+    }
+
+    /// The live preview waits for its model, or for the part of the model
+    /// that streams. The overlay then shows "Loading the live preview".
+    pub(crate) fn preview_loading(&self) -> bool {
+        let Some(preview) = self.preview_model() else { return false };
+        matches!(self.status_of(&preview), ModelStatus::Optimizing)
+            || self.services.engine.as_ref().is_some_and(|e| e.part_readiness(&preview, true) == PartReadiness::Preparing)
+    }
+
+    /// The final pass waits for the helper model of the dictionary words.
+    pub(crate) fn dictionary_loading(&self) -> bool {
+        let Some(model) = self.active_local_model() else { return false };
+        self.services.engine.as_ref().is_some_and(|e| e.part_readiness(&model, false) == PartReadiness::Preparing)
     }
 
     /// Load the final-pass and preview models when they are on disk. A cloud

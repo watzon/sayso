@@ -441,10 +441,12 @@ fn style_key(o: &config::Overlay) -> (OverlayStyle, bool) {
     (o.style, o.notch_on_other_displays)
 }
 
-/// The name of the processing stage. The final pass waits for a model that is not in memory yet.
-fn stage_label(stage: &Stage, model_status: &ModelStatus) -> String {
+/// The name of the processing stage. The final pass waits for a model that is not in memory yet,
+/// or for the helper model of the dictionary words.
+fn stage_label(stage: &Stage, model_status: &ModelStatus, dictionary_loading: bool) -> String {
     match (stage, model_status) {
         (_, ModelStatus::Optimizing | ModelStatus::Downloaded) => sayso_i18n::t!("overlay.stage.loading_model"),
+        (Stage::Transcribing, _) if dictionary_loading => sayso_i18n::t!("overlay.stage.loading_model"),
         (Stage::Enhancing, _) => sayso_i18n::t!("overlay.stage.applying_style"),
         (Stage::Inserting, _) => sayso_i18n::t!("overlay.stage.inserting"),
         _ => sayso_i18n::t!("overlay.stage.transcribing"),
@@ -489,6 +491,8 @@ impl Render for OverlayView {
         let show_preview = m.config.overlay.show_preview;
         let toggle_caps = m.config.hotkeys.toggle.map(|h| h.keycaps()).unwrap_or_default();
         let model_status = m.status_of(&m.config.dictation.model);
+        let dictionary_loading = m.dictionary_loading();
+        let preview_loading = show_preview && m.preview_loading();
         let levels = m.live.smoothed(28);
         let now_ms = m.now_ms();
         // Settings › Overlay › Size. Shapes scale by `k`; text by the gentler `tk`.
@@ -509,7 +513,7 @@ impl Render for OverlayView {
             (Some(n), State::Idle) => Some((n.detail.as_ref().map_or(n.title.clone(), |d| format!("{}. {d}", n.title)), true)),
             (_, State::Idle) => None,
             (_, State::Recording { .. }) => Some((sayso_i18n::t!("overlay.a11y.recording"), false)),
-            (_, State::Processing { stage, .. }) => Some((stage_label(stage, &model_status), false)),
+            (_, State::Processing { stage, .. }) => Some((stage_label(stage, &model_status, dictionary_loading), false)),
             (_, State::Showing { notice, .. }) => match notice {
                 Notice::Inserted { .. } => Some((sayso_i18n::t!("overlay.inserted"), false)),
                 Notice::InsertedRaw { reason } => Some((format!("{}. {reason}", sayso_i18n::t!("overlay.inserted_raw")), false)),
@@ -533,8 +537,9 @@ impl Render for OverlayView {
                 now_ms,
                 incognito,
                 preview: (show_preview && !(preview.0.is_empty() && preview.1.is_empty())).then_some((preview.0.as_str(), preview.1.as_str())),
+                preview_loading,
                 stage: match &state {
-                    State::Processing { stage, .. } => stage_label(stage, &model_status),
+                    State::Processing { stage, .. } => stage_label(stage, &model_status, dictionary_loading),
                     _ => String::new(),
                 },
                 progress: processing_progress(self.phase_start.elapsed(), reduce),
@@ -612,7 +617,13 @@ impl Render for OverlayView {
                         })
                         .child(capture());
                     // The live preview is on the side of the pill that has room on the display.
-                    let slip = (show_preview && !(preview.0.is_empty() && preview.1.is_empty())).then(|| preview_slip(&preview.0, &preview.1, size, &c));
+                    let slip = if show_preview && !(preview.0.is_empty() && preview.1.is_empty()) {
+                        Some(preview_slip(&preview.0, &preview.1, size, &c))
+                    } else if preview_loading {
+                        Some(loading_slip(processing_progress(self.phase_start.elapsed(), reduce), size, &c))
+                    } else {
+                        None
+                    };
                     let col = div().flex().flex_col().items_center().gap(z(12.));
                     match anchor {
                         Anchor::Bottom => col.children(slip).child(pill),
@@ -621,7 +632,7 @@ impl Render for OverlayView {
                     .into_any_element()
                 }
                 State::Processing { stage, .. } => {
-                    let label = stage_label(stage, &model_status);
+                    let label = stage_label(stage, &model_status, dictionary_loading);
                     let p = processing_progress(self.phase_start.elapsed(), reduce);
                     div()
                         .relative()
@@ -875,6 +886,34 @@ fn preview_slip(committed: &str, tentative: &str, size: OverlaySize, c: &sayso_u
         .child(StyledText::new(text).with_highlights(highlights))
 }
 
+/// The slip of a live preview whose model still loads: a pencil line that
+/// draws across, and the reason in pencil italic. It has the width of the
+/// preview slip, so the words take its place with no jump.
+fn loading_slip(progress: f32, size: OverlaySize, c: &sayso_ui::Colors) -> Div {
+    let (k, tk) = (size.scale(), size.text_scale());
+    div()
+        .w(px(420. * k))
+        .px(px(18. * k))
+        .py(px(14. * k))
+        .rounded(px(12. * k))
+        .bg(c.sheet)
+        .shadow(paper::raised(c))
+        .flex()
+        .items_center()
+        .gap(px(10. * k))
+        .child(div().flex_none().w(px(34. * k)).h(px(10. * k)).child(ink_line(progress, c.pencil, c.pencil.opacity(0.5)).size_full()))
+        .child(
+            div()
+                .font_family(SERIF)
+                .locale_fonts(Face::Serif)
+                .italic()
+                .text_size(px(16. * tk))
+                .line_height(px(24. * tk))
+                .text_color(c.pencil)
+                .child(sayso_i18n::t!("overlay.preview_loading")),
+        )
+}
+
 /// The text of the live preview with its colors: committed words in ink, the
 /// tentative tail in pencil italic, and the caret. It shows only the last
 /// `max` characters of the committed words, so the slip stays at three lines
@@ -971,8 +1010,19 @@ use gpui_kit::prelude::FluentBuilder as _;
 
 #[cfg(test)]
 mod tests {
-    use super::{animates, needs_space};
+    use super::{animates, needs_space, stage_label};
     use sayso_core::dictation::{Notice, Stage, State, Trigger};
+    use sayso_core::stt::ModelStatus;
+
+    #[test]
+    fn the_final_pass_says_when_it_waits_for_the_dictionary_helper() {
+        let loading = sayso_i18n::t!("overlay.stage.loading_model");
+        assert_eq!(stage_label(&Stage::Transcribing, &ModelStatus::Ready, true), loading);
+        assert_eq!(stage_label(&Stage::Transcribing, &ModelStatus::Ready, false), sayso_i18n::t!("overlay.stage.transcribing"));
+        // The helper only changes the transcription stage.
+        assert_eq!(stage_label(&Stage::Enhancing, &ModelStatus::Ready, true), sayso_i18n::t!("overlay.stage.applying_style"));
+        assert_eq!(stage_label(&Stage::Transcribing, &ModelStatus::Optimizing, false), loading);
+    }
 
     #[test]
     fn space_between_the_committed_text_and_the_tail() {

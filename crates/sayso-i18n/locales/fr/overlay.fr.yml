@@ -24,6 +24,7 @@ overlay:
     applying_style: "Application du style"
     inserting: "Insertion"
     transcribing: "Transcription"
+  preview_loading: "Chargement de l’aperçu en direct"
   inserted: "Inséré"
   inserted_raw: "Inséré sans amélioration"
   cancelled: "Annulé"

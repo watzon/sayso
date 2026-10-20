@@ -24,6 +24,7 @@ overlay:
     applying_style: "スタイルを適用中"
     inserting: "挿入中"
     transcribing: "文字起こし中"
+  preview_loading: "ライブプレビューを読み込み中"
   inserted: "挿入しました"
   inserted_raw: "AI 処理なしで挿入しました"
   cancelled: "キャンセルしました"

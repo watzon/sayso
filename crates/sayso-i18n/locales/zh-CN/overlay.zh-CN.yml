@@ -24,6 +24,7 @@ overlay:
     applying_style: "正在应用风格"
     inserting: "正在插入"
     transcribing: "正在转录"
+  preview_loading: "正在载入实时预览"
   inserted: "已插入"
   inserted_raw: "已插入，未润色"
   cancelled: "已取消"

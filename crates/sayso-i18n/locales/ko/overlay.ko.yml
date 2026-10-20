@@ -24,6 +24,7 @@ overlay:
     applying_style: "스타일 적용 중"
     inserting: "삽입 중"
     transcribing: "전사 중"
+  preview_loading: "실시간 미리보기 로드 중"
   inserted: "삽입됨"
   inserted_raw: "향상 없이 삽입됨"
   cancelled: "취소됨"

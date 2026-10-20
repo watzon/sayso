@@ -94,6 +94,8 @@ pub struct Scene<'a> {
     pub incognito: bool,
     /// The live preview, when it is on and has text.
     pub preview: Option<(&'a str, &'a str)>,
+    /// The live preview is on, but its model still loads.
+    pub preview_loading: bool,
     /// The name of the processing stage.
     pub stage: String,
     /// How far the ink line of the processing stage has drawn.
@@ -145,7 +147,11 @@ pub fn body(n: Notch, s: Scene, c: &Colors, dark: &Colors) -> Option<Div> {
             };
             let (levels, t) = (s.levels, s.t);
             let right = move || ink_waveform(levels.clone(), t, pale).w(px(50.)).h(px(20.)).into_any_element();
-            let slip = s.preview.map(|(committed, tentative)| preview_slip(n, committed, tentative, c));
+            let slip = match s.preview {
+                Some((committed, tentative)) => Some(preview_slip(n, committed, tentative, c)),
+                None if s.preview_loading => Some(loading_slip(n, s.progress, c)),
+                None => None,
+            };
             card(n, &wings, left, right, slip)
         }
         State::Processing { .. } => {
@@ -340,6 +346,28 @@ fn notice_slip(n: Notch, title: &str, detail: Option<&str>, c: &Colors) -> AnyEl
         .gap(px(2.))
         .child(text::ui(title.to_string(), 14., FontWeight::SEMIBOLD, c.ink))
         .when_some(detail.map(str::to_string), |d, s| d.child(text::ui(s, 13., FontWeight::NORMAL, c.graphite)))
+        .into_any_element()
+}
+
+/// The slip of a live preview whose model still loads. The line height is
+/// the same as the preview's, so the words take its place with no jump.
+fn loading_slip(n: Notch, progress: f32, c: &Colors) -> AnyElement {
+    slip(n, c)
+        .px(px(18.))
+        .flex()
+        .items_center()
+        .gap(px(10.))
+        .child(div().flex_none().w(px(34.)).h(px(10.)).child(ink_line(progress, c.pencil, c.pencil.opacity(0.5)).size_full()))
+        .child(
+            div()
+                .font_family(SERIF)
+                .locale_fonts(Face::Serif)
+                .italic()
+                .text_size(px(15.))
+                .line_height(px(23.))
+                .text_color(c.pencil)
+                .child(sayso_i18n::t!("overlay.preview_loading")),
+        )
         .into_any_element()
 }
 

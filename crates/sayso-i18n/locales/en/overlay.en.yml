@@ -24,6 +24,7 @@ overlay:
     applying_style: "Applying style"
     inserting: "Inserting"
     transcribing: "Transcribing"
+  preview_loading: "Loading the live preview"
   inserted: "Inserted"
   inserted_raw: "Inserted without enhancement"
   cancelled: "Cancelled"
