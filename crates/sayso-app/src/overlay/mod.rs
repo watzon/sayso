@@ -135,6 +135,7 @@ impl OverlayView {
         let observe = cx.observe_in(&model, window, |view, _, window, cx| {
             view.reopen_when_style_changes(window, cx);
             view.reopen_when_recording_starts(window, cx);
+            view.show_when_active(window, cx);
             cx.notify();
         });
         let recording = matches!(model.read(cx).state(), State::Recording { .. });
@@ -197,6 +198,22 @@ impl OverlayView {
             open(&model, cx);
             let _ = old.update(cx, |_, window, _| window.remove_window());
         });
+    }
+
+    /// Show the hidden overlay as soon as a dictation or a notice starts. The
+    /// mouse tracker would show it only at its next poll.
+    fn show_when_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let m = self.model.read(cx);
+        if !self.hidden || (matches!(m.state(), State::Idle) && m.blocked_notice.is_none()) {
+            return;
+        }
+        self.hidden = false;
+        // Without window placement, "hidden" means drawn empty, and the notify draws it.
+        if crate::shell::can_place_windows()
+            && let Some(ns) = crate::shell::native(window)
+        {
+            crate::app::appkit_later(cx, move || crate::shell::order_front_without_activating(ns));
+        }
     }
 
     /// The window origin, the anchor, and the notch for a display.
@@ -339,12 +356,8 @@ impl OverlayView {
                     crate::app::appkit_later(cx, move || crate::shell::order_front_without_activating(ns));
                 }
             }
-        } else if self.hidden {
-            let m = self.model.read(cx);
-            if !matches!(m.state(), State::Idle) || m.blocked_notice.is_some() {
-                self.hidden = false;
-                crate::app::appkit_later(cx, move || crate::shell::order_front_without_activating(ns));
-            }
+        } else {
+            self.show_when_active(window, cx);
         }
         self.hovered || !matches!(self.model.read(cx).state(), State::Idle)
     }
