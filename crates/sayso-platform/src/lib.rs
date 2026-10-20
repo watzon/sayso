@@ -249,7 +249,8 @@ pub trait CaptureHandle: Send {
 
 pub trait AudioCapture: Send + Sync {
     fn devices(&self) -> Vec<AudioDevice>;
-    /// Start capture. `on_frame` runs on an audio thread every ~20 ms. Keep it cheap.
+    /// Start capture. `on_frame` runs every ~20 ms on a worker thread, not the audio
+    /// callback, so a slow `on_frame` delays frames but does not drop them.
     fn start(
         &self,
         device_id: Option<&str>,
