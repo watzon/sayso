@@ -1,18 +1,32 @@
 //! [`AudioCapture`] with `cpal`.
 //!
 //! Pipeline in the audio callback: convert samples to f32, mix to mono,
-//! resample to 16 kHz, cut into 20 ms frames, compute a display level, and
-//! call `on_frame`. The callback allocates nothing once its buffers are warm.
+//! resample to 16 kHz, cut into 20 ms frames, and queue each frame for the
+//! worker thread. The callback allocates nothing and takes no lock once its
+//! buffers are warm.
+//!
+//! The worker thread computes the display level, copies the frame, and calls
+//! `on_frame`. So `on_frame` can take locks, grow the recording, and write to
+//! the engine without a stall that costs microphone samples. The queue holds
+//! about 20 s of audio. If it is ever full, the callback waits for the worker.
+//! It never drops a frame, because the final pass needs all of them.
 
 use crate::resample::StreamResampler;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
 use sayso_platform::{AudioCapture, AudioDevice, AudioFrame, CaptureHandle, Permission, PermissionState, PlatformError, Result};
+use std::time::Duration;
 
 /// Output sample rate for the speech engine.
 pub const TARGET_RATE: u32 = 16_000;
 /// Samples per frame: 20 ms at 16 kHz.
 pub const FRAME_SAMPLES: usize = 320;
+
+/// Frames that the queue between the audio callback and the worker holds: 20 s.
+const QUEUE_FRAMES: usize = 1_024;
+/// How long `stop` waits for the worker to finish the frames in the queue.
+const WORKER_STOP_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Level that maps to 0.0 (dB below full scale).
 const LEVEL_FLOOR_DB: f32 = -50.0;
@@ -66,36 +80,118 @@ pub fn downmix(interleaved: &[f32], channels: usize, out: &mut Vec<f32>) {
     out.extend(interleaved.chunks_exact(channels).map(|frame| frame.iter().sum::<f32>() / channels as f32));
 }
 
+/// One 20 ms frame of 16 kHz mono samples.
+type RawFrame = [f32; FRAME_SAMPLES];
+
 /// Collects samples and emits whole frames.
 struct Framer {
     pending: Vec<f32>,
 }
 
 impl Framer {
-    fn push(&mut self, samples: &[f32], on_frame: &mut dyn FnMut(AudioFrame)) {
+    fn push(&mut self, samples: &[f32], mut on_frame: impl FnMut(&RawFrame)) {
         self.pending.extend_from_slice(samples);
         let (frames, _rest) = self.pending.as_chunks::<FRAME_SAMPLES>();
         for frame in frames {
-            on_frame(AudioFrame { samples: frame.to_vec(), level: display_level(rms(frame)) });
+            on_frame(frame);
         }
         let whole = frames.len() * FRAME_SAMPLES;
         self.pending.drain(..whole);
     }
 }
 
+/// What the callback sends to the worker.
+// A box would allocate in the callback, and `Stop` is sent once.
+#[allow(clippy::large_enum_variant)]
+enum Message {
+    Frame(RawFrame),
+    /// Sent after the last frame. The worker ends.
+    Stop,
+}
+
+/// The callback side of the queue.
+struct FrameSink {
+    tx: Sender<Message>,
+    /// The worker is gone, and it was logged.
+    lost: bool,
+}
+
+impl FrameSink {
+    fn push(&mut self, frame: &RawFrame) {
+        // A frame is a plain copy, so the queue allocates nothing.
+        match self.tx.try_send(Message::Frame(*frame)) {
+            Ok(()) => {}
+            Err(TrySendError::Full(message)) => {
+                // The worker is far behind. Wait for it: a wait costs a glitch at worst,
+                // and a dropped frame would cut a hole in the recording.
+                if self.tx.send(message).is_err() {
+                    self.worker_lost();
+                }
+            }
+            Err(TrySendError::Disconnected(_)) => self.worker_lost(),
+        }
+    }
+
+    fn worker_lost(&mut self) {
+        if !self.lost {
+            self.lost = true;
+            log::error!("audio worker ended early, so the recording loses audio from now on");
+        }
+    }
+}
+
+/// The worker thread: it turns queued frames into `on_frame` calls, in order.
+struct Worker {
+    tx: Sender<Message>,
+    done: Receiver<()>,
+}
+
+impl Worker {
+    fn start(on_frame: Box<dyn FnMut(AudioFrame) + Send>) -> Result<(Self, FrameSink)> {
+        Self::with_capacity(QUEUE_FRAMES, on_frame)
+    }
+
+    fn with_capacity(capacity: usize, mut on_frame: Box<dyn FnMut(AudioFrame) + Send>) -> Result<(Self, FrameSink)> {
+        let (tx, rx) = bounded::<Message>(capacity);
+        let (done_tx, done) = bounded::<()>(1);
+        std::thread::Builder::new()
+            .name("sayso-audio".into())
+            .spawn(move || {
+                while let Ok(Message::Frame(samples)) = rx.recv() {
+                    let level = display_level(rms(&samples));
+                    on_frame(AudioFrame { samples: samples.to_vec(), level });
+                }
+                let _ = done_tx.send(());
+            })
+            .map_err(|e| PlatformError::Failed(format!("audio worker: {e}")))?;
+        Ok((Self { tx: tx.clone(), done }, FrameSink { tx, lost: false }))
+    }
+
+    /// Wait until `on_frame` has seen every queued frame. Call it after the
+    /// last frame was pushed. A stuck `on_frame` does not stop the caller for
+    /// longer than [`WORKER_STOP_TIMEOUT`].
+    fn finish(self) {
+        // The frames before this message are all in the queue: the stream is gone.
+        let _ = self.tx.send(Message::Stop);
+        if self.done.recv_timeout(WORKER_STOP_TIMEOUT) == Err(RecvTimeoutError::Timeout) {
+            log::error!("audio worker did not finish in {} s", WORKER_STOP_TIMEOUT.as_secs());
+        }
+    }
+}
+
 /// Everything the audio callback owns.
-struct Pipeline {
+struct Pipeline<F: FnMut(&RawFrame)> {
     channels: usize,
     resampler: StreamResampler,
     framer: Framer,
-    on_frame: Box<dyn FnMut(AudioFrame) + Send>,
+    on_frame: F,
     float: Vec<f32>,
     mono: Vec<f32>,
     resampled: Vec<f32>,
 }
 
-impl Pipeline {
-    fn new(channels: u16, in_rate: u32, on_frame: Box<dyn FnMut(AudioFrame) + Send>) -> Self {
+impl<F: FnMut(&RawFrame)> Pipeline<F> {
+    fn new(channels: u16, in_rate: u32, on_frame: F) -> Self {
         Self {
             channels: usize::from(channels.max(1)),
             resampler: StreamResampler::new(in_rate, TARGET_RATE),
@@ -116,7 +212,7 @@ impl Pipeline {
         downmix(&self.float, self.channels, &mut self.mono);
         self.resampled.clear();
         self.resampler.process(&self.mono, &mut self.resampled);
-        self.framer.push(&self.resampled, &mut *self.on_frame);
+        self.framer.push(&self.resampled, &mut self.on_frame);
     }
 }
 
@@ -128,8 +224,9 @@ fn map_error(err: cpal::Error) -> PlatformError {
     }
 }
 
-fn build_stream<T>(device: &cpal::Device, config: cpal::StreamConfig, mut pipeline: Pipeline) -> Result<cpal::Stream>
+fn build_stream<T, F>(device: &cpal::Device, config: cpal::StreamConfig, mut pipeline: Pipeline<F>) -> Result<cpal::Stream>
 where
+    F: FnMut(&RawFrame) + Send + 'static,
     T: SizedSample,
     f32: cpal::FromSample<T>,
 {
@@ -161,13 +258,27 @@ fn input_device(host: &cpal::Host, device_id: Option<&str>) -> Option<cpal::Devi
 }
 
 struct Handle {
-    stream: cpal::Stream,
+    stream: Option<cpal::Stream>,
+    worker: Option<Worker>,
 }
 
 impl CaptureHandle for Handle {
     fn stop(self: Box<Self>) {
-        // Dropping the stream stops it.
-        let _ = self.stream.pause();
+        // Dropping the handle ends the capture.
+    }
+}
+
+impl Drop for Handle {
+    /// Stop the stream, so no callback runs, then wait for the worker to pass
+    /// on the frames that are still queued. When this returns, `on_frame` has
+    /// seen all the audio.
+    fn drop(&mut self) {
+        if let Some(stream) = self.stream.take() {
+            let _ = stream.pause();
+        }
+        if let Some(worker) = self.worker.take() {
+            worker.finish();
+        }
     }
 }
 
@@ -200,17 +311,20 @@ impl AudioCapture for CpalAudio {
         let supported = device.default_input_config().map_err(map_error)?;
         let format = supported.sample_format();
         let config: cpal::StreamConfig = supported.into();
-        let pipeline = Pipeline::new(config.channels, config.sample_rate, on_frame);
+        let (worker, mut sink) = Worker::start(on_frame)?;
+        let pipeline = Pipeline::new(config.channels, config.sample_rate, move |frame: &RawFrame| sink.push(frame));
+        // On an error below, the worker ends on its own: the pipeline and the
+        // dropped `worker` held the last senders of its queue.
         let stream = match format {
-            SampleFormat::F32 => build_stream::<f32>(&device, config, pipeline)?,
-            SampleFormat::I16 => build_stream::<i16>(&device, config, pipeline)?,
-            SampleFormat::I32 => build_stream::<i32>(&device, config, pipeline)?,
-            SampleFormat::U16 => build_stream::<u16>(&device, config, pipeline)?,
-            SampleFormat::I8 => build_stream::<i8>(&device, config, pipeline)?,
+            SampleFormat::F32 => build_stream::<f32, _>(&device, config, pipeline)?,
+            SampleFormat::I16 => build_stream::<i16, _>(&device, config, pipeline)?,
+            SampleFormat::I32 => build_stream::<i32, _>(&device, config, pipeline)?,
+            SampleFormat::U16 => build_stream::<u16, _>(&device, config, pipeline)?,
+            SampleFormat::I8 => build_stream::<i8, _>(&device, config, pipeline)?,
             other => return Err(PlatformError::Failed(format!("unsupported sample format {other}"))),
         };
         stream.play().map_err(map_error)?;
-        Ok(Box::new(Handle { stream }))
+        Ok(Box::new(Handle { stream: Some(stream), worker: Some(worker) }))
     }
 }
 
@@ -266,11 +380,11 @@ mod tests {
     #[test]
     fn framer_emits_20_ms_frames_and_keeps_the_rest() {
         let mut framer = Framer { pending: Vec::new() };
-        let mut frames: Vec<AudioFrame> = Vec::new();
-        framer.push(&vec![0.1; 500], &mut |f| frames.push(f));
+        let mut frames: Vec<RawFrame> = Vec::new();
+        framer.push(&vec![0.1; 500], |f| frames.push(*f));
         assert_eq!(frames.len(), 1);
-        assert_eq!(frames[0].samples.len(), FRAME_SAMPLES);
-        framer.push(&vec![0.1; 160], &mut |f| frames.push(f));
+        assert_eq!(frames[0].len(), FRAME_SAMPLES);
+        framer.push(&vec![0.1; 160], |f| frames.push(*f));
         assert_eq!(frames.len(), 2);
         assert_eq!(framer.pending.len(), 20);
     }
@@ -278,8 +392,9 @@ mod tests {
     #[test]
     fn pipeline_turns_48k_stereo_into_16k_mono_frames() {
         let frames = std::sync::Arc::new(parking_lot::Mutex::new(Vec::<AudioFrame>::new()));
-        let sink = frames.clone();
-        let mut p = Pipeline::new(2, 48_000, Box::new(move |f| sink.lock().push(f)));
+        let collected = frames.clone();
+        let (worker, mut sink) = Worker::start(Box::new(move |f| collected.lock().push(f))).unwrap();
+        let mut p = Pipeline::new(2, 48_000, move |f: &RawFrame| sink.push(f));
         // 1 second of a 440 Hz tone, stereo, in 10 ms callbacks.
         let tone: Vec<f32> = (0..48_000)
             .flat_map(|n| {
@@ -290,6 +405,7 @@ mod tests {
         for chunk in tone.chunks(960) {
             p.push(chunk);
         }
+        worker.finish();
         let frames = frames.lock();
         // 1 s is 50 frames; the filter delay holds back a couple.
         assert!((47..=50).contains(&frames.len()), "{} frames", frames.len());
@@ -302,10 +418,74 @@ mod tests {
     fn pipeline_accepts_integer_samples() {
         let count = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let c = count.clone();
-        let mut p = Pipeline::new(1, 16_000, Box::new(move |_| {
+        let (worker, mut sink) = Worker::start(Box::new(move |_| {
             c.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        }));
+        }))
+        .unwrap();
+        let mut p = Pipeline::new(1, 16_000, move |f: &RawFrame| sink.push(f));
         p.push(&vec![1000i16; 640]);
+        worker.finish();
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    /// Run `samples` through the callback side in chunks of `chunk` samples, with an
+    /// `on_frame` that appends to a recording as the app does. Returns the recording.
+    fn record(samples: &[f32], chunk: usize, queue: usize, on_frame_delay: Duration) -> Vec<f32> {
+        let recording = std::sync::Arc::new(parking_lot::Mutex::new(Vec::<f32>::new()));
+        let target = recording.clone();
+        let on_frame = Box::new(move |frame: AudioFrame| {
+            std::thread::sleep(on_frame_delay);
+            target.lock().extend_from_slice(&frame.samples);
+        });
+        let (worker, mut sink) = Worker::with_capacity(queue, on_frame).unwrap();
+        // 16 kHz in and out, so the resampler passes every sample through unchanged.
+        let mut callback = Pipeline::new(1, TARGET_RATE, move |f: &RawFrame| sink.push(f));
+        for c in samples.chunks(chunk) {
+            callback.push(c);
+        }
+        worker.finish();
+        let recording = recording.lock();
+        recording.clone()
+    }
+
+    /// A ramp, so a lost, doubled, or moved sample shows in the comparison.
+    fn ramp(len: usize) -> Vec<f32> {
+        (0..len).map(|n| n as f32 / 1_000_000.0).collect()
+    }
+
+    #[test]
+    fn a_recording_over_thirty_seconds_keeps_every_sample() {
+        // 35 s is past the 30 s that the app reserves for a recording, and past the
+        // first growth of the buffer. Callbacks of 10 ms, like a 48 kHz device.
+        let whole_frames = 35 * 50;
+        let input = ramp(whole_frames * FRAME_SAMPLES + 123);
+        let recording = record(&input, 160, QUEUE_FRAMES, Duration::ZERO);
+        assert_eq!(recording.len(), whole_frames * FRAME_SAMPLES);
+        assert!(recording == input[..whole_frames * FRAME_SAMPLES], "the samples differ from the input");
+    }
+
+    #[test]
+    fn a_full_queue_makes_the_callback_wait_and_loses_nothing() {
+        // The queue holds 2 frames and the worker takes 1 ms for each, so the
+        // callback finds the queue full again and again.
+        let input = ramp(300 * FRAME_SAMPLES);
+        let recording = record(&input, 640, 2, Duration::from_millis(1));
+        assert!(recording == input, "{} of {} samples, or changed", recording.len(), input.len());
+    }
+
+    #[test]
+    fn finish_returns_after_the_last_frame_reached_on_frame() {
+        let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = seen.clone();
+        let (worker, mut sink) = Worker::start(Box::new(move |_| {
+            std::thread::sleep(Duration::from_millis(2));
+            count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }))
+        .unwrap();
+        for _ in 0..100 {
+            sink.push(&[0.0; FRAME_SAMPLES]);
+        }
+        worker.finish();
+        assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 100);
     }
 }
