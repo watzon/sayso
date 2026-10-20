@@ -31,7 +31,7 @@ Without the Flatpak, the binaries need glibc 2.35 and the libstdc++ of GCC 12, o
 
 The install was tested in a container of each of these, except Tumbleweed and Arch Linux on aarch64. A start of Sayso was tested on Ubuntu 22.04 and 26.04 and on Debian 12.
 
-Without a `.deb` or `.rpm`, your system must have these libraries: ALSA (`libasound`), `libxcb`, `libxkbcommon`, `libxkbcommon-x11`, fontconfig, FreeType, and the Vulkan loader (`libvulkan`) or EGL. The AppImage does not need `libxkbcommon` and `libxkbcommon-x11` on your system. A Wayland session also needs `libwayland-client`.
+Without a `.deb` or `.rpm`, your system must have these libraries: ALSA (`libasound`), `libxcb`, `libxkbcommon`, `libxkbcommon-x11`, fontconfig, FreeType, and the Vulkan loader (`libvulkan.so.1`). The speech engine does not start without the Vulkan loader, also when you use a model that runs on the CPU. The AppImage does not need `libxkbcommon` and `libxkbcommon-x11` on your system. A Wayland session also needs `libwayland-client`.
 
 No package updates by itself. Sayso shows a new version and says where to get it:
 
