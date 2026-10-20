@@ -126,7 +126,7 @@ impl AppModel {
                         }
                         m.styles = StyleLibrary::load(&styles_dir);
                         m.reload_dictionary();
-                        m.reload_history();
+                        m.reload_history(cx);
                         log::info!("import from Pindrop: {report:?}, {styles} styles");
                         PindropImport::Done(PindropSummary { dictations: report.dictations, words: report.words, replacements: report.replacements, styles })
                     }

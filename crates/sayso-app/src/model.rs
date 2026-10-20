@@ -116,6 +116,7 @@ pub struct AppModel {
     pub stats: Stats,
     pub history_total: usize,
     /// What the store holds on disk, for Settings › History and privacy.
+    /// That page asks for it with [`AppModel::refresh_storage`].
     pub storage: sayso_store::StorageUse,
     pub words: Vec<Word>,
     pub replacements: Vec<Replacement>,
@@ -134,6 +135,8 @@ pub struct AppModel {
     pub incognito: bool,
     /// Bumps when history changes, so pages can refresh their own queries.
     pub history_revision: u64,
+    /// The newest history reload. An older reload that ends later is dropped.
+    history_reload: u64,
 
     pub(crate) sessions: crate::dictation::Sessions,
     /// Pauses the media of other apps while a dictation records.
@@ -262,6 +265,7 @@ impl AppModel {
             blocked_notice: None,
             incognito: false,
             history_revision: 0,
+            history_reload: 0,
             sessions: Default::default(),
             media,
             started: Instant::now(),
@@ -281,7 +285,7 @@ impl AppModel {
         };
         model.system_dark = model.services.platform.prefs.dark_mode();
         model.reload_dictionary();
-        model.reload_history();
+        model.reload_history(cx);
         model.refresh_permissions();
         model.refresh_input_devices(cx);
         let engine_events = model.services.engine_events.take();
@@ -1435,16 +1439,49 @@ impl AppModel {
     // History
     // -----------------------------------------------------------------------
 
-    pub fn reload_history(&mut self) {
-        let Some(store) = &self.services.store else { return };
-        let q = sayso_store::HistoryQuery { limit: Some(50), ..Default::default() };
-        self.recent = store.list(&q).unwrap_or_default();
-        self.history_total = store.count(&sayso_store::HistoryQuery::default()).unwrap_or(0);
-        self.storage = store.storage_use().unwrap_or_default();
-        let since = chrono::Utc::now() - chrono::Duration::days(8);
-        let entries = store.entries_since(since).unwrap_or_default();
-        self.stats = stats::compute(&entries, chrono::Local::now());
-        self.history_revision += 1;
+    /// Read the recent entries, the count, and the stats again, on the
+    /// background executor.
+    pub fn reload_history(&mut self, cx: &mut Context<Self>) {
+        let Some(store) = self.services.store.clone() else { return };
+        self.history_reload += 1;
+        let reload = self.history_reload;
+        cx.spawn(async move |this, cx| {
+            let (recent, total, stats) = cx
+                .background_spawn(async move {
+                    let q = sayso_store::HistoryQuery { limit: Some(50), ..Default::default() };
+                    let recent = store.list(&q).unwrap_or_default();
+                    let total = store.count(&sayso_store::HistoryQuery::default()).unwrap_or(0);
+                    let since = chrono::Utc::now() - chrono::Duration::days(8);
+                    let stats = stats::compute(&store.stats_since(since).unwrap_or_default(), chrono::Local::now());
+                    (recent, total, stats)
+                })
+                .await;
+            let _ = this.update(cx, |m, cx| {
+                if reload != m.history_reload {
+                    return;
+                }
+                m.recent = recent;
+                m.history_total = total;
+                m.stats = stats;
+                m.history_revision += 1;
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Measure what the store holds on disk, on the background executor. It
+    /// reads the size of every audio file, so only the page that shows it asks.
+    pub fn refresh_storage(&mut self, cx: &mut Context<Self>) {
+        let Some(store) = self.services.store.clone() else { return };
+        cx.spawn(async move |this, cx| {
+            let storage = cx.background_spawn(async move { store.storage_use().unwrap_or_default() }).await;
+            let _ = this.update(cx, |m, cx| {
+                m.storage = storage;
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub fn query_history(&self, q: &sayso_store::HistoryQuery) -> Vec<HistoryEntry> {
@@ -1463,7 +1500,7 @@ impl AppModel {
         if let Some(store) = &self.services.store {
             let _ = store.delete(id);
         }
-        self.reload_history();
+        self.reload_history(cx);
         cx.notify();
     }
 
@@ -1471,7 +1508,7 @@ impl AppModel {
         if let Some(store) = &self.services.store {
             let _ = store.clear_all();
         }
-        self.reload_history();
+        self.reload_history(cx);
         cx.notify();
     }
 
@@ -1482,7 +1519,7 @@ impl AppModel {
         {
             log::error!("could not delete audio: {e}");
         }
-        self.reload_history();
+        self.reload_history(cx);
         cx.notify();
     }
 

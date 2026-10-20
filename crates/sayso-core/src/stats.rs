@@ -1,7 +1,7 @@
 //! Home screen numbers.
 
 use crate::history::HistoryEntry;
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
 
 /// Typing speed used to estimate time saved. A common average for adults.
 pub const TYPING_WPM: f64 = 40.0;
@@ -19,7 +19,22 @@ pub struct Stats {
     pub today_index: usize,
 }
 
-pub fn compute(entries: &[HistoryEntry], now: DateTime<Local>) -> Stats {
+/// The part of a history entry that the stats read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StatsEntry {
+    pub created_at: DateTime<Utc>,
+    pub duration_ms: u64,
+    /// The words of the final text.
+    pub words: usize,
+}
+
+impl From<&HistoryEntry> for StatsEntry {
+    fn from(e: &HistoryEntry) -> Self {
+        StatsEntry { created_at: e.created_at, duration_ms: e.duration_ms, words: e.word_count() }
+    }
+}
+
+pub fn compute(entries: &[StatsEntry], now: DateTime<Local>) -> Stats {
     let today: NaiveDate = now.date_naive();
     let monday = today - Duration::days(today.weekday().num_days_from_monday() as i64);
     let week_ago = now - Duration::days(7);
@@ -29,7 +44,7 @@ pub fn compute(entries: &[HistoryEntry], now: DateTime<Local>) -> Stats {
     let mut saved_minutes_today = 0.0;
     for e in entries {
         let local = e.created_at.with_timezone(&Local);
-        let words = e.word_count();
+        let words = e.words;
         let day = local.date_naive();
         if day == today {
             s.words_today += words;
@@ -95,7 +110,8 @@ mod tests {
         let today = now.with_timezone(&Utc);
         let yesterday = today - Duration::days(1);
         let last_week = today - Duration::days(9);
-        let entries = vec![entry(today, 120, 60_000), entry(yesterday, 30, 15_000), entry(last_week, 500, 60_000)];
+        let entries: Vec<StatsEntry> =
+            [entry(today, 120, 60_000), entry(yesterday, 30, 15_000), entry(last_week, 500, 60_000)].iter().map(StatsEntry::from).collect();
         let s = compute(&entries, now);
         assert_eq!(s.words_today, 120);
         assert_eq!(s.words_this_week, 150);

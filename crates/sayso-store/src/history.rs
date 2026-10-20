@@ -7,6 +7,7 @@ use rusqlite::types::Value;
 use rusqlite::{Row, params, params_from_iter};
 use sayso_core::history::{HistoryEntry, TargetApp};
 use sayso_core::models::ModelId;
+use sayso_core::stats::StatsEntry;
 
 /// Columns of `history` in the order [`entry_from_row`] reads them.
 pub(crate) const COLUMNS: &str = "id, created_at, duration_ms, app, transcript, final_text, style_id, model, \
@@ -258,12 +259,20 @@ impl Store {
         Ok(StorageUse { entries, database_bytes, audio_files, audio_bytes })
     }
 
-    /// All entries created at or after `since`, newest first. Input for the Home stats.
-    pub fn entries_since(&self, since: DateTime<Utc>) -> Result<Vec<HistoryEntry>> {
+    /// The Home stats input of every entry created at or after `since`,
+    /// newest first. It reads only the columns that the stats need.
+    pub fn stats_since(&self, since: DateTime<Utc>) -> Result<Vec<StatsEntry>> {
         let conn = self.conn.lock();
-        let mut stmt = conn
-            .prepare(&format!("SELECT {COLUMNS} FROM history WHERE created_at >= ? ORDER BY created_at DESC, id DESC"))?;
-        let rows = stmt.query_map(params![since.timestamp_millis()], entry_from_row)?;
+        let mut stmt = conn.prepare(
+            "SELECT created_at, duration_ms, final_text FROM history WHERE created_at >= ? ORDER BY created_at DESC, id DESC",
+        )?;
+        let rows = stmt.query_map(params![since.timestamp_millis()], |row| {
+            Ok(StatsEntry {
+                created_at: millis_to_time(row.get(0)?),
+                duration_ms: row.get::<_, i64>(1)? as u64,
+                words: sayso_core::history::word_count(&row.get::<_, String>(2)?),
+            })
+        })?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
@@ -444,13 +453,14 @@ mod tests {
     }
 
     #[test]
-    fn entries_since_returns_only_recent_entries() {
+    fn stats_since_returns_only_recent_entries() {
         let (_dir, store) = temp_store();
         store.insert_entry(&entry("old", Duration::days(10))).unwrap();
-        store.insert_entry(&entry("new", Duration::days(1))).unwrap();
-        let recent = store.entries_since(base_time() - Duration::days(7)).unwrap();
-        assert_eq!(recent.len(), 1);
-        assert_eq!(recent[0].final_text, "new");
+        let new = entry("three new words", Duration::days(1));
+        store.insert_entry(&new).unwrap();
+        let recent = store.stats_since(base_time() - Duration::days(7)).unwrap();
+        assert_eq!(recent, [StatsEntry::from(&new)]);
+        assert_eq!(recent[0].words, 3);
     }
 
     #[test]

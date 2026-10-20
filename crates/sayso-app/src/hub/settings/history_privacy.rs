@@ -26,17 +26,26 @@ pub struct HistorySettings {
     model: Entity<AppModel>,
     /// The delete that waits for a second click.
     confirm: Option<Wipe>,
+    /// The history revision of the last storage measure.
+    storage_revision: Option<u64>,
 }
 
 impl HistorySettings {
     pub fn new(model: Entity<AppModel>, _window: &mut Window, _cx: &mut Context<Self>) -> Self {
-        Self { model, confirm: None }
+        Self { model, confirm: None, storage_revision: None }
     }
 }
 
 impl Render for HistorySettings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c = cx.paper().colors;
+        // Measure the storage when the page shows, and again after each change of history.
+        let revision = self.model.read(cx).history_revision;
+        if self.storage_revision != Some(revision) {
+            self.storage_revision = Some(revision);
+            let model = self.model.clone();
+            cx.defer(move |cx| model.update(cx, |m, cx| m.refresh_storage(cx)));
+        }
         let m = self.model.read(cx);
         let h = m.config.history.clone();
         let total = m.history_total;

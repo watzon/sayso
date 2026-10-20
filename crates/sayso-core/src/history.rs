@@ -182,7 +182,7 @@ struct Metadata<'a> {
 
 impl HistoryEntry {
     pub fn word_count(&self) -> usize {
-        self.final_text.split_whitespace().count()
+        word_count(&self.final_text)
     }
 
     /// The entry as JSON for a bug report. The dictated text and the site are
@@ -207,6 +207,11 @@ impl HistoryEntry {
         };
         serde_json::to_string_pretty(&metadata).unwrap_or_default()
     }
+}
+
+/// The number of words in a text, as the stats count them.
+pub fn word_count(text: &str) -> usize {
+    text.split_whitespace().count()
 }
 
 /// A new entry before the store assigns an id.

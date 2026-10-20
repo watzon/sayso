@@ -667,7 +667,7 @@ impl AppModel {
             })
             .await;
             let _ = this.update(cx, |m, cx| {
-                m.reload_history();
+                m.reload_history(cx);
                 m.reload_dictionary();
                 cx.notify();
             });
@@ -712,7 +712,7 @@ impl AppModel {
             })
             .await;
             let _ = this.update(cx, |m, cx| {
-                m.reload_history();
+                m.reload_history(cx);
                 cx.notify();
             });
         })
@@ -760,7 +760,7 @@ impl AppModel {
                 if !ok {
                     m.notice(NoticeIcon::Style, t!("overlay.notice.style_failed"), cx);
                 }
-                m.reload_history();
+                m.reload_history(cx);
                 cx.notify();
             });
         })
