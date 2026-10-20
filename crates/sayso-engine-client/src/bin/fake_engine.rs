@@ -19,6 +19,9 @@
 //! milliseconds (the text of the file) after each one, like an engine that falls behind.
 //!
 //! `download` reports 50 % at once, waits 300 ms, then reports `downloaded`.
+//!
+//! The file `hello-delay-ms` makes `hello` wait that many milliseconds. The file
+//! `exit-at-hello` makes the process end at `hello`, with no answer.
 
 use serde_json::{Value, json};
 use std::fs::{self, OpenOptions};
@@ -91,12 +94,21 @@ fn main() {
 fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Value, kind: &str) {
     let model = request["model"].as_str().unwrap_or_default().to_string();
     match kind {
-        "hello" => reply(
-            out,
-            request,
-            "hello",
-            json!({"version": "fake", "protocol": 1}),
-        ),
+        "hello" => {
+            if dir.join("exit-at-hello").exists() {
+                std::process::exit(3);
+            }
+            let delay = fs::read_to_string(dir.join("hello-delay-ms")).ok().and_then(|ms| ms.trim().parse().ok());
+            if let Some(ms) = delay {
+                thread::sleep(Duration::from_millis(ms));
+            }
+            reply(
+                out,
+                request,
+                "hello",
+                json!({"version": "fake", "protocol": 1}),
+            )
+        }
         "list_models" => {
             for entry in request["models"].as_array().into_iter().flatten() {
                 let id = entry["id"].as_str().unwrap_or_default();

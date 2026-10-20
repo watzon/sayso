@@ -404,11 +404,13 @@ impl ModelsPage {
         let m = self.model.read(cx);
         let info = m.active_model();
         let status = m.status_of(&info.id);
-        let engine = m.services.engine.is_some();
+        let engine = m.services.engine.is_some() && !m.engine_starting;
         let measured = m.measured_speed(&info.id);
         let remote = info.is_remote();
 
         let (dot, state) = match &status {
+            // The engine has not said what is on disk yet.
+            _ if m.engine_starting && !remote => (c.accent, Some(t!("models.hero.loading"))),
             ModelStatus::Ready => (c.success, None),
             ModelStatus::NotDownloaded if remote => (c.danger, Some(t!("models.hero.provider_not_set_up"))),
             // The idle time unloaded the model. The next dictation loads it.
@@ -442,6 +444,7 @@ impl ModelsPage {
 
         let id = info.id.clone();
         let action: Option<AnyElement> = match &status {
+            _ if m.engine_starting && !remote => None,
             ModelStatus::NotDownloaded if remote => Some(ui(t!("models.hero.add_provider_again"), 13., 18., FontWeight::NORMAL, c.danger).into_any_element()),
             ModelStatus::NotDownloaded => Some(
                 Button::new("hero-download", if info.size_bytes == 0 { t!("models.download") } else { t!("models.download_size", size = format_size(info.size_bytes)) })
@@ -705,7 +708,7 @@ impl ModelsPage {
         let c = cx.paper().colors;
         let m = self.model.read(cx);
         let status = m.status_of(&info.id);
-        let engine = m.services.engine.is_some();
+        let engine = m.services.engine.is_some() && !m.engine_starting;
         let remote = info.is_remote();
         // A custom endpoint on this Mac is not cloud.
         let place_label = match sayso_core::speech::split_model_id(&info.id).and_then(|(p, _)| m.config.speech.provider(p)) {
@@ -894,7 +897,7 @@ impl ModelsPage {
         let m = self.model.read(cx);
         let info = m.catalog().into_iter().find(|i| &i.id == id)?;
         let status = m.status_of(&info.id);
-        let engine = m.services.engine.is_some();
+        let engine = m.services.engine.is_some() && !m.engine_starting;
         let active = m.active_model();
         let preview = m.preview_model().and_then(|p| sayso_core::models::find(&p));
         let measured = m.measured_speed(&info.id);

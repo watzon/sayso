@@ -569,30 +569,117 @@ fn dropping_the_client_stops_the_engine() {
     let f = fixture();
     let pid_file = f.models.path().join("pid");
     let pid = std::fs::read_to_string(&pid_file).unwrap();
-    #[cfg(unix)]
-    let alive = |pid: &str| {
-        std::process::Command::new("kill")
-            .args(["-0", pid])
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    };
-    #[cfg(windows)]
-    let alive = |pid: &str| {
-        std::process::Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().any(|w| w == pid.trim()))
-            .unwrap_or(false)
-    };
     assert!(alive(&pid));
     drop(f.client);
+    wait_until_gone(&pid);
+}
+
+#[cfg(unix)]
+fn alive(pid: &str) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", pid])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn alive(pid: &str) -> bool {
+    std::process::Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).split_whitespace().any(|w| w == pid.trim()))
+        .unwrap_or(false)
+}
+
+fn wait_until_gone(pid: &str) {
     let deadline = Instant::now() + Duration::from_secs(5);
-    while alive(&pid) {
+    while alive(pid) {
         assert!(Instant::now() < deadline, "engine {pid} is still running");
         thread::sleep(Duration::from_millis(20));
     }
+}
+
+/// Start the fake engine with marker files in its models folder.
+fn start_with_markers(markers: &[(&str, &str)], options: Options) -> (TempDir, TempDir, EngineClient, Receiver<EngineEvent>) {
+    let models = TempDir::new().unwrap();
+    let cache = TempDir::new().unwrap();
+    for (name, text) in markers {
+        std::fs::write(models.path().join(name), text).unwrap();
+    }
+    let (client, events) =
+        EngineClient::start_with(PathBuf::from(FAKE_ENGINE), models.path().to_path_buf(), cache.path().to_path_buf(), options)
+            .expect("the fake engine runs");
+    (models, cache, client, events)
+}
+
+#[test]
+fn start_returns_before_the_engine_answers() {
+    let default = default_model();
+    let downloaded = format!("downloaded-{default}");
+    let began = Instant::now();
+    let (models, _cache, client, events) = start_with_markers(&[("hello-delay-ms", "800"), (&downloaded, "")], fast_options());
+    assert!(began.elapsed() < Duration::from_millis(400), "start waited for the hello: {:?}", began.elapsed());
+    // Nothing is known about the disk yet.
+    assert_eq!(client.status(&default), ModelStatus::NotDownloaded);
+
+    // The receiver has the events from the start on: the status from the
+    // refresh, then `Started`.
+    let mut statuses = Vec::new();
+    wait_for(&events, "Started", |e| match e {
+        EngineEvent::ModelStatus { model, status } if *model == default => {
+            statuses.push(status.clone());
+            None
+        }
+        EngineEvent::Started => Some(()),
+        EngineEvent::StartFailed { message } => panic!("the start failed: {message}"),
+        _ => None,
+    });
+    assert!(began.elapsed() >= Duration::from_millis(800));
+    assert_eq!(statuses, [ModelStatus::Downloaded]);
+    assert_eq!(client.status(&default), ModelStatus::Downloaded);
+    let kinds: Vec<String> = requests(&models).into_iter().take(2).collect();
+    assert!(kinds[0].contains(r#""type":"hello""#) && kinds[1].contains(r#""type":"list_models""#), "{kinds:?}");
+}
+
+#[test]
+fn an_engine_that_ends_at_hello_fails_the_start_and_stays_stopped() {
+    let (models, _cache, client, events) = start_with_markers(&[("exit-at-hello", "")], fast_options());
+    let message = wait_for(&events, "StartFailed", |e| match e {
+        EngineEvent::StartFailed { message } => Some(message.clone()),
+        EngineEvent::Crashed { .. } | EngineEvent::Restarted | EngineEvent::Started => panic!("unexpected {e:?}"),
+        _ => None,
+    });
+    assert!(message.contains("engine"), "{message}");
+    // No restart: the engine got one hello only, and calls fail at once.
+    thread::sleep(Duration::from_millis(300));
+    let hellos = requests(&models).iter().filter(|r| r.contains(r#""type":"hello""#)).count();
+    assert_eq!(hellos, 1);
+    assert!(client.load(&default_model()).is_err());
+    assert!(events.try_iter().all(|e| !matches!(e, EngineEvent::Crashed { .. } | EngineEvent::Restarted)));
+}
+
+#[test]
+fn an_engine_that_does_not_answer_hello_is_stopped_after_the_timeout() {
+    let options = Options { request_timeout: Duration::from_millis(300), ..fast_options() };
+    let (models, _cache, _client, events) = start_with_markers(&[("hello-delay-ms", "10000")], options);
+    let message = wait_for(&events, "StartFailed", |e| match e {
+        EngineEvent::StartFailed { message } => Some(message.clone()),
+        _ => None,
+    });
+    assert!(message.contains("did not answer hello"), "{message}");
+    let pid = std::fs::read_to_string(models.path().join("pid")).unwrap();
+    wait_until_gone(&pid);
+}
+
+#[test]
+fn spawn_waits_for_the_hello_and_returns_its_failure() {
+    let models = TempDir::new().unwrap();
+    let cache = TempDir::new().unwrap();
+    std::fs::write(models.path().join("exit-at-hello"), "").unwrap();
+    let result = EngineClient::spawn_with(PathBuf::from(FAKE_ENGINE), models.path().to_path_buf(), cache.path().to_path_buf(), fast_options());
+    assert!(result.is_err(), "spawn returned a client for an engine that did not answer");
 }
 
 #[test]

@@ -122,6 +122,11 @@ impl AppModel {
             self.notice(NoticeIcon::Info, t!("overlay.notice.no_engine"), cx);
             return false;
         }
+        // The status of the model is not known yet.
+        if self.engine_starting {
+            self.notice(NoticeIcon::Info, t!("overlay.notice.engine_starting"), cx);
+            return false;
+        }
         if !self.status_of(&model.id).is_on_disk() {
             self.notice(NoticeIcon::Info, t!("overlay.notice.download_model"), cx);
             cx.emit(AppEvent::OpenHub(crate::hub::Route::Models));
@@ -760,6 +765,18 @@ impl AppModel {
                 if matches!(self.machine.state, State::Recording { session: s, .. } if s == session) {
                     self.preview = (committed, tentative);
                 }
+            }
+            EngineEvent::Started => {
+                self.engine_starting = false;
+                self.load_active_models(cx);
+            }
+            EngineEvent::StartFailed { message } => {
+                log::error!("could not start the engine: {message}");
+                self.engine_starting = false;
+                // As when the binary is missing: Sayso runs without the engine.
+                self.services.engine = None;
+                self.services.language_model = None;
+                self.detect_providers(cx);
             }
             EngineEvent::Crashed { message } => {
                 log::error!("engine crashed: {message}");

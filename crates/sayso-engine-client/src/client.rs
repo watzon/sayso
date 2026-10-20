@@ -1,6 +1,8 @@
 //! `EngineClient`: spawns the SaysoEngine sidecar and implements `SttBackend`.
 //!
 //! Threads, per client:
+//! - **start**: says hello and refreshes statuses after the first launch, then
+//!   reports `Started`, or `StartFailed` and stops the sidecar.
 //! - **supervisor**: reads the sidecar's stdout. When the pipe closes it reports
 //!   `Crashed`, restarts the sidecar with backoff, and starts a recovery thread.
 //! - **writer** (one per sidecar process): owns the sidecar's stdin and drains one
@@ -23,7 +25,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -72,6 +74,12 @@ impl Default for Options {
         }
     }
 }
+
+/// Where the first hello is. The supervisor restarts the sidecar only after
+/// the first hello came back.
+const START_PENDING: u8 = 0;
+const START_DONE: u8 = 1;
+const START_FAILED: u8 = 2;
 
 fn failed(message: impl Into<String>) -> PlatformError {
     PlatformError::Failed(message.into())
@@ -135,6 +143,8 @@ struct Inner {
     shutting_down: AtomicBool,
     supervisor_alive: AtomicBool,
     dropped_audio: AtomicU64,
+    /// `START_PENDING`, `START_DONE`, or `START_FAILED`.
+    start: AtomicU8,
 }
 
 /// Stops the sidecar when the last `EngineClient` handle is dropped.
@@ -183,6 +193,36 @@ impl EngineClient {
         cache_dir: PathBuf,
         options: Options,
     ) -> Result<Self> {
+        let (client, events) = Self::start_with(engine_path, models_dir, cache_dir, options)?;
+        for event in events {
+            match event {
+                EngineEvent::Started => return Ok(client),
+                EngineEvent::StartFailed { message } => return Err(failed(message)),
+                _ => {}
+            }
+        }
+        Err(failed("engine stopped"))
+    }
+
+    /// Start the sidecar and return without a wait for its answer. The hello
+    /// and the status refresh run on a thread of their own. The receiver
+    /// gets every event from the start on: `Started` when the engine answers,
+    /// or `StartFailed` when it does not. After `StartFailed` the sidecar is
+    /// stopped and does not restart.
+    ///
+    /// An error here means that the sidecar could not run at all, for
+    /// example because the binary is missing.
+    pub fn start(engine_path: PathBuf, models_dir: PathBuf, cache_dir: PathBuf) -> Result<(Self, Receiver<EngineEvent>)> {
+        Self::start_with(engine_path, models_dir, cache_dir, Options::default())
+    }
+
+    /// Like [`EngineClient::start`], with explicit timing options.
+    pub fn start_with(
+        engine_path: PathBuf,
+        models_dir: PathBuf,
+        cache_dir: PathBuf,
+        options: Options,
+    ) -> Result<(Self, Receiver<EngineEvent>)> {
         std::fs::create_dir_all(&models_dir)
             .and_then(|()| std::fs::create_dir_all(&cache_dir))
             .map_err(|e| failed(format!("cannot create engine directories: {e}")))?;
@@ -207,6 +247,7 @@ impl EngineClient {
             shutting_down: AtomicBool::new(false),
             supervisor_alive: AtomicBool::new(true),
             dropped_audio: AtomicU64::new(0),
+            start: AtomicU8::new(START_PENDING),
         });
         let stdout = inner.launch().map_err(|e| {
             failed(format!(
@@ -223,13 +264,15 @@ impl EngineClient {
         }
         let client = EngineClient {
             inner: Arc::clone(&inner),
-            _guard: Arc::new(Guard(inner)),
+            _guard: Arc::new(Guard(Arc::clone(&inner))),
         };
-        client
-            .inner
-            .call("hello", json!({}), client.inner.options.request_timeout)?;
-        client.inner.refresh_statuses()?;
-        Ok(client)
+        // Before the start thread, so no event is lost.
+        let events = client.subscribe();
+        thread::Builder::new()
+            .name("sayso-engine-start".into())
+            .spawn(move || inner.first_start())
+            .map_err(|e| failed(format!("cannot start engine thread: {e}")))?;
+        Ok((client, events))
     }
 
     /// Find the sidecar binary. In order: env `SAYSO_ENGINE_PATH`, the engine next to
@@ -833,6 +876,27 @@ impl Inner {
             .min(self.options.backoff_max)
     }
 
+    /// After the first launch: hello and refresh statuses, then `Started`. When
+    /// either fails, stop the sidecar for good and report `StartFailed`.
+    fn first_start(&self) {
+        let answered = self
+            .call("hello", json!({}), self.options.request_timeout)
+            .and_then(|_| self.refresh_statuses());
+        match answered {
+            Ok(()) => {
+                self.start.store(START_DONE, Ordering::SeqCst);
+                self.emit(EngineEvent::Started);
+            }
+            Err(e) => {
+                // Before the state, so the supervisor sees it and does not restart.
+                self.shutting_down.store(true, Ordering::SeqCst);
+                self.start.store(START_FAILED, Ordering::SeqCst);
+                self.kill_child();
+                self.emit(EngineEvent::StartFailed { message: e.to_string() });
+            }
+        }
+    }
+
     /// After a restart: hello, refresh statuses, load again what was loaded, `Restarted`.
     fn recover(&self, generation: u64) {
         let current = || self.generation.load(Ordering::SeqCst) == generation;
@@ -879,6 +943,11 @@ fn supervise(inner: &Arc<Inner>, first_stdout: ChildStdout) {
             }
         }
         let description = inner.on_exit();
+        // The engine stopped before its first hello came back. The start
+        // thread gets the failure from `on_exit` and decides at once.
+        while inner.start.load(Ordering::SeqCst) == START_PENDING {
+            thread::sleep(Duration::from_millis(5));
+        }
         if inner.shutting_down.load(Ordering::SeqCst) {
             break;
         }

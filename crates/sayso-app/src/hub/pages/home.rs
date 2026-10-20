@@ -436,6 +436,8 @@ impl HomePage {
             fix("fix-ax", t!("home.checklist.allow"), ax_name.clone(), Box::new(|m, _| m.fix_permission(Permission::Accessibility)))
         };
         let model_value = match &status {
+            // The engine has not said what is on disk yet.
+            _ if m.engine_starting && !active.is_remote() => shown(t!("app.engine.loading")),
             ModelStatus::NotDownloaded if active.is_remote() => {
                 fix("fix-model", t!("home.checklist.open_models"), model_name.clone(), Box::new(|m, cx| m.navigate(Route::Models, cx)))
             }

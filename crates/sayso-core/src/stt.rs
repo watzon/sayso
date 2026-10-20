@@ -114,6 +114,10 @@ pub enum EngineEvent {
     ModelStatus { model: ModelId, status: ModelStatus },
     /// Live preview. `committed` will not change. `tentative` may still change.
     Partial { session: u64, committed: String, tentative: String },
+    /// The engine answered for the first time, and the model statuses are known.
+    Started,
+    /// The engine did not answer its first hello. It is stopped and does not restart.
+    StartFailed { message: String },
     /// The engine process stopped. The client restarts it.
     Crashed { message: String },
     Restarted,

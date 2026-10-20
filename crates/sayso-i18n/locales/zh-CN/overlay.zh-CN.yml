@@ -7,6 +7,7 @@ overlay:
     microphone_failed: "麦克风无法启动"
     set_up_cloud_provider: "请先设置模型的云端服务商"
     no_engine: "语音引擎未安装"
+    engine_starting: "请等待语音引擎启动，然后重试"
     download_model: "请先下载语音模型"
     set_up_ai_provider: "请先在“设置”中设置 AI 服务商"
     choose_ai_model: "请先在“设置”中为 %{provider} 选择模型"

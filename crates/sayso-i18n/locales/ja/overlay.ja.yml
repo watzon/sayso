@@ -7,6 +7,7 @@ overlay:
     microphone_failed: "マイクを開始できませんでした"
     set_up_cloud_provider: "先にモデルのクラウドプロバイダを設定してください"
     no_engine: "音声エンジンがインストールされていません"
+    engine_starting: "音声エンジンが起動するまで待ってから、もう一度お試しください"
     download_model: "先に音声モデルをダウンロードしてください"
     set_up_ai_provider: "先に「設定」で AI プロバイダを設定してください"
     choose_ai_model: "先に「設定」で %{provider} のモデルを選択してください"

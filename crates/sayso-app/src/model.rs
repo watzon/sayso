@@ -123,6 +123,9 @@ pub struct AppModel {
 
     /// The engine process reported a crash and has not come back yet.
     pub engine_down: Option<String>,
+    /// The engine runs but has not answered yet. Until it does, the status
+    /// of the local models is not known.
+    pub engine_starting: bool,
     /// A short message in the idle overlay, for example when a hotkey cannot
     /// start a dictation.
     pub blocked_notice: Option<OverlayNotice>,
@@ -255,6 +258,7 @@ impl AppModel {
             replacements: Vec::new(),
             replacer: Arc::new(Replacer::new(&[])),
             engine_down: None,
+            engine_starting: false,
             blocked_notice: None,
             incognito: false,
             history_revision: 0,
@@ -280,13 +284,14 @@ impl AppModel {
         model.reload_history();
         model.refresh_permissions();
         model.refresh_input_devices(cx);
+        let engine_events = model.services.engine_events.take();
+        model.engine_starting = engine_events.is_some();
         // Local models only. The status of a cloud model comes from its provider.
         for m in sayso_core::models::catalog() {
             let status = model.services.engine.as_ref().map(|e| e.status(&m.id)).unwrap_or(ModelStatus::NotDownloaded);
             model.model_status.insert(m.id, status);
         }
         let hotkeys = model.services.platform.hotkeys.events();
-        let engine_events = model.services.engine.as_ref().map(|e| e.subscribe());
         crate::dictation::start_background_loops(hotkeys, engine_events, cx);
         model.start_updater(cx);
         model.detect_providers(cx);
@@ -375,7 +380,7 @@ impl AppModel {
             loop {
                 cx.background_executor().timer(Duration::from_secs(30)).await;
                 let done = this.update(cx, |m, cx| {
-                    if m.services.engine.is_none() || m.engine_down.is_some() {
+                    if m.services.engine.is_none() || m.engine_down.is_some() || m.engine_starting {
                         return false;
                     }
                     // Not yet, when another Sayso uses this install.
@@ -1555,6 +1560,9 @@ impl AppModel {
         }
         if self.services.engine.is_none() || self.engine_down.is_some() {
             return (t!("app.engine.stopped"), t!("app.engine.restarting"), |c| c.danger);
+        }
+        if self.engine_starting {
+            return (t!("app.engine.loading"), model.name, |c| c.accent);
         }
         match self.status_of(&model.id) {
             ModelStatus::Ready => (t!("app.engine.ready"), model.name, |c| c.success),

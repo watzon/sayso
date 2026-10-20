@@ -7,6 +7,7 @@ overlay:
     microphone_failed: "O microfone não pôde iniciar"
     set_up_cloud_provider: "Configure primeiro o provedor na nuvem do seu modelo"
     no_engine: "O mecanismo de voz não está instalado"
+    engine_starting: "Espere o mecanismo de voz iniciar e tente de novo"
     download_model: "Baixe primeiro um modelo de voz"
     set_up_ai_provider: "Configure primeiro um provedor de IA em Ajustes"
     choose_ai_model: "Escolha primeiro um modelo para %{provider} em Ajustes"

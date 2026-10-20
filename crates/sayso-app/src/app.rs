@@ -159,11 +159,13 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
         .clone()
         .map(std::path::PathBuf::from)
         .unwrap_or_else(sayso_engine_client::EngineClient::default_engine_path);
-    let client = match sayso_engine_client::EngineClient::spawn(engine_path.clone(), paths.models_dir(), paths.cache_dir.clone()) {
-        Ok(e) => Some(e),
+    // The engine answers on a thread of its own, so the tray and the overlay
+    // do not wait for it. `AppModel` hears `Started` or `StartFailed`.
+    let (client, engine_events) = match sayso_engine_client::EngineClient::start(engine_path.clone(), paths.models_dir(), paths.cache_dir.clone()) {
+        Ok((e, events)) => (Some(e), Some(events)),
         Err(e) => {
             log::error!("could not start the engine at {}: {e:#}", engine_path.display());
-            None
+            (None, None)
         }
     };
     // Both handles share the one sidecar.
@@ -183,7 +185,7 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
         }
     };
 
-    Services { platform, engine, language_model, store, secrets: Arc::new(sayso_enhance::KeychainStore), updates }
+    Services { platform, engine, engine_events, language_model, store, secrets: Arc::new(sayso_enhance::KeychainStore), updates }
 }
 
 /// Set the interface language from config and the languages of the system.
