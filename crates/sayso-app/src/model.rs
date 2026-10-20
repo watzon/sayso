@@ -776,6 +776,20 @@ impl AppModel {
         crate::memory::wanted(self.active_local_model().as_ref(), self.preview_model().as_ref(), self.model_idle)
     }
 
+    /// Prepare the optional parts of the ready models in use.
+    pub(crate) fn prepare_active_models(&self) {
+        let Some(engine) = &self.services.engine else { return };
+        let preview = self.preview_model();
+        for id in self.wanted_models() {
+            if !self.status_of(&id).is_usable() { continue; }
+            let words = self.vocabulary();
+            let (preview, vocabulary) = crate::memory::preparation(&id, self.active_local_model().as_ref(), preview.as_ref(), &words);
+            if let Err(e) = engine.prepare(&id, preview, vocabulary) {
+                log::warn!("prepare model {id}: {e}");
+            }
+        }
+    }
+
     /// Load the final-pass and preview models when they are on disk. A cloud
     /// model needs no load. A model that the idle time unloaded stays out.
     pub fn load_active_models(&mut self, cx: &mut Context<Self>) {
@@ -807,12 +821,14 @@ impl AppModel {
                         m.last_dictation = Instant::now();
                     }
                     m.model_status.insert(id.clone(), status);
+                    m.prepare_active_models();
                     m.start_late_preview(&id, cx);
                     cx.notify();
                 });
             })
             .detach();
         }
+        self.prepare_active_models();
         cx.notify();
     }
 
@@ -1418,6 +1434,7 @@ impl AppModel {
         self.words = store.list_words().unwrap_or_default();
         self.replacements = store.list_replacements().unwrap_or_default();
         self.replacer = Arc::new(Replacer::new(&self.replacements));
+        self.prepare_active_models();
     }
 
     pub fn add_word(&mut self, text: &str, cx: &mut Context<Self>) {

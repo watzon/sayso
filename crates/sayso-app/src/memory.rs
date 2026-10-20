@@ -24,6 +24,12 @@ pub fn wanted(active: Option<&ModelId>, preview: Option<&ModelId>, idle: bool) -
     ids
 }
 
+/// Optional parts for one model. Dictionary words go only to the final model.
+pub fn preparation<'a>(model: &ModelId, active: Option<&ModelId>, preview: Option<&ModelId>, words: &'a [String]) -> (bool, &'a [String]) {
+    let vocabulary = if Some(model) == active && sayso_core::models::find(model).is_some_and(|m| m.vocabulary) { words } else { &[] };
+    (Some(model) == preview, vocabulary)
+}
+
 /// The models to unload: in memory, and not wanted. A model that loads now
 /// is not in the list. It gets its turn when the load is complete.
 pub fn unwanted(statuses: &HashMap<ModelId, ModelStatus>, wanted: &[ModelId]) -> Vec<ModelId> {
@@ -52,6 +58,19 @@ mod tests {
 
     fn id(s: &str) -> ModelId {
         ModelId::new(s)
+    }
+
+    #[test]
+    fn preparation_sends_final_words_and_loads_only_the_chosen_preview() {
+        let final_model = id("parakeet-unified-en");
+        let preview = id("parakeet-eou");
+        let words = vec!["Sayso".to_string(), "Parakeet".to_string()];
+        assert_eq!(preparation(&final_model, Some(&final_model), None, &words), (false, words.as_slice()));
+        assert_eq!(preparation(&preview, Some(&final_model), Some(&preview), &words), (true, &[][..]));
+        assert_eq!(preparation(&final_model, Some(&final_model), Some(&final_model), &words), (true, words.as_slice()));
+        let changed = vec!["new word".to_string()];
+        assert_eq!(preparation(&final_model, Some(&final_model), None, &changed).1, changed);
+        assert!(preparation(&preview, None, Some(&preview), &words).1.is_empty());
     }
 
     #[test]
