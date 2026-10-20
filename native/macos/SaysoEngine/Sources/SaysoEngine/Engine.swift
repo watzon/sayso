@@ -14,13 +14,28 @@ import WhisperKit
 final class UnifiedModel: @unchecked Sendable {
     let batch: UnifiedAsrManager
     let stream: LazyPart<StreamingUnifiedAsrManager>
+    let vocabulary: KeyedParts<[String], VocabularyBooster>
+    private let ctc: LazyPart<VocabularyBooster.CtcAssets>
 
-    init(batch: UnifiedAsrManager, config: UnifiedConfig, directory: URL) {
+    init(batch: UnifiedAsrManager, config: UnifiedConfig, directory: URL, ctcDirectory: URL, out: Output) {
+        let assets = LazyPart<VocabularyBooster.CtcAssets>(
+            load: {
+                let start = nowMs()
+                let assets = try await VocabularyBooster.CtcAssets.load(from: ctcDirectory)
+                out.log("debug", "dictionary assets loaded in \(Int(nowMs() - start)) ms")
+                return assets
+            }, free: { _ in })
+        ctc = assets
+        vocabulary = KeyedParts { words in
+            try await VocabularyBooster(words: words, assets: assets.get())
+        }
         self.batch = batch
         stream = LazyPart(
             load: {
                 let manager = StreamingUnifiedAsrManager(config: config)
+                let start = nowMs()
                 try await manager.loadModels(from: directory)
+                out.log("debug", "preview part loaded in \(Int(nowMs() - start)) ms")
                 return manager
             },
             free: { await $0.cleanup() })
@@ -30,6 +45,8 @@ final class UnifiedModel: @unchecked Sendable {
     func cleanup() async {
         await batch.cleanup()
         await stream.close()
+        await vocabulary.close()
+        await ctc.close()
     }
 }
 
@@ -224,9 +241,6 @@ actor Engine {
     private var sessions: [Int: StreamSession] = [:]
     /// Models whose streaming manager runs a final pass now. A new stream must wait.
     private var finalPasses: Set<String> = []
-
-    private var ctcAssets: VocabularyBooster.CtcAssets?
-    private var booster: VocabularyBooster?
 
     init(modelsDir: URL, out: Output) {
         self.store = ModelStore(root: modelsDir)
@@ -450,10 +464,6 @@ actor Engine {
         case .cohere, .canary, .senseVoice, .paraformer, .whisper, .appleSpeech:
             break  // Released with the last reference.
         }
-        if case .parakeetUnified = entry {
-            booster = nil
-            ctcAssets = nil
-        }
         return true
     }
 
@@ -500,7 +510,7 @@ actor Engine {
             }
             let batch = UnifiedAsrManager()
             try await batch.loadModels(from: store.unifiedDir)
-            return .parakeetUnified(UnifiedModel(batch: batch, config: config, directory: store.unifiedDir))
+            return .parakeetUnified(UnifiedModel(batch: batch, config: config, directory: store.unifiedDir, ctcDirectory: store.ctcDir, out: out))
         case .parakeetEou:
             let eou = StreamingEouAsrManager(chunkSize: .ms160)
             try await eou.loadModels(from: store.eouDir)
@@ -575,7 +585,7 @@ actor Engine {
         let text: String
         switch entry {
         case .parakeetUnified(let unified):
-            text = try await transcribeParakeet(unified.batch, samples: samples, vocabulary: vocabulary)
+            text = try await transcribeParakeet(unified, samples: samples, vocabulary: vocabulary)
         case .whisper(let kit):
             text = try await transcribeWhisper(
                 kit, samples: samples, language: language, vocabulary: vocabulary)
@@ -652,35 +662,57 @@ actor Engine {
     }
 
     private func transcribeParakeet(
-        _ batch: UnifiedAsrManager, samples: [Float], vocabulary: [String]
+        _ unified: UnifiedModel, samples: [Float], vocabulary: [String]
     ) async throws -> String {
-        if !vocabulary.isEmpty, let booster = await boosterFor(vocabulary) {
-            let result = try await batch.transcribeWithTimings(samples)
-            return await booster.rescore(
-                text: result.text, tokenTimings: result.tokenTimings, samples: samples)
+        if !vocabulary.isEmpty {
+            let booster: VocabularyBooster?
+            do { booster = try await unified.vocabulary.get(vocabulary) }
+            catch { out.log("warn", "vocabulary ignored: \(error)"); booster = nil }
+            if let booster {
+                let result = try await unified.batch.transcribeWithTimings(samples)
+                return await booster.rescore(
+                    text: result.text, tokenTimings: result.tokenTimings, samples: samples)
+            }
         }
-        return try await batch.transcribe(samples)
+        return try await unified.batch.transcribe(samples)
     }
 
-    /// The booster for a word list, cached while the list stays the same.
-    /// Nil (with a log line) when the CTC helper is missing.
-    private func boosterFor(_ words: [String]) async -> VocabularyBooster? {
-        if let booster, booster.terms == words { return booster }
-        do {
-            if ctcAssets == nil {
-                guard store.ctcComplete() else {
-                    out.log("warn", "vocabulary ignored: CTC helper model is not downloaded")
-                    return nil
-                }
-                ctcAssets = try await VocabularyBooster.CtcAssets.load(from: store.ctcDir)
-            }
-            let built = try await VocabularyBooster(words: words, assets: ctcAssets!)
-            booster = built
-            return built
-        } catch {
-            out.log("warn", "vocabulary ignored: \(error)")
-            return nil
+    /// Load optional parts before a dictation. Failure leaves lazy loading available.
+    func prepare(model: String, preview: Bool, vocabulary: [String], id: String?) async throws {
+        guard let entry = loaded[model] else { throw EngineError("model \(model) is not loaded") }
+        func report(_ part: String, _ state: String) {
+            out.send("part_state", id: id, ["model": model, "part": part, "state": state])
         }
+        // The two loads do not run predictions or change stream state.
+        await withTaskGroup(of: Void.self) { group in
+            if preview {
+                group.addTask {
+                    report("preview", "preparing")
+                    do {
+                        _ = try await entry.streamer()
+                        report("preview", "ready")
+                    } catch {
+                        report("preview", "failed")
+                        self.out.log("warn", "preview preparation of \(model) failed: \(error)")
+                    }
+                }
+            }
+            if !vocabulary.isEmpty {
+                group.addTask {
+                    report("dictionary", "preparing")
+                    do {
+                        if case .parakeetUnified(let unified) = entry {
+                            _ = try await unified.vocabulary.get(vocabulary)
+                        }
+                        report("dictionary", "ready")
+                    } catch {
+                        report("dictionary", "failed")
+                        self.out.log("warn", "dictionary preparation of \(model) failed: \(error)")
+                    }
+                }
+            }
+        }
+        out.ok(id: id)
     }
 
     private func transcribeWhisper(

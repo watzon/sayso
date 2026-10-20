@@ -140,6 +140,10 @@ impl Engine {
             "list_models" => self.list_models(request),
             "download" => self.download(request),
             "delete" => self.delete(request),
+            "prepare" => {
+                self.out.ok(id, json!({}));
+                Ok(())
+            }
             "load" => self.load(request),
             "unload" => self.unload(request),
             "transcribe" => self.transcribe(request),

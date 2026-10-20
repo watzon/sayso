@@ -166,6 +166,10 @@ impl Engine {
             "list_models" => self.list_models(r),
             "download" => self.download(r),
             "delete" => self.delete(r),
+            "prepare" => {
+                self.out.ok(id, json!({}));
+                Ok(())
+            }
             "load" => self.load(r),
             "unload" => self.unload(r),
             "transcribe" => self.transcribe(r),
@@ -692,6 +696,13 @@ mod tests {
             .iter()
             .map(|m| m["type"].as_str().unwrap().to_string())
             .collect()
+    }
+
+    #[test]
+    fn prepare_is_a_noop_without_a_loaded_model() {
+        let rig = rig();
+        let reply = rig.send(json!({"type":"prepare","id":"p","model":"m","preview":true,"vocabulary":["Sayso"]}));
+        assert_eq!(reply.last().unwrap()["type"], "ok");
     }
 
     #[test]

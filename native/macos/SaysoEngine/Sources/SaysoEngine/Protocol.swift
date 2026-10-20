@@ -158,6 +158,8 @@ struct Request: @unchecked Sendable {
         return value
     }
 
+    func optionalBool(_ key: String) -> Bool { fields[key] as? Bool ?? false }
+
     func optionalString(_ key: String) -> String? { fields[key] as? String }
 
     func int(_ key: String) throws -> Int {

@@ -43,6 +43,9 @@ func handle(_ request: Request) async {
         case "load":
             try await engine.load(
                 model: try request.string("model"), spec: try request.engine(), id: id)
+        case "prepare":
+            try await engine.prepare(model: try request.string("model"),
+                preview: request.optionalBool("preview"), vocabulary: request.stringArray("vocabulary"), id: id)
         case "unload":
             try await engine.unload(model: try request.string("model"), id: id)
         case "transcribe":
