@@ -27,9 +27,16 @@ pub(super) fn suggested(language: &str) -> ModelId {
 /// ones that understand the dictation language.
 fn choices(language: &str) -> Vec<ModelId> {
     let (english, european) = crate::shell::os_text!(("parakeet-unified-en", "parakeet-ultra"), ("parakeet-tdt-v2", "parakeet-tdt-v3"));
-    let mut rest = [english, european, "whisper-large-v3-turbo"].map(ModelId::new);
-    rest.sort_by_key(|id| !sayso_core::models::find(id).is_some_and(|m| m.understands(language)));
-    let mut list = vec![suggested(language)];
+    let rest = [english, european, "whisper-large-v3-turbo"].map(ModelId::new);
+    order_choices(suggested(language), rest, |id| sayso_core::models::find(id).is_some_and(|m| m.understands(language)))
+}
+
+/// `suggested`, then the models of `rest` that `understands` the dictation
+/// language, then the others, each group in the order of `rest`, without
+/// repeats: three models at most.
+fn order_choices(suggested: ModelId, mut rest: [ModelId; 3], understands: impl Fn(&ModelId) -> bool) -> Vec<ModelId> {
+    rest.sort_by_key(|id| !understands(id));
+    let mut list = vec![suggested];
     for id in rest {
         if !list.contains(&id) {
             list.push(id);
@@ -294,8 +301,8 @@ pub(super) fn track(fraction: f32, height: f32, label: String, c: &Colors) -> St
 
 #[cfg(test)]
 mod tests {
-    use super::{choices, suggested};
-    use sayso_core::models::{default_model, find};
+    use super::{choices, order_choices, suggested};
+    use sayso_core::models::{ModelId, default_model, find};
 
     #[test]
     fn choices_are_three_different_models_with_the_suggested_one_first() {
@@ -309,11 +316,30 @@ mod tests {
         assert_eq!(choices("en")[0], default_model());
     }
 
+    /// Models for the choice rule, the same on every system: an English model,
+    /// a European model, a model for many languages, and an East Asian model.
+    const MODELS: [(&str, &[&str]); 4] = [
+        ("english", &["en"]),
+        ("european", &["en", "de", "fr"]),
+        ("many", &["en", "de", "fr", "zh", "ja"]),
+        ("asian", &["zh", "ja"]),
+    ];
+
+    fn understands(language: &'static str) -> impl Fn(&ModelId) -> bool {
+        move |id| MODELS.iter().any(|(m, languages)| id.as_str() == *m && languages.contains(&language))
+    }
+
     #[test]
     fn the_second_choice_understands_the_dictation_language_when_one_can() {
-        for language in ["de", "zh", "ja"] {
-            let second = find(&choices(language)[1]).unwrap();
-            assert!(second.understands(language), "{language}: {}", second.id.as_str());
+        let rest = || ["english", "european", "many"].map(ModelId::new);
+        for (language, suggested) in [("de", "european"), ("zh", "asian"), ("ja", "asian"), ("fr", "many")] {
+            let ids = order_choices(ModelId::new(suggested), rest(), understands(language));
+            assert_eq!(ids.len(), 3, "{language}: {ids:?}");
+            assert!(understands(language)(&ids[1]), "{language}: {ids:?}");
         }
+        // The suggested model is the only one that understands Chinese, so no
+        // second choice can. The others keep their order.
+        let ids = order_choices(ModelId::new("many"), rest(), understands("zh"));
+        assert_eq!(ids, ["many", "english", "european"].map(ModelId::new));
     }
 }
