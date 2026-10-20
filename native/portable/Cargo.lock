@@ -2097,7 +2097,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-core"
-version = "0.8.0"
+version = "0.10.1"
 dependencies = [
  "chrono",
  "log",
@@ -2133,7 +2133,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-engine-client"
-version = "0.8.0"
+version = "0.10.1"
 dependencies = [
  "base64 0.22.1",
  "crossbeam-channel",
@@ -2147,7 +2147,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-i18n"
-version = "0.8.0"
+version = "0.10.1"
 dependencies = [
  "chrono",
  "rust-i18n",
@@ -2157,7 +2157,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform"
-version = "0.8.0"
+version = "0.10.1"
 dependencies = [
  "crossbeam-channel",
  "sayso-core",
