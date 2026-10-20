@@ -179,13 +179,14 @@ mod tests {
     #[test]
     #[cfg(windows)] // `preview_for` reads the catalog of this platform.
     fn whisper_borrows_the_parakeet_preview_in_parakeet_languages() {
+        use crate::config::PreviewChoice;
         use crate::models::{ModelId, preview_for};
         let whisper = model("whisper-small");
         let on = |ids: &'static [&'static str]| move |id: &ModelId| ids.contains(&id.as_str());
-        assert_eq!(preview_for(&whisper, "en", on(&["parakeet-tdt-v3"])), Some(ModelId::new("parakeet-tdt-v3")));
-        assert_eq!(preview_for(&whisper, "en", on(&["parakeet-tdt-v2"])), Some(ModelId::new("parakeet-tdt-v2")));
-        assert_eq!(preview_for(&whisper, "de", on(&["parakeet-tdt-v2"])), None, "v2 is English only");
-        assert_eq!(preview_for(&whisper, "ja", on(&["parakeet-tdt-v3"])), None);
-        assert_eq!(preview_for(&whisper, "en", on(&[])), None);
+        assert_eq!(preview_for(&whisper, &PreviewChoice::Auto, "en", on(&["parakeet-tdt-v3"])), Some(ModelId::new("parakeet-tdt-v3")));
+        assert_eq!(preview_for(&whisper, &PreviewChoice::Auto, "en", on(&["parakeet-tdt-v2"])), Some(ModelId::new("parakeet-tdt-v2")));
+        assert_eq!(preview_for(&whisper, &PreviewChoice::Auto, "de", on(&["parakeet-tdt-v2"])), None, "v2 is English only");
+        assert_eq!(preview_for(&whisper, &PreviewChoice::Auto, "ja", on(&["parakeet-tdt-v3"])), None);
+        assert_eq!(preview_for(&whisper, &PreviewChoice::Auto, "en", on(&[])), None);
     }
 }
