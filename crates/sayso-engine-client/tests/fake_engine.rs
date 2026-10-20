@@ -83,6 +83,16 @@ fn requests(models: &TempDir) -> Vec<String> {
         .collect()
 }
 
+/// Wait until the fake engine got `count` requests of type `kind`.
+fn wait_for_requests(models: &TempDir, kind: &str, count: usize) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let pattern = format!("\"type\":\"{kind}\"");
+    while requests(models).iter().filter(|line| line.contains(&pattern)).count() < count {
+        assert!(Instant::now() < deadline, "timed out waiting for {count} {kind} requests");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 fn wav_files(cache: &TempDir) -> usize {
     std::fs::read_dir(cache.path())
         .unwrap()
@@ -756,11 +766,15 @@ fn stop_drops_the_preview_audio_that_waits_and_the_final_pass_keeps_the_whole_re
 fn a_stream_that_starts_again_after_its_stop_gets_audio() {
     let f = fixture();
     let options = options_for("final-model");
+    // A stop drops the audio that still waits in the queue, so each stream
+    // ends only after the engine got its frame.
     f.client.start_stream(1, &options).unwrap();
     f.client.push_audio(1, &[0.1; 320]).unwrap();
+    wait_for_requests(&f.models, "stream_audio", 1);
     f.client.end_stream(1);
     f.client.start_stream(1, &options).unwrap();
     f.client.push_audio(1, &[0.1; 320]).unwrap();
+    wait_for_requests(&f.models, "stream_audio", 2);
     f.client.end_stream(1);
     f.client.transcribe(&[0.1; 320], &options).unwrap();
     let log = requests(&f.models);
