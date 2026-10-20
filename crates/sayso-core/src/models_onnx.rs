@@ -40,7 +40,7 @@ struct Entry {
     description: String,
     engine: EngineKind,
     size_mb: u64,
-    languages: Vec<String>,
+    languages: &'static [&'static str],
     speed: u8,
 }
 

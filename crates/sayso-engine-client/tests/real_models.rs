@@ -83,7 +83,7 @@ fn run_model(client: &EngineClient, events: &crossbeam_channel::Receiver<EngineE
 
     // A model that cannot hear English (Japanese, Mandarin) must still return without
     // an error. Its text is printed and not checked.
-    let english = info.languages.iter().any(|l| l == "en");
+    let english = info.languages.contains(&"en");
     let options = SessionOptions {
         final_model: info.id.clone(),
         preview_model: info.live_preview.then(|| info.id.clone()),
@@ -166,7 +166,7 @@ fn real_models_download_load_and_transcribe() {
 
     let catalog = models::catalog();
     let chosen: Vec<ModelInfo> = if wanted == "all" {
-        catalog
+        catalog.to_vec()
     } else {
         wanted
             .split(',')

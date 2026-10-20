@@ -249,10 +249,13 @@ pub fn is_valid(code: &str) -> bool {
 }
 
 /// Every known code, sorted by English name. For a model that takes any language.
-pub fn all() -> Vec<String> {
-    let mut list: Vec<(&str, &str)> = NAMES.to_vec();
-    list.sort_by_key(|(_, n)| *n);
-    list.into_iter().map(|(c, _)| c.to_string()).collect()
+pub fn all() -> &'static [&'static str] {
+    static ALL: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+        let mut list: Vec<(&str, &str)> = NAMES.to_vec();
+        list.sort_by_key(|(_, n)| *n);
+        list.into_iter().map(|(c, _)| c).collect()
+    });
+    &ALL
 }
 
 /// The dictation language for the languages of the system, in the order of
@@ -278,59 +281,55 @@ pub fn from_system(system: &[String]) -> String {
         .unwrap_or_else(|| "en".into())
 }
 
-fn codes(list: &[&str]) -> Vec<String> {
-    list.iter().map(|c| c.to_string()).collect()
-}
-
-pub fn english() -> Vec<String> {
-    codes(&["en"])
+pub fn english() -> &'static [&'static str] {
+    &["en"]
 }
 
 /// The 99 languages of OpenAI Whisper.
-pub fn whisper() -> Vec<String> {
-    codes(&[
+pub fn whisper() -> &'static [&'static str] {
+    &[
         "en", "zh", "de", "es", "ru", "ko", "fr", "ja", "pt", "tr", "pl", "ca", "nl", "ar", "sv", "it", "id", "hi", "fi", "vi",
         "he", "uk", "el", "ms", "cs", "ro", "da", "hu", "ta", "no", "th", "ur", "hr", "bg", "lt", "la", "mi", "ml", "cy", "sk",
         "te", "fa", "lv", "bn", "sr", "az", "sl", "kn", "et", "mk", "br", "eu", "is", "hy", "ne", "mn", "bs", "kk", "sq", "sw",
         "gl", "mr", "pa", "si", "km", "sn", "yo", "so", "af", "oc", "ka", "be", "tg", "sd", "gu", "am", "yi", "lo", "uz", "fo",
         "ht", "ps", "tk", "nn", "mt", "sa", "lb", "my", "bo", "tl", "mg", "as", "tt", "haw", "ln", "ha", "ba", "jw", "su",
-    ])
+    ]
 }
 
 /// The 25 European languages of Parakeet TDT v3 and the models trained from it.
-pub fn parakeet_v3() -> Vec<String> {
-    codes(&[
+pub fn parakeet_v3() -> &'static [&'static str] {
+    &[
         "en", "de", "es", "fr", "it", "pt", "nl", "pl", "ru", "uk", "sv", "da", "fi", "cs", "sk", "sl", "hr", "bg", "ro", "hu",
         "el", "et", "lv", "lt", "mt",
-    ])
+    ]
 }
 
 /// The 14 languages of Cohere Transcribe.
-pub fn cohere() -> Vec<String> {
-    codes(&["en", "fr", "de", "es", "it", "pt", "nl", "pl", "el", "ar", "ja", "zh", "ko", "vi"])
+pub fn cohere() -> &'static [&'static str] {
+    &["en", "fr", "de", "es", "it", "pt", "nl", "pl", "el", "ar", "ja", "zh", "ko", "vi"]
 }
 
 /// The languages SenseVoice Small can be told to use. It also detects more.
-pub fn sensevoice() -> Vec<String> {
-    codes(&["zh", "yue", "en", "ja", "ko"])
+pub fn sensevoice() -> &'static [&'static str] {
+    &["zh", "yue", "en", "ja", "ko"]
 }
 
 /// The languages Nemotron Multilingual has a language prompt for.
-pub fn nemotron() -> Vec<String> {
-    codes(&[
+pub fn nemotron() -> &'static [&'static str] {
+    &[
         "en", "es", "zh", "hi", "ar", "fr", "de", "ja", "ru", "pt", "ko", "it", "nl", "pl", "tr", "uk", "ro", "el", "cs", "hu",
         "sv", "da", "fi", "no", "nn", "sk", "hr", "bg", "lt", "et", "lv", "sl", "th", "vi", "id", "ms", "bn", "ur", "fa", "ta",
         "te", "mr", "gu", "kn", "ml", "si", "ne", "km", "sw", "am", "ha", "zu", "yo", "ig", "af", "rw", "so", "ln", "he", "ku",
         "az", "ka", "hy", "uz", "tg", "ky", "mi", "haw", "mt",
-    ])
+    ]
 }
 
 /// The languages of Apple Speech (SpeechTranscriber) on macOS 26.
-pub fn apple_speech() -> Vec<String> {
-    codes(&[
+pub fn apple_speech() -> &'static [&'static str] {
+    &[
         "en", "zh", "yue", "ja", "ko", "de", "fr", "es", "it", "pt", "hi", "bn", "gu", "kn", "ks", "mai", "ml", "mr", "ne", "or",
         "pa", "ta", "te", "ur",
-    ])
+    ]
 }
 
 #[cfg(test)]
@@ -353,7 +352,7 @@ mod tests {
     fn every_model_language_has_a_name() {
         for list in [english(), whisper(), parakeet_v3(), cohere(), sensevoice(), nemotron(), apple_speech()] {
             for code in list {
-                assert!(name(&code).is_some(), "no name for {code}");
+                assert!(name(code).is_some(), "no name for {code}");
             }
         }
     }

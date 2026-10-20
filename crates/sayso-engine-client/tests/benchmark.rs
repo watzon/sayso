@@ -63,7 +63,7 @@ fn manifest(dir: &Path) -> Vec<Clip> {
 
 /// The models to measure: local models with a final pass that understand English.
 fn english_final_models() -> Vec<ModelInfo> {
-    models::catalog().into_iter().filter(|m| !m.is_remote() && m.final_pass && m.languages.iter().any(|l| l == "en")).collect()
+    models::catalog().iter().filter(|m| !m.is_remote() && m.final_pass && m.languages.contains(&"en")).cloned().collect()
 }
 
 fn download(client: &EngineClient, events: &crossbeam_channel::Receiver<EngineEvent>, info: &ModelInfo) {
@@ -195,7 +195,7 @@ fn benchmark_preview() {
     let clips = manifest(&dir);
     let models_dir = dir.join("models");
     std::fs::create_dir_all(&models_dir).unwrap();
-    let info = models::catalog().into_iter().find(|m| m.id.as_str() == id && m.live_preview).expect("a streaming model");
+    let info = models::catalog().iter().find(|m| m.id.as_str() == id && m.live_preview).expect("a streaming model");
     let engine = EngineClient::default_engine_path();
     let cache = tempfile::TempDir::new().unwrap();
     let client = EngineClient::spawn(engine, models_dir, cache.path().to_path_buf()).unwrap();
@@ -209,7 +209,7 @@ fn benchmark_preview() {
         .filter_map(|v| v["id"].as_str().map(String::from))
         .collect();
     if !client.status(&info.id).is_on_disk() {
-        download(&client, &events, &info);
+        download(&client, &events, info);
     }
     client.load(&info.id).unwrap();
     let options = SessionOptions { final_model: info.id.clone(), preview_model: Some(info.id.clone()), language: "en".into(), vocabulary: vec![] };

@@ -212,6 +212,31 @@ fn matches(info: &ModelInfo, query: &str) -> bool {
         || [info.name.as_str(), info.vendor.as_str(), &info.language_label(), &info.description].iter().any(|s| s.to_lowercase().contains(query))
 }
 
+/// The final model and the live preview model. The page reads them once per
+/// render, not once per row.
+struct Roles {
+    active: ModelId,
+    preview: Option<ModelId>,
+}
+
+impl Roles {
+    fn of(m: &AppModel) -> Self {
+        Self { active: m.active_model().id, preview: m.preview_model() }
+    }
+
+    /// "Final text", "Live preview", or "In use" for a model with both roles.
+    fn tag(&self, id: &ModelId) -> Option<String> {
+        let is_final = &self.active == id;
+        let is_preview = self.preview.as_ref() == Some(id);
+        match (is_final, is_preview) {
+            (true, true) => Some(t!("models.row.in_use")),
+            (true, false) => Some(t!("models.setup.final")),
+            (false, true) => Some(t!("models.setup.preview")),
+            (false, false) => None,
+        }
+    }
+}
+
 /// Which floating menu of the page is open.
 #[derive(Clone, PartialEq)]
 enum OpenMenu {
@@ -690,21 +715,8 @@ impl ModelsPage {
     // Lists
     // -----------------------------------------------------------------------
 
-    /// "Final text", "Live preview", or "In use" for a model with both roles.
-    fn role_tag(&self, id: &ModelId, cx: &App) -> Option<String> {
-        let m = self.model.read(cx);
-        let is_final = &m.active_model().id == id;
-        let is_preview = m.preview_model().as_ref() == Some(id);
-        match (is_final, is_preview) {
-            (true, true) => Some(t!("models.row.in_use")),
-            (true, false) => Some(t!("models.setup.final")),
-            (false, true) => Some(t!("models.setup.preview")),
-            (false, false) => None,
-        }
-    }
-
     /// `place` is the row and the size of its list.
-    fn row(&self, info: &ModelInfo, place: (usize, usize), cx: &mut Context<Self>) -> impl IntoElement {
+    fn row(&self, info: &ModelInfo, place: (usize, usize), roles: &Roles, cx: &mut Context<Self>) -> impl IntoElement {
         let c = cx.paper().colors;
         let m = self.model.read(cx);
         let status = m.status_of(&info.id);
@@ -721,7 +733,7 @@ impl ModelsPage {
         }
         let id = info.id.clone();
         let key = info.id.as_str().to_string();
-        let tag = self.role_tag(&info.id, cx);
+        let tag = roles.tag(&info.id);
         let name = info.name.clone();
 
         let action: AnyElement = match &status {
@@ -864,7 +876,7 @@ impl ModelsPage {
     }
 
     /// A list of local models: a title, a note, column captions, then the rows.
-    fn group(&self, title: String, note: String, models: &[ModelInfo], cx: &mut Context<Self>) -> Stateful<Div> {
+    fn group(&self, title: String, note: String, models: &[ModelInfo], roles: &Roles, cx: &mut Context<Self>) -> Stateful<Div> {
         let c = cx.paper().colors;
         // The id keeps the captions of each group apart.
         let table = div().id(SharedString::from(format!("group-{title}"))).flex().flex_col().child(
@@ -883,7 +895,7 @@ impl ModelsPage {
         );
         let mut rows = div().id(SharedString::from(format!("rows-{title}"))).role(Role::List).aria_label(title.clone()).flex().flex_col();
         for (i, info) in models.iter().enumerate() {
-            rows = rows.child(self.row(info, (i, models.len()), cx));
+            rows = rows.child(self.row(info, (i, models.len()), roles, cx));
         }
         table.child(rows)
     }
@@ -1382,7 +1394,7 @@ impl ModelsPage {
     }
 
     /// The cloud section: every provider with its models, then the add form.
-    fn cloud(&mut self, active: &sayso_core::models::ModelId, cx: &mut Context<Self>) -> Div {
+    fn cloud(&mut self, roles: &Roles, cx: &mut Context<Self>) -> Div {
         let c = cx.paper().colors;
         let providers = self.model.read(cx).config.speech.providers.clone();
         let query = self.query(cx);
@@ -1402,14 +1414,14 @@ impl ModelsPage {
             );
         }
         for p in &providers {
-            let models: Vec<ModelInfo> = p.catalog().into_iter().filter(|m| &m.id != active && matches(m, &query)).collect();
+            let models: Vec<ModelInfo> = p.catalog().into_iter().filter(|m| m.id != roles.active && matches(m, &query)).collect();
             if models.is_empty() && !query.is_empty() {
                 continue;
             }
             col = col.child(self.provider_head(p, cx));
             let mut rows = div().id(SharedString::from(format!("provider-models-{}", p.id))).role(Role::List).aria_label(p.name.clone()).flex().flex_col();
             for (i, info) in models.iter().enumerate() {
-                rows = rows.child(self.row(info, (i, models.len()), cx));
+                rows = rows.child(self.row(info, (i, models.len()), roles, cx));
             }
             col = col.child(rows).child(div().h(px(1.)).bg(c.rule));
         }
@@ -1445,9 +1457,9 @@ impl Render for ModelsPage {
         }
         let pad = crate::layout::page_pad(window, &self.model.read(cx).config);
         self.narrow = crate::layout::page_narrow(window, &self.model.read(cx).config);
-        let (catalog, active, used, dir, engine_down) = {
+        let (catalog, roles, used, dir, engine_down) = {
             let m = self.model.read(cx);
-            (m.catalog(), m.active_model().id, m.models_disk_bytes(), m.models_dir_display(), m.services.engine.is_none())
+            (m.catalog(), Roles::of(m), m.models_disk_bytes(), m.models_dir_display(), m.services.engine.is_none())
         };
         let model = self.model.clone();
         let used_label = if used == 0 { t!("models.page.nothing_downloaded") } else { t!("models.page.used", size = format_size(used)) };
@@ -1481,12 +1493,12 @@ impl Render for ModelsPage {
             tables = tables.child(ui(t!("models.search.empty", query = self.search.read(cx).value().trim().to_string()), 14., 20., FontWeight::NORMAL, c.graphite));
         }
         if !non_streaming.is_empty() {
-            tables = tables.child(self.group(t!("models.group.non_streaming"), t!("models.group.non_streaming_note"), &non_streaming, cx));
+            tables = tables.child(self.group(t!("models.group.non_streaming"), t!("models.group.non_streaming_note"), &non_streaming, &roles, cx));
         }
         if !streaming.is_empty() {
-            tables = tables.child(self.group(t!("models.group.streaming"), t!("models.group.streaming_note"), &streaming, cx));
+            tables = tables.child(self.group(t!("models.group.streaming"), t!("models.group.streaming_note"), &streaming, &roles, cx));
         }
-        let cloud = self.cloud(&active, cx);
+        let cloud = self.cloud(&roles, cx);
         let setup = self.setup(cx);
         let details = self.details.clone().and_then(|id| self.details_modal(&id, cx));
         div().absolute().inset_0().child(div().id("models").absolute().inset_0().overflow_y_scroll().text_color(c.ink).child(
@@ -1522,7 +1534,7 @@ mod tests {
 
     #[test]
     fn the_best_comes_first_and_unmeasured_models_stay_last() {
-        let mut list = catalog();
+        let mut list = catalog().to_vec();
         sort_models(&mut list, SortKey::Accuracy, false);
         let wers: Vec<Option<f32>> = list.iter().map(|m| m.wer_percent).collect();
         let measured = wers.iter().take_while(|w| w.is_some()).count();
@@ -1543,11 +1555,11 @@ mod tests {
 
     #[test]
     fn recommended_keeps_the_catalog_order_with_the_recommended_model_first() {
-        let mut list = catalog();
+        let mut list = catalog().to_vec();
         list.reverse();
         sort_models(&mut list, SortKey::Recommended, false);
         assert!(list[0].recommended);
-        let mut expected = catalog();
+        let mut expected = catalog().to_vec();
         expected.reverse();
         expected.retain(|m| !m.recommended);
         assert_eq!(ids(&list[1..]), ids(&expected), "the sort is stable");
@@ -1555,7 +1567,7 @@ mod tests {
 
     #[test]
     fn search_looks_at_name_vendor_and_languages() {
-        let m = catalog().remove(0);
+        let m = catalog()[0].clone();
         assert!(matches(&m, ""));
         assert!(matches(&m, &m.name.to_lowercase()));
         assert!(matches(&m, &m.vendor.to_lowercase()));

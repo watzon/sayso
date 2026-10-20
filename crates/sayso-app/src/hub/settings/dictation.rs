@@ -52,7 +52,7 @@ impl DictationSettings {
         } else {
             t!("settings.dictation.language_detail_single", model = active.name, language = languages::display(&current))
         };
-        let mut codes = active.languages.clone();
+        let mut codes: Vec<String> = active.languages.iter().map(|c| c.to_string()).collect();
         codes.sort_by_key(|code| languages::display(code));
         if active.is_multilingual() {
             codes.insert(0, languages::AUTO.to_string());

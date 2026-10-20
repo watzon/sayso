@@ -120,7 +120,7 @@ impl OnboardingView {
             cx,
         );
 
-        let mut codes = languages::all();
+        let mut codes: Vec<String> = languages::all().iter().map(|c| c.to_string()).collect();
         codes.sort_by_cached_key(|code| languages::display(code));
         let items = codes.iter().map(|code| kit::MenuItem::new(languages::display(code)).selected(*code == spoken)).collect();
         let dictation = self.language_picker(

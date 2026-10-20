@@ -40,7 +40,7 @@ fn matches(info: &ModelInfo, query: &str) -> bool {
         return true;
     }
     let mut text = format!("{} {} {}", info.name, info.vendor, info.description);
-    for code in &info.languages {
+    for code in info.languages {
         text.push(' ');
         text.push_str(&languages::display(code));
     }
@@ -313,12 +313,12 @@ mod tests {
 
     #[test]
     fn filter_matches_name_vendor_and_language() {
-        let info = sayso_core::models::catalog().into_iter().find(|i| i.is_multilingual()).expect("a multilingual model");
-        let language = languages::display(info.languages.iter().find(|l| *l != languages::AUTO).unwrap());
-        assert!(matches(&info, ""));
-        assert!(matches(&info, &format!("  {}  ", info.name.to_uppercase())));
-        assert!(matches(&info, &info.vendor));
-        assert!(matches(&info, &language.to_lowercase()));
-        assert!(!matches(&info, "no model has this text"));
+        let info = sayso_core::models::catalog().iter().find(|i| i.is_multilingual()).expect("a multilingual model");
+        let language = languages::display(info.languages.iter().find(|l| **l != languages::AUTO).unwrap());
+        assert!(matches(info, ""));
+        assert!(matches(info, &format!("  {}  ", info.name.to_uppercase())));
+        assert!(matches(info, &info.vendor));
+        assert!(matches(info, &language.to_lowercase()));
+        assert!(!matches(info, "no model has this text"));
     }
 }

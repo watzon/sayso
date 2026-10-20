@@ -936,7 +936,7 @@ mod tests {
         let old = Config::parse("[dictation]\nlanguage = \"de\"\n");
         assert!(old.issues.is_empty(), "{:?}", old.issues);
         assert_eq!(old.config.dictation.preview_model, PreviewChoice::Auto);
-        let streaming = crate::models::catalog().into_iter().find(|m| m.live_preview).unwrap().id;
+        let streaming = crate::models::catalog().iter().find(|m| m.live_preview).unwrap().id.clone();
         let mut c = Config::default();
         c.dictation.preview_model = PreviewChoice::Model(streaming.clone());
         let back = Config::parse(&c.to_toml());
@@ -949,7 +949,7 @@ mod tests {
         let mut c = Config::default();
         c.dictation.preview_model = PreviewChoice::Model(ModelId::new("no-such-model"));
         assert_eq!(c.validate()[0].problem, ConfigProblem::UnknownModel("no-such-model".into()));
-        let batch = crate::models::catalog().into_iter().find(|m| !m.live_preview).unwrap().id;
+        let batch = crate::models::catalog().iter().find(|m| !m.live_preview).unwrap().id.clone();
         c.dictation.preview_model = PreviewChoice::Model(batch.clone());
         assert_eq!(c.validate()[0].problem, ConfigProblem::NotAStreamingModel(batch.to_string()));
         assert_eq!(c.validate()[0].field, "dictation.preview_model");

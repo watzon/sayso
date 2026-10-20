@@ -4,6 +4,9 @@
 //! models on macOS, the portable engine's models (`portable`) on Windows, and
 //! the sherpa-onnx models ([`crate::models_onnx`]) on Linux. Cloud models
 //! come from the configured speech providers (see [`crate::speech`]).
+//!
+//! The catalog holds text in the interface language. It is built once for
+//! each locale that runs, and kept.
 
 mod benchmark;
 mod portable;
@@ -114,7 +117,7 @@ impl EngineKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ModelInfo {
     pub id: ModelId,
     pub name: String,
@@ -124,7 +127,7 @@ pub struct ModelInfo {
     /// Download size. Zero for a cloud model, and for Apple Speech, whose files macOS manages.
     pub size_bytes: u64,
     /// Language codes the model can be set to (see [`crate::languages`]).
-    pub languages: Vec<String>,
+    pub languages: &'static [&'static str],
     /// Can do the final pass.
     pub final_pass: bool,
     /// Can stream a live preview.
@@ -165,7 +168,7 @@ impl ModelInfo {
     /// "English", "Japanese", "25 languages", or "Many languages" for a
     /// cloud model, in the interface language.
     pub fn language_label(&self) -> String {
-        match self.languages.as_slice() {
+        match self.languages {
             _ if self.is_remote() => t!("core.models.many_languages"),
             [one] => languages::display(one),
             many => t!("core.models.languages", count = many.len()),
@@ -187,19 +190,19 @@ impl ModelInfo {
 
     /// True when the model understands `language`, a code or "auto".
     pub fn understands(&self, language: &str) -> bool {
-        if language == languages::AUTO { self.is_multilingual() } else { self.languages.iter().any(|l| l == language) }
+        if language == languages::AUTO { self.is_multilingual() } else { self.languages.contains(&language) }
     }
 
     /// The language to send to the model for a `dictation.language` setting:
     /// the setting when the model supports it, else "auto" for a
     /// multilingual model, else the model's only language.
     pub fn language_for(&self, setting: &str) -> String {
-        if self.languages.iter().any(|l| l == setting) {
+        if self.languages.contains(&setting) {
             setting.to_string()
         } else if self.is_multilingual() {
             languages::AUTO.to_string()
         } else {
-            self.languages.first().cloned().unwrap_or_else(|| languages::AUTO.to_string())
+            self.languages.first().unwrap_or(&languages::AUTO).to_string()
         }
     }
 }
@@ -223,7 +226,7 @@ pub fn default_model() -> ModelId {
 /// language. For a language Whisper does not know, the first model that
 /// knows it and `runs_here`.
 pub fn suggested_for(language: &str, runs_here: impl Fn(&ModelInfo) -> bool) -> ModelId {
-    let european = languages::parakeet_v3().iter().any(|l| l == language);
+    let european = languages::parakeet_v3().contains(&language);
     let id = match language {
         "en" | languages::AUTO => return default_model(),
         _ if european => by_os("parakeet-ultra", "parakeet-tdt-v3", "parakeet-tdt-v3"),
@@ -236,7 +239,7 @@ pub fn suggested_for(language: &str, runs_here: impl Fn(&ModelInfo) -> bool) -> 
     if find(&id).is_some_and(|m| usable(&m)) {
         return id;
     }
-    catalog().into_iter().find(usable).map_or(id, |m| m.id)
+    catalog().iter().find(|m| usable(m)).map_or(id, |m| m.id.clone())
 }
 
 /// The text for macOS, for Windows, or for Linux.
@@ -268,7 +271,7 @@ struct Entry {
     description: String,
     engine: EngineKind,
     size_mb: u64,
-    languages: Vec<String>,
+    languages: &'static [&'static str],
     speed: u8,
 }
 
@@ -380,8 +383,23 @@ fn whisper(variant: &str) -> EngineKind {
     EngineKind::Whisper { variant: variant.into() }
 }
 
-/// The local models of this system, in display order.
-pub fn catalog() -> Vec<ModelInfo> {
+/// The local models of this system, in display order, with the text in the
+/// interface language.
+pub fn catalog() -> &'static [ModelInfo] {
+    /// One catalog for each locale that ran. There are few locales, so each
+    /// stays for the life of the process.
+    static CATALOGS: std::sync::Mutex<Vec<(String, &'static [ModelInfo])>> = std::sync::Mutex::new(Vec::new());
+    let locale = sayso_i18n::locale();
+    let mut catalogs = CATALOGS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((_, built)) = catalogs.iter().find(|(l, _)| *l == locale) {
+        return built;
+    }
+    let built: &'static [ModelInfo] = Box::leak(build_catalog().into_boxed_slice());
+    catalogs.push((locale, built));
+    built
+}
+
+fn build_catalog() -> Vec<ModelInfo> {
     if cfg!(target_os = "macos") {
         apple_catalog()
     } else if cfg!(windows) {
@@ -506,7 +524,7 @@ fn apple_catalog() -> Vec<ModelInfo> {
             description: t!("core.model.parakeet_ja"),
             engine: tdt("ja"),
             size_mb: 625,
-            languages: vec!["ja".into()],
+            languages: &["ja"],
             speed: 3,
         }
         .build(),
@@ -703,7 +721,7 @@ fn apple_catalog() -> Vec<ModelInfo> {
             description: t!("core.model.paraformer_zh"),
             engine: EngineKind::Paraformer,
             size_mb: 644,
-            languages: vec!["zh".into()],
+            languages: &["zh"],
             speed: 5,
         }
         .build(),
@@ -712,12 +730,12 @@ fn apple_catalog() -> Vec<ModelInfo> {
 
 /// A local model of this system.
 pub fn find(id: &ModelId) -> Option<ModelInfo> {
-    catalog().into_iter().find(|m| &m.id == id)
+    catalog().iter().find(|m| &m.id == id).cloned()
 }
 
 /// The local models and the models of every configured speech provider.
 pub fn catalog_with(speech: &Speech) -> Vec<ModelInfo> {
-    let mut list = catalog();
+    let mut list = catalog().to_vec();
     list.extend(speech.catalog());
     list
 }
@@ -743,8 +761,8 @@ pub fn preview_for(active: &ModelInfo, choice: &PreviewChoice, language_setting:
         return Some(active.id.clone());
     }
     let fallback = preview_fallback();
-    let mut candidates: Vec<ModelInfo> =
-        catalog().into_iter().filter(|m| m.live_preview && on_disk(&m.id) && m.understands(&language)).collect();
+    let mut candidates: Vec<&ModelInfo> =
+        catalog().iter().filter(|m| m.live_preview && on_disk(&m.id) && m.understands(&language)).collect();
     candidates.sort_by_key(|m| m.id != fallback);
     candidates.first().map(|m| m.id.clone())
 }
@@ -781,11 +799,11 @@ mod tests {
     #[test]
     fn the_suggested_model_understands_each_language() {
         let any = |_: &ModelInfo| true;
-        for code in languages::all() {
-            let id = suggested_for(&code, any);
+        for &code in languages::all() {
+            let id = suggested_for(code, any);
             let m = find(&id).unwrap_or_else(|| panic!("{id:?} for {code} is not in the catalog"));
-            let known = catalog().iter().any(|m| m.final_pass && m.understands(&code));
-            assert!(!known || (m.final_pass && m.understands(&code)), "{id:?} for {code}");
+            let known = catalog().iter().any(|m| m.final_pass && m.understands(code));
+            assert!(!known || (m.final_pass && m.understands(code)), "{id:?} for {code}");
         }
         assert_eq!(suggested_for("en", any), default_model());
         assert_eq!(suggested_for(languages::AUTO, any), default_model());
@@ -794,7 +812,7 @@ mod tests {
 
     #[test]
     fn ids_are_unique() {
-        let mut ids: Vec<_> = catalog().into_iter().map(|m| m.id).collect();
+        let mut ids: Vec<_> = catalog().iter().map(|m| m.id.clone()).collect();
         let n = ids.len();
         ids.sort();
         ids.dedup();

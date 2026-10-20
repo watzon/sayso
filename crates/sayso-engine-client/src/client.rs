@@ -381,7 +381,7 @@ impl LanguageModel for EngineClient {
 
 impl SttBackend for EngineClient {
     fn catalog(&self) -> Vec<ModelInfo> {
-        models::catalog()
+        models::catalog().to_vec()
     }
 
     fn status(&self, model: &ModelId) -> ModelStatus {

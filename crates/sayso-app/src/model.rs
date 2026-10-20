@@ -296,7 +296,7 @@ impl AppModel {
         // Local models only. The status of a cloud model comes from its provider.
         for m in sayso_core::models::catalog() {
             let status = model.services.engine.as_ref().map(|e| e.status(&m.id)).unwrap_or(ModelStatus::NotDownloaded);
-            model.model_status.insert(m.id, status);
+            model.model_status.insert(m.id.clone(), status);
         }
         let hotkeys = model.services.platform.hotkeys.events();
         crate::dictation::start_background_loops(hotkeys, engine_events, cx);
