@@ -4,10 +4,12 @@
 //! A worker thread decodes the uncommitted audio about every 600 ms, when at
 //! least 300 ms of new audio arrived, and reports `(committed, tentative)` only
 //! when the text changed. To keep the cost bounded in a long dictation, once
-//! the uncommitted audio passes 20 s the older part is decoded one last time
-//! and its text is committed. The cut is at the quietest point between 12 s and
-//! 4 s before the end, so it rarely splits a word. `committed` then only grows,
-//! and `tentative` is the text of the last 4 to 12 s, decoded again each time.
+//! the uncommitted audio passes 10 s the older part is decoded one last time
+//! and its text is committed. The cut is at the quietest point between 7 s and
+//! 2 s before the end, so it rarely splits a word. `committed` then only grows,
+//! and `tentative` is the text of the last 2 to 7 s, decoded again each time.
+//! The cost of a decode grows faster than its length (NOTES.md), so a short
+//! tail keeps the preview fast.
 
 use crate::audio::{join_texts, ms, quietest_point};
 use crate::protocol::Result;
@@ -43,9 +45,9 @@ impl Default for Config {
         Config {
             interval: Duration::from_millis(600),
             min_new: ms(300),
-            commit_after: ms(20_000),
-            keep: ms(4_000),
-            search: ms(8_000),
+            commit_after: ms(10_000),
+            keep: ms(2_000),
+            search: ms(5_000),
             min_decode: ms(200),
         }
     }
@@ -518,12 +520,12 @@ mod tests {
     fn the_cut_falls_in_silence() {
         let samples = speech(60);
         let mut preview = Preview::new(Config::default());
-        preview.push(&samples[..ms(21_000)]);
+        preview.push(&samples[..ms(11_000)]);
         let Some(Job::Commit { cut, .. }) = preview.next_job(false) else {
             panic!("a commit is due")
         };
         assert_eq!(samples[cut], 0.0, "cut at {cut} is inside a word");
-        assert!((ms(9_000)..=ms(17_000)).contains(&cut));
+        assert!((ms(4_000)..=ms(9_000)).contains(&cut));
     }
 
     #[test]

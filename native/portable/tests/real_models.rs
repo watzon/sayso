@@ -13,10 +13,12 @@ use crossbeam_channel::Receiver;
 use sayso_core::models::{self, ModelId, ModelInfo};
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions};
 use sayso_engine::audio::{read_wav, rms};
+use sayso_engine::preview::{Config, Decoder, Preview, drive};
 use sayso_engine::recognizer::{Parakeet, Recognizer};
 use sayso_engine_client::EngineClient;
 use sayso_platform::SttBackend;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 fn root() -> PathBuf {
@@ -263,6 +265,158 @@ fn parakeet_preview_decode_cost() {
             "{seconds:>2} s of audio: {ms} ms per decode ({:.0}x real time), {} words",
             seconds as f64 * 1000.0 / ms.max(1) as f64,
             text.split_whitespace().count()
+        );
+    }
+}
+
+/// Parakeet as a preview decoder that records the length and time of each decode.
+struct TimedDecoder<'a> {
+    model: &'a mut Parakeet,
+    decodes: Vec<(usize, Duration)>,
+}
+
+impl Decoder for TimedDecoder<'_> {
+    fn decode(&mut self, samples: &[f32]) -> sayso_engine::protocol::Result<String> {
+        let started = Instant::now();
+        let text = self.model.transcribe(samples, "en", &[]);
+        self.decodes.push((samples.len(), started.elapsed()));
+        text
+    }
+}
+
+fn words(text: &str) -> Vec<String> {
+    text.split_whitespace()
+        .map(|w| {
+            w.trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase()
+        })
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// The words of `reference` that `text` misses and the words that `text`
+/// adds, by a longest common subsequence of the words.
+fn word_diff(reference: &[String], text: &[String]) -> (Vec<String>, Vec<String>) {
+    let (n, m) = (reference.len(), text.len());
+    let mut lcs = vec![vec![0usize; m + 1]; n + 1];
+    for i in (0..n).rev() {
+        for j in (0..m).rev() {
+            lcs[i][j] = if reference[i] == text[j] {
+                lcs[i + 1][j + 1] + 1
+            } else {
+                lcs[i + 1][j].max(lcs[i][j + 1])
+            };
+        }
+    }
+    let (mut missing, mut extra) = (Vec::new(), Vec::new());
+    let (mut i, mut j) = (0, 0);
+    while i < n || j < m {
+        if i < n && j < m && reference[i] == text[j] {
+            i += 1;
+            j += 1;
+        } else if j < m && (i == n || lcs[i][j + 1] >= lcs[i + 1][j]) {
+            extra.push(format!("{} (after word {i})", text[j]));
+            j += 1;
+        } else {
+            missing.push(format!("{} (word {i})", reference[i]));
+            i += 1;
+        }
+    }
+    (missing, extra)
+}
+
+/// The live preview over a long recording with several commit thresholds:
+/// the cost of the decodes, and the words that the preview loses or repeats
+/// at the commit points, against one final pass over the whole recording.
+/// The preview logic runs without threads, with a tick every 640 ms of audio
+/// (the worker ticks every 600 ms). `SAYSO_PREVIEW_WAV` picks the recording
+/// (default `long30.wav`; 60 s or more of speech shows several commits).
+#[test]
+#[ignore = "needs the Parakeet TDT v3 download"]
+fn parakeet_preview_commit_thresholds() {
+    let folder = models_dir().join("parakeet-tdt-v3");
+    assert!(
+        folder.join(".sayso-downloaded").exists(),
+        "run parakeet_final_pass_and_live_preview first"
+    );
+    let mut model = Parakeet::load(&folder).unwrap();
+    let samples = match std::env::var_os("SAYSO_PREVIEW_WAV") {
+        Some(path) => read_wav(Path::new(&path)).unwrap(),
+        None => clip("long30.wav"),
+    };
+    let seconds = samples.len() as f64 / 16_000.0;
+    let reference = model.transcribe(&samples, "en", &[]).unwrap();
+    println!(
+        "{seconds:.1} s of audio, final pass: {} words",
+        words(&reference).len()
+    );
+    let ms = |n: usize| n * 16;
+    // (commit after, keep, search), in ms.
+    let configs = [
+        (20_000, 4_000, 8_000),
+        (12_000, 3_000, 5_000),
+        (10_000, 3_000, 4_000),
+        (10_000, 2_000, 5_000),
+        (8_000, 2_000, 4_000),
+    ];
+    for (commit_after, keep, search) in configs {
+        let config = Config {
+            commit_after: ms(commit_after),
+            keep: ms(keep),
+            search: ms(search),
+            ..Config::default()
+        };
+        let mut decoder = TimedDecoder {
+            model: &mut model,
+            decodes: Vec::new(),
+        };
+        let preview = Mutex::new(Preview::new(config));
+        let mut committed = String::new();
+        let mut boundaries = Vec::new();
+        for (i, chunk) in samples.chunks(ms(160)).enumerate() {
+            preview.lock().unwrap().push(chunk);
+            if i % 4 == 3 {
+                drive(&preview, &mut decoder, false, || false);
+            }
+            let now = preview.lock().unwrap().committed().to_string();
+            if now != committed {
+                boundaries.push(now.len());
+                committed = now;
+            }
+        }
+        drive(&preview, &mut decoder, true, || false);
+        let text = preview.lock().unwrap().text();
+        let total: Duration = decoder.decodes.iter().map(|(_, d)| *d).sum();
+        let longest = decoder.decodes.iter().map(|(_, d)| *d).max().unwrap();
+        let longest_audio = decoder.decodes.iter().map(|(n, _)| *n).max().unwrap();
+        println!(
+            "\n== commit after {} s, keep {} s, search {} s",
+            commit_after / 1000,
+            keep / 1000,
+            search / 1000
+        );
+        println!(
+            "  {} decodes, {} ms in all ({:.0} ms per second of audio), longest {} ms (on {:.1} s of audio), {} commits",
+            decoder.decodes.len(),
+            total.as_millis(),
+            total.as_millis() as f64 / seconds,
+            longest.as_millis(),
+            longest_audio as f64 / 16_000.0,
+            boundaries.len()
+        );
+        for end in &boundaries {
+            let before: String = committed[..*end].chars().rev().take(40).collect();
+            let before: String = before.chars().rev().collect();
+            let after: String = committed[*end..].chars().take(40).collect();
+            println!("  commit: ...{before} | {after}...");
+        }
+        let (missing, extra) = word_diff(&words(&reference), &words(&text));
+        println!(
+            "  vs final pass: {} missing {:?}, {} extra {:?}",
+            missing.len(),
+            missing,
+            extra.len(),
+            extra
         );
     }
 }

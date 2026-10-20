@@ -59,7 +59,7 @@ Every request of protocol v1: `hello`, `list_models`, `download`, `delete`, `loa
 transcribe-rs has no streaming decoder for Parakeet, so `preview.rs` emulates one by decoding the recording again:
 
 - `stream_audio` appends to the session buffer. A worker thread decodes the uncommitted audio about every 600 ms when at least 300 ms of new audio arrived, and sends `partial {session, committed, tentative}` only when the text changed.
-- Bounded cost: when the uncommitted audio passes 20 s, the worker cuts at the quietest 100 ms window between 12 s and 4 s before the end, decodes the part before the cut one last time, appends its text to `committed`, and drops that audio. `committed` only grows. `tentative` is the text of the remaining 4 to 12 s (up to 20 s), decoded again on each tick. A decode never covers more than about 20 s of audio.
+- Bounded cost: when the uncommitted audio passes 10 s, the worker cuts at the quietest 100 ms window between 7 s and 2 s before the end, decodes the part before the cut one last time, appends its text to `committed`, and drops that audio. `committed` only grows. `tentative` is the text of the remaining 2 to 7 s (up to 10 s), decoded again on each tick. A decode never covers more than about 10 s of audio. The cost of a decode grows faster than its length, so this keeps each decode near 1 s at most (see "Preview commit point" below).
 - When a decode takes longer than the interval (a long tail on a slow processor), the next one waits half the decode time, so the preview uses at most about two thirds of the time.
 - Final pass first: a running `transcribe` counts as a final pass. While one runs, the worker starts no decode. `stream_end` stops the worker (it ends after the decode that runs now, if any), decodes the new audio one last time unless a final pass waits, sends a last `partial` (all text in `committed`) if the text the client saw last was different, then `ok {session, text}`. The model is shared behind a mutex, so the final pass waits for at most one preview decode.
 - The worker logic is behind the `Decoder` trait, so the unit tests run it with synthetic audio and a fake decoder (commit points in silence, no word lost or repeated over 80 s, bounded decode length, pause, prompt stop).
@@ -74,7 +74,7 @@ The engine runs on the CPU. transcribe-rs has these features; none is on:
 ## Tests
 
 - `cargo test`: 51 unit tests (protocol parsing and replies, request dispatch with a fake recognizer, `unload`, download bookkeeping against a local `tiny_http` server with HEAD, Range, 500s, and a body that stops halfway, WAV reading, the preview logic) and two integration tests of the built binary: `tests/protocol.rs` (raw NDJSON: hello, bad input, unknown kinds, errors, a download from a local server, a load of a broken file, delete, shutdown, exit on end of input, no `SAYSO_MODELS_DIR`) and `tests/client.rs` (`EngineClient` from `crates/sayso-engine-client`: spawn, statuses of the whole catalog, errors without models).
-- `cargo test --release --test real_models -- --ignored --nocapture --test-threads=1`: downloads Parakeet TDT v3 and Whisper tiny into `target/test-models` (kept for the next run), runs the final pass on `spikes/engine/audio/short.wav` ("dictation") and `long30.wav` ("deployment"), streams `short.wav` in 160 ms chunks at speaking speed through `EngineClient`, then a final pass right after `stream_end`, streams `long30.wav` at twice speaking speed so the preview commits, and measures preview decode cost.
+- `cargo test --release --test real_models -- --ignored --nocapture --test-threads=1`: downloads Parakeet TDT v3 and Whisper tiny into `target/test-models` (kept for the next run), runs the final pass on `spikes/engine/audio/short.wav` ("dictation") and `long30.wav` ("deployment"), streams `short.wav` in 160 ms chunks at speaking speed through `EngineClient`, then a final pass right after `stream_end`, streams `long30.wav` at twice speaking speed so the preview commits, and measures preview decode cost. `parakeet_preview_commit_thresholds` runs the preview logic over a long recording (`SAYSO_PREVIEW_WAV`, default `long30.wav`) with several commit points, and prints the decode cost and the words that the preview loses or adds against one final pass. The two clips left the repository with the engine spikes (commit c94fcb8); restore them with `git show c94fcb8^:spikes/engine/audio/short.wav > spikes/engine/audio/short.wav` (and the same for `long30.wav`).
 - `cargo clippy --all-targets -- -D warnings` is clean.
 
 ## Verified results (2026-10-02)
@@ -95,6 +95,24 @@ Two runs; the ranges cover both.
 - Preview decode cost (Parakeet, one decode, mean of 3): 2 s of audio 107 to 110 ms, 5 s 221 to 227 ms, 10 s 433 to 446 ms, 20 s 935 to 1045 ms, 29 s 1682 to 1732 ms. So the 20 s commit point keeps a decode near 1 s at most on this processor.
 - Live preview of `short.wav` in 160 ms chunks at speaking speed: 13 partials, from "Hello from the" to the full sentence. The last preview text has 100 % of the words of the final pass. The final pass sent right after `stream_end` took 425 to 464 ms in the engine and 434 to 472 ms wall time, so the preview did not hold it up.
 - Live preview of `long30.wav` at twice speaking speed: 19 partials, 6 with committed text. The commit fell at a sentence end ("...a container image for every pull request." committed, "Please review the migration plan..." tentative). The last preview text has 100 % of the words of the final pass.
+
+## Preview commit point (2026-10-19)
+
+Same machine (i9-13900K), release build. The commit point went from 20 s (keep 4 s, search 8 s) to 10 s (keep 2 s, search 5 s).
+
+- Decode cost in the test process (`parakeet_preview_decode_cost`, three runs): 10 s of audio 395 to 423 ms, 20 s 2329 to 2736 ms, 29 s 3786 to 4222 ms. On this day a 20 s decode cost 6 times a 10 s decode, not 2 times as on 2026-10-02. In the engine, `long30.wav` (29 s) still takes 1541 to 1577 ms.
+- In the engine (`partial` events and the debug log of `preview.rs`), a 93 s Windows TTS recording (System.Speech, 16 kHz mono) streamed at speaking speed in 160 ms chunks, two runs each:
+
+  | | 20 s | 10 s |
+  |---|---|---|
+  | Decodes | 53 | 90 to 91 |
+  | Mean decode | 1206 to 1208 ms | 679 to 687 ms |
+  | Longest decode | 1997 to 2165 ms | 1038 to 1099 ms |
+  | Partials | 44 to 45 | 70 |
+  | Decode time in all | 64 s | 62 s |
+
+  The worker is busy about two thirds of the time with both, so the processor time stays the same. But the preview updates about every second instead of every 1.8 s, and a final pass waits for at most about 1 s of preview decode instead of 2 s. With both, the last preview text had the same 252 words as the final pass.
+- Words lost or added at the commit points against one final pass (`parakeet_preview_commit_thresholds`, a tick every 640 ms of audio): none for 20 s, 12 s (keep 3 s, search 5 s), and 10 s (keep 2 s, search 5 s), on the TTS recording and on `long30.wav`. 10 s with keep 3 s and search 4 s cut "export" into "ex" and "port" in `long30.wav`, where the 4 s search found no pause. 8 s (keep 2 s, search 4 s) wrote "2" as "two" once and the phone number in another form once, because a short piece has less context.
 
 ## Not tested
 
