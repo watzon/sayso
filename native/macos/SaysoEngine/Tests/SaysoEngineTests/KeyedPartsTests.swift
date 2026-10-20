@@ -18,7 +18,7 @@ private actor BuildProbe {
 }
 
 final class KeyedPartsTests: XCTestCase {
-    func testPreparationAndRealRequestShareBuildsByWordsAndAssets() async throws {
+    func testPreparationAndRealRequestShareOneBuild() async throws {
         let assetProbe = BuildProbe()
         let assets = LazyPart<Int>(load: { await assetProbe.build([]) }, free: { _ in })
         let builds = BuildProbe()
@@ -28,20 +28,41 @@ final class KeyedPartsTests: XCTestCase {
         }
         async let prepared = cache.get(["Sayso"])
         async let real = cache.get(["Sayso"])
-        async let changed = cache.get(["Parakeet"])
         await assetProbe.waitForBuilds(1)
         await assetProbe.release()
-        await builds.waitForBuilds(2)
+        await builds.waitForBuilds(1)
         await builds.release()
-        let values = try await (prepared, real, changed)
+        let values = try await (prepared, real)
         XCTAssertEqual(values.0, values.1)
-        XCTAssertNotEqual(values.0, values.2)
+        let cached = try await cache.get(["Sayso"])
+        XCTAssertEqual(cached, values.0)
         let assetKeys = await assetProbe.keys
         let keys = await builds.keys
         XCTAssertEqual(assetKeys.count, 1)
-        XCTAssertEqual(Set(keys), Set([["Sayso"], ["Parakeet"]]))
-        let cached = try await cache.get(["Sayso"])
-        XCTAssertEqual(cached, values.0)
+        XCTAssertEqual(keys, [["Sayso"]])
+    }
+
+    func testANewWordListReplacesTheCachedOne() async throws {
+        let assetProbe = BuildProbe()
+        await assetProbe.release()
+        let assets = LazyPart<Int>(load: { await assetProbe.build([]) }, free: { _ in })
+        let builds = BuildProbe()
+        await builds.release()
+        let cache = KeyedParts<[String], Int> { words in
+            _ = try await assets.get()
+            return await builds.build(words)
+        }
+        let first = try await cache.get(["Sayso"])
+        let changed = try await cache.get(["Parakeet"])
+        let cachedChange = try await cache.get(["Parakeet"])
+        XCTAssertEqual(cachedChange, changed)
+        // The old list was dropped, so it builds again. The CTC assets load once.
+        let again = try await cache.get(["Sayso"])
+        XCTAssertNotEqual(again, first)
+        let keys = await builds.keys
+        let assetKeys = await assetProbe.keys
+        XCTAssertEqual(keys, [["Sayso"], ["Parakeet"], ["Sayso"]])
+        XCTAssertEqual(assetKeys.count, 1)
     }
 
     func testUnloadDuringPreparationRejectsTheResultAndFutureBuilds() async throws {

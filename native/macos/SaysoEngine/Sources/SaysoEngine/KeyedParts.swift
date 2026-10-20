@@ -1,6 +1,10 @@
 import Foundation
 
-/// Builds for the same key share a load. Closing rejects all pending results.
+/// A value built for the latest key. Builds for the same key share a load.
+///
+/// Only the latest key stays cached: a new key drops the older parts, so a word list
+/// that changes many times does not keep a booster for each list. A caller that already
+/// waits for an older part still gets its value. Closing rejects all pending results.
 actor KeyedParts<Key: Hashable & Sendable, Value: Sendable> {
     private var parts: [Key: LazyPart<Value>] = [:]
     private var closed = false
@@ -16,7 +20,7 @@ actor KeyedParts<Key: Hashable & Sendable, Value: Sendable> {
         } else {
             let build = self.build
             part = LazyPart(load: { try await build(key) }, free: { _ in })
-            parts[key] = part
+            parts = [key: part]
         }
         return try await part.get()
     }

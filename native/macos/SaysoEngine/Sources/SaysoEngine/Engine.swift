@@ -17,9 +17,13 @@ final class UnifiedModel: @unchecked Sendable {
     let vocabulary: KeyedParts<[String], VocabularyBooster>
     private let ctc: LazyPart<VocabularyBooster.CtcAssets>
 
-    init(batch: UnifiedAsrManager, config: UnifiedConfig, directory: URL, ctcDirectory: URL, out: Output) {
+    init(
+        batch: UnifiedAsrManager, config: UnifiedConfig, directory: URL, ctcDirectory: URL,
+        ctcComplete: @escaping @Sendable () -> Bool, out: Output
+    ) {
         let assets = LazyPart<VocabularyBooster.CtcAssets>(
             load: {
+                guard ctcComplete() else { throw EngineError("CTC helper model is not downloaded") }
                 let start = nowMs()
                 let assets = try await VocabularyBooster.CtcAssets.load(from: ctcDirectory)
                 out.log("debug", "dictionary assets loaded in \(Int(nowMs() - start)) ms")
@@ -510,7 +514,9 @@ actor Engine {
             }
             let batch = UnifiedAsrManager()
             try await batch.loadModels(from: store.unifiedDir)
-            return .parakeetUnified(UnifiedModel(batch: batch, config: config, directory: store.unifiedDir, ctcDirectory: store.ctcDir, out: out))
+            return .parakeetUnified(UnifiedModel(
+                batch: batch, config: config, directory: store.unifiedDir, ctcDirectory: store.ctcDir,
+                ctcComplete: { [store] in store.ctcComplete() }, out: out))
         case .parakeetEou:
             let eou = StreamingEouAsrManager(chunkSize: .ms160)
             try await eou.loadModels(from: store.eouDir)
