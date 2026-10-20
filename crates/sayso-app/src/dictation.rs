@@ -185,6 +185,7 @@ impl AppModel {
     }
 
     fn start_capture(&mut self, session: SessionId, cx: &mut Context<Self>) {
+        let requested = Instant::now();
         // Dictation into Sayso itself is recorded as Sayso. A run outside a
         // bundle has no bundle id, so match the process instead.
         let app = self.services.platform.context.frontmost_app().map(|a| {
@@ -244,6 +245,7 @@ impl AppModel {
         s.capture = capture;
         s.streaming = streaming;
         s.started = Some(Instant::now());
+        s.diagnostics.start_to_capture_ms = Some(requested.elapsed().as_millis() as u64);
     }
 
     /// Ask the app for its web page: a site rule can choose the style, and
@@ -301,13 +303,17 @@ impl AppModel {
     fn stop_capture(&mut self, session: SessionId) {
         let engine = self.services.engine.clone();
         let s = self.session(session);
+        // The diagnostics count from the stop request, so they hold the time
+        // to close the microphone.
+        let requested = Instant::now();
+        s.stopped = Some(requested);
+        if let Some(t) = s.started {
+            s.duration_ms = requested.duration_since(t).as_millis() as u64;
+        }
         if let Some(c) = s.capture.take() {
             c.stop();
         }
-        if let Some(t) = s.started {
-            s.duration_ms = t.elapsed().as_millis() as u64;
-        }
-        s.stopped = Some(Instant::now());
+        s.diagnostics.stop_to_capture_end_ms = Some(requested.elapsed().as_millis() as u64);
         let streamed = s.streaming.swap(false, Ordering::Relaxed);
         s.diagnostics.transcribe.live_preview = streamed;
         if streamed
@@ -350,6 +356,8 @@ impl AppModel {
                 return;
             }
         };
+        // The step starts before the copy of the audio.
+        let started = Instant::now();
         let samples = self.session(session).samples.lock().clone();
         let options = self.session_options();
         let replacer = self.replacer.clone();
@@ -361,8 +369,7 @@ impl AppModel {
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    let started = Instant::now();
-                    let Passed { transcript: t, note, model_wait_ms } = pass.run(&samples, &options)?;
+                    let Passed { transcript: t, note, model_wait_ms, sent } = pass.run(&samples, &options)?;
                     let (replaced, applied) = replacer.apply(t.text.trim());
                     let replaced = if spoken_punctuation { sayso_core::spoken_punctuation::apply(&replaced) } else { replaced };
                     let timings = TranscribeTimings {
@@ -374,12 +381,13 @@ impl AppModel {
                         language: options.language,
                         live_preview: false,
                     };
-                    Ok::<_, String>((t, replaced, applied, note, timings))
+                    Ok::<_, String>((t, replaced, applied, note, timings, sent))
                 })
                 .await;
             let _ = this.update(cx, |m, cx| match result {
-                Ok((t, replaced, applied, note, timings)) => {
+                Ok((t, replaced, applied, note, timings, sent)) => {
                     let s = m.session(session);
+                    s.diagnostics.stop_to_request_ms = s.stopped.map(|t| sent.saturating_duration_since(t).as_millis() as u64);
                     s.transcript = Some(t.text.clone());
                     s.transcribe_ms = t.elapsed_ms;
                     s.model = Some(t.model.clone());
@@ -854,6 +862,8 @@ struct Passed {
     note: Option<String>,
     /// The wait until the local model was in memory.
     model_wait_ms: u64,
+    /// When the request of the final pass went out.
+    sent: Instant,
 }
 
 impl FinalPass {
@@ -869,25 +879,28 @@ impl FinalPass {
                     _ => return Err(t!("overlay.error.model_load_timeout")),
                 }
                 let model_wait_ms = wait_started.elapsed().as_millis() as u64;
+                let sent = Instant::now();
                 let transcript = engine.transcribe(samples, options).map_err(|e| e.to_string())?;
-                Ok(Passed { transcript, note: None, model_wait_ms })
+                Ok(Passed { transcript, note: None, model_wait_ms, sent })
             }
             FinalPass::Cloud { provider, model, info, secrets, timeout, fallback } => {
                 let started = Instant::now();
                 let key = provider.api_key_account.as_deref().and_then(|account| secrets.get(account));
                 let language = info.language_for(&options.language);
                 let vocabulary: &[String] = if info.vocabulary { &options.vocabulary } else { &[] };
+                let wav = encode_wav(&to_pcm16(samples));
                 let request = SpeechRequest {
                     model,
-                    wav: &encode_wav(&to_pcm16(samples)),
+                    wav: &wav,
                     language: (language != sayso_core::languages::AUTO).then_some(language.as_str()),
                     vocabulary,
                     timeout: *timeout,
                 };
+                let sent = Instant::now();
                 match sayso_transcribe::transcribe(provider, key.as_deref(), &request) {
                     Ok(text) => {
                         let elapsed_ms = started.elapsed().as_millis() as u64;
-                        Ok(Passed { transcript: Transcript { text, model: info.id.clone(), elapsed_ms }, note: None, model_wait_ms: 0 })
+                        Ok(Passed { transcript: Transcript { text, model: info.id.clone(), elapsed_ms }, note: None, model_wait_ms: 0, sent })
                     }
                     Err(e) => {
                         log::warn!("cloud final pass with {} failed: {e}", provider.id);
@@ -896,7 +909,7 @@ impl FinalPass {
                         let options = SessionOptions { final_model: local.id.clone(), ..options.clone() };
                         let transcript = engine.transcribe(samples, &options).map_err(|_| message)?;
                         let note = Some(t!("overlay.notice.provider_fallback", provider = provider.name, local = local.name));
-                        Ok(Passed { transcript, note, model_wait_ms: 0 })
+                        Ok(Passed { transcript, note, model_wait_ms: 0, sent })
                     }
                 }
             }
@@ -1120,7 +1133,7 @@ mod tests {
         });
         let pass = FinalPass::Local { engine: engine.clone(), model: ModelId::new("final") };
         let started = Instant::now();
-        let Passed { transcript, note, model_wait_ms } = pass.run(&[0.0; 1600], &options()).unwrap();
+        let Passed { transcript, note, model_wait_ms, sent } = pass.run(&[0.0; 1600], &options()).unwrap();
         load.join().unwrap();
 
         assert!(started.elapsed() >= Duration::from_millis(300), "the final pass ran before the load was complete");
@@ -1129,6 +1142,7 @@ mod tests {
         assert_eq!(transcript.model, ModelId::new("final"));
         assert_eq!(note, None);
         assert!(model_wait_ms >= 300, "the diagnostics do not have the wait for the model");
+        assert!(sent >= started + Duration::from_millis(300), "the request went out before the model was in memory");
         assert_eq!(*engine.calls.lock(), [(ModelId::new("final"), ModelStatus::Ready)]);
     }
 

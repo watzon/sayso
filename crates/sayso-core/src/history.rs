@@ -66,8 +66,16 @@ pub struct HistoryEntry {
 pub struct Diagnostics {
     pub app_version: String,
     pub system: SystemInfo,
-    /// From the stop of the recording to the end of the insertion. None when
-    /// nothing was inserted. The steps below are parts of this time.
+    /// From the start request (the hotkey) to the open microphone.
+    pub start_to_capture_ms: Option<u64>,
+    /// From the stop request to the closed microphone.
+    pub stop_to_capture_end_ms: Option<u64>,
+    /// From the stop request to the final-pass request, after the wait for
+    /// the model. None when no request went out.
+    pub stop_to_request_ms: Option<u64>,
+    /// From the stop request to the end of the insertion. None when nothing
+    /// was inserted. The steps below are parts of this time. Older entries
+    /// count from the closed microphone.
     pub stop_to_insert_ms: Option<u64>,
     pub transcribe: TranscribeTimings,
     /// None when no provider ran.
@@ -263,6 +271,9 @@ mod tests {
             audio_file: None,
             waveform: vec![],
             diagnostics: Some(Diagnostics {
+                start_to_capture_ms: Some(30),
+                stop_to_capture_end_ms: Some(12),
+                stop_to_request_ms: Some(40),
                 stop_to_insert_ms: Some(9900),
                 enhance: Some(EnhanceTimings {
                     attempts: vec![EnhanceAttempt { elapsed_ms: 9100, ..Default::default() }],
@@ -274,6 +285,9 @@ mod tests {
         let json = entry.metadata_json();
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(value["diagnostics"]["stop_to_insert_ms"], 9900);
+        assert_eq!(value["diagnostics"]["start_to_capture_ms"], 30);
+        assert_eq!(value["diagnostics"]["stop_to_capture_end_ms"], 12);
+        assert_eq!(value["diagnostics"]["stop_to_request_ms"], 40);
         assert_eq!(value["diagnostics"]["enhance"]["attempts"][0]["elapsed_ms"], 9100);
         assert_eq!((value["transcript_chars"].as_u64(), value["final_text_chars"].as_u64()), (Some(15), Some(16)));
         assert_eq!(value["app_id"], "org.mozilla.firefox");
@@ -288,5 +302,6 @@ mod tests {
         assert_eq!(d.app_version, "0.8.0");
         assert_eq!(d.insert.unwrap().elapsed_ms, 40);
         assert_eq!(d.enhance, None);
+        assert_eq!((d.start_to_capture_ms, d.stop_to_capture_end_ms, d.stop_to_request_ms), (None, None, None));
     }
 }
