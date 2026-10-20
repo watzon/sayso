@@ -13,7 +13,7 @@ The sidecar there is the portable Rust engine in `native/portable` (its own Carg
 
 One JSON object per line. Every message has `"v":1`. The sidecar needs env `SAYSO_MODELS_DIR`. It exits when stdin closes.
 
-Every request with an `id` gets exactly one **reply**: `hello`, `ok`, `final`, or `error`. Events (`model_state`, `download_progress`, `partial`, `log`) can arrive at any time, and they echo the `id` of the request that caused them. `engine` is the `EngineKind` JSON of `sayso-core`.
+Every request with an `id` gets exactly one **reply**: `hello`, `ok`, `final`, or `error`. Events (`model_state`, `download_progress`, `part_state`, `partial`, `log`) can arrive at any time, and they echo the `id` of the request that caused them. `engine` is the `EngineKind` JSON of `sayso-core`.
 
 | Request | Fields | Reply and events |
 |---|---|---|
@@ -22,6 +22,7 @@ Every request with an `id` gets exactly one **reply**: `hello`, `ok`, `final`, o
 | `download` | `model, engine, size_bytes?` | `model_state downloading` and `download_progress {fraction, bytes_done, bytes_total}` (at most 8 per second), `model_state downloaded`, `ok` |
 | `delete` | `model, engine?` | `model_state not_downloaded`, `ok` |
 | `load` | `model, engine` | `model_state optimizing`, `model_state ready {load_ms}`, `ok` |
+| `prepare` | `model, preview: bool, vocabulary: [String]` | `part_state {model, part, state}` per requested part, then `ok` |
 | `unload` | `model, keep_preview?` | `model_state downloaded` (with `preview: true` when the live preview stayed) when the model was in memory, then `ok` |
 | `stream_start` | `session, model, language?` | `ok`, then `partial {session, committed, tentative}` events |
 | `stream_audio` | `session, pcm` (base64 of 16 kHz mono little-endian i16), no `id` | none (errors have no `id`) |
@@ -33,6 +34,25 @@ Every request with an `id` gets exactly one **reply**: `hello`, `ok`, `final`, o
 
 States: `not_downloaded`, `downloading`, `optimizing`, `downloaded`, `ready`, `failed {message, reason?}`.
 Other events: `log {level, message}`. Errors: `error {message, code?, reason?}` with the request `id`. `generate` sets `code` to `unavailable`, `refused`, or `timeout`.
+
+### Optional part preparation
+
+Send `prepare` after `load`, and again when the preview setting or dictionary words change.
+`part` is `preview` or `dictionary`. Its `state` is `preparing`, `ready`, or `failed`.
+Each event carries the prepare request id. `ok` means that preparation ended, even when a part failed.
+A failed part logs a warning and stays available for a later load on demand. It does not change model status.
+
+The Swift engine loads the stream part only when `preview` is true. For Parakeet Unified,
+it also loads the CTC assets and builds a booster for the exact requested word list.
+Preparation and real requests share those loads. Preparation runs no inference.
+Unload closes the shared parts and rejects results that finish after unload.
+The Linux and portable engines accept `prepare` as a no-op. An older engine can reply
+with `error`; the client logs the failure and keeps the model usable.
+
+`SttBackend::part_readiness(model, true)` returns preview readiness. Pass `false` for
+the dictionary helper. The values are `Unprepared`, `Preparing`, `Ready`, and `Failed`.
+The client tracks the latest request for each model and ignores older events. Unload
+and an engine restart clear the record. No overlay text changes with this protocol.
 
 ### Reason codes
 

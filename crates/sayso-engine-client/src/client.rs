@@ -18,7 +18,7 @@ use parking_lot::Mutex;
 use sayso_core::enhance::{EnhanceError, Generated, LanguageModel, Unavailable};
 use sayso_core::models::{self, ModelId, ModelInfo};
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript, encode_wav, to_pcm16};
-use sayso_platform::{PlatformError, Result, SttBackend};
+use sayso_platform::{PartReadiness, PlatformError, Result, SttBackend};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
@@ -125,6 +125,13 @@ struct Core {
     pending: HashMap<String, Pending>,
 }
 
+struct Preparation {
+    request: String,
+    preview: bool,
+    vocabulary: Vec<String>,
+    parts: [PartReadiness; 2],
+}
+
 struct Inner {
     engine_path: PathBuf,
     models_dir: PathBuf,
@@ -138,6 +145,7 @@ struct Inner {
     /// Models that are not `Ready` but whose live preview is in memory
     /// (`model_state` with `preview: true`).
     preview_ready: Mutex<HashSet<ModelId>>,
+    preparation: Mutex<HashMap<ModelId, Preparation>>,
     child: Mutex<Option<Child>>,
     next_id: AtomicU64,
     next_file: AtomicU64,
@@ -242,6 +250,7 @@ impl EngineClient {
             statuses: Mutex::new(HashMap::new()),
             desired_loaded: Mutex::new(Vec::new()),
             preview_ready: Mutex::new(HashSet::new()),
+            preparation: Mutex::new(HashMap::new()),
             child: Mutex::new(None),
             next_id: AtomicU64::new(0),
             next_file: AtomicU64::new(0),
@@ -383,6 +392,38 @@ impl LanguageModel for EngineClient {
 }
 
 impl SttBackend for EngineClient {
+    fn prepare(&self, model: &ModelId, preview: bool, vocabulary: &[String]) -> Result<()> {
+        let mut preparations = self.inner.preparation.lock();
+        if preparations.get(model).is_some_and(|p| {
+            p.preview == preview && p.vocabulary == vocabulary
+                && !p.parts.contains(&PartReadiness::Failed)
+        }) {
+            return Ok(());
+        }
+        let request = self.inner.send(
+            "prepare",
+            json!({"model": model, "preview": preview, "vocabulary": vocabulary}),
+            Pending::Detached { what: "prepare", model: None },
+        )?;
+        preparations.insert(model.clone(), Preparation {
+            request,
+            preview,
+            vocabulary: vocabulary.to_vec(),
+            parts: [
+                if preview { PartReadiness::Preparing } else { PartReadiness::Unprepared },
+                if vocabulary.is_empty() { PartReadiness::Unprepared } else { PartReadiness::Preparing },
+            ],
+        });
+        Ok(())
+    }
+
+    fn part_readiness(&self, model: &ModelId, preview: bool) -> PartReadiness {
+        self.inner.preparation.lock().get(model).map_or(
+            PartReadiness::Unprepared,
+            |p| p.parts[if preview { 0 } else { 1 }],
+        )
+    }
+
     fn catalog(&self) -> Vec<ModelInfo> {
         models::catalog().to_vec()
     }
@@ -419,6 +460,7 @@ impl SttBackend for EngineClient {
         let fields = json!({"model": info.id, "engine": info.engine});
         self.inner
             .call("delete", fields, self.inner.options.request_timeout)?;
+        self.inner.preparation.lock().remove(model);
         self.inner.desired_loaded.lock().retain(|m| m != model);
         Ok(())
     }
@@ -433,6 +475,7 @@ impl SttBackend for EngineClient {
     }
 
     fn unload(&self, model: &ModelId, keep_preview: bool) -> Result<()> {
+        self.inner.preparation.lock().remove(model);
         self.inner.desired_loaded.lock().retain(|m| m != model);
         self.inner.send(
             "unload",
@@ -643,6 +686,23 @@ impl Inner {
     /// Route one message from the sidecar.
     fn handle(&self, message: Message) {
         match message.kind.as_str() {
+            "part_state" => {
+                if let Some(model) = message.str("model") {
+                    let mut preparations = self.preparation.lock();
+                    if let Some(p) = preparations.get_mut(&ModelId::new(model))
+                        && message.id.as_deref() == Some(p.request.as_str())
+                    {
+                        let index = match message.str("part") { Some("preview") => 0, Some("dictionary") => 1, _ => return };
+                        p.parts[index] = match message.str("state") {
+                            Some("preparing") => PartReadiness::Preparing,
+                            Some("ready") => PartReadiness::Ready,
+                            Some("failed") => PartReadiness::Failed,
+                            _ => return,
+                        };
+                    }
+                }
+            }
+
             "model_state" | "download_progress" => {
                 if let Some((model, status)) = protocol::model_status(&message) {
                     if message.kind == "model_state" {
@@ -686,6 +746,17 @@ impl Inner {
 
     /// Finish the request that a reply belongs to.
     fn complete(&self, message: Message) {
+        // An older engine can reject prepare. Keep the model usable and permit a retry.
+        if let Some(id) = message.id.as_ref() {
+            for p in self.preparation.lock().values_mut().filter(|p| &p.request == id) {
+                for state in &mut p.parts {
+                    if *state == PartReadiness::Preparing {
+                        *state = if message.kind == "error" { PartReadiness::Failed } else { PartReadiness::Ready };
+                    }
+                }
+            }
+        }
+
         let is_error = message.kind == "error";
         let text = message
             .str("message")
@@ -853,6 +924,7 @@ impl Inner {
     /// With the process gone, nothing is loaded or downloading any more.
     fn reset_statuses_after_exit(&self) {
         self.preview_ready.lock().clear();
+        self.preparation.lock().clear();
         let current: Vec<(ModelId, ModelStatus)> = self
             .statuses
             .lock()

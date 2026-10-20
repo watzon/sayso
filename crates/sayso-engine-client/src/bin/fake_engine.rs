@@ -94,6 +94,23 @@ fn main() {
 fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Value, kind: &str) {
     let model = request["model"].as_str().unwrap_or_default().to_string();
     match kind {
+        "prepare" => {
+            if dir.join("reject-prepare").exists() {
+                reply(out, request, "error", json!({"message": "unknown request type prepare"}));
+                return;
+            }
+            for part in ["preview", "dictionary"] {
+                let wanted = if part == "preview" { request["preview"] == true }
+                    else { request["vocabulary"].as_array().is_some_and(|v| !v.is_empty()) };
+                if !wanted { continue; }
+                for state in ["preparing", "ready"] {
+                    if state == "ready" { thread::sleep(Duration::from_millis(100)); }
+                    send(out, json!({"type":"part_state", "id":request["id"], "model":model, "part":part, "state":state}));
+                }
+            }
+            reply(out, request, "ok", json!({}));
+        }
+
         "hello" => {
             if dir.join("exit-at-hello").exists() {
                 std::process::exit(3);

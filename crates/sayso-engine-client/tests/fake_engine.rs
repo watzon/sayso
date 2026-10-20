@@ -793,3 +793,65 @@ fn default_engine_path_names_the_sidecar() {
         assert!(EngineClient::default_engine_path().ends_with(name));
     }
 }
+
+#[test]
+fn prepares_parts_and_replaces_word_lists_without_failing_the_model() {
+    use sayso_platform::PartReadiness;
+    let f = fixture();
+    let model = default_model();
+    f.client.load(&model).unwrap();
+    f.client.prepare(&model, true, &["Sayso".into()]).unwrap();
+    assert_eq!(f.client.part_readiness(&model, true), PartReadiness::Preparing);
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while f.client.part_readiness(&model, false) != PartReadiness::Ready {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(f.client.part_readiness(&model, true), PartReadiness::Ready);
+    f.client.prepare(&model, false, &["Parakeet".into()]).unwrap();
+    assert_eq!(f.client.part_readiness(&model, true), PartReadiness::Unprepared);
+    assert_eq!(f.client.part_readiness(&model, false), PartReadiness::Preparing);
+    f.client.unload(&model, false).unwrap();
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(f.client.part_readiness(&model, false), PartReadiness::Unprepared);
+}
+
+#[test]
+fn older_engine_can_reject_preparation_without_failing_the_model() {
+    use sayso_platform::PartReadiness;
+    let f = fixture();
+    let model = default_model();
+    f.client.load(&model).unwrap();
+    std::fs::write(f.models.path().join("reject-prepare"), "").unwrap();
+    f.client.prepare(&model, true, &["Sayso".into()]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while f.client.part_readiness(&model, true) == PartReadiness::Preparing {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(f.client.part_readiness(&model, true), PartReadiness::Failed);
+    assert_eq!(f.client.status(&model), ModelStatus::Ready);
+}
+
+#[test]
+fn newer_preparation_ignores_older_events_and_reuses_identical_requests() {
+    use sayso_platform::PartReadiness;
+    let f = fixture();
+    let model = default_model();
+    f.client.load(&model).unwrap();
+    f.client.prepare(&model, true, &["old".into()]).unwrap();
+    f.client.prepare(&model, false, &["new".into()]).unwrap();
+    f.client.prepare(&model, false, &["new".into()]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while f.client.part_readiness(&model, false) != PartReadiness::Ready {
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(5));
+    }
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(f.client.part_readiness(&model, true), PartReadiness::Unprepared);
+    let requests: Vec<serde_json::Value> = std::fs::read_to_string(f.models.path().join("requests.log"))
+        .unwrap().lines().map(|line| serde_json::from_str(line).unwrap())
+        .filter(|v: &serde_json::Value| v["type"] == "prepare").collect();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[1]["vocabulary"], serde_json::json!(["new"]));
+}

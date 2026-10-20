@@ -262,7 +262,26 @@ pub trait AudioCapture: Send + Sync {
 // Speech engine
 // ---------------------------------------------------------------------------
 
+/// Readiness of an optional model part. A failed part can still load on demand.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PartReadiness {
+    #[default]
+    Unprepared,
+    Preparing,
+    Ready,
+    Failed,
+}
+
 pub trait SttBackend: Send + Sync {
+    /// Prepare optional parts. Older backends can leave them lazy.
+    fn prepare(&self, _model: &ModelId, _preview: bool, _vocabulary: &[String]) -> Result<()> {
+        Ok(())
+    }
+    /// `preview` selects the preview part; false selects the dictionary helper.
+    fn part_readiness(&self, _model: &ModelId, _preview: bool) -> PartReadiness {
+        PartReadiness::Unprepared
+    }
+
     fn catalog(&self) -> Vec<ModelInfo>;
     fn status(&self, model: &ModelId) -> ModelStatus;
     /// Start a download. Progress arrives as `EngineEvent::ModelStatus`.
