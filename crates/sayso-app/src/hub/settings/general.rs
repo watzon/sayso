@@ -427,6 +427,17 @@ impl Render for GeneralSettings {
                 cx,
             ))
             .child(row(&t!("settings.general.config_file"), &path, div(), cx));
+        // Both licenses ask for the name and the publisher of the model.
+        let about = sayso_core::cleanup::catalog().iter().fold(about, |about, info| {
+            // An id for each row: the two rows have the same text "Apache 2.0",
+            // and the accessibility node of a text takes its id from the call site and the text.
+            about.child(div().id(SharedString::from(format!("about-{}", info.id))).child(row(
+                &t!("settings.general.model_by", name = info.name, publisher = info.publisher),
+                "Apache 2.0",
+                div(),
+                cx,
+            )))
+        });
         body = body.child(about);
 
         let title = t!("settings.general.title");

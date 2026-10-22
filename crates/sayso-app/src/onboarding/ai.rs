@@ -1,13 +1,15 @@
 //! Step 3: optional AI clean-up. Continue saves the provider. Skip turns AI off.
 
-use super::{OnboardingView, arrow_target, heading, live_ui, plain};
+use super::{OnboardingView, arrow_target, heading, live_ui, plain, size_text};
 use crate::model::{AppModel, ModelList};
 use crate::model_picker;
 use gpui_kit::component::input::{Input, InputContentType, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use sayso_i18n::t;
+use sayso_core::cleanup::{self, CleanupModelInfo};
 use sayso_core::config::{Provider, ProviderKind, is_local_url};
+use sayso_core::languages;
 use sayso_ui::a11y::{A11yExt as _, Pressable, Role};
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
@@ -20,6 +22,24 @@ pub(super) enum AiChoice {
     Local,
     Cloud,
     Claude,
+    /// A cleanup model: its place in the catalog.
+    Cleanup(usize),
+}
+
+/// The choices before the cleanup models.
+const FIXED_CHOICES: usize = 4;
+
+impl AiChoice {
+    /// The place of the choice in `AiForm::rows`.
+    fn slot(self) -> usize {
+        match self {
+            AiChoice::Apple => 0,
+            AiChoice::Local => 1,
+            AiChoice::Cloud => 2,
+            AiChoice::Claude => 3,
+            AiChoice::Cleanup(i) => FIXED_CHOICES + i,
+        }
+    }
 }
 
 /// What is wrong with the form. The form keeps the kind, not the text, so the
@@ -79,7 +99,7 @@ pub(super) struct AiForm {
     testing: bool,
     /// One handle for each choice, around its radio button. The arrow keys
     /// use them to find out where the focus is and to move it.
-    rows: [FocusHandle; 4],
+    rows: Vec<FocusHandle>,
 }
 
 impl AiForm {
@@ -97,6 +117,10 @@ impl AiForm {
             }
             Some(ProviderKind::ClaudeCli { .. }) => (Some(AiChoice::Claude), 0, PRESETS[0].2.to_string(), String::new(), None),
             Some(ProviderKind::AppleIntelligence) => (Some(AiChoice::Apple), 0, PRESETS[0].2.to_string(), String::new(), None),
+            Some(ProviderKind::CleanupModel { model }) => {
+                let place = cleanup::catalog().iter().position(|info| info.id == model);
+                (place.map(AiChoice::Cleanup), 0, PRESETS[0].2.to_string(), String::new(), None)
+            }
             _ => (None, 0, PRESETS[0].2.to_string(), String::new(), None),
         };
         let base_url = crate::widgets::input_state("https://…/v1", &url, window, cx);
@@ -113,7 +137,7 @@ impl AiForm {
             error: None,
             test: None,
             testing: false,
-            rows: std::array::from_fn(|_| cx.focus_handle()),
+            rows: (0..FIXED_CHOICES + cleanup::catalog().len()).map(|_| cx.focus_handle()).collect(),
         }
     }
 }
@@ -207,8 +231,22 @@ impl OnboardingView {
     /// The selected option. None when the user has not chosen one: Continue
     /// is then off, and Skip is the way on.
     pub(super) fn ai_choice(&self, cx: &App) -> Option<AiChoice> {
-        let d = &self.model.read(cx).detected;
-        self.ai.choice.or_else(|| d.ollama.as_ref().is_some_and(|l| !l.is_empty()).then_some(AiChoice::Local))
+        let m = self.model.read(cx);
+        self.ai.choice.or_else(|| self.suggested_cleanup(cx)).or_else(|| m.detected.ollama.as_ref().is_some_and(|l| !l.is_empty()).then_some(AiChoice::Local))
+    }
+
+    /// The first cleanup model that knows the dictation language. The speech
+    /// model sets the language: an English-only model hears English, and
+    /// "auto" with a multilingual model names no language.
+    fn suggested_cleanup(&self, cx: &App) -> Option<AiChoice> {
+        let m = self.model.read(cx);
+        let language = m.active_model().language_for(&m.config.dictation.language);
+        cleanup::catalog().iter().position(|info| info.languages.contains(&language.as_str())).map(AiChoice::Cleanup)
+    }
+
+    /// True when Continue downloads a cleanup model.
+    pub(super) fn ai_downloads(&self, cx: &App) -> bool {
+        matches!(self.ai_choice(cx), Some(AiChoice::Cleanup(_)))
     }
 
     /// The provider for the current form, or a message that says what to fix.
@@ -270,6 +308,10 @@ impl OnboardingView {
                     (!key.is_empty()).then_some(key),
                 ))
             }
+            AiChoice::Cleanup(i) => {
+                let info = &cleanup::catalog()[i];
+                Ok((Provider { id: info.id.into(), name: info.name.into(), kind: ProviderKind::CleanupModel { model: info.id.into() } }, None))
+            }
             AiChoice::Claude => {
                 let path = m.detected.claude_cli.clone().ok_or(AiError::NoClaude)?;
                 Ok((
@@ -286,6 +328,12 @@ impl OnboardingView {
 
     /// Save the choice. Returns false when the form needs a fix.
     pub(super) fn save_ai(&mut self, cx: &mut Context<Self>) -> bool {
+        // A cleanup model downloads in the background: the step does not wait for it.
+        if let Some(AiChoice::Cleanup(i)) = self.ai_choice(cx) {
+            self.ai.error = None;
+            self.model.update(cx, |m, cx| m.add_cleanup_model(cleanup::catalog()[i].id, true, cx));
+            return true;
+        }
         match self.ai_provider(cx) {
             Err(e) => {
                 self.ai.error = Some(e);
@@ -360,7 +408,7 @@ impl OnboardingView {
         let home = sayso_core::paths::PathEnv::home(&sayso_core::paths::SystemEnv);
 
         // The choices that this computer has, in the order of the list.
-        let mut order = Vec::new();
+        let mut order: Vec<AiChoice> = (0..cleanup::catalog().len()).map(AiChoice::Cleanup).collect();
         if d.apple_intelligence.is_some() {
             order.push(AiChoice::Apple);
         }
@@ -390,16 +438,31 @@ impl OnboardingView {
                     return;
                 }
                 // The arrow keys belong to an input or a list inside a row.
-                if !keys.iter().any(|ch| this.ai.rows[*ch as usize].contains_focused(window, cx)) {
+                if !keys.iter().any(|ch| this.ai.rows[ch.slot()].contains_focused(window, cx)) {
                     return;
                 }
                 let Some((next, _)) = arrow_target(&e.keystroke.key, selected_index, keys.len()) else { return };
                 cx.stop_propagation();
                 this.select_ai(keys[next], cx);
-                window.focus(&this.ai.rows[keys[next] as usize], cx);
+                window.focus(&this.ai.rows[keys[next].slot()], cx);
             }));
         if !d.done {
             rows = rows.child(text::ui(t!("onboarding.ai.looking", computer = crate::shell::computer()), 13., FontWeight::NORMAL, c.graphite).px(px(4.)));
+        }
+        for (i, info) in cleanup::catalog().iter().enumerate() {
+            rows = rows.child(self.ai_row(
+                AiChoice::Cleanup(i),
+                choice,
+                &order,
+                info.name.into(),
+                Some(t!("onboarding.ai.by", publisher = info.publisher)),
+                cleanup_desc(info),
+                Some(size_badge(info, &c)),
+                None,
+                None,
+                &c,
+                cx,
+            ));
         }
         if let Some(model) = &d.apple_intelligence {
             rows = rows.child(self.ai_row(
@@ -407,6 +470,7 @@ impl OnboardingView {
                 choice,
                 &order,
                 "Apple Intelligence".into(),
+                None,
                 t!("onboarding.ai.apple_desc", model = model),
                 None,
                 None,
@@ -421,6 +485,7 @@ impl OnboardingView {
                 choice,
                 &order,
                 "Ollama".into(),
+                None,
                 t!("onboarding.ai.ollama_empty", computer = crate::shell::computer()),
                 None,
                 None,
@@ -504,6 +569,7 @@ impl OnboardingView {
                 choice,
                 &order,
                 "Ollama".into(),
+                None,
                 t!("onboarding.ai.ollama_running", computer = crate::shell::computer()),
                 None,
                 Some(picker.into_any_element()),
@@ -518,6 +584,7 @@ impl OnboardingView {
             choice,
             &order,
             t!("onboarding.ai.cloud_api"),
+            None,
             t!("onboarding.ai.cloud_desc", store = crate::shell::secret_store()),
             Some(Badge::new(t!("onboarding.ai.cloud"), BadgeTone::Accent).into_any_element()),
             None,
@@ -532,6 +599,7 @@ impl OnboardingView {
                 choice,
                 &order,
                 "Claude CLI".into(),
+                None,
                 t!("onboarding.ai.claude_desc", path = shown),
                 Some(Badge::new(t!("onboarding.ai.cloud"), BadgeTone::Accent).into_any_element()),
                 None,
@@ -566,6 +634,7 @@ impl OnboardingView {
         choice: Option<AiChoice>,
         order: &[AiChoice],
         title: String,
+        publisher: Option<String>,
         desc: String,
         trailing: Option<AnyElement>,
         control: Option<AnyElement>,
@@ -575,9 +644,14 @@ impl OnboardingView {
     ) -> AnyElement {
         let selected = Some(me) == choice;
         let index = order.iter().position(|x| *x == me).unwrap_or(0);
+        // The name for a screen reader has the publisher: "S1-mini by Superwhisper".
+        let name = match &publisher {
+            Some(by) => format!("{title} {by}"),
+            None => title.clone(),
+        };
         let radio = Pressable::new(SharedString::from(format!("ai-{me:?}")))
-            .track_focus_handle(&self.ai.rows[me as usize])
-            .a11y_radio(title.clone(), selected, index, order.len())
+            .track_focus_handle(&self.ai.rows[me.slot()])
+            .a11y_radio(name, selected, index, order.len())
             .aria_description(desc.clone())
             .flex()
             .flex_1()
@@ -594,7 +668,14 @@ impl OnboardingView {
                     .flex_1()
                     .min_w_0()
                     .gap(px(2.))
-                    .child(plain(title, 15., FontWeight::SEMIBOLD, c.ink).line_height(px(18.)))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(plain(title, 15., FontWeight::SEMIBOLD, c.ink).line_height(px(18.)))
+                            .when_some(publisher, |d, by| d.child(plain(by, 13., FontWeight::NORMAL, c.graphite).line_height(px(18.)))),
+                    )
                     .child(plain(desc, 13., FontWeight::NORMAL, c.graphite).line_height(px(16.))),
             )
             .when_some(trailing, |d, t| d.child(t));
@@ -717,4 +798,28 @@ impl OnboardingView {
             .when_some(error, |d, e| d.child(e))
             .into_any_element()
     }
+}
+
+/// "English only. Formats emails and lists."
+fn cleanup_desc(info: &CleanupModelInfo) -> String {
+    let formats = if info.formats.len() > 1 || info.layouts.len() > 1 { t!("onboarding.ai.cleanup_formats") } else { t!("onboarding.ai.cleanup_no_formats") };
+    let first = info.languages.first().map(|code| languages::display(code)).unwrap_or_default();
+    match info.languages.len() {
+        0 | 1 => t!("onboarding.ai.cleanup_desc_one", language = first, formats = formats),
+        n => t!("onboarding.ai.cleanup_desc_many", count = n - 1, language = first, formats = formats),
+    }
+}
+
+/// The download size, in the green of a local choice.
+fn size_badge(info: &CleanupModelInfo, c: &Colors) -> AnyElement {
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .h(px(22.))
+        .px(px(8.))
+        .rounded_full()
+        .bg(c.success.opacity(0.14))
+        .child(plain(size_text(info.size_bytes), 12., FontWeight::SEMIBOLD, c.success))
+        .into_any_element()
 }

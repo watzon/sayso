@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Make the Linux packages from the release tarball of scripts/bundle-linux.sh.
-# Nothing is compiled here: each format gets the same two binaries.
+# Nothing is compiled here: each format gets the same three binaries.
 #
 #   scripts/package-linux.sh <tarball> [deb] [rpm] [appimage] [flatpak]    default: all
 #
@@ -65,7 +65,7 @@ stage="$work/$name"
 
 # The packages declare the glibc and libstdc++ versions in nfpm.yaml. Stop
 # when a binary needs more, for example after a change of the build system.
-newest() { objdump -T "$stage/bin/sayso" "$stage/bin/sayso-engine" | grep -oE "$1_[0-9.]+" | cut -d_ -f2 | sort -Vu | tail -1; }
+newest() { objdump -T "$stage/bin/sayso" "$stage/bin/sayso-engine" "$stage/bin/sayso-cleanup" | grep -oE "$1_[0-9.]+" | cut -d_ -f2 | sort -Vu | tail -1; }
 declared_glibc=$(sed -n 's/.*libc6 (>= \([0-9.]*\)).*/\1/p' "$root/packaging/linux/nfpm.yaml")
 declared_glibcxx=$(sed -n 's/.*(GLIBCXX_\([0-9.]*\)).*/\1/p' "$root/packaging/linux/nfpm.yaml")
 check_floor() {

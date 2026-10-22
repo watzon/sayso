@@ -133,6 +133,26 @@ pub struct EnhanceTimings {
     pub timeout_ms: u64,
     pub prompt_chars: usize,
     pub attempts: Vec<EnhanceAttempt>,
+    /// Set when a cleanup model ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cleanup: Option<CleanupTimings>,
+}
+
+/// How a cleanup model ran. It holds no text.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CleanupTimings {
+    /// The time to load the model in this dictation. Zero when it was loaded.
+    pub load_ms: u64,
+    /// The number of parts of a long text.
+    pub parts: u32,
+    pub tokens_in: u32,
+    pub tokens_out: u32,
+    /// The language that decided whether the model ran. None when Sayso did not know it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+    /// True when the model could not run the style and did a cleanup only.
+    pub cleanup_only: bool,
 }
 
 /// One call of a provider. A reply with the wrong shape gets a second attempt.

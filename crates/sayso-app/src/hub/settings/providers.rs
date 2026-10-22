@@ -8,12 +8,17 @@
 use super::kit::{self, group};
 use crate::hub::pages::ext::provider_detail;
 use crate::hub::pages::kit::{self as pkit, plain, ui};
+use crate::cleanup_models::CleanupModelState;
 use crate::model::{AppModel, ProviderLogin};
 use crate::model_picker;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+use sayso_core::cleanup::{self, CleanupModelInfo};
 use sayso_core::config::{Provider, ProviderKind, is_local_url, thinking_label};
+use sayso_core::languages;
+use sayso_core::models::format_size;
+use sayso_core::style::{RunPlan, builtin_styles};
 use sayso_enhance::AuthStatus;
 use sayso_i18n::t;
 use sayso_ui::a11y::{A11yExt as _, LiveStatus, Pressable, Role};
@@ -123,6 +128,58 @@ fn tool(p: &Provider) -> (&'static str, &'static str) {
     }
 }
 
+/// The catalog entry of a cleanup model provider. None for another kind, and
+/// for a model that this version does not know.
+fn cleanup_info(p: &Provider) -> Option<&'static CleanupModelInfo> {
+    match &p.kind {
+        ProviderKind::CleanupModel { model } => cleanup::find(model),
+        _ => None,
+    }
+}
+
+/// "English", or "7 languages".
+fn languages_short(info: &CleanupModelInfo) -> String {
+    match info.languages {
+        [one] => languages::display(one),
+        many => t!("core.models.languages", count = many.len()),
+    }
+}
+
+/// "A", "A and B", "A, B, and C", with the words of the interface language.
+fn list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [a, b] => t!("settings.providers.list_two", a = a, b = b),
+        [head @ .., last] => t!("settings.providers.list_last", head = head.join(&t!("settings.providers.list_separator")), last = last),
+    }
+}
+
+/// "English only", or "Best in English. Also German and French."
+fn cleanup_language(info: &CleanupModelInfo) -> String {
+    let names: Vec<String> = info.languages.iter().map(|code| languages::display(code)).collect();
+    match names.as_slice() {
+        [] => String::new(),
+        [only] => t!("settings.providers.language_only", language = only),
+        [first, others @ ..] => t!("settings.providers.language_best", first = first, others = list(others)),
+    }
+}
+
+/// The names of the built-in styles that a cleanup model runs, and of those
+/// that need a provider that reads prompts (with "your own styles" at the end).
+fn style_names(p: &Provider) -> (Vec<String>, Vec<String>) {
+    let (mut runs, mut needs) = (Vec::new(), Vec::new());
+    for style in builtin_styles() {
+        match style.run_plan(p) {
+            RunPlan::Cleanup(_) => runs.push(style.display_name()),
+            RunPlan::CleanupOnly => needs.push(style.display_name()),
+            RunPlan::Prompt | RunPlan::Nothing => {}
+        }
+    }
+    needs.push(t!("settings.providers.own_styles"));
+    (runs, needs)
+}
+
 impl ProviderSettings {
     pub fn new(model: Entity<AppModel>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&model, |_, _, cx| cx.notify());
@@ -184,6 +241,10 @@ impl ProviderSettings {
             }
         });
         self.open = Some(Open { id: id.to_string(), folder, code, _subs: [folder_sub, code_sub] });
+        // A cleanup model has no login and no model list.
+        if matches!(p.kind, ProviderKind::CleanupModel { .. }) {
+            return;
+        }
         self.model.update(cx, |m, cx| {
             m.check_provider_login(id, cx);
             // The list has the thinking levels of the model.
@@ -213,6 +274,29 @@ impl ProviderSettings {
     }
 
     fn test(&mut self, id: String, cx: &mut Context<Self>) {
+        // A cleanup model has no prompt: its test cleans up a sample.
+        if let Some(p) = self.provider(&id, cx).filter(|p| matches!(p.kind, ProviderKind::CleanupModel { .. })) {
+            let Some(info) = cleanup_info(&p) else {
+                self.tests.insert(id, Test::Failed("unknown cleanup model".into()));
+                cx.notify();
+                return;
+            };
+            self.tests.insert(id.clone(), Test::Running);
+            let entity = cx.entity();
+            self.model.update(cx, |m, cx| {
+                m.test_cleanup_model(info.id, cx, move |_, result, cx| {
+                    entity.update(cx, |this, cx| {
+                        this.tests.insert(id, match result {
+                            Ok(ms) => Test::Passed(ms),
+                            Err(e) => Test::Failed(e),
+                        });
+                        cx.notify();
+                    });
+                })
+            });
+            cx.notify();
+            return;
+        }
         self.tests.insert(id.clone(), Test::Running);
         let entity = cx.entity();
         self.model.update(cx, |m, cx| {
@@ -236,6 +320,9 @@ impl ProviderSettings {
         let test = self.tests.get(&p.id);
         let (name, _) = tool(p);
         let bad = |line: String, problem: Option<Problem>| Status { dot: c.danger, line, color: c.danger, problem };
+        if let Some(info) = cleanup_info(p) {
+            return self.cleanup_status(info, test, cx);
+        }
         if login.is_some_and(|l| l.sign_in.is_some()) {
             return Status { dot: c.accent, line: t!("settings.providers.waiting_for_browser"), color: c.graphite, problem: None };
         }
@@ -295,6 +382,46 @@ impl ProviderSettings {
         }
     }
 
+    /// The status line of a cleanup model: the download, then the last test.
+    fn cleanup_status(&self, info: &CleanupModelInfo, test: Option<&Test>, cx: &App) -> Status {
+        let c = cx.paper().colors;
+        let bad = |line: String, problem: Problem| Status { dot: c.danger, line, color: c.danger, problem: Some(problem) };
+        if matches!(test, Some(Test::Running)) {
+            return Status { dot: c.accent, line: t!("settings.providers.testing"), color: c.graphite, problem: None };
+        }
+        match self.model.read(cx).cleanup_model_state(info.id) {
+            CleanupModelState::Downloading(fraction) => Status {
+                dot: c.accent,
+                line: t!("settings.providers.cleanup_downloading", percent = (fraction * 100.).round() as u32),
+                color: c.graphite,
+                problem: None,
+            },
+            CleanupModelState::Failed(raw) => bad(
+                t!("settings.providers.cleanup_download_failed"),
+                Problem { message: t!("settings.providers.cleanup_download_failed_detail", name = info.name), details: Some(raw) },
+            ),
+            CleanupModelState::NotDownloaded => Status { dot: c.pencil, line: t!("settings.providers.cleanup_not_downloaded"), color: c.graphite, problem: None },
+            CleanupModelState::Deleting => Status { dot: c.pencil, line: t!("settings.providers.cleanup_deleting"), color: c.graphite, problem: None },
+            CleanupModelState::DeleteFailed(raw) => bad(
+                t!("settings.providers.cleanup_delete_failed"),
+                Problem { message: t!("settings.providers.cleanup_delete_failed_detail", name = info.name), details: Some(raw) },
+            ),
+            CleanupModelState::Ready => match test {
+                Some(Test::Failed(raw)) => bad(
+                    t!("settings.providers.test_failed"),
+                    Problem { message: t!("settings.providers.cleanup_test_failed_detail"), details: Some(raw.clone()) },
+                ),
+                Some(Test::Passed(ms)) => Status { dot: c.success, line: t!("settings.providers.answered_in", ms = ms), color: c.success, problem: None },
+                _ => Status {
+                    dot: c.success,
+                    line: t!("settings.providers.cleanup_ready", computer = crate::shell::computer(), languages = languages_short(info)),
+                    color: c.graphite,
+                    problem: None,
+                },
+            },
+        }
+    }
+
     fn provider_row(&self, p: &Provider, default: bool, cx: &mut Context<Self>) -> AnyElement {
         let c = cx.paper().colors;
         let login = self.model.read(cx).logins.get(&p.id).cloned();
@@ -306,7 +433,17 @@ impl ProviderSettings {
         let toggle_id = p.id.clone();
         // The row is one button that opens the detail. The status line is a
         // live node inside it, so a change (a test, a sign-in) is read.
-        let name = if default { format!("{}, {}", p.name, t!("settings.providers.default_badge")) } else { p.name.clone() };
+        let cleanup = cleanup_info(p);
+        // The license of S1-mini asks for its exact name with its publisher.
+        let shown_name = cleanup.map_or_else(|| p.name.clone(), |i| i.name.to_string());
+        let by = cleanup.map(|i| t!("settings.providers.by", publisher = i.publisher));
+        let mut name = shown_name.clone();
+        if let Some(by) = &by {
+            name = format!("{name} {by}, {}", t!("settings.providers.no_prompts"));
+        }
+        if default {
+            name = format!("{name}, {}", t!("settings.providers.default_badge"));
+        }
         let label = Pressable::new(SharedString::from(format!("provider-{}", p.id)))
             .label(name)
             .aria_expanded(open.is_some())
@@ -330,7 +467,11 @@ impl ProviderSettings {
                             .flex()
                             .items_center()
                             .gap(px(8.))
-                            .child(plain(p.name.clone(), 15., 18., FontWeight::SEMIBOLD, c.ink).truncate())
+                            .child(plain(shown_name.clone(), 15., 18., FontWeight::SEMIBOLD, c.ink).truncate())
+                            .when_some(by.clone(), |d, by| d.child(plain(by, 13., 18., FontWeight::NORMAL, c.graphite).flex_none()))
+                            .when(cleanup.is_some(), |d| {
+                                d.child(div().flex_none().px(px(6.)).py(px(2.)).rounded(px(5.)).bg(c.accent_wash).child(pkit::caps(t!("settings.providers.no_prompts"), 11., c.accent)))
+                            })
                             .when(default, |d| {
                                 d.child(div().flex_none().px(px(6.)).py(px(2.)).rounded(px(5.)).bg(c.deboss).child(pkit::caps(t!("settings.providers.default_badge"), 11., c.graphite)))
                             }),
@@ -364,6 +505,8 @@ impl ProviderSettings {
                     cx.notify();
                 },
             )));
+        } else if let Some(info) = cleanup {
+            head = head.children(self.cleanup_head_action(p, info, cx));
         } else if open.is_none() {
             // The open row has the picker in its Model line.
             head = head.child(self.model_picker(p, cx));
@@ -389,10 +532,44 @@ impl ProviderSettings {
             .border_b_1()
             .border_color(c.rule)
             .child(head);
+        if let Some(CleanupModelState::Downloading(fraction)) = cleanup.map(|i| self.model.read(cx).cleanup_model_state(i.id)) {
+            // Under the dot and the gap of the row.
+            row = row.child(div().pl(px(22.)).pt(px(8.)).child(Progress::new(fraction).height(4.).label(t!("settings.providers.cleanup_downloading_label", name = shown_name))));
+        }
         if let Some(open) = open {
             row = row.child(self.detail(p, default, open, login.as_ref(), status.problem, cx));
         }
         row.into_any_element()
+    }
+
+    /// The button at the right of a cleanup model row, when the model needs
+    /// one: Cancel while it downloads, Try again after an error, Download
+    /// when the files are not there.
+    fn cleanup_head_action(&self, p: &Provider, info: &'static CleanupModelInfo, cx: &mut Context<Self>) -> Option<Button> {
+        let id = SharedString::from(format!("cleanup-action-{}", p.id));
+        let model = info.id;
+        let (label, primary) = match self.model.read(cx).cleanup_model_state(model) {
+            CleanupModelState::Ready | CleanupModelState::Deleting => return None,
+            CleanupModelState::Downloading(_) => (t!("settings.providers.cancel"), false),
+            CleanupModelState::Failed(_) | CleanupModelState::DeleteFailed(_) => (t!("settings.providers.try_again"), true),
+            CleanupModelState::NotDownloaded => (t!("settings.providers.download"), true),
+        };
+        let state = self.model.read(cx).cleanup_model_state(model);
+        let downloading = matches!(state, CleanupModelState::Downloading(_));
+        let delete_failed = matches!(state, CleanupModelState::DeleteFailed(_));
+        let button = Button::new(id, label.clone()).a11y_label(format!("{label}, {}", info.name)).on_click(cx.listener(move |this, _, _, cx| {
+            this.model.update(cx, |m, cx| {
+                if downloading {
+                    m.cancel_cleanup_download(model);
+                } else if delete_failed {
+                    m.delete_cleanup_model(model, cx);
+                } else {
+                    m.download_cleanup_model(model, cx);
+                }
+            });
+            cx.notify();
+        }));
+        Some(if primary { button.primary() } else { button.ghost() })
     }
 
     /// The open part of a row.
@@ -410,6 +587,18 @@ impl ProviderSettings {
             col = col.child(kit::banner(BannerKind::Warning, error.text(), cx));
         }
 
+        if let Some(info) = cleanup_info(p) {
+            return col
+                .child(self.cleanup_summary(p, cx))
+                .child(kit::row_s(t!("settings.providers.language"), cleanup_language(info), div(), cx))
+                .child(self.cleanup_file(info, cx))
+                .child(kit::row_s(
+                    t!("settings.providers.test"),
+                    t!("settings.providers.test_detail", style = t!("styles.builtin.clean.name")),
+                    self.cleanup_actions(p, info, default, cx),
+                    cx,
+                ));
+        }
         if is_cli(p) {
             let sayso = self.sayso_login(p, cx);
             let entity = cx.entity();
@@ -448,7 +637,8 @@ impl ProviderSettings {
             col = col.child(kit::row_s(t!("settings.providers.address"), place, text::mono(base_url.clone(), 12., c.graphite).font_weight(FontWeight::NORMAL), cx));
         }
 
-        if p.kind != ProviderKind::AppleIntelligence {
+        // macOS and the catalog choose the model of these two kinds.
+        if !matches!(p.kind, ProviderKind::AppleIntelligence | ProviderKind::CleanupModel { .. }) {
             col = col.child(kit::row(&t!("settings.providers.model"), &t!("settings.providers.model_detail"), self.model_picker(p, cx), cx));
         }
         let path = match &p.kind {
@@ -462,6 +652,97 @@ impl ProviderSettings {
                 .child(text::mono(path, 12., c.graphite).font_weight(FontWeight::NORMAL));
         }
         col.child(div().flex().items_center().w_full().gap(px(24.)).pt(px(14.)).child(left).child(self.actions(p, default, cx)))
+    }
+
+    /// What a cleanup model runs, from the plan of each built-in style.
+    fn cleanup_summary(&self, p: &Provider, cx: &App) -> Div {
+        let c = cx.paper().colors;
+        let (runs, needs) = style_names(p);
+        div().w_full().min_w_0().pb(px(6.)).child(
+            div()
+                .id(SharedString::from(format!("cleanup-runs-{}", p.id)))
+                .role(Role::Group)
+                .aria_label(t!("settings.providers.cleanup_runs", styles = list(&runs)))
+                .flex()
+                .flex_col()
+                .w_full()
+                .min_w_0()
+                .gap(px(3.))
+                .px(px(16.))
+                .py(px(14.))
+                .rounded(px(10.))
+                .bg(c.accent_wash)
+                .border_1()
+                .border_color(c.accent.opacity(0.18))
+                .child(plain(t!("settings.providers.cleanup_runs", styles = list(&runs)), 14., 18., FontWeight::SEMIBOLD, c.ink))
+                .child(ui(t!("settings.providers.cleanup_needs", styles = list(&needs)), 13., 18., FontWeight::NORMAL, c.graphite)),
+        )
+    }
+
+    /// The model file: its size, its name, and a button that shows it.
+    fn cleanup_file(&self, info: &'static CleanupModelInfo, cx: &mut Context<Self>) -> Div {
+        let c = cx.paper().colors;
+        let path = self.model.read(cx).cleanup_model_file(info.id);
+        let reveal = path.map(|path| {
+            let label = t!(crate::shell::os_text!("settings.providers.show_in_finder", "settings.providers.show_in_explorer", "settings.providers.show_in_folder"));
+            Button::new(SharedString::from(format!("reveal-{}", info.id)), label.clone())
+                .a11y_label(format!("{label}, {}", info.name))
+                .small()
+                .on_click(move |_, _, _| crate::shell::reveal(&path))
+        });
+        let control = div().flex().flex_none().items_center().gap(px(12.)).child(text::mono(info.file, 12., c.graphite).font_weight(FontWeight::NORMAL)).children(reveal);
+        kit::row_s(t!("settings.providers.model_file"), format_size(info.size_bytes), control, cx)
+    }
+
+    /// Run test, Make default, and Delete download. Delete asks first, in place.
+    fn cleanup_actions(&self, p: &Provider, info: &'static CleanupModelInfo, default: bool, cx: &mut Context<Self>) -> Div {
+        let c = cx.paper().colors;
+        let mut row = div().flex().flex_none().items_center().gap(px(8.));
+        let id = p.id.clone();
+        if self.confirm_remove.as_deref() == Some(p.id.as_str()) {
+            let question = t!("settings.providers.delete_confirm", name = info.name);
+            let delete = t!("settings.providers.delete");
+            return row
+                .child(
+                    div()
+                        .id("delete-confirm")
+                        .role(Role::Alert)
+                        .aria_label(question.clone())
+                        .a11y_live(question.clone(), true)
+                        .child(plain(question, 13., 16., FontWeight::MEDIUM, c.ink)),
+                )
+                .child(Button::new("delete-yes", delete.clone()).a11y_label(format!("{delete}, {}", info.name)).danger().on_click(cx.listener(move |this, _, _, cx| {
+                    this.confirm_remove = None;
+                    this.open = None;
+                    this.tests.remove(&id);
+                    this.model.update(cx, |m, cx| m.delete_cleanup_model(info.id, cx));
+                })))
+                .child(Button::new("delete-no", t!("settings.providers.cancel")).a11y_label(format!("{}, {}", t!("settings.providers.cancel"), info.name)).ghost().on_click(cx.listener(|this, _, _, cx| {
+                    this.confirm_remove = None;
+                    cx.notify();
+                })));
+        }
+        let ready = self.model.read(cx).cleanup_model_state(info.id) == CleanupModelState::Ready;
+        let running = matches!(self.tests.get(&p.id), Some(Test::Running));
+        let test_id = p.id.clone();
+        row = row.child(
+            Button::new("test-cleanup", t!("settings.providers.run_test"))
+                .a11y_label(format!("{}, {}", t!("settings.providers.run_test"), info.name))
+                .disabled(running || !ready)
+                .on_click(cx.listener(move |this, _, _, cx| this.test(test_id.clone(), cx))),
+        );
+        if !default {
+            let id = p.id.clone();
+            row = row.child(Button::new("default-cleanup", t!("settings.providers.make_default")).a11y_label(format!("{}, {}", t!("settings.providers.make_default"), info.name)).on_click(cx.listener(move |this, _, _, cx| {
+                let id = id.clone();
+                this.model.update(cx, |m, cx| m.edit_config(cx, |c| c.ai.default_provider = Some(id)));
+            })));
+        }
+        let id = p.id.clone();
+        row.child(Button::new("delete-cleanup", t!("settings.providers.delete_download")).a11y_label(format!("{}, {}", t!("settings.providers.delete_download"), info.name)).danger().on_click(cx.listener(move |this, _, _, cx| {
+            this.confirm_remove = Some(id.clone());
+            cx.notify();
+        })))
     }
 
     /// Test, Make default, and Remove. Remove asks first, in place.
@@ -673,10 +954,21 @@ impl ProviderSettings {
     }
 
     /// A provider that Sayso found on this computer and that is not added yet.
-    fn suggestion(&self, id: &'static str, title: &str, detail: String, provider: Provider, cx: &mut Context<Self>) -> AnyElement {
+    /// `by` is the publisher of a cleanup model, in a muted line after the title.
+    #[allow(clippy::too_many_arguments)]
+    fn suggestion(
+        id: impl Into<SharedString>,
+        title: &str,
+        by: Option<String>,
+        detail: String,
+        button: String,
+        on_add: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let c = cx.paper().colors;
+        let id: SharedString = id.into();
         div()
-            .id(id)
+            .id(id.clone())
             .flex()
             .items_center()
             .w_full()
@@ -692,15 +984,19 @@ impl ProviderSettings {
                     .flex_1()
                     .min_w_0()
                     .gap(px(2.))
-                    .child(ui(title.to_string(), 15., 18., FontWeight::SEMIBOLD, c.ink))
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .child(ui(title.to_string(), 15., 18., FontWeight::SEMIBOLD, c.ink))
+                            .children(by.map(|by| ui(by, 13., 18., FontWeight::NORMAL, c.graphite))),
+                    )
                     .child(ui(detail, 13., 16., FontWeight::NORMAL, c.graphite)),
             )
-            .child(Button::new(SharedString::from(format!("{id}-add")), t!("settings.providers.add"))
-                .a11y_label(format!("{}, {title}", t!("settings.providers.add")))
-                .on_click(cx.listener(move |this, _, window, cx| {
-                let p = provider.clone();
-                this.added(p, None, window, cx);
-            })))
+            .child(Button::new(SharedString::from(format!("{id}-add")), button.clone())
+                .a11y_label(format!("{button}, {title}"))
+                .on_click(cx.listener(move |this, _, window, cx| on_add(this, window, cx))))
             .into_any_element()
     }
 
@@ -738,7 +1034,35 @@ impl ProviderSettings {
             let p = Provider { id: new_id("apple-intelligence"), name: "Apple Intelligence".into(), kind: ProviderKind::AppleIntelligence };
             found.push(("suggest-apple", "Apple Intelligence", t!("settings.providers.suggest_apple", model = model), p));
         }
-        found.into_iter().map(|(id, title, detail, p)| self.suggestion(id, title, detail, p, cx)).collect()
+        let mut rows: Vec<AnyElement> = found
+            .into_iter()
+            .map(|(id, title, detail, provider)| {
+                let add = t!("settings.providers.add");
+                Self::suggestion(id, title, None, detail, add, move |this, window, cx| this.added(provider.clone(), None, window, cx), cx)
+            })
+            .collect();
+        // The cleanup models need no tool on this computer, only a download.
+        for info in cleanup::catalog().iter().filter(|info| !providers.iter().any(|p| cleanup_info(p).is_some_and(|i| i.id == info.id))) {
+            let detail = t!("settings.providers.suggest_cleanup", computer = crate::shell::computer(), languages = languages_short(info), size = format_size(info.size_bytes));
+            let by = t!("settings.providers.by", publisher = info.publisher);
+            let model = info.id;
+            rows.push(Self::suggestion(
+                format!("suggest-{model}"),
+                info.name,
+                Some(by),
+                detail,
+                t!("settings.providers.download"),
+                move |this, _, cx| {
+                    // The first provider becomes the default.
+                    this.model.update(cx, |m, cx| {
+                        let make_default = m.config.ai.default_provider.is_none();
+                        m.add_cleanup_model(model, make_default, cx);
+                    });
+                },
+                cx,
+            ));
+        }
+        rows
     }
 
     // -----------------------------------------------------------------------
@@ -1059,5 +1383,36 @@ impl Render for ProviderSettings {
             kit::body().child(div().flex().flex_col().w_full().min_w_0().child(use_ai)).child(list),
             cx,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    // No glob import: `gpui_kit::*` has its own `test` attribute.
+    use super::{cleanup, cleanup_language, languages_short, list, style_names};
+    use sayso_core::config::{Provider, ProviderKind};
+
+    fn cleanup_provider(id: &str) -> Provider {
+        Provider { id: id.into(), name: id.into(), kind: ProviderKind::CleanupModel { model: id.into() } }
+    }
+
+    #[test]
+    fn a_model_lists_the_styles_it_runs_and_the_styles_it_cannot() {
+        let (runs, needs) = style_names(&cleanup_provider("s1-mini"));
+        assert_eq!(list(&runs), "Clean, Message, Email, and Notes");
+        assert_eq!(list(&needs), "Polished, Rambling, and your own styles");
+        let (runs, needs) = style_names(&cleanup_provider("spokenly-cleanup-1"));
+        assert_eq!(list(&runs), "Clean and Message");
+        assert_eq!(list(&needs), "Polished, Rambling, Email, Notes, and your own styles");
+    }
+
+    #[test]
+    fn the_language_line_names_the_other_languages() {
+        let s1 = cleanup::find("s1-mini").unwrap();
+        let one = cleanup::find("spokenly-cleanup-1").unwrap();
+        assert_eq!(cleanup_language(s1), "English only");
+        assert_eq!(cleanup_language(one), "Best in English. Also German, Spanish, French, Chinese, Russian, and Japanese.");
+        assert_eq!(languages_short(s1), "English");
+        assert_eq!(languages_short(one), "7 languages");
     }
 }

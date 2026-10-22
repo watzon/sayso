@@ -225,6 +225,13 @@ impl Machine {
                 State::Processing { session, recorded_ms, .. },
                 Event::ReadyToInsert { session: s, text, style_name, enhance_error },
             ) if s == session => {
+                // A cleanup model answers only filler words ("um uh") with no
+                // text. Insert nothing: no paste, no keys, no Enter.
+                if text.trim().is_empty() {
+                    self.state = State::Showing { session, notice: Notice::NoSpeech, until_ms: Some(now_ms + self.timing.error_ms) };
+                    fx.push(Effect::Discard { session });
+                    return fx;
+                }
                 self.state = State::Processing { session, stage: Stage::Inserting, recorded_ms };
                 self.pending_notice = Some(match enhance_error {
                     Some(reason) => Notice::InsertedRaw { reason },
@@ -469,6 +476,16 @@ mod tests {
         let fx = machine.handle(Event::Toggle, 1500);
         assert!(has(&fx, &Effect::Discard { session: 1 }));
         assert!(has(&fx, &Effect::StartCapture { session: 2 }));
+    }
+
+    #[test]
+    fn an_empty_text_after_the_style_inserts_nothing() {
+        let mut machine = m();
+        let s = record_and_transcribe(&mut machine, "um uh");
+        let fx = machine.handle(Event::ReadyToInsert { session: s, text: " ".into(), style_name: None, enhance_error: None }, 2200);
+        assert!(!fx.iter().any(|e| matches!(e, Effect::Insert { .. })), "{fx:?}");
+        assert!(has(&fx, &Effect::Discard { session: s }));
+        assert!(matches!(machine.state, State::Showing { notice: Notice::NoSpeech, .. }));
     }
 
     #[test]

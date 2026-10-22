@@ -4,7 +4,7 @@ _version: 1
 onboarding:
   ai:
     title: "KI-Bereinigung hinzufügen"
-    lead: "Optional. Ein Stil kann Füllwörter entfernen, die Grammatik korrigieren oder eine E-Mail formatieren. Ohne ihn fügt Sayso genau ein, was du gesagt hast. Du kannst das auch später in den Einstellungen einrichten."
+    lead: "Optional. Ein Stil kann Füllwörter entfernen, die Grammatik korrigieren oder eine E-Mail formatieren. Ohne ihn fügt Sayso genau ein, was du gesagt hast. Du kannst das später unter Einstellungen › Anbieter einrichten."
     looking: "Suche nach KI-Tools auf diesem %{computer}…"
     apple_desc: "Das Modell von macOS (%{model}). Keine Einrichtung. Der Text bleibt auf diesem Mac."
     ollama_empty: "Ollama läuft auf diesem %{computer}, hat aber keine Modelle. Führe „ollama pull qwen3:4b“ aus und wähle dies dann erneut."
@@ -34,3 +34,11 @@ onboarding:
     error_api_key: "Gib deinen API-Schlüssel ein. Sayso speichert ihn in %{store}."
     error_model: "Wähle ein Modell aus der Liste des Anbieters."
     error_claude: "Sayso hat die Claude CLI nicht gefunden. Installiere sie oder wähle eine andere Option."
+    by: "von %{publisher}"
+    download_and_continue: "Laden und weiter"
+    cleanup_formats: "Formatiert E-Mails und Listen."
+    cleanup_no_formats: "Keine Formatierung für E-Mails und Listen."
+    cleanup_desc_one: "Nur %{language}. %{formats}"
+    cleanup_desc_many:
+      one: "%{language} und %{count} weitere Sprache. %{formats}"
+      other: "%{language} und %{count} weitere Sprachen. %{formats}"

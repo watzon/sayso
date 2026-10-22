@@ -60,3 +60,4 @@ settings:
     version: "Version %{version}"
     tagline: "Lokales Diktieren für %{os}"
     speech_engine: "Sprach-Engine"
+    model_by: "%{name} von %{publisher}"

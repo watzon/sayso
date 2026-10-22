@@ -28,9 +28,11 @@ if [ "$mode" = uninstall ]; then
 fi
 
 mkdir -p "$bin" "$lib" "$share/applications" "$share/metainfo"
-# The app finds the engine next to itself, so both live in one folder.
+# The app finds the engine and the cleanup runtime next to itself, so all
+# three live in one folder.
 install -m 755 "$here/bin/sayso" "$lib/sayso"
 install -m 755 "$here/bin/sayso-engine" "$lib/sayso-engine"
+install -m 755 "$here/bin/sayso-cleanup" "$lib/sayso-cleanup"
 ln -sf "$lib/sayso" "$bin/sayso"
 sed "s|^Exec=sayso|Exec=$lib/sayso|" "$here/share/applications/dev.sayso.Sayso.desktop" > "$share/applications/dev.sayso.Sayso.desktop"
 cp "$here/share/metainfo/dev.sayso.Sayso.metainfo.xml" "$share/metainfo/"

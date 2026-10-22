@@ -3604,6 +3604,8 @@ version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
+ "allocator-api2",
+ "equivalent",
  "foldhash 0.1.5",
 ]
 
@@ -7017,6 +7019,7 @@ dependencies = [
  "parking_lot",
  "raw-window-handle",
  "regex",
+ "sayso-cleanup-client",
  "sayso-core",
  "sayso-engine-client",
  "sayso-enhance",
@@ -7041,6 +7044,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-cleanup-client"
+version = "0.10.1"
+dependencies = [
+ "log",
+ "parking_lot",
+ "sayso-core",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tiny_http",
+ "ureq 3.4.2",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sayso-core"
 version = "0.10.1"
 dependencies = [
@@ -7054,6 +7074,7 @@ dependencies = [
  "thiserror 2.0.21",
  "toml 0.9.12+spec-1.1.0",
  "uuid",
+ "whatlang",
  "workspace-hack",
 ]
 
@@ -7103,6 +7124,7 @@ dependencies = [
  "keyring",
  "log",
  "parking_lot",
+ "sayso-cleanup-client",
  "sayso-core",
  "sayso-engine-client",
  "sayso-i18n",
@@ -9402,6 +9424,15 @@ dependencies = [
  "log",
  "raw-window-handle",
  "web-sys",
+]
+
+[[package]]
+name = "whatlang"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f5e8f38b596e2a359b755342473520a99421e43658548c79489ee221b728c107"
+dependencies = [
+ "hashbrown 0.15.5",
 ]
 
 [[package]]

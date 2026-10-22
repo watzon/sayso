@@ -61,3 +61,4 @@ settings:
     version: "Version %{version}"
     tagline: "Dictée locale pour %{os}"
     speech_engine: "Moteur vocal"
+    model_by: "%{name} par %{publisher}"

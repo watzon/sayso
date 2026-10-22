@@ -4,7 +4,7 @@ _version: 1
 onboarding:
   ai:
     title: "Ajouter le nettoyage par IA"
-    lead: "Facultatif. Un style peut supprimer les mots de remplissage, corriger la grammaire ou mettre en forme un e-mail. Sans lui, Sayso insère exactement ce que vous avez dit. Vous pouvez aussi le configurer plus tard dans Réglages."
+    lead: "Facultatif. Un style peut supprimer les mots de remplissage, corriger la grammaire ou mettre en forme un e-mail. Sans lui, Sayso insère exactement ce que vous avez dit. Vous pouvez le configurer plus tard dans Réglages › Fournisseurs."
     looking: "Recherche d’outils d’IA sur votre %{computer}…"
     apple_desc: "Le modèle de macOS (%{model}). Sans configuration. Le texte reste sur ce Mac."
     ollama_empty: "Ollama s’exécute sur votre %{computer}, mais il n’a aucun modèle. Exécutez « ollama pull qwen3:4b », puis sélectionnez à nouveau cette option."
@@ -34,3 +34,12 @@ onboarding:
     error_api_key: "Saisissez votre clé API. Sayso la conserve dans %{store}."
     error_model: "Choisissez un modèle dans la liste du fournisseur."
     error_claude: "Sayso n’a pas trouvé Claude CLI. Installez-le, ou choisissez une autre option."
+    by: "par %{publisher}"
+    download_and_continue: "Télécharger et continuer"
+    cleanup_formats: "Met en forme les e-mails et les listes."
+    cleanup_no_formats: "Pas de mise en forme des e-mails ni des listes."
+    cleanup_desc_one: "%{language} uniquement. %{formats}"
+    cleanup_desc_many:
+      one: "%{language} et %{count} autre langue. %{formats}"
+      many: "%{language} et %{count} autres langues. %{formats}"
+      other: "%{language} et %{count} autres langues. %{formats}"

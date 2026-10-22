@@ -30,6 +30,8 @@ keyring = "4"
 
 [dev-dependencies]
 tiny_http = "0.12"
+# The style evaluation also runs the cleanup models through the cleanup runtime.
+sayso-cleanup-client.workspace = true
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 # The style evaluation runs Apple Intelligence through the real sidecar.

@@ -15,13 +15,14 @@ check() { # crate, forbidden-regex, reason
 check sayso-i18n '^(sayso-|gpui)' "the catalogs are data: no Sayso crates, no GPUI"
 check sayso-core '^(sayso-(platform|engine|store|enhance|transcribe|ui|update|app)|gpui)' "core imports no Sayso crate except sayso-i18n, and no GPUI"
 check sayso-platform '^(sayso-(platform-|engine|store|enhance|ui|app)|gpui)' "traits only"
-for c in sayso-store sayso-enhance sayso-engine-client sayso-ui; do
+for c in sayso-store sayso-enhance sayso-engine-client sayso-cleanup-client sayso-ui; do
   check "$c" '^sayso-platform-' "only sayso-app may use a platform implementation"
 done
 check sayso-ui '^sayso-(store|enhance|engine-client)' "UI gets data through the app"
 check sayso-platform-common '^(sayso-(platform-(macos|linux|windows)|engine|store|enhance|ui|app)|gpui)' "portable platform code only"
 check sayso-update '^(sayso-(platform|engine|store|enhance|transcribe|ui|app)|gpui)' "the updater has no UI and no platform code"
 check sayso-engine '^(sayso-(platform|store|enhance|ui|app)|gpui)' "the engine is a separate process"
+check sayso-cleanup-client '^(sayso-(platform|engine|store|enhance|transcribe|ui|update|app)|gpui)' "the cleanup client needs only sayso-core"
 # workspace-hack (cargo hakari, .config/hakari.toml) must match the
 # dependencies. After you add, remove, or change a dependency, run:
 #   cargo hakari generate && cargo hakari manage-deps -y

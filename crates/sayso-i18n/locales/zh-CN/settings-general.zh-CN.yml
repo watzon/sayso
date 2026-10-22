@@ -59,3 +59,4 @@ settings:
     version: "版本 %{version}"
     tagline: "适用于 %{os} 的本地听写"
     speech_engine: "语音引擎"
+    model_by: "%{name}（来自 %{publisher}）"

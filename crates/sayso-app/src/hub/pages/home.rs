@@ -316,12 +316,13 @@ impl HomePage {
             StyleRoute::NeedsModel { provider } => t!("home.style.detail_needs_model", provider = provider),
             StyleRoute::Local { provider, model } => t!("home.style.detail_local", computer = crate::shell::computer(), provider = provider, model = model),
             StyleRoute::Cloud { provider, model } => t!("home.style.detail_cloud", provider = provider, model = model),
+            route @ StyleRoute::CleanupCannotRun { .. } => route.line(),
         };
         let description = if style.description.is_empty() { detail } else { format!("{} {}", style.display_description(), detail) };
         let badge = match &route {
             StyleRoute::Cloud { .. } => Some(kit::place_badge(true, cx)),
             StyleRoute::Local { .. } | StyleRoute::NoAi => Some(kit::place_badge(false, cx)),
-            StyleRoute::NeedsProvider | StyleRoute::NeedsModel { .. } => None,
+            StyleRoute::NeedsProvider | StyleRoute::NeedsModel { .. } | StyleRoute::CleanupCannotRun { .. } => None,
         };
         let model = self.model.clone();
         let change = Button::new("change-style", t!("home.style.change"))

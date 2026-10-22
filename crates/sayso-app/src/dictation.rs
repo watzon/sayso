@@ -14,7 +14,9 @@ use sayso_core::history::{
     Diagnostics, EnhanceOutcome, HistoryEntry, InsertOutcome, InsertTimings, TargetApp, TranscribeTimings, waveform_summary,
 };
 use sayso_core::models::ModelInfo;
-use sayso_core::pipeline::TextPipeline;
+use sayso_core::pipeline::{CleanerRun, CleanupNotice, TextPipeline};
+use sayso_core::config::{Provider, ProviderKind};
+use sayso_core::style::RunPlan;
 use sayso_core::speech::{SpeechProvider, SpeechRequest, split_model_id};
 use sayso_core::stt::{EngineEvent, ModelStatus, SAMPLE_RATE, SessionOptions, Transcript, encode_wav, to_pcm16};
 use sayso_enhance::SecretStore;
@@ -209,6 +211,7 @@ impl AppModel {
         self.preview = (String::new(), String::new());
         // The model loads while the microphone records, if the idle time unloaded it.
         self.wake_model(cx);
+        self.preload_cleanup(session);
         // The live preview opens after the microphone, off the UI thread.
         let streaming = Arc::new(AtomicBool::new(false));
         let samples = Arc::new(Mutex::new(Vec::<f32>::with_capacity(SAMPLE_RATE as usize * 30)));
@@ -460,7 +463,7 @@ impl AppModel {
         let style = self.session_style(session);
         self.session(session).style_id = style.id.clone();
         let provider = self.provider_for(&style).cloned();
-        let Some(provider) = provider.filter(|_| style.uses_ai()) else {
+        let Some(provider) = provider.filter(|p| style.run_plan(p) != RunPlan::Nothing) else {
             self.session(session).enhance = Some(EnhanceOutcome::NotUsed);
             self.dispatch(Event::ReadyToInsert { session, text, style_name: None, enhance_error: None }, cx);
             return;
@@ -482,25 +485,46 @@ impl AppModel {
         let base_prompt = self.styles.base_prompt().to_string();
         let replacements = self.session(session).replacements.clone();
         let timeout = Duration::from_millis(match provider.kind {
-            // The language model of the engine answers as fast as a server.
-            sayso_core::config::ProviderKind::OpenAiCompatible { .. } | sayso_core::config::ProviderKind::AppleIntelligence => {
-                ai.http_timeout_ms
-            }
+            // The language model of the engine and a cleanup model answer as fast as a server.
+            sayso_core::config::ProviderKind::OpenAiCompatible { .. }
+            | sayso_core::config::ProviderKind::AppleIntelligence
+            | sayso_core::config::ProviderKind::CleanupModel { .. } => ai.http_timeout_ms,
             _ => ai.cli_timeout_ms,
         });
         let style_name = style.display_name();
+        let s = self.session(session);
+        // The model that did the final pass: a cloud model, or the local model
+        // that took over after it failed.
+        let final_model = s.model.clone();
+        let (app, site) = (s.app.as_ref().map(|a| a.name.clone()), s.site.clone());
+        // The language of this dictation, as the final pass had it.
+        let language = Some(s.diagnostics.transcribe.language.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| self.config.dictation.language.clone());
+        let speech_model = final_model.unwrap_or_else(|| self.config.dictation.model.clone());
+        let cleanup = self.cleanup_context(&provider, app, site, language, &speech_model);
         cx.spawn(async move |this, cx| {
             let out = cx
                 .background_spawn(async move {
                     let started = Instant::now();
-                    let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
-                    let setup_ms = started.elapsed().as_millis() as u64;
                     let replacer = sayso_core::dictionary::Replacer::new(&[]);
-                    let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), timeout };
-                    let mut out = p.run_style(text, replacements);
+                    let mut out = match &cleanup {
+                        Some(c) => {
+                            let run = c.run(&style, &provider);
+                            let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: None, cleaner: Some(run), timeout };
+                            p.run_style(text, replacements)
+                        }
+                        None => {
+                            let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
+                            let setup_ms = started.elapsed().as_millis() as u64;
+                            let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), cleaner: None, timeout };
+                            let mut out = p.run_style(text, replacements);
+                            if let Some(timings) = &mut out.timings {
+                                timings.setup_ms = setup_ms;
+                            }
+                            out
+                        }
+                    };
                     if let Some(timings) = &mut out.timings {
                         timings.step_ms = started.elapsed().as_millis() as u64;
-                        timings.setup_ms = setup_ms;
                         timings.provider_kind = provider.kind.name().into();
                         timings.thinking = provider.thinking_sent().map(str::to_string);
                     }
@@ -512,6 +536,11 @@ impl AppModel {
                 m.session(session).enhance = Some(out.enhance.clone());
                 m.session(session).diagnostics.enhance = out.timings.clone();
                 let name = out.enhance_error.as_ref().map(|(id, error)| style_error_text(&m.provider_name(id), error));
+                if let Some(notice) = &out.notice {
+                    m.notice(NoticeIcon::Style, cleanup_notice_text(notice, &style_name), cx);
+                }
+                // A cleanup only did not apply the style.
+                let applied = applied && !matches!(out.notice, Some(CleanupNotice::CleanupOnly { .. }));
                 m.dispatch(
                     Event::ReadyToInsert {
                         session,
@@ -524,6 +553,44 @@ impl AppModel {
             });
         })
         .detach();
+    }
+
+    /// Load the cleanup model of the style while the microphone records. A
+    /// hint: the style can still change (a rule, the next-style hotkey), and
+    /// then the style step loads the right model.
+    fn preload_cleanup(&mut self, session: SessionId) {
+        let style = self.session_style(session);
+        if let Some(provider) = self.provider_for(&style)
+            && let ProviderKind::CleanupModel { model } = &provider.kind
+            && style.run_plan(provider) != RunPlan::Nothing
+        {
+            self.services.cleaner.preload(model);
+        }
+    }
+
+    /// What a cleanup model needs from the dictation, when `provider` is one.
+    /// `language` is the language setting of the dictation and `speech_model`
+    /// the model of its final pass: of the session, or of a history entry.
+    pub(crate) fn cleanup_context(
+        &self,
+        provider: &Provider,
+        app: Option<String>,
+        site: Option<String>,
+        language: String,
+        speech_model: &sayso_core::models::ModelId,
+    ) -> Option<CleanupContext> {
+        let ProviderKind::CleanupModel { model } = &provider.kind else { return None };
+        let model = sayso_core::cleanup::find(model)?;
+        let final_model_languages =
+            sayso_core::models::find_with(&self.config.speech, speech_model).map(|info| info.languages.to_vec()).unwrap_or_default();
+        Some(CleanupContext {
+            cleaner: self.services.cleaner.clone(),
+            model,
+            language_setting: language,
+            final_model_languages,
+            app,
+            site,
+        })
     }
 
     fn insert(&mut self, session: SessionId, text: String, cx: &mut Context<Self>) {
@@ -732,6 +799,10 @@ impl AppModel {
             self.notice(NoticeIcon::Info, t!("overlay.notice.choose_ai_model", provider = provider.name), cx);
             return;
         }
+        if style.run_plan(&provider) == RunPlan::Nothing {
+            self.notice(NoticeIcon::Info, t!("overlay.notice.set_up_ai_provider"), cx);
+            return;
+        }
         let Some(store) = self.services.store.clone() else { return };
         let ai = self.config.ai.clone();
         let secrets = self.services.secrets.clone();
@@ -739,13 +810,27 @@ impl AppModel {
         let vocabulary = self.vocabulary();
         let base_prompt = self.styles.base_prompt().to_string();
         let timeout = Duration::from_millis(ai.http_timeout_ms.max(ai.cli_timeout_ms));
+        let target = entry.app.clone();
+        // The language and the model of that dictation, not of today. An entry
+        // from before diagnostics has no language: "auto" then runs only on a
+        // language that the detector is sure of.
+        let language = entry.diagnostics.as_ref().map(|d| d.transcribe.language.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| "auto".into());
+        let cleanup = self.cleanup_context(&provider, target.as_ref().map(|a| a.name.clone()), target.and_then(|a| a.site), language, &entry.model);
         cx.spawn(async move |this, cx| {
             let ok = cx
                 .background_spawn(async move {
-                    let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
                     let replacer = sayso_core::dictionary::Replacer::new(&[]);
-                    let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), timeout };
-                    let out = p.run_style(entry.final_text.clone(), entry.replacements.clone());
+                    let out = match &cleanup {
+                        Some(c) => {
+                            let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: None, cleaner: Some(c.run(&style, &provider)), timeout };
+                            p.run_style(entry.final_text.clone(), entry.replacements.clone())
+                        }
+                        None => {
+                            let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
+                            let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), cleaner: None, timeout };
+                            p.run_style(entry.final_text.clone(), entry.replacements.clone())
+                        }
+                    };
                     let ok = out.enhance_error.is_none();
                     let mut e = entry;
                     e.final_text = out.text;
@@ -983,6 +1068,44 @@ impl FinalPass {
 }
 
 /// Why a style failed, for the overlay: "OpenRouter timed out after 4 s".
+/// The data of a dictation that a cleanup model reads. Built on the UI thread,
+/// used on a background thread.
+pub(crate) struct CleanupContext {
+    cleaner: Arc<sayso_cleanup_client::cleaner::RuntimeCleaner>,
+    model: &'static sayso_core::cleanup::CleanupModelInfo,
+    language_setting: String,
+    final_model_languages: Vec<&'static str>,
+    app: Option<String>,
+    site: Option<String>,
+}
+
+impl CleanupContext {
+    pub(crate) fn run<'a>(&'a self, style: &sayso_core::style::Style, provider: &'a Provider) -> CleanerRun<'a> {
+        CleanerRun {
+            cleaner: self.cleaner.as_ref(),
+            provider_id: &provider.id,
+            model: self.model,
+            plan: style.run_plan(provider),
+            language_setting: &self.language_setting,
+            final_model_languages: &self.final_model_languages,
+            app: self.app.as_deref(),
+            site: self.site.as_deref(),
+        }
+    }
+}
+
+/// What the overlay says when a cleanup model did less than the style.
+fn cleanup_notice_text(notice: &CleanupNotice, style_name: &str) -> String {
+    let model_name = |id: &str| sayso_core::cleanup::find(id).map_or(id.to_string(), |m| m.name.to_string());
+    match notice {
+        CleanupNotice::CleanupOnly { .. } => t!("overlay.notice.cleanup_only", style = style_name),
+        CleanupNotice::Language { model, language } => {
+            t!("overlay.notice.cleanup_language", model = model_name(model), language = sayso_core::languages::display(language))
+        }
+        CleanupNotice::UnknownLanguage { .. } => t!("overlay.notice.cleanup_unknown_language"),
+    }
+}
+
 fn style_error_text(provider: &str, error: &EnhanceError) -> String {
     match error {
         EnhanceError::Timeout(ms) => t!("overlay.style_error.timeout", provider = provider, seconds = (*ms as f64 / 1000.0).round() as u64),

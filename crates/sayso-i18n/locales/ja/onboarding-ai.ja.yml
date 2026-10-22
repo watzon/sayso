@@ -4,7 +4,7 @@ _version: 1
 onboarding:
   ai:
     title: "AI による整形を追加"
-    lead: "任意の設定です。スタイルを使うと、フィラーを取り除いたり、文法を直したり、メールの形式に整えたりできます。スタイルがない場合、Sayso は話したとおりに挿入します。この設定は後で「設定」でも行えます。"
+    lead: "任意の設定です。スタイルを使うと、フィラーを取り除いたり、文法を直したり、メールの形式に整えたりできます。スタイルがない場合、Sayso は話したとおりに挿入します。この設定は後で「設定 › プロバイダ」でも行えます。"
     looking: "この %{computer} で AI ツールを探しています…"
     apple_desc: "macOS のモデル（%{model}）。設定は不要です。テキストはこの Mac の外に送信されません。"
     ollama_empty: "この %{computer} で Ollama が実行されていますが、モデルがありません。「ollama pull qwen3:4b」を実行してから、もう一度これを選択してください。"
@@ -34,3 +34,10 @@ onboarding:
     error_api_key: "API キーを入力してください。Sayso はキーを%{store}に保存します。"
     error_model: "プロバイダの一覧からモデルを選択してください。"
     error_claude: "Claude CLI が見つかりませんでした。インストールするか、別のオプションを選択してください。"
+    by: "%{publisher} 製"
+    download_and_continue: "ダウンロードして続ける"
+    cleanup_formats: "メールとリストを整形します。"
+    cleanup_no_formats: "メールやリストの整形はできません。"
+    cleanup_desc_one: "%{language}のみ。%{formats}"
+    cleanup_desc_many:
+      other: "%{language}ほか %{count} 言語。%{formats}"

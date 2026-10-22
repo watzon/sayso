@@ -93,6 +93,8 @@ pub struct AppModel {
     pub styles: StyleLibrary,
     pub route: Route,
     pub services: Services,
+    /// The downloads of cleanup models. See `cleanup_models.rs`.
+    pub cleanup: crate::cleanup_models::CleanupModels,
 
     pub machine: Machine,
     pub live: Arc<LiveAudio>,
@@ -246,6 +248,7 @@ impl AppModel {
             route: Route::Home,
             services,
             machine: Machine::new(timing),
+            cleanup: Default::default(),
             live: Arc::new(LiveAudio::default()),
             preview: (String::new(), String::new()),
             last_text: None,
@@ -483,6 +486,18 @@ impl AppModel {
 
     /// Apply a config that changed (from the UI or from a file edit).
     pub(crate) fn apply_config_change(&mut self, before: &Config, cx: &mut Context<Self>) {
+        // No cleanup model can run any more: free the memory of the runtime
+        // now, not after its idle time. Off the UI thread, because a cleanup
+        // that runs now holds the runtime until it ends.
+        let cleanup_in_use = |c: &Config| c.ai.enabled && c.ai.providers.iter().any(|p| matches!(p.kind, ProviderKind::CleanupModel { .. }));
+        if cleanup_in_use(before) != cleanup_in_use(&self.config) {
+            let on = cleanup_in_use(&self.config);
+            self.services.cleanup_runtime.set_enabled(on);
+            if !on {
+                let runtime = self.services.cleanup_runtime.clone();
+                cx.background_spawn(async move { runtime.stop() }).detach();
+            }
+        }
         if before.appearance != self.config.appearance {
             crate::app::apply_theme(&self.config, &self.services, cx);
             cx.emit(AppEvent::ThemeChanged);
@@ -1311,6 +1326,10 @@ impl AppModel {
     /// is loading or loaded stays as it is.
     pub fn load_provider_models(&mut self, id: &str, force: bool, cx: &mut Context<Self>) {
         let Some(provider) = self.config.ai.providers.iter().find(|p| p.id == id).cloned() else { return };
+        // A cleanup model has one fixed model and no list.
+        if matches!(provider.kind, ProviderKind::CleanupModel { .. }) {
+            return;
+        }
         let secrets = self.services.secrets.clone();
         self.load_models(id.to_string(), provider, secrets, force, cx);
     }
