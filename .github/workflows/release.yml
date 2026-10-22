@@ -84,7 +84,12 @@ jobs:
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
 
+      # The cleanup runtime (native/cleanup) is its own Cargo workspace.
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            native/cleanup
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -215,9 +220,11 @@ jobs:
           workspaces: |
             .
             native/portable
+            native/cleanup
 
-      # whisper.cpp in the speech engine builds with CMake, and its bindings need
-      # libclang (the runner has LLVM). Inno Setup makes the installer.
+      # whisper.cpp in the speech engine and llama.cpp in the cleanup runtime
+      # build with CMake, and their bindings need libclang (the runner has
+      # LLVM). Inno Setup makes the installer.
       - name: Install CMake and Inno Setup
         run: |
           choco install cmake innosetup --no-progress -y

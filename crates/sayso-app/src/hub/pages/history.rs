@@ -726,7 +726,7 @@ impl HistoryPage {
         let (can_enhance, engine) = {
             let m = self.model.read(cx);
             let style = m.active_style();
-            (m.provider_for(&style).is_some_and(|p| !p.needs_model()) && style.uses_ai(), m.model_ready())
+            (m.provider_for(&style).is_some_and(|p| !p.needs_model() && style.run_plan(p) != sayso_core::style::RunPlan::Nothing), m.model_ready())
         };
 
         // The actions of the entry are in the three-dot menu. A delete asks

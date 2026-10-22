@@ -9,8 +9,8 @@
 # so permission prompts and grants belong to Sayso.
 #
 # XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME, RUST_LOG, SAYSO_FAKE_MIC,
-# SAYSO_ENGINE_PATH, SAYSO_UPDATE_URL, and SAYSO_UPDATE_KEY pass through to the
-# app. Press Ctrl+C to quit Sayso.
+# SAYSO_ENGINE_PATH, SAYSO_CLEANUP_PATH, SAYSO_UPDATE_URL, and SAYSO_UPDATE_KEY
+# pass through to the app. Press Ctrl+C to quit Sayso.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -34,7 +34,7 @@ if pgrep -fl 'target/(debug|release)/sayso( |$)' >/dev/null; then
 fi
 
 env_args=()
-for var in XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME RUST_LOG SAYSO_FAKE_MIC SAYSO_ENGINE_PATH SAYSO_UPDATE_URL SAYSO_UPDATE_KEY; do
+for var in XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME RUST_LOG SAYSO_FAKE_MIC SAYSO_ENGINE_PATH SAYSO_CLEANUP_PATH SAYSO_UPDATE_URL SAYSO_UPDATE_KEY; do
   [[ -n "${!var:-}" ]] && env_args+=(--env "$var=${!var}")
 done
 

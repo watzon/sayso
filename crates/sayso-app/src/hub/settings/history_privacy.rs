@@ -152,8 +152,10 @@ impl Render for HistorySettings {
         let privacy = group(&t!("settings.history.leaves", computer = crate::shell::computer()), cx).child(leaves.border_b_1().border_color(c.rule));
 
         // One row of the data group: a dot in the color of its bar segment, the size, and an action.
+        // The id keeps the texts of two rows apart: two sizes can be the same ("0 B").
         let data_row = |dot: Hsla, title: &str, description: String, bytes: u64, action: AnyElement| {
             div()
+                .id(SharedString::from(format!("data-{title}")))
                 .flex()
                 .items_center()
                 .w_full()

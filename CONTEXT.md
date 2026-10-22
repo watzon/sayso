@@ -79,7 +79,7 @@ The user's list of words and replacements.
 - A **replacement** is a rule that changes text after transcription ("git hub" → "GitHub").
 
 **Style**
-A named AI enhancement with a prompt and optional provider, model, and timeout overrides. "Raw" is the style with no AI. Each style is one TOML file. Built-in styles ship in the app, and a user file with the same id overrides them. The prompt of a style says only what the style adds to the base prompt.
+A named AI enhancement with a prompt, optional cleanup settings, and optional provider, model, and timeout overrides. "Raw" is the style with no AI: no prompt and no cleanup settings. Each style is one TOML file. Built-in styles ship in the app, and a user file with the same id overrides them. The prompt of a style says only what the style adds to the base prompt.
 
 **Default style**
 The style of a dictation when no style rule applies. The user chooses it in the popover, on the Styles page, or with the next-style hotkey.
@@ -106,7 +106,19 @@ The step that changes the English commands "comma", "period", "question mark", "
 A word that the speaker spells after a cue: "Dana Cats, that's K A T Z". Before the model of a style runs, code puts the spelled word in place of the cue and of the words that it corrects.
 
 **Enhancer**
-The trait that sends a transcript and a style prompt to an AI provider and returns schema-checked JSON. The implementations are the OpenAI-compatible endpoint, the Claude CLI, the Codex CLI, and the language model of the engine.
+The trait that sends a transcript and a style prompt to an AI provider and returns schema-checked JSON. The implementations are the OpenAI-compatible endpoint, the Claude CLI, the Codex CLI, and the language model of the engine. A cleanup model is not an enhancer: it runs through `Cleaner`.
+
+**Cleanup model**
+A local model that cleans up text with fixed settings and reads no prompt: S1-mini by Superwhisper (English) and Cleanup 1 by Spokenly (seven languages). It is a provider of a style, like Apple Intelligence, with the badge "No prompts". It runs a style only when the style has cleanup settings that the model supports; else it does a cleanup only, and the overlay says so. It runs only when Sayso knows the language of the dictation and the model supports it. The text stays on the computer. [docs/cleanup-models.md](docs/cleanup-models.md) has the design.
+
+**Cleanup settings**
+The part of a style that a cleanup model uses (`[cleanup]` in the style file): tone, layout (paragraphs or list), and format (plain or email). A style without them needs a provider that reads prompts. An override of a built-in style without the key keeps the settings of the built-in style; `cleanup = false` turns them off.
+
+**Tone**
+How a cleanup model writes capital letters and the final period: very casual, casual, or formal. It does not change words. Only Cleanup 1 has tones.
+
+**Cleanup runtime**
+The process `sayso-cleanup` (`native/cleanup`) that runs a cleanup model with llama.cpp. It knows no model: it loads a GGUF file and completes text. Sayso starts it at the first use and stops it after 10 minutes with no use.
 
 **Thinking level**
 How much the model of a provider thinks before it answers, for example low, medium, or high. A higher level is slower. The levels are those that the provider reports for the model, with its model list: the Claude tool, the Codex tool, and OpenRouter do. The user sets the level for each provider in Settings. With no choice, a CLI provider gets low, and an OpenAI-compatible provider gets no level, so the model uses its own default. When the user chooses another model, a level that the model does not have becomes its lowest level. The level goes out as `--effort` (Claude), `model_reasoning_effort` (Codex), `reasoning.effort` (OpenRouter), or `reasoning_effort` (other servers).

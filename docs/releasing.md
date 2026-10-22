@@ -85,7 +85,7 @@ rm tap-key tap-key.pub
 
 ### AUR package
 
-The job **AUR package** pushes the `PKGBUILD` and the `.SRCINFO` of `sayso-bin` to the [AUR](https://aur.archlinux.org/packages/sayso-bin). The `manifest` job makes the two files from `packaging/linux/aur/PKGBUILD.in` and the tarballs of the run (`scripts/aur-pkgbuild.sh`). Like the Homebrew job, it runs after the release is the latest release.
+The job **AUR package** pushes the `PKGBUILD` and the `.SRCINFO` of `sayso-bin` to the [AUR](https://aur.archlinux.org/packages/sayso-bin). The `manifest` job makes the two files from `packaging/linux/aur/PKGBUILD.in` and the tarballs of the run (`scripts/aur-pkgbuild.sh`). The `package()` function installs the three binaries from the tarball into `/usr/lib/sayso`. Like the Homebrew job, it runs after the release is the latest release.
 
 The job needs one secret:
 
@@ -107,7 +107,7 @@ To change the package without a new Sayso version (for example a new dependency)
 
 ### Windows signing (optional)
 
-The Windows job signs the installer and the two exes when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
+The Windows job signs the installer and the three exes (`Sayso.exe`, `SaysoEngine.exe`, and `sayso-cleanup.exe`) when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
 
 | Secret | Contents |
 |---|---|
@@ -163,7 +163,7 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    The AUR package `sayso-bin` must also have the new version.
 
-7. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before.
+7. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before. The Nix package installs `sayso-cleanup` only when the tarball has it, so it also works with a release before the cleanup runtime. After the first release that has the runtime, remove that test from `packaging/nix/package.nix`.
 
    ```sh
    scripts/after-release.sh v0.3.0
@@ -180,9 +180,28 @@ If only the last step of **Update manifest** fails, run that job again.
 
 The workflow does not change a release that users already get: each job stops when the release is not a prerelease. To correct such a release, make a new version.
 
+## What ships where
+
+Each release file holds three programs: the app, the speech engine, and the cleanup runtime `sayso-cleanup` (`native/cleanup`, its own Cargo workspace, which builds llama.cpp with CMake). The app finds the runtime in the folder of its own executable (`Runtime::default_path` in `crates/sayso-cleanup-client/src/runtime.rs`). So the runtime goes where the app executable is. No release file is new: the runtime is inside the 12 that exist.
+
+| Release file | Where `sayso-cleanup` is | Signing |
+|---|---|---|
+| macOS DMG | `Sayso.app/Contents/MacOS/sayso-cleanup`, beside `Sayso` and `SaysoEngine` | Developer ID, hardened runtime, no entitlements, identifier `dev.sayso.Sayso.cleanup`. The notarization of the app covers it. |
+| Windows installer | `sayso-cleanup.exe` in the install folder, beside `Sayso.exe` and `SaysoEngine.exe` | Signed with the same certificate as the exes, when the secrets exist |
+| Linux tarball | `bin/sayso-cleanup`, beside `bin/sayso` | None |
+| `.deb`, `.rpm`, AUR | `/usr/lib/sayso/sayso-cleanup`, beside `sayso` (`/usr/bin/sayso` is a link) | None |
+| AppImage | `usr/bin/sayso-cleanup` | None |
+| Flatpak | `/app/bin/sayso-cleanup` | None |
+| Nix | `$out/lib/sayso/sayso-cleanup` | None |
+| Homebrew cask | Inside `Sayso.app`, as in the DMG | The DMG |
+
+`scripts/bundle.sh`, `scripts/bundle-windows.ps1`, and `scripts/bundle-linux.sh` build the runtime in release mode, also for a debug app, because llama.cpp is slow in a debug build. Every other Linux format takes the binary from the tarball.
+
+The CI job **Cleanup runtime** (`ci.yml`, start it with `gh workflow run ci.yml`) builds, tests, and lints the runtime on the four targets: macOS arm64, Windows x86_64, Linux x86_64, and Linux arm64. It prints the size and the libraries of the binary, and fails when the binary needs OpenMP. `linux.yml` also starts the installed runtime in the `.deb` test and checks that it answers `hello` with the `cpu` backend.
+
 ## Build the release files on your Mac
 
-`scripts/release.sh` does the same steps as the macOS job and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`).
+`scripts/release.sh` does the same steps as the macOS job and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`) and CMake (for the cleanup runtime).
 
 ```sh
 scripts/release.sh --skip-notarize   # bundle and DMG only. Nothing goes to Apple.
@@ -198,7 +217,7 @@ For notarization, the script uses the keychain profile `notarytool-password`, th
 
 ## Build the Windows files on a PC
 
-`scripts/bundle-windows.ps1 -Installer` does the same steps as the Windows job and writes the installer and its `.sha256` to `dist\`. It needs CMake and [Inno Setup 6](https://jrsoftware.org/isinfo.php). Set `SAYSO_SIGN_CERT` and `SAYSO_SIGN_PASSWORD` to sign.
+`scripts/bundle-windows.ps1 -Installer` does the same steps as the Windows job and writes the installer and its `.sha256` to `dist\`. It builds the speech engine and the cleanup runtime, so it needs CMake and libclang (`scripts\windows-env.ps1` finds them), and [Inno Setup 6](https://jrsoftware.org/isinfo.php). Set `SAYSO_SIGN_CERT` and `SAYSO_SIGN_PASSWORD` to sign.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
@@ -208,7 +227,7 @@ powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
 
 The Linux jobs are in their own workflow, `linux.yml`, which the Release workflow calls. It has two jobs for each architecture:
 
-1. **Build** compiles the two binaries one time, in an Ubuntu 22.04 container, and makes the tarball (`scripts/bundle-linux.sh`). The container sets the oldest glibc that Sayso runs on: 2.35.
+1. **Build** compiles the three binaries one time, in an Ubuntu 22.04 container, and makes the tarball (`scripts/bundle-linux.sh`). The container sets the oldest glibc that Sayso runs on: 2.35.
 2. **Packages** makes the `.deb`, the `.rpm`, the AppImage, and the Flatpak from the tarball (`scripts/package-linux.sh`), with no compiler. The AppImage gets its copies of the fallback libraries from the packages of this container. It then installs the `.deb` on Ubuntu 22.04 and starts Sayso on a virtual display.
 
 `linux.yml` does not touch a release, so you can test a packaging change without one. A pull request that changes the packaging runs it. You can also start it by hand, and then download the files from the run:
@@ -217,7 +236,7 @@ The Linux jobs are in their own workflow, `linux.yml`, which the Release workflo
 gh workflow run linux.yml --ref <branch>
 ```
 
-`packaging/linux/nfpm.yaml` has the layout and the dependencies of the `.deb` and the `.rpm`. It also declares the glibc and libstdc++ versions. `package-linux.sh` stops when a binary needs a newer version, so change the numbers there when you change the build container.
+`packaging/linux/nfpm.yaml` has the layout and the dependencies of the `.deb` and the `.rpm`. It also declares the glibc and libstdc++ versions. `package-linux.sh` stops when one of the three binaries needs a newer version, so change the numbers there when you change the build container.
 
 `package-linux.sh` downloads nfpm, appimagetool, and the AppImage runtime at fixed versions and checks their SHA-256. To use a newer version, change the URL and the hash in the script for both architectures.
 

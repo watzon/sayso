@@ -3,6 +3,7 @@
 //! This crate must not depend on GPUI, on platform crates, or on other Sayso
 //! crates. A CI check enforces this (see `scripts/check-deps.sh`).
 
+pub mod cleanup;
 pub mod config;
 pub mod dictation;
 pub mod dictionary;

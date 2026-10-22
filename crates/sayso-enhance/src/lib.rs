@@ -33,7 +33,7 @@ pub use openai::{OpenAiCompatible, clear_mode_cache};
 pub use secrets::{KEYCHAIN_SERVICE, KeychainStore, MemoryStore, SecretError, SecretStore};
 
 use sayso_core::config::{Ai, Provider, ProviderKind};
-use sayso_core::enhance::{Enhancer, LanguageModel};
+use sayso_core::enhance::{EnhanceError, EnhanceRequest, EnhanceResponse, Enhancer, LanguageModel};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -83,6 +83,29 @@ pub fn build_enhancer(
                 .with_default_timeout(cli_timeout),
         ),
         ProviderKind::AppleIntelligence => Box::new(EngineModel::new(&provider.id, engine).with_default_timeout(http_timeout)),
+        // A cleanup model reads no prompt: the app runs it as a `Cleaner`
+        // (`sayso-cleanup-client`), never through this function.
+        ProviderKind::CleanupModel { .. } => Box::new(CleanupModelStub { id: provider.id.clone() }),
+    }
+}
+
+/// The enhancer of a cleanup model. A cleanup model reads no prompt, so it
+/// cannot enhance.
+struct CleanupModelStub {
+    id: String,
+}
+
+impl Enhancer for CleanupModelStub {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn is_cloud(&self) -> bool {
+        false
+    }
+
+    fn enhance(&self, _request: &EnhanceRequest) -> Result<EnhanceResponse, EnhanceError> {
+        Err(EnhanceError::NotConfigured("cleanup models run in the cleanup runtime".into()))
     }
 }
 

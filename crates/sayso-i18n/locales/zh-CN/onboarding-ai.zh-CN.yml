@@ -4,7 +4,7 @@ _version: 1
 onboarding:
   ai:
     title: "添加 AI 整理"
-    lead: "可选。风格可以删除口头禅、修正语法或排版电子邮件。不使用风格时，Sayso 会原样插入你说的话。你也可以稍后在“设置”中进行设置。"
+    lead: "可选。风格可以删除口头禅、修正语法或排版电子邮件。不使用风格时，Sayso 会原样插入你说的话。你也可以稍后在“设置 › 服务商”中进行设置。"
     looking: "正在这台%{computer}上查找 AI 工具…"
     apple_desc: "macOS 的模型（%{model}）。无需设置。文本会保留在这台 Mac 上。"
     ollama_empty: "Ollama 正在这台%{computer}上运行，但没有任何模型。请运行“ollama pull qwen3:4b”，然后再次选择此项。"
@@ -34,3 +34,10 @@ onboarding:
     error_api_key: "请输入你的 API 密钥。Sayso 会将其保存在%{store}中。"
     error_model: "请从服务商的列表中选择一个模型。"
     error_claude: "Sayso 未找到 Claude CLI。请安装它，或选择其他选项。"
+    by: "来自 %{publisher}"
+    download_and_continue: "下载并继续"
+    cleanup_formats: "可排版电子邮件和列表。"
+    cleanup_no_formats: "不排版电子邮件和列表。"
+    cleanup_desc_one: "仅支持%{language}。%{formats}"
+    cleanup_desc_many:
+      other: "支持%{language}及另外 %{count} 种语言。%{formats}"

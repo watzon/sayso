@@ -12,8 +12,9 @@ spikes/engine/runs/*.stderr
 .swiftpm/
 .DS_Store
 
-# The portable speech engine is its own Cargo workspace.
+# The portable speech engine and the cleanup runtime are their own Cargo workspaces.
 native/portable/target
+native/cleanup/target
 
 # Agent worktrees of Claude Code.
 .claude/worktrees/

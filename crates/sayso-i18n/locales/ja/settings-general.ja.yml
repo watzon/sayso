@@ -59,3 +59,4 @@ settings:
     version: "バージョン %{version}"
     tagline: "%{os} 用のローカル音声入力"
     speech_engine: "音声エンジン"
+    model_by: "%{name}（%{publisher} 製）"

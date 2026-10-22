@@ -18,6 +18,12 @@ target_dir=$(cargo metadata --format-version 1 --no-deps | python3 -c 'import js
 
 echo "==> app and engine (cargo, $profile)"
 cargo build -p sayso-app -p sayso-engine $cargo_flag
+# The cleanup runtime is its own Cargo workspace (it builds llama.cpp, which is
+# slow in a debug build), so it is always a release build.
+echo "==> cleanup runtime (cargo, release)"
+cargo build --release --manifest-path native/cleanup/Cargo.toml
+cleanup_target=$(cargo metadata --format-version 1 --no-deps --manifest-path native/cleanup/Cargo.toml | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+cleanup_bin="$cleanup_target/release/sayso-cleanup"
 
 name="sayso-$version-linux-$arch"
 out="${SAYSO_BUNDLE_DIR:-build}/$name"
@@ -25,12 +31,16 @@ rm -rf "$out"
 mkdir -p "$out/bin" "$out/share/applications" "$out/share/metainfo" "$out/lib/udev/rules.d"
 install -m 755 "$target_dir/$profile/sayso" "$out/bin/sayso"
 install -m 755 "$target_dir/$profile/sayso-engine" "$out/bin/sayso-engine"
+# The app finds the cleanup runtime next to itself, like the engine.
+install -m 755 "$cleanup_bin" "$out/bin/sayso-cleanup"
 cp packaging/linux/dev.sayso.Sayso.desktop "$out/share/applications/"
 cp packaging/linux/dev.sayso.Sayso.metainfo.xml "$out/share/metainfo/"
 cp packaging/linux/70-sayso-uinput.rules "$out/lib/udev/rules.d/"
 install -m 755 packaging/linux/install.sh "$out/install.sh"
 cp LICENSE "$out/"
 # The MIT licenses of parakeet.cpp and ggml, which the engine links statically.
+# The cleanup runtime links llama.cpp statically, and its LICENSE has the same
+# text as ggml.txt.
 install -D -m 644 -t "$out/share/licenses/sayso" crates/sayso-engine/licenses/*.txt
 # The macOS icon set has the sizes the hicolor theme uses.
 for size in 16 32 128 256 512; do

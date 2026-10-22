@@ -23,9 +23,11 @@ sha256sums_aarch64=('@SHA256_AARCH64@')
 
 package() {
   cd "sayso-$pkgver-linux-$CARCH"
-  # The app finds the engine next to itself, so both binaries live in one folder.
+  # The app finds the engine and the cleanup runtime next to itself, so the
+  # three binaries live in one folder.
   install -Dm755 bin/sayso "$pkgdir/usr/lib/sayso/sayso"
   install -Dm755 bin/sayso-engine "$pkgdir/usr/lib/sayso/sayso-engine"
+  install -Dm755 bin/sayso-cleanup "$pkgdir/usr/lib/sayso/sayso-cleanup"
   install -d "$pkgdir/usr/bin"
   ln -s /usr/lib/sayso/sayso "$pkgdir/usr/bin/sayso"
   install -Dm644 share/applications/dev.sayso.Sayso.desktop "$pkgdir/usr/share/applications/dev.sayso.Sayso.desktop"

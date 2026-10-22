@@ -5,19 +5,21 @@
 //! panel, and a line that names the default provider. The providers are in
 //! Settings.
 
-use super::ext::StyleRoute;
+use super::ext::{self, StyleRoute};
 use super::kit::{self, ui};
 use crate::model::AppModel;
 use crate::model_picker::{self, Extra};
 use gpui_kit::component::input::{InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+use sayso_core::cleanup::{CleanupModelInfo, CleanupSettings, Format, Layout, Settings, Tone};
+use sayso_core::config::{Provider, ProviderKind};
 use sayso_core::ink::NamedInk;
-use sayso_core::style::{Style, StyleOrigin};
+use sayso_core::style::{CleanupField, RunPlan, Style, StyleOrigin};
 use sayso_core::style_rules::{self, TypedTarget};
 use sayso_i18n::t;
 use sayso_platform::AppInfo;
-use sayso_ui::a11y::{A11yExt as _, Pressable, Role};
+use sayso_ui::a11y::{A11yExt as _, Pressable, Role, Toggled};
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
 use sayso_ui::paper::PaperStyled;
@@ -26,6 +28,68 @@ use sayso_ui::{ActivePaper, Colors, text};
 
 /// The style that the page shows with an example.
 const FEATURED_STYLE_ID: &str = "rambling";
+
+/// The styles to feature when the default provider cannot run the usual one,
+/// first choice first.
+const FEATURED_FALLBACK: [&str; 6] = ["rambling", "email", "notes", "message", "polished", "clean"];
+
+/// The style that the page shows with an example. It is a style that the
+/// default provider can run: a cleanup model reads no prompt, so it cannot run
+/// every style. With any other default provider this is the usual style.
+fn featured_style<'a>(styles: &'a [Style], default: Option<&Provider>) -> Option<&'a Style> {
+    let usual = styles.iter().find(|s| s.id == FEATURED_STYLE_ID);
+    let Some(default) = default.filter(|p| matches!(p.kind, ProviderKind::CleanupModel { .. })) else { return usual };
+    let runs = |s: &Style| matches!(s.run_plan(default), RunPlan::Prompt | RunPlan::Cleanup(_));
+    if usual.is_some_and(runs) {
+        return usual;
+    }
+    FEATURED_FALLBACK.iter().filter_map(|id| styles.iter().find(|s| s.id == *id)).find(|s| runs(s)).or(usual)
+}
+
+/// What the cleanup controls of the editor say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CleanupEdit {
+    settings: Settings,
+    /// True when these settings replace what the style has: the user changed
+    /// a control, or the style is new.
+    own: bool,
+}
+
+impl CleanupEdit {
+    fn new(style: &Style, is_new: bool) -> Self {
+        CleanupEdit { settings: style.cleanup_settings().and_then(|s| s.known()).unwrap_or_default(), own: is_new }
+    }
+
+    fn change(&mut self, f: impl FnOnce(&mut Settings)) {
+        f(&mut self.settings);
+        self.own = true;
+    }
+
+    fn table(&self) -> CleanupField {
+        CleanupField::Settings(CleanupSettings::new(self.settings.tone, self.settings.layout, self.settings.format))
+    }
+}
+
+/// The style as the editor has it now, to ask `Style::run_plan` what a provider
+/// does with it.
+fn style_as_edited(base: &Style, prompt: &str, edit: &CleanupEdit) -> Style {
+    Style { prompt: prompt.trim().to_string(), cleanup: if edit.own { edit.table() } else { base.cleanup.clone() }, ..base.clone() }
+}
+
+/// The `cleanup` key to save for a style whose provider is a cleanup model.
+/// None keeps the key as it is: a style with no cleanup settings that the user
+/// did not give any, and a style with a value that this version does not know.
+fn cleanup_to_save(base: &Style, edit: &CleanupEdit) -> Option<CleanupField> {
+    let known = base.cleanup_settings().is_some_and(|s| s.known().is_some());
+    (edit.own || known).then(|| edit.table())
+}
+
+/// The cleanup model that cannot run `style`, when `provider` is one.
+fn cannot_run(style: &Style, provider: Option<&Provider>) -> Option<&'static CleanupModelInfo> {
+    let provider = provider?;
+    let info = ext::cleanup_model_info(provider)?;
+    (style.run_plan(provider) == RunPlan::CleanupOnly).then_some(info)
+}
 
 /// Why the editor cannot save. It keeps the reason, not the sentence, so it
 /// changes with the language.
@@ -73,6 +137,11 @@ struct Editor {
     timeout: Entity<InputState>,
     /// False for a standalone style.
     use_base: bool,
+    /// The controls of a cleanup model. Used only when the provider is one.
+    cleanup: CleanupEdit,
+    /// With a cleanup model, the prompt and the apps are folded away.
+    prompt_open: bool,
+    targets_open: bool,
     error: Option<EditError>,
     confirm_delete: bool,
     /// The apps and sites that use this style (see `style_rules`).
@@ -158,6 +227,8 @@ impl StylesPage {
             temperature: None,
             timeout_ms: None,
             standalone: false,
+            cleanup: Default::default(),
+            inherited_cleanup: None,
         });
         let origin = if is_new { None } else { self.model.read(cx).style_origin(&base.id) };
         let http_s = self.model.read(cx).config.ai.http_timeout_ms as f64 / 1000.0;
@@ -194,6 +265,7 @@ impl StylesPage {
         });
         let style_model = base.model.clone();
         let use_base = !base.standalone;
+        let cleanup = CleanupEdit::new(&base, is_new);
         self.editor = Some(Editor {
             id: base.id.clone(),
             is_new,
@@ -208,6 +280,9 @@ impl StylesPage {
             model: style_model,
             timeout,
             use_base,
+            cleanup,
+            prompt_open: false,
+            targets_open: false,
             error: None,
             confirm_delete: false,
             apps,
@@ -304,6 +379,10 @@ impl StylesPage {
         let description = ed.description.read(cx).value().trim().to_string();
         let name = if name == ed.base.display_name() { ed.base.name.clone() } else { name };
         let description = if description == ed.base.display_description() { ed.base.description.clone() } else { description };
+        // The settings go into the file only for a cleanup model. A file for
+        // another provider stays as it was.
+        let on_cleanup_model = self.model.read(cx).config.ai.provider(ed.provider.as_deref()).is_some_and(|p| ext::cleanup_model_info(p).is_some());
+        let cleanup = on_cleanup_model.then(|| cleanup_to_save(&ed.base, &ed.cleanup)).flatten().unwrap_or_else(|| ed.base.cleanup.clone());
         let style = Style {
             id,
             name,
@@ -314,6 +393,7 @@ impl StylesPage {
             model: ed.model.clone(),
             timeout_ms,
             standalone: !ed.use_base,
+            cleanup,
             ..ed.base.clone()
         };
         let (apps, sites) = (ed.apps.clone(), ed.sites.clone());
@@ -355,6 +435,12 @@ impl StylesPage {
             },
             (None, None) => t!("styles.editor.provider_model"),
         };
+        let all_providers: Vec<Provider> = m.config.ai.providers.clone();
+        let default_provider = m.config.ai.provider(None).cloned();
+        // The controls and the menu follow what the provider does with the style as it is now.
+        let cleanup_model = target.as_ref().and_then(ext::cleanup_model_info);
+        let edited = style_as_edited(&ed.base, &ed.prompt.read(cx).value(), &ed.cleanup);
+        let blocked = cannot_run(&edited, target.as_ref());
 
         // Ink swatches.
         let ink_count = NamedInk::ALL.len();
@@ -434,6 +520,7 @@ impl StylesPage {
                 .px(px(12.))
                 .rounded(px(9.))
                 .raised_small(&c)
+                .when(blocked.is_some(), |d| d.border_1().border_color(c.danger))
                 .cursor_pointer()
                 .on_click(cx.listener(|this, _, _, cx| {
                     if let Some(ed) = this.editor.as_mut() {
@@ -441,22 +528,35 @@ impl StylesPage {
                     }
                     cx.notify();
                 }))
-                .child(kit::plain(current, 14., 18., FontWeight::NORMAL, c.ink))
+                .child(kit::plain(current.clone(), 14., 18., FontWeight::NORMAL, c.ink))
                 .child(icon(Icon::ChevronDown, 12., c.graphite)),
         );
         if ed.provider_menu {
-            let mut items: Vec<(SharedString, bool)> = vec![(t!("styles.editor.default_provider").into(), ed.provider.is_none())];
-            for (id, name) in &providers {
-                items.push((name.clone().into(), ed.provider.as_deref() == Some(id)));
+            // A cleanup model that cannot run the style is grey. When the
+            // current choice is one, the first line says why.
+            let default_blocked = cannot_run(&edited, default_provider.as_ref()).is_some();
+            let mut rows = Vec::new();
+            let note = blocked.map(|info| (current.clone(), t!("styles.editor.cannot_run", model = info.name)));
+            // With the default provider as the current choice, the first line stands for its row.
+            if !(ed.provider.is_none() && note.is_some()) {
+                rows.push(ProviderRow { pick: None, label: t!("styles.editor.default_provider"), selected: ed.provider.is_none(), blocked: default_blocked });
             }
-            let ids: Vec<String> = providers.iter().map(|p| p.0.clone()).collect();
+            for p in &all_providers {
+                rows.push(ProviderRow {
+                    pick: Some(p.id.clone()),
+                    label: p.name.clone(),
+                    selected: ed.provider.as_deref() == Some(p.id.as_str()),
+                    blocked: cannot_run(&edited, Some(p)).is_some(),
+                });
+            }
+            let picks: Vec<Option<String>> = rows.iter().map(|r| r.pick.clone()).collect();
             let e1 = cx.entity();
             let e2 = cx.entity();
-            select = select.child(div().absolute().top_full().left_0().child(kit::menu(
-                "provider-menu",
-                items,
+            select = select.child(div().absolute().top_full().left_0().child(provider_menu(
+                note,
+                rows,
                 move |i, _, cx| {
-                    let pick = if i == 0 { None } else { ids.get(i - 1).cloned() };
+                    let Some(pick) = picks.get(i).cloned() else { return };
                     e1.update(cx, |this, cx| {
                         if let Some(ed) = this.editor.as_mut() {
                             // A model from one provider means nothing to another.
@@ -540,7 +640,6 @@ impl StylesPage {
             .debossed(&c)
             .text_size(px(14.))
             .child(Textarea::new(&ed.prompt).aria_label(t!("styles.editor.prompt")).appearance(false).h(px(150.)).text_size(px(14.)));
-        let targets = self.targets_group(ed, cx);
 
         let title = if ed.is_new { t!("styles.editor.new_title") } else { t!("styles.editor.edit_title", name = ed.base.name) };
         let file_note = if ed.is_new {
@@ -591,34 +690,8 @@ impl StylesPage {
             }
         }
 
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap(px(18.))
-            .p(px(28.))
-            .child(
-                div()
-                    .flex()
-                    .items_start()
-                    .justify_between()
-                    .child(div().flex().flex_col().gap(px(6.)).child(text::title(title, 28., &c)).child(ui(
-                        file_note,
-                        13.,
-                        18.,
-                        FontWeight::NORMAL,
-                        c.graphite,
-                    )))
-                    .child(kit::icon_button("close-editor", Icon::Close, 12., cx).label(t!("styles.a11y.close")).on_click(cx.listener(|this, _, _, cx| {
-                        this.editor = None;
-                        cx.notify();
-                    }))),
-            )
-            .child(kit::field(&t!("styles.editor.name"), kit::input_well_named(&ed.name, Some(t!("styles.editor.name").into()), cx), None, cx))
-            .child(kit::field(&t!("styles.editor.description"), kit::input_well_named(&ed.description, Some(t!("styles.editor.description").into()), cx), None, cx))
-            .child(kit::field(&t!("styles.editor.ink"), swatches, None, cx))
-            .child(kit::field(&t!("styles.editor.prompt"), prompt, Some(&t!("styles.editor.prompt_hint")), cx))
-            .child(
-                div()
+        let prompt_field = kit::field(&t!("styles.editor.prompt"), prompt, Some(&t!("styles.editor.prompt_hint")), cx);
+        let use_base_row = div()
                     .flex()
                     .items_center()
                     .justify_between()
@@ -649,17 +722,153 @@ impl StylesPage {
                                 cx.notify();
                             })
                         }
-                    }))),
-            )
-            .child(kit::field(&t!("styles.editor.provider"), provider_field, None, cx))
+                    })));
+        let cleanup_hint = cleanup_model.map(|info| if info.context { t!("styles.editor.cleanup_hint_context") } else { t!("styles.editor.cleanup_hint") });
+        let body = div()
+            .flex()
+            .flex_col()
+            .gap(px(18.))
+            .p(px(28.))
             .child(
                 div()
                     .flex()
-                    .gap(px(12.))
-                    .child(kit::field(&t!("styles.editor.model"), model_field, None, cx).flex_1())
-                    .child(kit::field(&t!("styles.editor.timeout"), kit::input_well_named(&ed.timeout, Some(t!("styles.editor.timeout").into()), cx), None, cx).w(px(150.))),
+                    .items_start()
+                    .justify_between()
+                    .child(div().flex().flex_col().gap(px(6.)).child(text::title(title, 28., &c)).child(ui(
+                        file_note,
+                        13.,
+                        18.,
+                        FontWeight::NORMAL,
+                        c.graphite,
+                    )))
+                    .child(kit::icon_button("close-editor", Icon::Close, 12., cx).label(t!("styles.a11y.close")).on_click(cx.listener(|this, _, _, cx| {
+                        this.editor = None;
+                        cx.notify();
+                    }))),
             )
-            .child(targets)
+            .child(kit::field(&t!("styles.editor.name"), kit::input_well_named(&ed.name, Some(t!("styles.editor.name").into()), cx), None, cx))
+            .child(kit::field(&t!("styles.editor.description"), kit::input_well_named(&ed.description, Some(t!("styles.editor.description").into()), cx), None, cx))
+            .child(kit::field(&t!("styles.editor.ink"), swatches, None, cx))
+            .child(kit::field(&t!("styles.editor.provider"), provider_field, cleanup_hint.as_deref(), cx));
+        let body = match cleanup_model {
+            Some(info) => {
+                let page = cx.entity();
+                let mut body = body;
+                if info.tones {
+                    let tone = [Tone::VeryCasual, Tone::Casual, Tone::Formal].iter().position(|t| *t == ed.cleanup.settings.tone).unwrap_or(2);
+                    let tone_control = Segmented::new(
+                        "cleanup-tone",
+                        [t!("styles.editor.tone_very_casual"), t!("styles.editor.tone_casual"), t!("styles.editor.tone_formal")],
+                        tone,
+                    )
+                    .label(t!("styles.editor.tone"))
+                    .compact()
+                    .on_select({
+                        let page = page.clone();
+                        move |i, _, cx| {
+                            page.update(cx, |this, cx| {
+                                if let Some(ed) = this.editor.as_mut() {
+                                    let tone = [Tone::VeryCasual, Tone::Casual, Tone::Formal][i.min(2)];
+                                    ed.cleanup.change(|s| s.tone = tone);
+                                }
+                                cx.notify();
+                            })
+                        }
+                    });
+                    body = body.child(kit::field(&t!("styles.editor.tone"), tone_control, None, cx));
+                }
+                if info.layouts.contains(&Layout::List) {
+                    let layout = if ed.cleanup.settings.layout == Layout::List { 1 } else { 0 };
+                    let layout_control = Segmented::new("cleanup-layout", [t!("styles.editor.layout_paragraphs"), t!("styles.editor.layout_lists")], layout)
+                        .label(t!("styles.editor.layout"))
+                        .compact()
+                        .on_select({
+                            let page = page.clone();
+                            move |i, _, cx| {
+                                page.update(cx, |this, cx| {
+                                    if let Some(ed) = this.editor.as_mut() {
+                                        let layout = if i == 1 { Layout::List } else { Layout::Paragraphs };
+                                        ed.cleanup.change(|s| s.layout = layout);
+                                    }
+                                    cx.notify();
+                                })
+                            }
+                        });
+                    body = body.child(kit::field(&t!("styles.editor.layout"), layout_control, None, cx));
+                }
+                if info.formats.contains(&Format::Email) {
+                    let page = page.clone();
+                    body = body.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(px(16.))
+                            .child(ui(t!("styles.editor.format_email"), 13., 16., FontWeight::SEMIBOLD, c.ink).flex_1().min_w_0())
+                            .child(div().flex_none().child(Switch::new("format-email", ed.cleanup.settings.format == Format::Email).label(t!("styles.editor.format_email")).on_toggle(
+                                move |on, _, cx| {
+                                    page.update(cx, |this, cx| {
+                                        if let Some(ed) = this.editor.as_mut() {
+                                            ed.cleanup.change(|s| s.format = if on { Format::Email } else { Format::Plain });
+                                        }
+                                        cx.notify();
+                                    })
+                                },
+                            ))),
+                    );
+                }
+                let prompt_body = div().flex().flex_col().gap(px(18.)).child(prompt_field).child(use_base_row);
+                let targets_summary = names_line(&self.target_names(&ed.apps, &ed.sites, cx)).unwrap_or_else(|| t!("styles.targets.summary_none"));
+                body.child(fold_row(
+                    "fold-prompt",
+                    t!("styles.editor.prompt"),
+                    t!("styles.editor.prompt_not_used", model = info.name),
+                    ed.prompt_open,
+                    {
+                        let page = page.clone();
+                        move |_, cx| {
+                            page.update(cx, |this, cx| {
+                                if let Some(ed) = this.editor.as_mut() {
+                                    ed.prompt_open = !ed.prompt_open;
+                                }
+                                cx.notify();
+                            })
+                        }
+                    },
+                    prompt_body,
+                    &c,
+                ))
+                .child(fold_row(
+                    "fold-targets",
+                    t!("styles.targets.title"),
+                    targets_summary,
+                    ed.targets_open,
+                    move |_, cx| {
+                        page.update(cx, |this, cx| {
+                            if let Some(ed) = this.editor.as_mut() {
+                                ed.targets_open = !ed.targets_open;
+                            }
+                            cx.notify();
+                        })
+                    },
+                    self.targets_group(ed, false, cx),
+                    &c,
+                ))
+                .child(kit::field(&t!("styles.editor.timeout"), kit::input_well_named(&ed.timeout, Some(t!("styles.editor.timeout").into()), cx), None, cx).w(px(150.)))
+            }
+            None => body
+                .child(prompt_field)
+                .child(use_base_row)
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(12.))
+                        .child(kit::field(&t!("styles.editor.model"), model_field, None, cx).flex_1())
+                        .child(kit::field(&t!("styles.editor.timeout"), kit::input_well_named(&ed.timeout, Some(t!("styles.editor.timeout").into()), cx), None, cx).w(px(150.))),
+                )
+                .child(self.targets_group(ed, true, cx)),
+        };
+        let body = body
             .when_some(ed.error.as_ref(), |d, e| d.child(Banner::new(BannerKind::Warning, e.text())))
             .child(div().pt(px(6.)).child(buttons));
 
@@ -673,20 +882,22 @@ impl StylesPage {
         let rules = &self.model.read(cx).config.ai.style_rules;
         let rule = rules.rule(style).filter(|_| rules.enabled)?;
         // The apps on this computer first: the user knows their names.
-        let (here, away): (Vec<&String>, Vec<&String>) =
-            rule.apps.iter().partition(|id| self.apps.iter().any(|a| a.bundle_id.eq_ignore_ascii_case(id)));
-        let names: Vec<String> = here.into_iter().chain(away).map(|id| self.app_name(id, cx)).chain(rule.sites.iter().cloned()).collect();
-        Some(match names.as_slice() {
-            [] => return None,
-            [one] => one.clone(),
-            [one, two] => t!("styles.targets.names_two", one = one, two = two),
-            [one, two, rest @ ..] => t!("styles.targets.names_many", one = one, two = two, more = rest.len()),
-        })
+        names_line(&self.target_names(&rule.apps, &rule.sites, cx))
+    }
+
+    /// The names of apps and sites: the apps on this computer first, as the
+    /// user knows their names.
+    fn target_names(&self, apps: &[String], sites: &[String], cx: &App) -> Vec<String> {
+        let (here, away): (Vec<&String>, Vec<&String>) = apps.iter().partition(|id| self.apps.iter().any(|a| a.bundle_id.eq_ignore_ascii_case(id)));
+        here.into_iter().chain(away).map(|id| self.app_name(id, cx)).chain(sites.iter().cloned()).collect()
     }
 
     /// The "Use automatically" part of the style editor: the apps and sites
     /// of the style, and the field that adds one.
-    fn targets_group(&self, ed: &Editor, cx: &Context<Self>) -> Div {
+    ///
+    /// With `framed` false the group has no title and no rule above it, for a
+    /// fold row that has them.
+    fn targets_group(&self, ed: &Editor, framed: bool, cx: &Context<Self>) -> Div {
         let c = cx.paper().colors;
         let m = self.model.read(cx);
         let rules = &m.config.ai.style_rules;
@@ -827,15 +1038,13 @@ impl StylesPage {
             .flex()
             .flex_col()
             .gap(px(10.))
-            .pt(px(18.))
-            .border_t_1()
-            .border_color(c.rule)
+            .when(framed, |d| d.pt(px(18.)).border_t_1().border_color(c.rule))
             .child(
                 div()
                     .flex()
                     .flex_col()
                     .gap(px(3.))
-                    .child(text::title(t!("styles.targets.title"), 18., &c).line_height(px(24.)))
+                    .when(framed, |d| d.child(text::title(t!("styles.targets.title"), 18., &c).line_height(px(24.))))
                     .child(ui(intro, 13., 18., FontWeight::NORMAL, c.graphite)),
             )
             .when(!rules.enabled, |d| d.child(Banner::new(BannerKind::Info, t!("styles.targets.off"))))
@@ -1074,13 +1283,20 @@ impl StylesPage {
 
     /// The detail of a style row: the apps and sites of the style, or its
     /// provider when that is not the default provider.
-    fn row_detail(&self, style: &Style, cx: &App) -> Option<(String, Hsla)> {
+    ///
+    /// The last value is true for the warning of a cleanup model that cannot
+    /// run the style. It comes before the apps and sites: the style does not
+    /// run as the user wants, whatever its rules say.
+    fn row_detail(&self, style: &Style, cx: &App) -> Option<(String, Hsla, bool)> {
         let c = cx.paper().colors;
-        if let Some(line) = self.target_line(&style.id, cx) {
-            return Some((line, c.ink));
-        }
         let m = self.model.read(cx);
         let route = m.style_route(style);
+        if matches!(route, StyleRoute::CleanupCannotRun { .. }) {
+            return Some((route.line(), c.danger, true));
+        }
+        if let Some(line) = self.target_line(&style.id, cx) {
+            return Some((line, c.ink, false));
+        }
         let color = match &route {
             StyleRoute::NoAi => c.graphite,
             StyleRoute::NeedsModel { .. } => c.danger,
@@ -1089,8 +1305,9 @@ impl StylesPage {
             StyleRoute::Cloud { .. } => c.accent,
             StyleRoute::Local { .. } => c.success,
             StyleRoute::NeedsProvider => c.pencil,
+            StyleRoute::CleanupCannotRun { .. } => c.danger,
         };
-        Some((route.line(), color))
+        Some((route.line(), color, false))
     }
 
     /// A style row is a radio button of the default style: `place` is its
@@ -1100,7 +1317,7 @@ impl StylesPage {
         let last = place.0 + 1 == place.1;
         let hovered = self.hovered.as_deref() == Some(style.id.as_str());
         let detail = self.row_detail(style, cx);
-        let has_rule = self.target_line(&style.id, cx).is_some();
+        let has_rule = detail.as_ref().is_some_and(|d| !d.2) && self.target_line(&style.id, cx).is_some();
         let id2 = style.id.clone();
         let id3 = style.id.clone();
         let st = style.clone();
@@ -1156,7 +1373,7 @@ impl StylesPage {
                 let id = id3.clone();
                 this.model.update(cx, |m, cx| m.set_active_style(&id, cx));
             }))
-            .child(kit::seal_dot(style.uses_ai().then_some(style.ink.as_str()), 14., cx))
+            .child(kit::seal_dot((!style.is_raw()).then_some(style.ink.as_str()), 14., cx))
             .child(
                 div()
                     .font_family(DISPLAY)
@@ -1171,8 +1388,10 @@ impl StylesPage {
                     .child(name),
             )
             .child(kit::plain(style.display_description(), 14., 20., FontWeight::NORMAL, c.graphite).flex_1().min_w_0().truncate())
-            .child(div().flex().flex_none().items_center().gap(px(6.)).w(px(if narrow { 150. } else { 236. })).when_some(detail, |d, (line, color)| {
-                d.when(has_rule, |d| d.child(icon(Icon::ArrowRight, 11., c.graphite))).child(kit::plain(line, 12., 16., FontWeight::MEDIUM, color).min_w_0().truncate())
+            .child(div().flex().flex_none().items_center().gap(px(6.)).w(px(if narrow { 150. } else { 236. })).when_some(detail, |d, (line, color, warning)| {
+                d.when(has_rule, |d| d.child(icon(Icon::ArrowRight, 11., c.graphite)))
+                    .when(warning, |d| d.child(icon(Icon::Warning, 12., color)))
+                    .child(kit::plain(line, 12., 16., FontWeight::MEDIUM, color).min_w_0().truncate())
             }))
             .child(
                 div()
@@ -1196,7 +1415,9 @@ impl StylesPage {
         let default = m.config.ai.provider(None).filter(|_| m.config.ai.enabled);
         let (dot, line) = match default {
             Some(p) => {
-                let line = match p.model() {
+                // A cleanup model has its own name and no model to choose.
+                let model = p.model().filter(|_| !matches!(p.kind, ProviderKind::CleanupModel { .. }));
+                let line = match model {
                     Some(id) => t!("styles.provider_line.with_model", provider = p.name, model = m.model_label(&p.id, id)),
                     None => t!("styles.provider_line.no_model", provider = p.name),
                 };
@@ -1232,6 +1453,154 @@ impl StylesPage {
             )
             .into_any_element()
     }
+}
+
+/// The names of apps and sites in one line: "Mail", "Mail and Notes", "Mail, Notes, and 3 more".
+fn names_line(names: &[String]) -> Option<String> {
+    Some(match names {
+        [] => return None,
+        [one] => one.clone(),
+        [one, two] => t!("styles.targets.names_two", one = one, two = two),
+        [one, two, rest @ ..] => t!("styles.targets.names_many", one = one, two = two, more = rest.len()),
+    })
+}
+
+/// A part of the editor that is folded to one row: a title, a line of detail,
+/// and the body when it is open.
+fn fold_row(
+    id: &'static str,
+    title: String,
+    detail: String,
+    open: bool,
+    on_toggle: impl Fn(&mut Window, &mut App) + 'static,
+    body: Div,
+    c: &Colors,
+) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(14.))
+        .pt(px(14.))
+        .border_t_1()
+        .border_color(c.rule)
+        .child(
+            Pressable::new(id)
+                .label(title.clone())
+                .aria_description(detail.clone())
+                .aria_expanded(open)
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(px(16.))
+                .cursor_pointer()
+                .on_click(move |_, w, cx| on_toggle(w, cx))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .gap(px(2.))
+                        .child(ui(title, 13., 16., FontWeight::SEMIBOLD, c.ink))
+                        .child(ui(detail, 12., 16., FontWeight::NORMAL, c.graphite)),
+                )
+                .child(icon(Icon::ChevronDown, 12., c.graphite)),
+        )
+        .when(open, |d| d.child(body))
+}
+
+/// A line of the provider menu of the editor.
+struct ProviderRow {
+    /// The provider id. None is the default provider.
+    pick: Option<String>,
+    label: String,
+    selected: bool,
+    /// A cleanup model that cannot run the style. It is grey and no pick.
+    blocked: bool,
+}
+
+/// The provider menu of the editor. `note` is the first line when the current
+/// choice cannot run the style: its name, and why. Place it inside a
+/// `relative()` parent.
+fn provider_menu(
+    note: Option<(String, String)>,
+    rows: Vec<ProviderRow>,
+    on_pick: impl Fn(usize, &mut Window, &mut App) + 'static,
+    on_close: impl Fn(&mut Window, &mut App) + 'static,
+    cx: &App,
+) -> impl IntoElement {
+    let c = cx.paper().colors;
+    let on_pick = std::rc::Rc::new(on_pick);
+    let on_close = std::rc::Rc::new(on_close);
+    let close = on_close.clone();
+    let radio = rows.iter().any(|r| r.selected);
+    let mut list = div()
+        .id("provider-menu")
+        .role(Role::Menu)
+        .flex()
+        .flex_col()
+        .min_w(px(280.))
+        .max_h(px(320.))
+        .overflow_y_scroll()
+        .p(px(4.))
+        .rounded(px(10.))
+        .bg(c.sheet_raised)
+        .shadow(sayso_ui::paper::floating(&c))
+        .locale_fonts(Face::Sans)
+        .occlude()
+        .on_mouse_down_out(move |_, w, cx| close(w, cx))
+        .on_key_down(move |e, w, cx| {
+            match e.keystroke.key.as_str() {
+                "escape" => on_close(w, cx),
+                "down" => w.focus_next(cx),
+                "up" => w.focus_prev(cx),
+                _ => return,
+            }
+            cx.stop_propagation();
+        });
+    if let Some((label, why)) = note {
+        list = list
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.))
+                    .px(px(10.))
+                    .py(px(6.))
+                    .child(kit::plain(label, 13., 16., FontWeight::NORMAL, c.pencil))
+                    .child(kit::plain(why, 12., 16., FontWeight::NORMAL, c.danger)),
+            )
+            .child(div().h(px(1.)).mx(px(10.)).my(px(4.)).bg(c.rule));
+    }
+    for (i, row) in rows.into_iter().enumerate() {
+        let f = on_pick.clone();
+        let weight = if row.selected { FontWeight::SEMIBOLD } else { FontWeight::NORMAL };
+        let detail = row.blocked.then(|| t!("styles.editor.no_prompts"));
+        let name = match &detail {
+            Some(d) => format!("{}, {d}", row.label),
+            None => row.label.clone(),
+        };
+        let item = Pressable::new(i).label(name).disabled(row.blocked);
+        let item = if radio {
+            item.a11y_role(Role::MenuItemRadio).aria_toggled(if row.selected { Toggled::True } else { Toggled::False })
+        } else {
+            item.a11y_role(Role::MenuItem)
+        };
+        list = list.child(
+            item.flex()
+                .items_center()
+                .gap(px(8.))
+                .h(px(30.))
+                .px(px(10.))
+                .rounded(px(7.))
+                .when(!row.blocked, |d| d.cursor_pointer().hover(|s| s.bg(c.deboss)))
+                .on_click(move |_, w, cx| f(i, w, cx))
+                .child(div().w(px(14.)).flex_none().when(row.selected, |d| d.child(icon(Icon::Check, 12., c.ink))))
+                .child(kit::plain(row.label, 13., 16., weight, if row.blocked { c.pencil } else { c.ink }).flex_1().min_w_0())
+                .when_some(detail, |d, detail| d.child(kit::plain(detail, 13., 16., FontWeight::NORMAL, c.pencil).flex_none().ml(px(8.)))),
+        );
+    }
+    deferred(anchored().snap_to_window_with_margin(px(8.)).child(div().mt(px(4.)).child(list))).with_priority(2)
 }
 
 fn trim_float(v: f64) -> String {
@@ -1287,7 +1656,11 @@ impl Render for StylesPage {
         );
         let pad = crate::layout::page_pad(window, &self.model.read(cx).config);
         let narrow = crate::layout::page_narrow(window, &self.model.read(cx).config);
-        let featured = styles.iter().find(|s| s.id == FEATURED_STYLE_ID).map(|s| self.featured(s, s.id == active, narrow, cx));
+        let default_provider = {
+            let m = self.model.read(cx);
+            m.config.ai.provider(None).filter(|_| m.config.ai.enabled).cloned()
+        };
+        let featured = featured_style(&styles, default_provider.as_ref()).map(|s| self.featured(s, s.id == active, narrow, cx));
         // The default style is a choice of one: the rows are radio buttons, and
         // the arrows pick the next style and move the focus.
         let count = styles.len();
@@ -1342,5 +1715,111 @@ impl Render for StylesPage {
                 ),
             )
             .children(editor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CleanupEdit, CleanupField, CleanupSettings, Format, Layout, Provider, ProviderKind, Settings, Style, Tone};
+    use super::{cannot_run, cleanup_to_save, featured_style, style_as_edited};
+    use sayso_core::style::builtin_styles;
+
+    fn cleanup_model(model: &str) -> Provider {
+        Provider { id: "c".into(), name: "C".into(), kind: ProviderKind::CleanupModel { model: model.into() } }
+    }
+
+    fn apple() -> Provider {
+        Provider { id: "a".into(), name: "A".into(), kind: ProviderKind::AppleIntelligence }
+    }
+
+    fn built_in(id: &str) -> Style {
+        builtin_styles().into_iter().find(|s| s.id == id).unwrap()
+    }
+
+    fn featured_id(default: Option<&Provider>) -> Option<String> {
+        featured_style(&builtin_styles(), default).map(|s| s.id.clone())
+    }
+
+    #[test]
+    fn the_featured_style_stays_without_a_cleanup_model() {
+        assert_eq!(featured_id(None).as_deref(), Some("rambling"));
+        assert_eq!(featured_id(Some(&apple())).as_deref(), Some("rambling"));
+    }
+
+    #[test]
+    fn the_featured_style_is_one_that_the_cleanup_model_runs() {
+        // S1-mini has no prompts, so Rambling is out. Email is the first that it runs.
+        assert_eq!(featured_id(Some(&cleanup_model("s1-mini"))).as_deref(), Some("email"));
+        // Cleanup 1 has no format email and no lists.
+        assert_eq!(featured_id(Some(&cleanup_model("spokenly-cleanup-1"))).as_deref(), Some("message"));
+    }
+
+    #[test]
+    fn a_model_that_runs_nothing_keeps_the_usual_featured_style() {
+        assert_eq!(featured_id(Some(&cleanup_model("no-such-model"))).as_deref(), Some("rambling"));
+    }
+
+    #[test]
+    fn a_new_style_has_its_own_default_cleanup_settings() {
+        let mut style = built_in("raw");
+        style.id = String::new();
+        let edit = CleanupEdit::new(&style, true);
+        assert!(edit.own);
+        assert_eq!(edit.settings, Settings::default());
+        // With a prompt, the new style still runs on a cleanup model.
+        let edited = style_as_edited(&style, "Make it short.", &edit);
+        assert_eq!(cannot_run(&edited, Some(&cleanup_model("s1-mini"))), None);
+    }
+
+    #[test]
+    fn a_style_with_no_cleanup_settings_is_blocked_until_the_user_gives_it_some() {
+        let polished = built_in("polished");
+        let mut edit = CleanupEdit::new(&polished, false);
+        let model = cleanup_model("s1-mini");
+        let edited = style_as_edited(&polished, &polished.prompt, &edit);
+        assert_eq!(cannot_run(&edited, Some(&model)).map(|m| m.name), Some("S1-mini"));
+        edit.change(|s| s.tone = Tone::Casual);
+        let edited = style_as_edited(&polished, &polished.prompt, &edit);
+        assert_eq!(cannot_run(&edited, Some(&model)), None);
+        // A provider that reads prompts is never blocked.
+        assert_eq!(cannot_run(&edited, Some(&apple())), None);
+        assert_eq!(cannot_run(&edited, None), None);
+    }
+
+    #[test]
+    fn the_settings_that_the_editor_has_decide_what_a_model_runs() {
+        let email = built_in("email");
+        let mut edit = CleanupEdit::new(&email, false);
+        assert_eq!(edit.settings.format, Format::Email);
+        let cleanup_1 = cleanup_model("spokenly-cleanup-1");
+        let edited = style_as_edited(&email, &email.prompt, &edit);
+        assert_eq!(cannot_run(&edited, Some(&cleanup_1)).map(|m| m.name), Some("Cleanup 1"));
+        edit.change(|s| s.format = Format::Plain);
+        let edited = style_as_edited(&email, &email.prompt, &edit);
+        assert_eq!(cannot_run(&edited, Some(&cleanup_1)), None);
+    }
+
+    #[test]
+    fn save_writes_the_settings_only_when_there_are_some() {
+        // A style that has known settings gets them back as a table.
+        let clean = built_in("clean");
+        let edit = CleanupEdit::new(&clean, false);
+        assert_eq!(cleanup_to_save(&clean, &edit), Some(CleanupField::Settings(CleanupSettings::default())));
+        // A style that has none and was not changed stays as it is.
+        let polished = built_in("polished");
+        assert_eq!(cleanup_to_save(&polished, &CleanupEdit::new(&polished, false)), None);
+        // A new style, and a style that the user changed, get a table.
+        let mut changed = CleanupEdit::new(&polished, false);
+        changed.change(|s| s.tone = Tone::VeryCasual);
+        let saved = cleanup_to_save(&polished, &changed);
+        assert_eq!(saved, Some(CleanupField::Settings(CleanupSettings::new(Tone::VeryCasual, Layout::Paragraphs, Format::Plain))));
+        assert!(cleanup_to_save(&polished, &CleanupEdit::new(&polished, true)).is_some());
+    }
+
+    #[test]
+    fn save_keeps_a_value_that_this_version_does_not_know() {
+        let mut style = built_in("clean");
+        style.cleanup = CleanupField::Settings(CleanupSettings { layout: Some("table".into()), ..Default::default() });
+        assert_eq!(cleanup_to_save(&style, &CleanupEdit::new(&style, false)), None);
     }
 }

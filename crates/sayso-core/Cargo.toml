@@ -15,6 +15,7 @@ thiserror.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 regex.workspace = true
+whatlang = "0.18"
 log.workspace = true
 workspace-hack.workspace = true
 

@@ -1,6 +1,6 @@
 name: Linux packages
 
-# Build the two Linux binaries one time for each architecture, then make each
+# Build the three Linux binaries one time for each architecture, then make each
 # package from that build: the tarball, the .deb, the .rpm, the AppImage, and
 # the Flatpak.
 # The files stay in the workflow run as artifacts. The Release workflow calls
@@ -103,7 +103,12 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           "$HOME/.cargo/bin/rustup" toolchain install
 
+      # The cleanup runtime (native/cleanup) is its own Cargo workspace.
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            native/cleanup
 
       # sherpa-onnx-sys downloads its native library to target/sherpa-onnx-prebuilt
       # and links from there. The cache keeps the folders in that path, but
@@ -186,6 +191,22 @@ jobs:
           for text in 'sayso-engine .* ready' 'Selected GPU adapter' 'chords use'; do
             grep -qE "$text" "$log" || { echo "::error::The log does not have \"$text\"."; exit 1; }
           done
+
+      # The cleanup runtime needs no model to answer hello, and its backend
+      # is the CPU on Linux. It must not need libgomp (OpenMP is off).
+      - name: Start the installed cleanup runtime
+        shell: bash
+        run: |
+          runtime=/usr/lib/sayso/sayso-cleanup
+          deps=$(ldd "$runtime")
+          echo "$deps"
+          if grep -qE 'libgomp|not found' <<< "$deps"; then
+            echo "::error::The cleanup runtime has a library that it must not have, or one that is missing."
+            exit 1
+          fi
+          reply=$(printf '{"v":1,"id":"1","type":"hello"}\n' | timeout 20 "$runtime")
+          echo "$reply"
+          [[ "$reply" == *'"type":"hello"'*'"backend":"cpu"'* ]] || { echo "::error::The cleanup runtime gave no hello reply with the cpu backend."; exit 1; }
 
       - name: Keep the packages
         uses: actions/upload-artifact@v4

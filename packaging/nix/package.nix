@@ -46,11 +46,17 @@ stdenv.mkDerivation {
   ];
   dontStrip = true;
 
-  # The app finds the engine next to itself, so both binaries live in one folder.
+  # The app finds the engine and the cleanup runtime next to itself, so the
+  # three binaries live in one folder.
   installPhase = ''
     runHook preInstall
     install -Dm755 bin/sayso $out/lib/sayso/sayso
     install -Dm755 bin/sayso-engine $out/lib/sayso/sayso-engine
+    # The tarballs before the cleanup runtime have no such file. Remove this
+    # test after the first release that has it (packaging/nix/release.json).
+    if [ -e bin/sayso-cleanup ]; then
+      install -Dm755 bin/sayso-cleanup $out/lib/sayso/sayso-cleanup
+    fi
     mkdir -p $out/bin
     ln -s $out/lib/sayso/sayso $out/bin/sayso
     cp -r share $out/share

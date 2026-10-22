@@ -8,7 +8,10 @@
 //!
 //! Environment:
 //! - `SAYSO_EVAL_PROVIDER`: `apple` (the default, needs the Swift sidecar and
-//!   Apple Intelligence) or `claude` (needs the `claude` command and a login).
+//!   Apple Intelligence), `claude` (needs the `claude` command and a login), or
+//!   a cleanup model: `s1-mini` or `spokenly-cleanup-1`. A cleanup model needs
+//!   the release build of `native/cleanup` and `SAYSO_CLEANUP_MODELS`, a folder
+//!   with the model files. It runs only the styles that the model can run.
 //! - `SAYSO_EVAL_BASE_PROMPT`: a file with the base prompt to test. Without it
 //!   the default base prompt runs.
 //! - `SAYSO_EVAL_RUNS`: how many times each transcript runs. The default is 3.
@@ -153,6 +156,44 @@ fn apple() -> Box<dyn Enhancer> {
     panic!("Apple Intelligence runs only on macOS. Set SAYSO_EVAL_PROVIDER=claude.")
 }
 
+/// A cleaner for `info`, with the model file of `SAYSO_CLEANUP_MODELS` in a
+/// models folder that looks like a finished download.
+fn cleaner(info: &'static sayso_core::cleanup::CleanupModelInfo) -> sayso_cleanup_client::cleaner::RuntimeCleaner {
+    use sayso_cleanup_client::download;
+    let source = std::env::var_os("SAYSO_CLEANUP_MODELS").expect("SAYSO_CLEANUP_MODELS: a folder with the model files");
+    let models = std::env::temp_dir().join(format!("sayso-style-eval-{}", std::process::id()));
+    let dir = download::model_dir(&models, info);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join(info.file);
+    if !file.exists() {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(std::path::Path::new(&source).join(info.file), &file).unwrap();
+        #[cfg(not(unix))]
+        std::fs::copy(std::path::Path::new(&source).join(info.file), &file).unwrap();
+    }
+    let ready = serde_json::json!({ "revision": info.revision, "sha256": info.sha256, "file": info.file });
+    std::fs::write(dir.join("ready.json"), ready.to_string()).unwrap();
+    let runtime = sayso_cleanup_client::runtime::Runtime::new(sayso_cleanup_client::runtime::Runtime::default_path());
+    sayso_cleanup_client::cleaner::RuntimeCleaner::new(runtime, models)
+}
+
+/// An enhancer that is never called: a cleanup model runs instead.
+fn apple_free() -> Box<dyn Enhancer> {
+    struct Never;
+    impl Enhancer for Never {
+        fn id(&self) -> &str {
+            "never"
+        }
+        fn is_cloud(&self) -> bool {
+            false
+        }
+        fn enhance(&self, _: &sayso_core::enhance::EnhanceRequest) -> Result<sayso_core::enhance::EnhanceResponse, sayso_core::enhance::EnhanceError> {
+            unreachable!("a cleanup model runs the styles")
+        }
+    }
+    Box::new(Never)
+}
+
 #[test]
 fn has_words_matches_whole_words() {
     assert!(has_words("Um, the Number is 5.", "um"));
@@ -166,11 +207,18 @@ fn has_words_matches_whole_words() {
 fn the_styles_pass_the_transcript_set() {
     let env = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
     let provider = env("SAYSO_EVAL_PROVIDER").unwrap_or_else(|| "apple".into());
+    let cleanup = sayso_core::cleanup::find(&provider).map(|info| (info, cleaner(info)));
     let enhancer: Box<dyn Enhancer> = match provider.as_str() {
+        _ if cleanup.is_some() => apple_free(),
         "apple" => apple(),
         "claude" => Box::new(sayso_enhance::ClaudeCli::new("claude", None, "haiku")),
-        other => panic!("SAYSO_EVAL_PROVIDER is {other:?}. Use apple or claude."),
+        other => panic!("SAYSO_EVAL_PROVIDER is {other:?}. Use apple, claude, s1-mini, or spokenly-cleanup-1."),
     };
+    let cleanup_provider = cleanup.as_ref().map(|(info, _)| sayso_core::config::Provider {
+        id: info.id.into(),
+        name: info.name.into(),
+        kind: sayso_core::config::ProviderKind::CleanupModel { model: info.id.into() },
+    });
     let base = match env("SAYSO_EVAL_BASE_PROMPT") {
         Some(path) => std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("could not read {path}: {e}")),
         None => DEFAULT_BASE_PROMPT.to_string(),
@@ -184,8 +232,34 @@ fn the_styles_pass_the_transcript_set() {
     let (mut passed, mut total) = (0, 0);
     for case in CASES.iter().filter(|c| only.as_ref().is_none_or(|o| o.split(',').any(|part| c.name.contains(part.trim())))) {
         let style = styles.iter().find(|s| s.id == case.style).expect("a built-in style");
-        let pipeline =
-            TextPipeline { replacer: &replacer, style, base_prompt: &base, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), timeout: Duration::from_secs(30) };
+        let run = match (&cleanup, &cleanup_provider) {
+            (Some((info, cleaner)), Some(provider)) => {
+                let plan = style.run_plan(provider);
+                if !matches!(plan, sayso_core::style::RunPlan::Cleanup(_)) {
+                    continue;
+                }
+                Some(sayso_core::pipeline::CleanerRun {
+                    cleaner,
+                    provider_id: info.id,
+                    model: info,
+                    plan,
+                    language_setting: "en",
+                    final_model_languages: &["en"],
+                    app: None,
+                    site: None,
+                })
+            }
+            _ => None,
+        };
+        let pipeline = TextPipeline {
+            replacer: &replacer,
+            style,
+            base_prompt: &base,
+            vocabulary: &vocabulary,
+            enhancer: Some(enhancer.as_ref()),
+            cleaner: run,
+            timeout: Duration::from_secs(30),
+        };
         let mut ok = 0;
         let mut lines = Vec::new();
         for _ in 0..runs {

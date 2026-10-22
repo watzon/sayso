@@ -2,8 +2,8 @@
 # release folder (sayso-<version>-linux-<arch>/), so the src paths are relative
 # to that folder. The script also copies postinstall.sh there.
 #
-# The app finds the engine next to itself, so both binaries live in
-# /usr/lib/sayso and /usr/bin/sayso is a link.
+# The app finds the engine and the cleanup runtime next to itself, so the
+# three binaries live in /usr/lib/sayso and /usr/bin/sayso is a link.
 #
 # The glibc version below is the version of the build system
 # (.github/workflows/release.yml). package-linux.sh stops when a binary needs
@@ -30,6 +30,9 @@ contents:
     file_info: { mode: 0755 }
   - src: bin/sayso-engine
     dst: /usr/lib/sayso/sayso-engine
+    file_info: { mode: 0755 }
+  - src: bin/sayso-cleanup
+    dst: /usr/lib/sayso/sayso-cleanup
     file_info: { mode: 0755 }
   - src: /usr/lib/sayso/sayso
     dst: /usr/bin/sayso

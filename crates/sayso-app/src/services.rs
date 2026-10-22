@@ -18,6 +18,10 @@ pub struct Services {
     /// The language model of the engine, for AI enhancement on this computer.
     /// None when the engine does not run.
     pub language_model: Option<Arc<dyn LanguageModel>>,
+    /// Runs cleanup models (S1-mini, Cleanup 1) in the cleanup runtime.
+    pub cleaner: Arc<sayso_cleanup_client::cleaner::RuntimeCleaner>,
+    /// The process of the cleanup runtime. Stop it before a model file is deleted.
+    pub cleanup_runtime: Arc<sayso_cleanup_client::runtime::Runtime>,
     /// None when the database cannot be opened. History is then off.
     pub store: Option<Arc<Store>>,
     pub secrets: Arc<dyn SecretStore>,

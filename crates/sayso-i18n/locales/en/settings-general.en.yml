@@ -60,3 +60,4 @@ settings:
     version: "Version %{version}"
     tagline: "Local dictation for %{os}"
     speech_engine: "Speech engine"
+    model_by: "%{name} by %{publisher}"

@@ -62,3 +62,4 @@ settings:
     version: "Версия %{version}"
     tagline: "Локальная диктовка для %{os}"
     speech_engine: "Движок распознавания"
+    model_by: "%{name} от %{publisher}"

@@ -137,3 +137,91 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test the speech engine
         run: cargo test --manifest-path native/portable/Cargo.toml
+
+  # The cleanup runtime (native/cleanup, the sayso-cleanup binary) is its own
+  # Cargo workspace. It builds llama.cpp with CMake, so no job above builds it.
+  # One job for each target that Sayso ships. It reports the size and the
+  # libraries of the binary, and fails on OpenMP (libgomp, libomp, vcomp):
+  # the runtime must need no library that the system does not have.
+  cleanup-runtime:
+    name: Cleanup runtime, ${{ matrix.name }} (manual)
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            runner: macos-26
+          - name: Windows x86_64
+            runner: windows-2025
+          - name: Linux x86_64
+            runner: ubuntu-24.04
+          - name: Linux arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+        working-directory: native/cleanup
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the build packages (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake clang libclang-dev
+      - name: Install CMake (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install cmake --no-progress -y
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/cleanup
+      - name: Build
+        run: cargo build --release
+      - name: Test
+        run: cargo test
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Size and libraries of the binary
+        run: |
+          case "$RUNNER_OS" in
+            Windows) binary=target/release/sayso-cleanup.exe ;;
+            *) binary=target/release/sayso-cleanup ;;
+          esac
+          ls -l "$binary"
+          echo "size: $(wc -c < "$binary") bytes"
+          case "$RUNNER_OS" in
+            macOS)
+              deps=$(otool -L "$binary")
+              # Only system libraries: llama.cpp and ggml are linked statically.
+              if tail -n +2 <<< "$deps" | grep -vE '^[[:space:]]*(/System/Library/|/usr/lib/)'; then
+                echo "::error::The cleanup runtime links a library that is not part of macOS."
+                exit 1
+              fi ;;
+            Linux) deps=$(ldd "$binary") ;;
+            Windows)
+              # llvm-readobj comes with LLVM. dumpbin comes with Visual Studio.
+              readobj="/c/Program Files/LLVM/bin/llvm-readobj.exe"
+              if [[ -x "$readobj" ]]; then
+                deps=$("$readobj" --coff-imports "$binary" | grep -E 'Name:.*\.(dll|DLL)')
+              else
+                vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath)
+                dumpbin=$(find "$(cygpath -u "$vs")/VC/Tools/MSVC" -path '*Hostx64/x64/dumpbin.exe' | sort | tail -1)
+                deps=$("$dumpbin" //dependents "$binary")
+              fi ;;
+          esac
+          echo "$deps"
+          if grep -qiE 'libgomp|libomp|vcomp' <<< "$deps"; then
+            echo "::error::The cleanup runtime needs an OpenMP library. The llama-cpp-2 features must stay off (native/cleanup/Cargo.toml)."
+            exit 1
+          fi
+          if grep -q 'not found' <<< "$deps"; then
+            echo "::error::The cleanup runtime has a library that is missing."
+            exit 1
+          fi

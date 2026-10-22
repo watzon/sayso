@@ -3,7 +3,8 @@
 //! Built-in styles ship in the binary. A file in `<config>/styles/<id>.toml`
 //! with the same id overrides a built-in style. "Reset" deletes that file.
 
-use serde::{Deserialize, Serialize};
+use crate::cleanup::{CleanupSettings, Format, Layout, Tone};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -32,6 +33,58 @@ pub struct Style {
     /// (a translation, for example).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub standalone: bool,
+    /// The settings that a cleanup model uses, as the file has them.
+    #[serde(default, skip_serializing_if = "CleanupField::is_absent")]
+    pub cleanup: CleanupField,
+    /// The settings of the built-in style that this file overrides, for a file
+    /// with no `cleanup` key. Not in the file.
+    #[serde(skip)]
+    pub inherited_cleanup: Option<CleanupSettings>,
+}
+
+/// The `cleanup` key of a style file: absent, a table, or `false`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum CleanupField {
+    /// No key. A user style has no cleanup settings, and an override of a
+    /// built-in style gets the settings of the built-in style.
+    #[default]
+    Absent,
+    /// `cleanup = false`: no cleanup settings, also for an override.
+    Off,
+    /// A `[cleanup]` table, also an empty one.
+    Settings(CleanupSettings),
+}
+
+impl CleanupField {
+    pub fn is_absent(&self) -> bool {
+        matches!(self, CleanupField::Absent)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum CleanupFieldFile {
+    Flag(bool),
+    Table(CleanupSettings),
+}
+
+impl Serialize for CleanupField {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            CleanupField::Absent | CleanupField::Off => CleanupFieldFile::Flag(false).serialize(serializer),
+            CleanupField::Settings(settings) => CleanupFieldFile::Table(settings.clone()).serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CleanupField {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match CleanupFieldFile::deserialize(deserializer)? {
+            CleanupFieldFile::Flag(false) => CleanupField::Off,
+            CleanupFieldFile::Flag(true) => CleanupField::Settings(CleanupSettings::default()),
+            CleanupFieldFile::Table(settings) => CleanupField::Settings(settings),
+        })
+    }
 }
 
 fn default_ink() -> String {
@@ -42,6 +95,54 @@ impl Style {
     pub fn uses_ai(&self) -> bool {
         !self.prompt.trim().is_empty()
     }
+
+    /// The settings that a cleanup model uses. None when the style has none.
+    pub fn cleanup_settings(&self) -> Option<CleanupSettings> {
+        match &self.cleanup {
+            CleanupField::Settings(settings) => Some(settings.clone()),
+            CleanupField::Off => None,
+            CleanupField::Absent => self.inherited_cleanup.clone(),
+        }
+    }
+
+    /// True for a style with no prompt and no cleanup settings, like Raw. Such
+    /// a style never runs AI.
+    pub fn is_raw(&self) -> bool {
+        !self.uses_ai() && self.cleanup_settings().is_none()
+    }
+    /// How this style runs on `provider`. See `docs/cleanup-models.md`,
+    /// "When a style uses AI".
+    pub fn run_plan(&self, provider: &crate::config::Provider) -> RunPlan {
+        if self.is_raw() {
+            return RunPlan::Nothing;
+        }
+        match &provider.kind {
+            crate::config::ProviderKind::CleanupModel { model } => {
+                let Some(info) = crate::cleanup::find(model) else { return RunPlan::Nothing };
+                match self.cleanup_settings().filter(|s| info.runs(s)).and_then(|s| s.known()) {
+                    Some(settings) => RunPlan::Cleanup(settings),
+                    None => RunPlan::CleanupOnly,
+                }
+            }
+            _ if self.uses_ai() => RunPlan::Prompt,
+            _ => RunPlan::Nothing,
+        }
+    }
+}
+
+/// How a style runs on a provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunPlan {
+    /// A provider that reads prompts runs the prompt of the style.
+    Prompt,
+    /// A cleanup model runs the style with these settings.
+    Cleanup(crate::cleanup::Settings),
+    /// A cleanup model cannot run the style. It cleans up with the default
+    /// settings, and the overlay says so.
+    CleanupOnly,
+    /// No AI: Raw, an unknown cleanup model, or an empty prompt on a provider
+    /// that reads prompts.
+    Nothing,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,7 +226,7 @@ impl Style {
 }
 
 pub fn builtin_styles() -> Vec<Style> {
-    let s = |id: &str, ink: &str, prompt: &str| Style {
+    let s = |id: &str, ink: &str, prompt: &str, cleanup: Option<CleanupSettings>| Style {
         id: id.into(),
         name: shipped(id).map(|(name, _)| name).unwrap_or_default().into(),
         ink: ink.into(),
@@ -136,13 +237,19 @@ pub fn builtin_styles() -> Vec<Style> {
         temperature: None,
         timeout_ms: None,
         standalone: false,
+        cleanup: cleanup.map_or(CleanupField::Absent, CleanupField::Settings),
+        inherited_cleanup: None,
     };
+    // Cleanup settings for a cleanup model. Polished and Rambling have none:
+    // the evaluation showed that the cleanup models do not fix grammar.
+    let cleanup = |tone, layout, format| Some(CleanupSettings::new(tone, layout, format));
     // The base prompt has the cleanup rules. A style says only what it adds.
     vec![
         s(
             "clean",
             "#1D1B18",
             "Keep the speaker's own words and word order. Do not rephrase.",
+            cleanup(Tone::Formal, Layout::Paragraphs, Format::Plain),
         ),
         s(
             "polished",
@@ -151,6 +258,7 @@ pub fn builtin_styles() -> Vec<Style> {
              and sentences that do not read well. \
              Change only the words that the fix needs. \
              Keep the speaker's word choices, tone, and all facts.",
+            None,
         ),
         s(
             "rambling",
@@ -167,12 +275,14 @@ pub fn builtin_styles() -> Vec<Style> {
              For \"so I was looking at the checkout page and honestly the thing is the banner is too tall like way too tall on phones \
              and I was thinking we could, well, anyway it covers the pay button so yeah we're gonna need the banner shorter on phones\", the reply is:\n\
              I was looking at the checkout page. Honestly, the banner is way too tall on phones. It covers the pay button, so we're gonna need it shorter.",
+            None,
         ),
         s(
             "message",
             "#2D3C8C",
             "This is a chat message. Keep the speaker's slang and contractions, and do not make it more formal. \
              Add no greeting and no sign-off. Write emoji names the speaker says as emoji, and add no other emoji.",
+            cleanup(Tone::Casual, Layout::Paragraphs, Format::Plain),
         ),
         s(
             "email",
@@ -181,6 +291,7 @@ pub fn builtin_styles() -> Vec<Style> {
              Then come the speaker's own words in paragraphs, with an empty line between them. \
              When the speaker says no sign-off, the last line is a short one (\"Thanks,\" or \"Best,\") with no name after it. \
              Add no subject line and no name that the speaker did not say.",
+            cleanup(Tone::Formal, Layout::Paragraphs, Format::Email),
         ),
         s(
             "notes",
@@ -188,8 +299,9 @@ pub fn builtin_styles() -> Vec<Style> {
             "Turn this into a list of short bullet points. Each bullet is on its own line and starts with \"- \". \
              Keep all facts and the speaker's word choices. \
              For \"we gotta call the bank and then book the flight for may second\", the reply is:\n- Call the bank\n- Book the flight for May 2",
+            cleanup(Tone::Formal, Layout::List, Format::Plain),
         ),
-        s("raw", "#B8B1A4", ""),
+        s("raw", "#B8B1A4", "", None),
     ]
 }
 
@@ -304,12 +416,12 @@ impl StyleLibrary {
         files.sort();
         for path in files {
             match read_style(&path) {
-                Ok(style) => {
-                    let origin = if by_id.get(&style.id).is_some_and(|e| e.origin == StyleOrigin::BuiltIn) {
-                        StyleOrigin::Overridden
-                    } else {
-                        StyleOrigin::User
-                    };
+                Ok(mut style) => {
+                    let built_in = by_id.get(&style.id).filter(|e| e.origin == StyleOrigin::BuiltIn);
+                    // A file with no `cleanup` key keeps the settings of the
+                    // built-in style, so an override from before cleanup models works.
+                    style.inherited_cleanup = built_in.and_then(|e| e.style.cleanup_settings());
+                    let origin = if built_in.is_some() { StyleOrigin::Overridden } else { StyleOrigin::User };
                     if !by_id.contains_key(&style.id) {
                         order.push(style.id.clone());
                     }
@@ -506,5 +618,97 @@ mod tests {
         style.standalone = true;
         let text = toml::to_string_pretty(&style).unwrap();
         assert!(toml::from_str::<Style>(&text).unwrap().standalone, "{text}");
+    }
+
+    fn provider(kind: crate::config::ProviderKind) -> crate::config::Provider {
+        crate::config::Provider { id: "p".into(), name: "P".into(), kind }
+    }
+
+    fn cleanup_model(model: &str) -> crate::config::Provider {
+        provider(crate::config::ProviderKind::CleanupModel { model: model.into() })
+    }
+
+    #[test]
+    fn the_cleanup_key_has_three_states_in_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let read = |text: &str| {
+            std::fs::write(dir.path().join("x.toml"), text).unwrap();
+            read_style(&dir.path().join("x.toml")).unwrap()
+        };
+        let absent = read("id = \"x\"\nname = \"X\"\nprompt = \"p\"\n");
+        assert_eq!(absent.cleanup, CleanupField::Absent);
+        assert_eq!(absent.cleanup_settings(), None);
+        let off = read("id = \"x\"\nname = \"X\"\nprompt = \"p\"\ncleanup = false\n");
+        assert_eq!(off.cleanup, CleanupField::Off);
+        let table = read("id = \"x\"\nname = \"X\"\n\n[cleanup]\nformat = \"email\"\n");
+        assert_eq!(table.cleanup_settings().unwrap().format.as_deref(), Some("email"));
+        let empty = read("id = \"x\"\nname = \"X\"\n\n[cleanup]\n");
+        assert_eq!(empty.cleanup_settings(), Some(CleanupSettings::default()));
+        // A value from a newer Sayso keeps the file loading.
+        let newer = read("id = \"x\"\nname = \"X\"\n\n[cleanup]\nlayout = \"table\"\n");
+        assert_eq!(newer.cleanup_settings().unwrap().layout.as_deref(), Some("table"));
+    }
+
+    #[test]
+    fn the_cleanup_key_round_trips_and_stays_out_when_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut style = builtin_styles().into_iter().find(|s| s.id == "email").unwrap();
+        let path = save_style(dir.path(), &style).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("[cleanup]") && text.contains("format = \"email\""), "{text}");
+        assert_eq!(read_style(&path).unwrap().cleanup, style.cleanup);
+        style.cleanup = CleanupField::Off;
+        let text = std::fs::read_to_string(save_style(dir.path(), &style).unwrap()).unwrap();
+        assert!(text.contains("cleanup = false"), "{text}");
+        style.cleanup = CleanupField::Absent;
+        let text = std::fs::read_to_string(save_style(dir.path(), &style).unwrap()).unwrap();
+        assert!(!text.contains("cleanup"), "{text}");
+    }
+
+    #[test]
+    fn an_override_without_the_key_keeps_the_built_in_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        // An override written before cleanup models existed.
+        std::fs::write(dir.path().join("message.toml"), "id = \"message\"\nname = \"Chat\"\nprompt = \"Mine.\"\n").unwrap();
+        std::fs::write(dir.path().join("email.toml"), "id = \"email\"\nname = \"Mail\"\nprompt = \"Mine.\"\ncleanup = false\n").unwrap();
+        std::fs::write(dir.path().join("mine.toml"), "id = \"mine\"\nname = \"Mine\"\nprompt = \"Mine.\"\n").unwrap();
+        let lib = StyleLibrary::load(dir.path());
+        let message = lib.get("message").unwrap();
+        assert_eq!(message.cleanup_settings().unwrap().tone.as_deref(), Some("casual"));
+        assert_eq!(message.cleanup, CleanupField::Absent, "the file still has no key");
+        assert_eq!(lib.get("email").unwrap().cleanup_settings(), None);
+        assert_eq!(lib.get("mine").unwrap().cleanup_settings(), None);
+    }
+
+    #[test]
+    fn run_plan_follows_the_provider() {
+        use crate::cleanup::{Format, Layout, Settings};
+        use crate::config::ProviderKind;
+        let styles = builtin_styles();
+        let get = |id: &str| styles.iter().find(|s| s.id == id).unwrap();
+        let s1 = cleanup_model("s1-mini");
+        let spokenly = cleanup_model("spokenly-cleanup-1");
+        let llm = provider(ProviderKind::AppleIntelligence);
+
+        assert_eq!(get("clean").run_plan(&s1), RunPlan::Cleanup(Settings::default()));
+        assert_eq!(get("email").run_plan(&s1), RunPlan::Cleanup(Settings { format: Format::Email, ..Default::default() }));
+        assert_eq!(get("notes").run_plan(&s1), RunPlan::Cleanup(Settings { layout: Layout::List, ..Default::default() }));
+        assert_eq!(get("email").run_plan(&spokenly), RunPlan::CleanupOnly);
+        assert_eq!(get("notes").run_plan(&spokenly), RunPlan::CleanupOnly);
+        assert_eq!(get("polished").run_plan(&s1), RunPlan::CleanupOnly);
+        assert_eq!(get("rambling").run_plan(&spokenly), RunPlan::CleanupOnly);
+        assert_eq!(get("message").run_plan(&spokenly), RunPlan::Cleanup(Settings { tone: crate::cleanup::Tone::Casual, ..Default::default() }));
+        assert_eq!(get("raw").run_plan(&s1), RunPlan::Nothing);
+        assert_eq!(get("raw").run_plan(&llm), RunPlan::Nothing);
+        assert_eq!(get("clean").run_plan(&llm), RunPlan::Prompt);
+        assert_eq!(get("clean").run_plan(&cleanup_model("unknown-model")), RunPlan::Nothing);
+
+        // A style with cleanup settings and no prompt runs on a cleanup model
+        // and is not Raw. On a provider that reads prompts it does nothing.
+        let mut only = get("raw").clone();
+        only.cleanup = CleanupField::Settings(CleanupSettings::default());
+        assert!(!only.is_raw());
+        assert_eq!(only.run_plan(&spokenly), RunPlan::Cleanup(Settings::default()));
+        assert_eq!(only.run_plan(&llm), RunPlan::Nothing);
     }
 }

@@ -4,7 +4,7 @@ _version: 1
 onboarding:
   ai:
     title: "Add AI clean-up"
-    lead: "Optional. A style can remove filler words, fix grammar, or format an email. Without it, Sayso inserts exactly what you said. You can also set this up later in Settings."
+    lead: "Optional. A style can remove filler words, fix grammar, or format an email. Without it, Sayso inserts exactly what you said. You can set this up later in Settings › Providers."
     looking: "Looking for AI tools on this %{computer}…"
     apple_desc: "The model of macOS (%{model}). No setup. Text stays on this Mac."
     ollama_empty: "Ollama is running on this %{computer}, but it has no models. Run \"ollama pull qwen3:4b\", then select this again."
@@ -34,3 +34,11 @@ onboarding:
     error_api_key: "Enter your API key. Sayso keeps it in %{store}."
     error_model: "Choose a model from the provider's list."
     error_claude: "Sayso did not find the Claude CLI. Install it, or choose another option."
+    by: "by %{publisher}"
+    download_and_continue: "Download and continue"
+    cleanup_formats: "Formats emails and lists."
+    cleanup_no_formats: "No email or list formatting."
+    cleanup_desc_one: "%{language} only. %{formats}"
+    cleanup_desc_many:
+      one: "%{language} and %{count} more language. %{formats}"
+      other: "%{language} and %{count} more languages. %{formats}"

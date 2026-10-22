@@ -7,6 +7,7 @@ mod a11y;
 mod app;
 mod caption;
 mod chrome;
+mod cleanup_models;
 mod dev;
 mod devices;
 mod diagnostics;

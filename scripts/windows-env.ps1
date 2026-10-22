@@ -1,6 +1,6 @@
-# Build tools for the speech engine on Windows. Dot-source it: . scripts\windows-env.ps1
+# Build tools for the speech engine and the cleanup runtime on Windows. Dot-source it: . scripts\windows-env.ps1
 #
-# whisper.cpp builds with CMake, and its Rust bindings need libclang. This
+# whisper.cpp and llama.cpp build with CMake, and its Rust bindings need libclang. This
 # finds both where they are usually installed, so a plain PowerShell works
 # without setting PATH by hand. Variables that are already set win.
 
@@ -10,7 +10,7 @@ if (-not (Get-Command cmake.exe -ErrorAction SilentlyContinue)) {
     if ($pip) { $env:PATH = "$env:PATH;$($pip.DirectoryName)" }
 }
 if (-not (Get-Command cmake.exe -ErrorAction SilentlyContinue)) {
-    Write-Warning 'CMake was not found. The speech engine needs it to build whisper.cpp (see native\portable\NOTES.md).'
+    Write-Warning 'CMake was not found. The speech engine and the cleanup runtime need it to build whisper.cpp and llama.cpp (see native\portable\NOTES.md and native\cleanup\NOTES.md).'
 }
 
 # Ninja: the default Visual Studio generator fails on long checkout paths.

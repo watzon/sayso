@@ -90,6 +90,8 @@ fn preset_style(preset: &PindropPreset) -> Style {
         timeout_ms: None,
         // A preset was written as a complete prompt.
         standalone: true,
+        cleanup: Default::default(),
+        inherited_cleanup: None,
     }
 }
 

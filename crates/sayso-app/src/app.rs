@@ -186,7 +186,15 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
         }
     };
 
-    Services { platform, engine, engine_events, language_model, store, secrets: Arc::new(sayso_enhance::KeychainStore), updates }
+    // The cleanup runtime starts at its first use, not here.
+    let cleanup_runtime = sayso_cleanup_client::runtime::Runtime::new(sayso_cleanup_client::runtime::Runtime::default_path());
+    // Nothing loads while no cleanup model is in use. `apply_config_change` keeps this up to date.
+    cleanup_runtime.set_enabled(
+        config.ai.enabled && config.ai.providers.iter().any(|p| matches!(p.kind, sayso_core::config::ProviderKind::CleanupModel { .. })),
+    );
+    let cleaner = Arc::new(sayso_cleanup_client::cleaner::RuntimeCleaner::new(cleanup_runtime.clone(), paths.models_dir()));
+
+    Services { platform, engine, engine_events, language_model, cleaner, cleanup_runtime, store, secrets: Arc::new(sayso_enhance::KeychainStore), updates }
 }
 
 /// Set the interface language from config and the languages of the system.

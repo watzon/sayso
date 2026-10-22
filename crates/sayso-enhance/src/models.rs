@@ -63,6 +63,8 @@ pub fn list_provider_models(
             let name = engine.model_name()?;
             Ok(vec![choice(&name, None, Some(&sayso_i18n::t!("enhance.runs_on_this_mac")))])
         }
+        // The catalog fixes the model of a cleanup model.
+        ProviderKind::CleanupModel { .. } => Ok(Vec::new()),
     }
 }
 

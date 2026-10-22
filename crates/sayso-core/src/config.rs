@@ -438,6 +438,10 @@ pub enum ProviderKind {
     },
     /// The language model of macOS, which the engine runs on this Mac.
     AppleIntelligence,
+    /// A local model that cleans the text and reads no prompt. `model` is the
+    /// id of the model in the catalog. In `config.toml` it is in
+    /// `[[ai.cleanup_models]]`, not in `[[ai.providers]]`.
+    CleanupModel { model: String },
 }
 
 impl ProviderKind {
@@ -448,6 +452,7 @@ impl ProviderKind {
             ProviderKind::ClaudeCli { .. } => "claude_cli",
             ProviderKind::CodexCli { .. } => "codex_cli",
             ProviderKind::AppleIntelligence => "apple_intelligence",
+            ProviderKind::CleanupModel { .. } => "cleanup_model",
         }
     }
 }
@@ -472,6 +477,7 @@ impl Provider {
             ProviderKind::OpenAiCompatible { model, .. } | ProviderKind::ClaudeCli { model, .. } => Some(model.as_str()),
             ProviderKind::CodexCli { model, .. } => model.as_deref(),
             ProviderKind::AppleIntelligence => None,
+            ProviderKind::CleanupModel { model } => Some(model.as_str()),
         };
         model.filter(|m| !m.trim().is_empty())
     }
@@ -493,7 +499,7 @@ impl Provider {
             ProviderKind::OpenAiCompatible { thinking, .. }
             | ProviderKind::ClaudeCli { thinking, .. }
             | ProviderKind::CodexCli { thinking, .. } => thinking.as_deref().filter(|level| !level.trim().is_empty()),
-            ProviderKind::AppleIntelligence => None,
+            ProviderKind::AppleIntelligence | ProviderKind::CleanupModel { .. } => None,
         }
     }
 
@@ -530,6 +536,8 @@ impl Provider {
             ProviderKind::CodexCli { model, .. } => *model = Some(id),
             // macOS chooses the model.
             ProviderKind::AppleIntelligence => {}
+            // The catalog fixes the model.
+            ProviderKind::CleanupModel { .. } => {}
         }
     }
 
@@ -544,7 +552,7 @@ impl Provider {
         match &self.kind {
             ProviderKind::OpenAiCompatible { base_url, .. } => !is_local_url(base_url),
             ProviderKind::ClaudeCli { .. } | ProviderKind::CodexCli { .. } => true,
-            ProviderKind::AppleIntelligence => false,
+            ProviderKind::AppleIntelligence | ProviderKind::CleanupModel { .. } => false,
         }
     }
 }
@@ -555,14 +563,19 @@ pub fn is_local_url(url: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]" | "0.0.0.0") || host.ends_with(".local")
 }
 
+/// The `[ai]` section. In memory `providers` holds every provider, also the
+/// cleanup models. In the file the cleanup models are in their own list (see
+/// [`AiFile`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(from = "AiFile", into = "AiFile")]
 pub struct Ai {
     /// Off until the user sets up a provider. Off means every style acts like Raw.
     pub enabled: bool,
     pub active_style: String,
     pub default_provider: Option<String>,
     pub providers: Vec<Provider>,
+    /// Entries of a provider kind that this version does not know. They stay in the file and never run.
+    pub unknown_providers: Vec<toml::Value>,
     pub http_timeout_ms: u64,
     pub cli_timeout_ms: u64,
     /// The apps and sites that choose a style.
@@ -576,6 +589,7 @@ impl Default for Ai {
             active_style: DEFAULT_STYLE_ID.into(),
             default_provider: None,
             providers: Vec::new(),
+            unknown_providers: Vec::new(),
             http_timeout_ms: 4000,
             cli_timeout_ms: 8000,
             style_rules: Default::default(),
@@ -587,6 +601,128 @@ impl Ai {
     pub fn provider(&self, id: Option<&str>) -> Option<&Provider> {
         let id = id.or(self.default_provider.as_deref())?;
         self.providers.iter().find(|p| p.id == id)
+    }
+}
+
+/// The `[ai]` section as `config.toml` has it.
+///
+/// An older Sayso reads `[ai]` in one piece, and a provider of a kind that it
+/// does not know makes it use the default for the whole section. So a cleanup
+/// model is not in `providers`. It is in `cleanup_models`, which an older
+/// Sayso ignores.
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
+struct AiFile {
+    enabled: bool,
+    active_style: String,
+    default_provider: Option<String>,
+    providers: Vec<ProviderEntry>,
+    http_timeout_ms: u64,
+    cli_timeout_ms: u64,
+    style_rules: crate::style_rules::StyleRules,
+    /// Not written when empty, so a file without cleanup models stays as it was.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    cleanup_models: Vec<CleanupModelEntry>,
+}
+
+impl Default for AiFile {
+    fn default() -> Self {
+        Ai::default().into()
+    }
+}
+
+/// An entry of `[[ai.providers]]`.
+enum ProviderEntry {
+    Known(Provider),
+    /// A kind that this version does not know, as it is in the file.
+    Unknown(toml::Value),
+}
+
+impl Serialize for ProviderEntry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            ProviderEntry::Known(provider) => provider.serialize(serializer),
+            ProviderEntry::Unknown(value) => value.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for ProviderEntry {
+    /// Read each entry on its own, so one bad entry does not fail the section.
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = toml::Value::deserialize(deserializer)?;
+        Ok(match value.clone().try_into::<Provider>() {
+            Ok(provider) => ProviderEntry::Known(provider),
+            Err(error) => {
+                let field = |name: &str| value.get(name).and_then(toml::Value::as_str).unwrap_or("?").to_string();
+                log::warn!("keeping the provider {:?} of kind {:?} as it is, it will not run: {}", field("id"), field("kind"), error);
+                ProviderEntry::Unknown(value)
+            }
+        })
+    }
+}
+
+/// An entry of `[[ai.cleanup_models]]`.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+struct CleanupModelEntry {
+    id: String,
+    name: String,
+    /// The id of the model in the catalog.
+    model: String,
+}
+
+impl From<AiFile> for Ai {
+    fn from(file: AiFile) -> Self {
+        let mut providers = Vec::new();
+        let mut unknown_providers = Vec::new();
+        for entry in file.providers {
+            match entry {
+                ProviderEntry::Known(provider) => providers.push(provider),
+                ProviderEntry::Unknown(value) => unknown_providers.push(value),
+            }
+        }
+        for entry in file.cleanup_models {
+            if entry.id.is_empty() || entry.model.is_empty() {
+                log::warn!("skipped a cleanup model with an empty id or model");
+                continue;
+            }
+            providers.push(Provider { id: entry.id, name: entry.name, kind: ProviderKind::CleanupModel { model: entry.model } });
+        }
+        Ai {
+            enabled: file.enabled,
+            active_style: file.active_style,
+            default_provider: file.default_provider,
+            providers,
+            unknown_providers,
+            http_timeout_ms: file.http_timeout_ms,
+            cli_timeout_ms: file.cli_timeout_ms,
+            style_rules: file.style_rules,
+        }
+    }
+}
+
+impl From<Ai> for AiFile {
+    fn from(ai: Ai) -> Self {
+        let mut providers = Vec::new();
+        let mut cleanup_models = Vec::new();
+        for provider in ai.providers {
+            match provider.kind {
+                ProviderKind::CleanupModel { model } => cleanup_models.push(CleanupModelEntry { id: provider.id, name: provider.name, model }),
+                kind => providers.push(ProviderEntry::Known(Provider { id: provider.id, name: provider.name, kind })),
+            }
+        }
+        providers.extend(ai.unknown_providers.into_iter().map(ProviderEntry::Unknown));
+        AiFile {
+            enabled: ai.enabled,
+            active_style: ai.active_style,
+            default_provider: ai.default_provider,
+            providers,
+            http_timeout_ms: ai.http_timeout_ms,
+            cli_timeout_ms: ai.cli_timeout_ms,
+            style_rules: ai.style_rules,
+            cleanup_models,
+        }
     }
 }
 
@@ -889,7 +1025,36 @@ impl Config {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        crate::style::write_atomic(path, &self.to_toml())
+        let toml = self.to_toml();
+        if toml.contains("[[ai.cleanup_models]]") {
+            back_up_before_cleanup_models(path);
+        }
+        crate::style::write_atomic(path, &toml)
+    }
+}
+
+/// The name that the backup of the file before the first cleanup model has.
+const BACKUP_SUFFIX: &str = ".before-cleanup-models";
+
+/// Copy the file at `path` to `<name>.before-cleanup-models`, one time. An
+/// older Sayso loses `[[ai.cleanup_models]]` when it saves, so the user can
+/// get the file back. It does nothing when the file is not there, when it
+/// already has cleanup models, or when the copy is there. A failure is logged
+/// and does not stop the save.
+fn back_up_before_cleanup_models(path: &Path) {
+    let Some(name) = path.file_name() else { return };
+    let Ok(old) = std::fs::read(path) else { return };
+    if String::from_utf8_lossy(&old).contains("cleanup_models") {
+        return;
+    }
+    let mut backup_name = name.to_os_string();
+    backup_name.push(BACKUP_SUFFIX);
+    let backup = path.with_file_name(backup_name);
+    if backup.exists() {
+        return;
+    }
+    if let Err(error) = std::fs::copy(path, &backup) {
+        log::warn!("could not copy {} to {}: {}", path.display(), backup.display(), error);
     }
 }
 
@@ -1341,5 +1506,306 @@ mod tests {
         assert!(is_local_url("http://localhost:11434/v1"));
         assert!(is_local_url("http://127.0.0.1:1234/v1"));
         assert!(!is_local_url("https://openrouter.ai/api/v1"));
+    }
+
+    // Tests for cleanup models in the file.
+
+    fn cleanup_model(id: &str, name: &str) -> Provider {
+        Provider { id: id.into(), name: name.into(), kind: ProviderKind::CleanupModel { model: id.into() } }
+    }
+
+    fn config_with_cleanup_model() -> Config {
+        let mut config = Config::default();
+        config.ai.enabled = true;
+        config.ai.default_provider = Some("s1-mini".into());
+        config.ai.providers = vec![
+            Provider { id: "apple-intelligence".into(), name: "Apple Intelligence".into(), kind: ProviderKind::AppleIntelligence },
+            cleanup_model("s1-mini", "S1-mini"),
+        ];
+        config.ai.style_rules.enabled = true;
+        config.ai.style_rules.rules = vec![crate::style_rules::StyleRule { style: "email".into(), apps: vec!["com.apple.mail".into()], sites: vec![] }];
+        config
+    }
+
+    fn ai_table(toml_text: &str) -> toml::Table {
+        let mut table: toml::Table = toml::from_str(toml_text).unwrap();
+        match table.remove("ai") {
+            Some(toml::Value::Table(ai)) => ai,
+            other => panic!("no [ai] table: {other:?}"),
+        }
+    }
+
+    fn kinds_of(array: Option<&toml::Value>) -> Vec<String> {
+        array
+            .and_then(toml::Value::as_array)
+            .map(|entries| entries.iter().filter_map(|e| e.get("kind")).filter_map(toml::Value::as_str).map(String::from).collect())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn a_config_with_a_cleanup_model_round_trips_and_keeps_it_out_of_the_provider_list() {
+        let config = config_with_cleanup_model();
+        let text = config.to_toml();
+
+        let loaded = Config::parse(&text);
+        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert_eq!(loaded.config, config);
+
+        let ai = ai_table(&text);
+        assert_eq!(kinds_of(ai.get("providers")), ["apple_intelligence"]);
+        let cleanup = ai.get("cleanup_models").and_then(toml::Value::as_array).expect("cleanup_models is written");
+        assert_eq!(cleanup.len(), 1);
+        assert_eq!(cleanup[0].get("id").and_then(toml::Value::as_str), Some("s1-mini"));
+        assert_eq!(cleanup[0].get("name").and_then(toml::Value::as_str), Some("S1-mini"));
+        assert_eq!(cleanup[0].get("model").and_then(toml::Value::as_str), Some("s1-mini"));
+    }
+
+    /// The `[ai]` section of the version before cleanup models. Its provider
+    /// kinds are the four old ones only, and it ignores keys that it does not know.
+    #[derive(Debug, Deserialize)]
+    #[serde(default)]
+    struct OldAi {
+        enabled: bool,
+        active_style: String,
+        default_provider: Option<String>,
+        providers: Vec<OldProvider>,
+        http_timeout_ms: u64,
+        cli_timeout_ms: u64,
+        style_rules: crate::style_rules::StyleRules,
+    }
+
+    impl Default for OldAi {
+        fn default() -> Self {
+            Self {
+                enabled: false,
+                active_style: DEFAULT_STYLE_ID.into(),
+                default_provider: None,
+                providers: Vec::new(),
+                http_timeout_ms: 4000,
+                cli_timeout_ms: 8000,
+                style_rules: Default::default(),
+            }
+        }
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct OldProvider {
+        id: String,
+        #[allow(dead_code)]
+        name: String,
+        #[serde(flatten)]
+        #[allow(dead_code)]
+        kind: OldProviderKind,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(tag = "kind", rename_all = "snake_case")]
+    enum OldProviderKind {
+        OpenAiCompatible {
+            #[allow(dead_code)]
+            base_url: String,
+        },
+        ClaudeCli {},
+        CodexCli {},
+        AppleIntelligence,
+    }
+
+    #[test]
+    fn an_older_reader_keeps_the_other_providers_and_the_style_rules() {
+        let config = config_with_cleanup_model();
+        let text = config.to_toml();
+
+        let old: OldAi = ai_table(&text).try_into().expect("the older version parses [ai]");
+        assert!(old.enabled);
+        assert_eq!(old.default_provider.as_deref(), Some("s1-mini"));
+        assert_eq!(old.providers.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["apple-intelligence"]);
+        assert_eq!(old.style_rules, config.ai.style_rules);
+        assert_eq!((old.http_timeout_ms, old.cli_timeout_ms), (config.ai.http_timeout_ms, config.ai.cli_timeout_ms));
+        assert_eq!(old.active_style, config.ai.active_style);
+    }
+
+    const TODAYS_FILE: &str = r#"
+[general]
+language = "en"
+
+[ai]
+enabled = true
+active_style = "clean"
+default_provider = "openrouter"
+http_timeout_ms = 6000
+cli_timeout_ms = 9000
+
+[[ai.providers]]
+id = "openrouter"
+name = "OpenRouter"
+kind = "open_ai_compatible"
+base_url = "https://openrouter.ai/api/v1"
+model = "openai/gpt-5-mini"
+api_key_account = "openrouter"
+zero_data_retention = true
+thinking = "low"
+
+[[ai.providers]]
+id = "claude"
+name = "Claude CLI"
+kind = "claude_cli"
+path = "/usr/local/bin/claude"
+model = "haiku"
+config_dir = "/Users/me/.claude-work"
+
+[[ai.providers]]
+id = "apple-intelligence"
+name = "Apple Intelligence"
+kind = "apple_intelligence"
+
+[ai.style_rules]
+enabled = true
+seeded = true
+
+[[ai.style_rules.rules]]
+style = "email"
+apps = ["com.apple.mail"]
+
+[[ai.style_rules.rules]]
+style = "message"
+apps = ["com.tinyspeck.slackmacgap"]
+sites = ["facebook.com/messages"]
+"#;
+
+    #[test]
+    fn a_config_file_from_before_cleanup_models_loads_and_saves_the_same_config() {
+        let loaded = Config::parse(TODAYS_FILE);
+        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        let ai = &loaded.config.ai;
+        assert!(ai.enabled);
+        assert_eq!(ai.default_provider.as_deref(), Some("openrouter"));
+        assert_eq!(ai.providers.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["openrouter", "claude", "apple-intelligence"]);
+        assert!(ai.unknown_providers.is_empty());
+        assert_eq!(ai.style_rules.rules.len(), 2);
+        assert_eq!((ai.http_timeout_ms, ai.cli_timeout_ms), (6000, 9000));
+
+        let saved = loaded.config.to_toml();
+        assert!(!saved.contains("cleanup_models"), "{saved}");
+        let again = Config::parse(&saved);
+        assert!(again.issues.is_empty(), "{:?}", again.issues);
+        assert_eq!(again.config, loaded.config);
+    }
+
+    #[test]
+    fn a_provider_of_an_unknown_kind_is_kept_and_does_not_reset_the_ai_section() {
+        let text = format!(
+            "{TODAYS_FILE}\n[[ai.providers]]\nid = \"later\"\nname = \"Later\"\nkind = \"future_thing\"\nendpoint = \"x://y\"\nretries = 3\n"
+        );
+        let loaded = Config::parse(&text);
+        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        let ai = &loaded.config.ai;
+        assert!(ai.enabled, "the section did not fall back to the default");
+        assert_eq!(ai.providers.len(), 3);
+        assert_eq!(ai.style_rules.rules.len(), 2);
+        assert_eq!(ai.unknown_providers.len(), 1);
+        assert_eq!(ai.unknown_providers[0].get("kind").and_then(toml::Value::as_str), Some("future_thing"));
+        assert_eq!(ai.unknown_providers[0].get("retries").and_then(toml::Value::as_integer), Some(3));
+
+        let saved = loaded.config.to_toml();
+        let providers = ai_table(&saved);
+        let kinds = kinds_of(providers.get("providers"));
+        assert_eq!(kinds, ["open_ai_compatible", "claude_cli", "apple_intelligence", "future_thing"]);
+        let again = Config::parse(&saved);
+        assert!(again.issues.is_empty(), "{:?}", again.issues);
+        assert_eq!(again.config, loaded.config);
+    }
+
+    #[test]
+    fn a_cleanup_model_with_an_empty_id_or_model_is_skipped() {
+        let text = r#"
+[ai]
+enabled = true
+
+[[ai.cleanup_models]]
+id = ""
+name = "No id"
+model = "s1-mini"
+
+[[ai.cleanup_models]]
+id = "no-model"
+name = "No model"
+
+[[ai.cleanup_models]]
+id = "cleanup-1"
+name = "Cleanup 1"
+model = "spokenly-cleanup-1"
+"#;
+        let loaded = Config::parse(text);
+        assert_eq!(loaded.config.ai.providers.len(), 1);
+        assert_eq!(loaded.config.ai.providers[0].kind, ProviderKind::CleanupModel { model: "spokenly-cleanup-1".into() });
+        assert_eq!(loaded.config.ai.providers[0].model(), Some("spokenly-cleanup-1"));
+    }
+
+    #[test]
+    fn the_file_before_the_first_cleanup_model_is_copied_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let backup = dir.path().join("config.toml.before-cleanup-models");
+        std::fs::write(&path, TODAYS_FILE).unwrap();
+
+        let config = config_with_cleanup_model();
+        config.save(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), TODAYS_FILE);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("[[ai.cleanup_models]]"));
+
+        // The file has cleanup models now, and a second save leaves the copy as it is.
+        let mut changed = config.clone();
+        changed.ai.http_timeout_ms = 7000;
+        changed.save(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), TODAYS_FILE);
+    }
+
+    #[test]
+    fn the_copy_is_not_replaced_when_a_later_file_has_no_cleanup_models_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let backup = dir.path().join("config.toml.before-cleanup-models");
+        std::fs::write(&path, TODAYS_FILE).unwrap();
+        let config = config_with_cleanup_model();
+        config.save(&path).unwrap();
+
+        // An older Sayso saved the file and dropped the cleanup models.
+        std::fs::write(&path, "[ai]\nenabled = true\n").unwrap();
+        config.save(&path).unwrap();
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), TODAYS_FILE);
+    }
+
+    #[test]
+    fn a_save_without_cleanup_models_makes_no_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, TODAYS_FILE).unwrap();
+        let loaded = Config::parse(TODAYS_FILE);
+        loaded.config.save(&path).unwrap();
+        assert!(!dir.path().join("config.toml.before-cleanup-models").exists());
+    }
+
+    #[test]
+    fn a_first_save_with_cleanup_models_and_no_old_file_makes_no_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        config_with_cleanup_model().save(&path).unwrap();
+        assert!(path.exists());
+        assert!(!dir.path().join("config.toml.before-cleanup-models").exists());
+    }
+
+    #[test]
+    fn a_cleanup_model_has_no_thinking_no_model_choice_and_stays_on_this_computer() {
+        let mut provider = cleanup_model("s1-mini", "S1-mini");
+        assert_eq!(provider.kind.name(), "cleanup_model");
+        assert_eq!(provider.thinking(), None);
+        assert_eq!(provider.thinking_sent(), None);
+        assert_eq!(provider.config_dir(), None);
+        assert!(!provider.is_cloud());
+        assert!(!provider.needs_model());
+        provider.set_thinking(Some("high".into()));
+        provider.set_model("other".into());
+        provider.fit_thinking(&["low".to_string()]);
+        assert_eq!(provider, cleanup_model("s1-mini", "S1-mini"));
     }
 }

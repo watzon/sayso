@@ -80,6 +80,7 @@ Filename: "{app}\Sayso.exe"; Description: "{cm:LaunchProgram,Sayso}"; Flags: now
 ; Quit a running Sayso, so its files can be removed.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM Sayso.exe /F"; Flags: runhidden; RunOnceId: "QuitSayso"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM SaysoEngine.exe /F"; Flags: runhidden; RunOnceId: "QuitEngine"
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanup"
 
 [Registry]
 ; Settings › General › Launch at login writes this value. Remove it with the app.

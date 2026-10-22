@@ -59,3 +59,4 @@ settings:
     version: "버전 %{version}"
     tagline: "%{os}용 로컬 받아쓰기"
     speech_engine: "음성 엔진"
+    model_by: "%{name} · %{publisher} 제공"

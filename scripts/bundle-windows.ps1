@@ -4,8 +4,9 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Debug       debug app (faster), release engine
 #   powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer   also dist\Sayso-<version>-windows-x64-setup.exe
 #
-# The folder holds Sayso.exe, the speech engine SaysoEngine.exe with the
-# runtime files it needs (the Visual C++ runtime), and the license. It runs from where it is, so it is
+# The folder holds Sayso.exe, the speech engine SaysoEngine.exe, the cleanup
+# runtime sayso-cleanup.exe, the runtime files they need (the Visual C++
+# runtime), and the license. It runs from where it is, so it is
 # also the portable build. The installer needs Inno Setup 6 (ISCC.exe on PATH,
 # or in its default folder). Set SAYSO_BUNDLE_DIR to use another folder.
 #
@@ -29,9 +30,11 @@ function Invoke-Checked([string]$what, [scriptblock]$block) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
 }
 
-# CMake, Ninja, and libclang for the speech engine.
+# CMake, Ninja, and libclang for the speech engine and the cleanup runtime.
 . (Join-Path $PSScriptRoot 'windows-env.ps1')
 Invoke-Checked 'engine (cargo, release)' { cargo build --release --manifest-path native\portable\Cargo.toml }
+# llama.cpp is slow in a debug build, so the runtime is always a release build.
+Invoke-Checked 'cleanup runtime (cargo, release)' { cargo build --release --manifest-path native\cleanup\Cargo.toml }
 if ($Debug) {
     Invoke-Checked 'app (cargo, debug)' { cargo build -p sayso-app }
 } else {
@@ -48,7 +51,9 @@ $engineDir = 'native\portable\target\release'
 # The engine delay-loads DirectML.dll and never calls it (it runs on the CPU),
 # so the DirectML.dll that the build puts beside it stays out of the app.
 Copy-Item (Join-Path $engineDir 'SaysoEngine.exe') $app
-# Both exes need the Visual C++ runtime. Ship it beside them (app-local), so
+# The app finds the cleanup runtime next to its exe (crates\sayso-cleanup-client\src\runtime.rs).
+Copy-Item 'native\cleanup\target\release\sayso-cleanup.exe' $app
+# The three exes need the Visual C++ runtime. Ship it beside them (app-local), so
 # the app also runs where vc_redist is not installed.
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -72,6 +77,7 @@ function Sign-File([string]$path) {
 }
 Sign-File (Join-Path $app 'Sayso.exe')
 Sign-File (Join-Path $app 'SaysoEngine.exe')
+Sign-File (Join-Path $app 'sayso-cleanup.exe')
 Write-Host "==> app folder: $app"
 
 if ($Installer) {

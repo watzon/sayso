@@ -167,8 +167,12 @@ impl OnboardingView {
                 }
                 _ => Footer { label: t!("onboarding.footer.download"), enabled: true, skip: None },
             },
-            // Continue saves the selected provider. Skip leaves AI off.
-            2 => Footer { label: t!("onboarding.footer.continue"), enabled: self.ai_choice(cx).is_some(), skip: Some(t!("onboarding.footer.skip")) },
+            // Continue saves the selected provider (a cleanup model starts its download). Skip leaves AI off.
+            2 => Footer {
+                label: if self.ai_downloads(cx) { t!("onboarding.ai.download_and_continue") } else { t!("onboarding.footer.continue") },
+                enabled: self.ai_choice(cx).is_some(),
+                skip: Some(t!("onboarding.footer.skip")),
+            },
             3 => {
                 let both = m.permission(Permission::Microphone) == PermissionState::Granted
                     && m.permission(Permission::Accessibility) == PermissionState::Granted;

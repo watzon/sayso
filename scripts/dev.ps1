@@ -1,4 +1,4 @@
-# Development run on Windows: build the debug app and the engine, start Sayso, and show its log.
+# Development run on Windows: build the debug app, the engine, and the cleanup runtime, start Sayso, and show its log.
 #
 #   scripts\dev.cmd [app flags]       for example: scripts\dev.cmd --onboarding --dark
 #   powershell -ExecutionPolicy Bypass -File scripts\dev.ps1 [app flags]
@@ -6,8 +6,8 @@
 #
 # The Windows counterpart of the macOS dev.sh. Windows ties no permission to
 # the app, so Sayso runs straight from target\debug. XDG_CONFIG_HOME,
-# XDG_DATA_HOME, XDG_CACHE_HOME, RUST_LOG, SAYSO_FAKE_MIC, and
-# SAYSO_ENGINE_PATH pass through to the app. Press Ctrl+C to quit Sayso.
+# XDG_DATA_HOME, XDG_CACHE_HOME, RUST_LOG, SAYSO_FAKE_MIC,
+# SAYSO_ENGINE_PATH, and SAYSO_CLEANUP_PATH pass through to the app. Press Ctrl+C to quit Sayso.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -20,6 +20,8 @@ function Invoke-Checked([string]$what, [scriptblock]$block) {
 }
 
 Invoke-Checked 'engine (cargo, release)' { cargo build --release --manifest-path native\portable\Cargo.toml }
+# The app finds this build when no sayso-cleanup.exe is beside it (or set SAYSO_CLEANUP_PATH).
+Invoke-Checked 'cleanup runtime (cargo, release)' { cargo build --release --manifest-path native\cleanup\Cargo.toml }
 Invoke-Checked 'app (cargo, debug)' { cargo build -p sayso-app }
 
 $exe = Join-Path $root 'target\debug\sayso.exe'

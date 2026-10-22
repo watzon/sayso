@@ -1,9 +1,10 @@
 //! Read helpers on `AppModel` for the Hub pages. They only read state.
 
 use crate::model::AppModel;
+use sayso_core::cleanup::CleanupModelInfo;
 use sayso_core::config::{Provider, ProviderKind};
 use sayso_core::models::ModelId;
-use sayso_core::style::{Style, StyleOrigin};
+use sayso_core::style::{RunPlan, Style, StyleOrigin};
 use sayso_i18n::t;
 use sayso_platform::{Permission, PermissionState};
 
@@ -18,6 +19,9 @@ pub enum StyleRoute {
     NeedsModel { provider: String },
     Local { provider: String, model: String },
     Cloud { provider: String, model: String },
+    /// The provider is a cleanup model that cannot run the style. It does a
+    /// cleanup only, on this computer.
+    CleanupCannotRun { model: String },
 }
 
 impl StyleRoute {
@@ -31,7 +35,37 @@ impl StyleRoute {
             StyleRoute::Local { provider, model } => t!("styles.route.local", provider = provider, model = model),
             StyleRoute::Cloud { provider, model } if model.is_empty() => t!("styles.route.cloud_no_model", provider = provider),
             StyleRoute::Cloud { provider, model } => t!("styles.route.cloud", provider = provider, model = model),
+            StyleRoute::CleanupCannotRun { model } => t!("styles.route.cleanup_cannot_run", model = model),
         }
+    }
+}
+
+/// The catalog entry of a provider that is a cleanup model. None for any
+/// other provider, and for a model that this version does not know.
+pub fn cleanup_model_info(p: &Provider) -> Option<&'static CleanupModelInfo> {
+    match &p.kind {
+        ProviderKind::CleanupModel { model } => sayso_core::cleanup::find(model),
+        _ => None,
+    }
+}
+
+/// What a cleanup model does with a style. `name` is the name of the model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CleanupRun {
+    /// The model runs the style with its settings.
+    Runs { name: String },
+    /// The model cannot run the style. It cleans up with the default settings.
+    CannotRun { name: String },
+}
+
+/// What a cleanup model does with a style. None when the provider is not a
+/// cleanup model, and when the style runs no AI on it.
+pub fn cleanup_run(style: &Style, p: &Provider) -> Option<CleanupRun> {
+    let name = cleanup_model_info(p)?.name.to_string();
+    match style.run_plan(p) {
+        RunPlan::Cleanup(_) => Some(CleanupRun::Runs { name }),
+        RunPlan::CleanupOnly => Some(CleanupRun::CannotRun { name }),
+        RunPlan::Prompt | RunPlan::Nothing => None,
     }
 }
 
@@ -56,6 +90,8 @@ pub fn provider_detail(p: &Provider) -> String {
         ProviderKind::ClaudeCli { .. } => t!("hub.provider.claude_cli"),
         ProviderKind::CodexCli { .. } => t!("hub.provider.codex_cli"),
         ProviderKind::AppleIntelligence => t!("hub.provider.apple_intelligence"),
+        // The model id, until the cleanup models have a row of their own.
+        ProviderKind::CleanupModel { model } => model.clone(),
     }
 }
 
@@ -84,10 +120,21 @@ impl AppModel {
 
     /// Where the text of a style goes now.
     pub fn style_route(&self, style: &Style) -> StyleRoute {
-        if !style.uses_ai() {
+        if style.is_raw() {
             return StyleRoute::NoAi;
         }
         let Some(p) = self.provider_for(style) else { return StyleRoute::NeedsProvider };
+        // A cleanup model has no prompt and no model to choose. It cleans up
+        // on this computer, also a style that it cannot run (with the default settings).
+        match cleanup_run(style, p) {
+            Some(CleanupRun::Runs { name }) => return StyleRoute::Local { provider: name, model: String::new() },
+            Some(CleanupRun::CannotRun { name }) => return StyleRoute::CleanupCannotRun { model: name },
+            None if cleanup_model_info(p).is_some() => return StyleRoute::NoAi,
+            None => {}
+        }
+        if !style.uses_ai() {
+            return StyleRoute::NoAi;
+        }
         let model = match style.model.as_deref().or(p.model()) {
             Some(id) => self.model_label(&p.id, id),
             None if p.needs_model() => return StyleRoute::NeedsModel { provider: p.name.clone() },
@@ -167,5 +214,58 @@ impl AppModel {
             n += 1;
         }
         id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sayso_core::cleanup::{CleanupSettings, Format, Layout, Tone};
+    use sayso_core::style::{CleanupField, builtin_styles};
+
+    fn cleanup_model(model: &str) -> Provider {
+        Provider { id: "c".into(), name: "Custom name".into(), kind: ProviderKind::CleanupModel { model: model.into() } }
+    }
+
+    fn built_in(id: &str) -> Style {
+        builtin_styles().into_iter().find(|s| s.id == id).unwrap()
+    }
+
+    fn runs(name: &str) -> Option<CleanupRun> {
+        Some(CleanupRun::Runs { name: name.into() })
+    }
+
+    fn cannot_run(name: &str) -> Option<CleanupRun> {
+        Some(CleanupRun::CannotRun { name: name.into() })
+    }
+
+    #[test]
+    fn a_style_that_the_cleanup_model_runs_uses_the_model_name() {
+        // The name is the name in the catalog, not the name of the provider.
+        assert_eq!(cleanup_run(&built_in("clean"), &cleanup_model("s1-mini")), runs("S1-mini"));
+    }
+
+    #[test]
+    fn a_style_that_the_cleanup_model_cannot_run_says_so() {
+        // Polished has no cleanup settings. Email needs a format that Cleanup 1 lacks.
+        assert_eq!(cleanup_run(&built_in("polished"), &cleanup_model("s1-mini")), cannot_run("S1-mini"));
+        assert_eq!(cleanup_run(&built_in("email"), &cleanup_model("spokenly-cleanup-1")), cannot_run("Cleanup 1"));
+    }
+
+    #[test]
+    fn a_style_with_a_value_that_is_not_known_cannot_run() {
+        let mut style = built_in("clean");
+        style.cleanup = CleanupField::Settings(CleanupSettings { layout: Some("table".into()), ..Default::default() });
+        assert_eq!(cleanup_run(&style, &cleanup_model("s1-mini")), cannot_run("S1-mini"));
+        style.cleanup = CleanupField::Settings(CleanupSettings::new(Tone::Casual, Layout::Paragraphs, Format::Plain));
+        assert_eq!(cleanup_run(&style, &cleanup_model("spokenly-cleanup-1")), runs("Cleanup 1"));
+    }
+
+    #[test]
+    fn raw_and_other_providers_have_no_cleanup_run() {
+        let other = Provider { id: "a".into(), name: "A".into(), kind: ProviderKind::AppleIntelligence };
+        assert_eq!(cleanup_run(&built_in("clean"), &other), None);
+        assert_eq!(cleanup_run(&built_in("raw"), &cleanup_model("s1-mini")), None);
+        assert_eq!(cleanup_run(&built_in("clean"), &cleanup_model("no-such-model")), None);
     }
 }
