@@ -380,8 +380,9 @@ mod tests {
         let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&slow), cleaner: None, timeout };
         let started = Instant::now();
         let out = p.run("keep this text");
-        // Two full attempts would take 600 ms.
-        assert!(started.elapsed() < timeout + Duration::from_millis(100), "took {:?}", started.elapsed());
+        // Two full attempts would take 600 ms. A slow CI runner adds more than
+        // 100 ms to one attempt (517 ms on a macOS runner).
+        assert!(started.elapsed() < timeout + Duration::from_millis(180), "took {:?}", started.elapsed());
         assert_eq!(out.text, "keep this text");
         assert_eq!(out.enhance_error, Some(("slow".to_string(), EnhanceError::Timeout(400))), "the limit of the whole step");
         let timeouts = slow.timeouts.lock().unwrap();

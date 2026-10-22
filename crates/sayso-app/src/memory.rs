@@ -62,14 +62,21 @@ mod tests {
 
     #[test]
     fn preparation_sends_final_words_and_loads_only_the_chosen_preview() {
-        let final_model = id("parakeet-unified-en");
+        // Each system has its own catalog. Take a model that uses dictionary
+        // words when the catalog has one (Linux has none), and expect the words
+        // only for such a model.
+        let catalog = sayso_core::models::catalog();
+        let info = catalog.iter().find(|m| m.vocabulary).unwrap_or(&catalog[0]);
+        let final_model = info.id.clone();
         let preview = id("parakeet-eou");
         let words = vec!["Sayso".to_string(), "Parakeet".to_string()];
-        assert_eq!(preparation(&final_model, Some(&final_model), None, &words), (false, words.as_slice()));
-        assert_eq!(preparation(&preview, Some(&final_model), Some(&preview), &words), (true, &[][..]));
-        assert_eq!(preparation(&final_model, Some(&final_model), Some(&final_model), &words), (true, words.as_slice()));
+        let sent = |w: &[String]| if info.vocabulary { w.to_vec() } else { Vec::new() };
+        let check = |(load, w): (bool, &[String])| (load, w.to_vec());
+        assert_eq!(check(preparation(&final_model, Some(&final_model), None, &words)), (false, sent(&words)));
+        assert_eq!(check(preparation(&preview, Some(&final_model), Some(&preview), &words)), (true, Vec::new()));
+        assert_eq!(check(preparation(&final_model, Some(&final_model), Some(&final_model), &words)), (true, sent(&words)));
         let changed = vec!["new word".to_string()];
-        assert_eq!(preparation(&final_model, Some(&final_model), None, &changed).1, changed);
+        assert_eq!(preparation(&final_model, Some(&final_model), None, &changed).1.to_vec(), sent(&changed));
         assert!(preparation(&preview, None, Some(&preview), &words).1.is_empty());
     }
 
