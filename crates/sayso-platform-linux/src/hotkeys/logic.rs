@@ -8,7 +8,7 @@
 
 use super::keymap::{self, Chord, KEY_ESC};
 use crate::esc::EscDetector;
-use sayso_core::hotkey::{Hotkey, Key, Modifiers, SoloModifier};
+use sayso_core::hotkey::{Hotkey, Key, ModifierCapture, ModifierSet, Modifiers};
 use sayso_platform::HotkeyEvent;
 use std::time::{Duration, Instant};
 
@@ -32,6 +32,7 @@ pub struct Outcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Ptt {
     Solo(u16),
+    ModifierOnly(ModifierSet),
     Chord(Chord),
 }
 
@@ -40,6 +41,8 @@ pub struct KeyLogic {
     /// evdev codes of the keys that are down now.
     pressed: Vec<u16>,
     ptt: Option<Ptt>,
+    toggle_modifiers: Option<ModifierSet>,
+    pointer_available: bool,
     ptt_down: bool,
     /// Chords that this stream detects, for sessions without a chord backend.
     chords: Vec<(Chord, HotkeyEvent)>,
@@ -47,8 +50,8 @@ pub struct KeyLogic {
     esc: EscDetector,
     /// The key recorder is open.
     capturing: bool,
-    /// A solo modifier went down alone and nothing else happened since.
-    solo_candidate: Option<SoloModifier>,
+    /// Modifiers pressed without a regular key in between.
+    modifier_capture: ModifierCapture,
 }
 
 impl Default for KeyLogic {
@@ -62,18 +65,20 @@ impl KeyLogic {
         Self {
             pressed: Vec::new(),
             ptt: None,
+            toggle_modifiers: None,
+            pointer_available: true,
             ptt_down: false,
             chords: Vec::new(),
             recording: false,
             esc,
             capturing: false,
-            solo_candidate: None,
+            modifier_capture: ModifierCapture::default(),
         }
     }
 
     /// True when the stream has any reason to run.
     pub fn is_needed(&self) -> bool {
-        self.ptt.is_some() || !self.chords.is_empty() || self.recording || self.capturing
+        self.ptt.is_some() || self.toggle_modifiers.is_some() || !self.chords.is_empty() || self.recording || self.capturing
     }
 
     /// Set the push-to-talk binding. Returns a release event when a held
@@ -82,10 +87,20 @@ impl KeyLogic {
     pub fn set_ptt(&mut self, hotkey: Option<Hotkey>) -> Option<HotkeyEvent> {
         let released = self.release_held();
         self.ptt = hotkey.and_then(|h| match h {
+            Hotkey::ModifierOnly(keys) => keymap::can_detect_modifiers(keys).then_some(Ptt::ModifierOnly(keys)),
             Hotkey::Solo(m) => keymap::solo_code(m).map(Ptt::Solo),
             Hotkey::Chord { .. } => keymap::chord(&h).ok().map(Ptt::Chord),
         });
         released
+    }
+
+    pub fn set_toggle_modifiers(&mut self, keys: Option<ModifierSet>) {
+        self.toggle_modifiers = keys.filter(|keys| keymap::can_detect_modifiers(*keys));
+        self.modifier_capture.clear();
+    }
+
+    fn modifier_keys(&self) -> ModifierSet {
+        self.pressed.iter().filter_map(|code| keymap::solo_from_code(*code)).collect()
     }
 
     /// Set the chords that this stream turns into events (toggle, paste last,
@@ -109,11 +124,12 @@ impl KeyLogic {
 
     pub fn set_capturing(&mut self, capturing: bool) {
         self.capturing = capturing;
-        self.solo_candidate = None;
+        self.modifier_capture.clear();
     }
 
     /// Release a held push-to-talk, for example when the stream stops.
     pub fn release_held(&mut self) -> Option<HotkeyEvent> {
+        self.modifier_capture.clear();
         std::mem::take(&mut self.ptt_down).then_some(HotkeyEvent::PushToTalkUp)
     }
 
@@ -121,8 +137,20 @@ impl KeyLogic {
     /// stream restarts, because their key-up events will not arrive.
     pub fn reset_keys(&mut self) -> Option<HotkeyEvent> {
         self.pressed.clear();
-        self.solo_candidate = None;
+        self.modifier_capture.clear();
         self.release_held()
+    }
+
+    /// Pointer gestures are never deliberate modifier taps (or recordings).
+    pub fn pointer_activity(&mut self) {
+        self.modifier_capture.clear();
+    }
+
+    /// A newly connected but unreadable device may be a pointer. Fail closed
+    /// until a rescan can observe every device again, even across rebindings.
+    pub fn set_pointer_available(&mut self, available: bool) {
+        self.pointer_available = available;
+        self.modifier_capture.clear();
     }
 
     pub fn handle(&mut self, code: u16, action: KeyAction, now: Instant) -> Outcome {
@@ -141,6 +169,24 @@ impl KeyLogic {
         }
         let mut out = Outcome::default();
         let mods = self.modifiers();
+        if !keymap::is_modifier(code) && action != KeyAction::Up {
+            self.modifier_capture.clear();
+        }
+        if keymap::is_modifier(code) && action != KeyAction::Repeat {
+            let modifier_keys = self.modifier_keys();
+            if let Some(keys) = self.toggle_modifiers.filter(|_| self.pointer_available) {
+                if action == KeyAction::Down {
+                    if self.pressed.iter().all(|code| keymap::is_modifier(*code)) {
+                        self.modifier_capture.press_tap(modifier_keys, now);
+                    }
+                } else if keymap::solo_from_code(code).and_then(|m| self.modifier_capture.release_tap(m, now)).and_then(Hotkey::modifier_keys) == Some(keys) {
+                    out.events.push(HotkeyEvent::Toggle);
+                }
+            }
+            if let Some(Ptt::ModifierOnly(keys)) = self.ptt {
+                self.set_ptt_down(modifier_keys == keys, &mut out.events);
+            }
+        }
         match action {
             KeyAction::Repeat => {}
             KeyAction::Down => {
@@ -189,22 +235,18 @@ impl KeyLogic {
         events.push(if down { HotkeyEvent::PushToTalkDown } else { HotkeyEvent::PushToTalkUp });
     }
 
-    /// Key recorder: a chord completes on key down, a solo modifier completes
-    /// when it is released without any other key in between.
+    /// Chords complete on key down; modifier-only combinations complete on
+    /// the first release without a regular key in between.
     fn capture(&mut self, code: u16, action: KeyAction) -> Option<Hotkey> {
         match action {
             // Modifiers auto-repeat too, so a repeat must not end a solo candidate.
             KeyAction::Repeat => None,
             KeyAction::Down if keymap::is_modifier(code) => {
-                let alone = self.pressed.iter().all(|c| *c == code || !keymap::is_modifier(*c));
-                self.solo_candidate = match keymap::solo_from_code(code) {
-                    Some(solo) if alone && self.solo_candidate.is_none() => Some(solo),
-                    _ => None,
-                };
+                self.modifier_capture.press(self.modifier_keys());
                 None
             }
             KeyAction::Down => {
-                self.solo_candidate = None;
+                self.modifier_capture.clear();
                 let key = keymap::key_from_code(code)?;
                 let modifiers = self.modifiers();
                 // A bare key is only a valid hotkey when it is an F key.
@@ -213,16 +255,15 @@ impl KeyLogic {
                 }
                 self.finish_capture(Hotkey::Chord { modifiers, key })
             }
-            KeyAction::Up => match self.solo_candidate {
-                Some(solo) if keymap::solo_code(solo) == Some(code) => self.finish_capture(Hotkey::Solo(solo)),
-                _ => None,
-            },
+            KeyAction::Up => keymap::solo_from_code(code)
+                .and_then(|modifier| self.modifier_capture.release(modifier))
+                .and_then(|hk| self.finish_capture(hk)),
         }
     }
 
     fn finish_capture(&mut self, hotkey: Hotkey) -> Option<Hotkey> {
         self.capturing = false;
-        self.solo_candidate = None;
+        self.modifier_capture.clear();
         Some(hotkey)
     }
 }
@@ -230,6 +271,56 @@ impl KeyLogic {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unreadable_pointer_disables_toggles_across_binding_changes_until_recovered() {
+        let now = Instant::now();
+        let mut logic = KeyLogic::default();
+        let keys = "left_control".parse::<Hotkey>().unwrap().modifier_keys();
+        logic.set_toggle_modifiers(keys);
+        logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Down, now);
+        logic.set_pointer_available(false);
+        assert!(logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Up, now).events.is_empty());
+        logic.set_toggle_modifiers(keys);
+        logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Down, now);
+        assert!(logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Up, now).events.is_empty());
+        logic.set_pointer_available(true);
+        logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Down, now);
+        assert_eq!(logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Up, now).events, vec![HotkeyEvent::Toggle]);
+    }
+
+    #[test]
+    fn pointer_activity_cancels_toggle_but_preserves_next_tap() {
+        let now = Instant::now();
+        let mut logic = KeyLogic::default();
+        logic.set_toggle_modifiers("left_control".parse::<Hotkey>().unwrap().modifier_keys());
+        logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Down, now);
+        logic.pointer_activity();
+        assert!(logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Up, now).events.is_empty());
+        logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Down, now);
+        assert_eq!(logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Up, now).events, vec![HotkeyEvent::Toggle]);
+    }
+
+    #[test]
+    fn pointer_activity_does_not_record_a_modifier() {
+        let now = Instant::now();
+        let mut logic = KeyLogic::default();
+        logic.set_capturing(true);
+        logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Down, now);
+        logic.pointer_activity();
+        assert_eq!(logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Up, now).captured, None);
+    }
+
+    #[test]
+    fn modifier_toggle_long_hold_does_not_toggle() {
+        let now = Instant::now();
+        let mut logic = KeyLogic::default();
+        logic.set_toggle_modifiers("left_control".parse::<Hotkey>().unwrap().modifier_keys());
+        logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Down, now);
+        assert!(logic.handle(keymap::KEY_LEFTCTRL, KeyAction::Up, now + Duration::from_millis(401)).events.is_empty());
+    }
+
+    use sayso_core::hotkey::SoloModifier;
     use crate::hotkeys::keymap::*;
     use KeyAction::{Down, Repeat, Up};
 
@@ -251,6 +342,102 @@ mod tests {
     fn feed(l: &mut KeyLogic, keys: &[(u16, KeyAction)]) -> Vec<HotkeyEvent> {
         let now = Instant::now();
         keys.iter().flat_map(|(c, a)| l.handle(*c, *a, now).events).collect()
+    }
+
+    #[test]
+    fn every_detectable_modifier_combination_records_and_triggers() {
+        let available = SoloModifier::ALL.into_iter().filter(|m| keymap::solo_code(*m).is_some()).collect::<Vec<_>>();
+        let now = Instant::now();
+        for mask in 0usize..(1 << available.len()) {
+            let selected: Vec<_> = available.iter().enumerate().filter_map(|(i, m)| (mask & (1 << i) != 0).then_some(*m)).collect();
+            if selected.is_empty() { continue; }
+            let modifiers: ModifierSet = selected.iter().copied().collect();
+            let binding = Hotkey::modifier_only(modifiers).unwrap();
+            for reverse in [false, true] {
+                let mut order = selected.clone();
+                if reverse { order.reverse(); }
+                for released in selected.iter().copied() {
+                    for toggle in [false, true] {
+                        let mut active = logic();
+                        if toggle { active.set_toggle_modifiers(Some(modifiers)); }
+                        else { active.set_ptt(Some(binding)); }
+                        let mut capture = logic();
+                        capture.set_capturing(true);
+                        for (i, modifier) in order.iter().enumerate() {
+                            let code = keymap::solo_code(*modifier).unwrap();
+                            let out = active.handle(code, Down, now);
+                            assert_eq!(capture.handle(code, Down, now).captured, None);
+                            let expected = if !toggle && i + 1 == order.len() {
+                                vec![HotkeyEvent::PushToTalkDown]
+                            } else { Vec::new() };
+                            assert_eq!(out.events, expected, "{binding}, reverse={reverse}, toggle={toggle}");
+                        }
+                        let code = keymap::solo_code(released).unwrap();
+                        let out = active.handle(code, Up, now);
+                        assert_eq!(capture.handle(code, Up, now).captured, Some(binding));
+                        assert_eq!(out.events, vec![if toggle { HotkeyEvent::Toggle } else { HotkeyEvent::PushToTalkUp }]);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn modifier_toggle_rejects_both_key_orders() {
+        for first in 0..2 {
+            for last in 0..2 {
+                let mut l = logic();
+                l.set_toggle_modifiers("left_shift".parse::<Hotkey>().unwrap().modifier_keys());
+                let press = [(KEY_A, Down), (KEY_LEFTSHIFT, Down)];
+                let release = [(KEY_A, Up), (KEY_LEFTSHIFT, Up)];
+                assert!(feed(&mut l, &[press[first], press[1 - first], release[last], release[1 - last]]).is_empty());
+                assert_eq!(feed(&mut l, &[(KEY_LEFTSHIFT, Down), (KEY_LEFTSHIFT, Up)]), vec![HotkeyEvent::Toggle]);
+            }
+        }
+    }
+
+    #[test]
+    fn modifier_toggle_ignores_normal_shortcuts() {
+        for binding in ["left_command", "left_shift", "left_control+left_option"] {
+            let keys = binding.parse::<Hotkey>().unwrap().modifier_keys().unwrap();
+            let mut l = logic();
+            l.set_toggle_modifiers(Some(keys));
+            let mut events: Vec<_> = keys.iter().map(|m| (keymap::solo_code(m).unwrap(), Down)).collect();
+            events.extend([(KEY_A, Down), (KEY_A, Up)]);
+            events.extend(keys.iter().map(|m| (keymap::solo_code(m).unwrap(), Up)));
+            assert!(feed(&mut l, &events).is_empty(), "{binding} fired for a normal shortcut");
+        }
+        let mut l = logic();
+        l.set_toggle_modifiers(Some("left_shift".parse::<Hotkey>().unwrap().modifier_keys().unwrap()));
+        assert!(feed(&mut l, &[
+            (KEY_A, Down), (KEY_LEFTSHIFT, Down), (KEY_A, Repeat), (KEY_A, Up), (KEY_LEFTSHIFT, Up),
+        ]).is_empty(), "a repeated letter must also cancel the toggle");
+    }
+
+    #[test]
+    fn releasing_an_extra_modifier_does_not_toggle() {
+        let now = Instant::now();
+        for binding in ["left_shift", "left_control+left_command"] {
+            let keys = binding.parse::<Hotkey>().unwrap().modifier_keys().unwrap();
+            let mut l = logic();
+            l.set_toggle_modifiers(Some(keys));
+            assert!(l.handle(KEY_LEFTALT, Down, now).events.is_empty());
+            for modifier in keys.iter() {
+                assert!(l.handle(keymap::solo_code(modifier).unwrap(), Down, now).events.is_empty());
+            }
+            assert!(l.handle(KEY_LEFTALT, Up, now).events.is_empty());
+            let required = keymap::solo_code(keys.iter().next().unwrap()).unwrap();
+            assert!(l.handle(required, Up, now).events.is_empty());
+        }
+    }
+
+    #[test]
+    fn modifiers_the_system_cannot_see_do_not_install_a_binding() {
+        let mut l = logic();
+        for binding in ["fn", "fn+left_command"] {
+            assert_eq!(l.set_ptt(Some(binding.parse().unwrap())), None);
+            assert!(!l.is_needed());
+        }
     }
 
     #[test]
@@ -466,26 +653,22 @@ mod tests {
     }
 
     #[test]
-    fn capture_ignores_a_solo_pressed_while_another_modifier_is_held() {
+    fn capture_ignores_modifiers_held_before_recording_starts() {
         let mut l = logic();
-        l.set_capturing(true);
         let now = Instant::now();
         l.handle(KEY_LEFTMETA, Down, now);
+        l.set_capturing(true);
         l.handle(KEY_RIGHTALT, Down, now);
         assert_eq!(l.handle(KEY_RIGHTALT, Up, now).captured, None);
-        // A second modifier after the solo one also spoils it.
-        l.handle(KEY_LEFTMETA, Up, now);
-        l.handle(KEY_RIGHTSHIFT, Down, now);
-        l.handle(KEY_LEFTCTRL, Down, now);
-        assert_eq!(l.handle(KEY_RIGHTSHIFT, Up, now).captured, None);
     }
 
     #[test]
-    fn capture_ignores_left_ctrl_alone() {
+    fn capture_records_left_ctrl_alone() {
         let mut l = logic();
         l.set_capturing(true);
-        assert!(feed(&mut l, &[(KEY_LEFTCTRL, Down), (KEY_LEFTCTRL, Up)]).is_empty());
-        assert!(l.is_capturing());
+        let now = Instant::now();
+        l.handle(KEY_LEFTCTRL, Down, now);
+        assert_eq!(l.handle(KEY_LEFTCTRL, Up, now).captured, Some(Hotkey::Solo(SoloModifier::LeftControl)));
     }
 
     #[test]

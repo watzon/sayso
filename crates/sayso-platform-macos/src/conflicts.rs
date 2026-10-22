@@ -16,7 +16,7 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
-use sayso_core::hotkey::Hotkey;
+use sayso_core::hotkey::{Hotkey, SoloModifier};
 use sayso_platform::{AppInfo, ConflictSource, HotkeyConflict};
 use std::ptr;
 
@@ -272,9 +272,31 @@ pub fn system_hotkeys() -> Vec<SymbolicHotkey> {
         .collect()
 }
 
+/// An unset AppleFnUsageType is conservatively treated as a conflict: defaults
+/// differ across systems, so do not silently assume that Fn does nothing.
+fn fn_conflict(usage: Option<i64>) -> Option<ConflictSource> {
+    let name = match usage.unwrap_or(2) {
+        0 => return None,
+        1 => "Select next input source",
+        2 => "Emoji & Symbols",
+        3 => "Start Dictation (press twice)",
+        _ => "A macOS keyboard shortcut",
+    };
+    Some(ConflictSource::System { name: name.into(), enabled: true })
+}
+
 /// All conflicts for `hotkey`: system shortcuts first, then running apps.
 pub fn conflicts(hotkey: &Hotkey) -> Vec<HotkeyConflict> {
     let mut sources = match_system(&system_hotkeys(), hotkey);
+    if *hotkey == Hotkey::Solo(SoloModifier::Fn) {
+        let usage = std::process::Command::new("/usr/bin/defaults")
+            .args(["read", "com.apple.HIToolbox", "AppleFnUsageType"])
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .and_then(|out| String::from_utf8_lossy(&out.stdout).trim().parse().ok());
+        sources.extend(fn_conflict(usage));
+    }
     sources.extend(match_known_apps(hotkey, &context::running_apps(), read_setting));
     sources.into_iter().map(|source| HotkeyConflict { hotkey: *hotkey, source }).collect()
 }
@@ -352,6 +374,19 @@ mod tests {
                 other => panic!("unexpected {other:?}"),
             })
             .collect()
+    }
+
+    #[test]
+    fn fn_conflict_follows_the_keyboard_setting() {
+        assert_eq!(fn_conflict(Some(0)), None);
+        for (usage, name) in [
+            (Some(1), "Select next input source"),
+            (Some(2), "Emoji & Symbols"),
+            (Some(3), "Start Dictation (press twice)"),
+            (None, "Emoji & Symbols"),
+        ] {
+            assert_eq!(fn_conflict(usage), Some(ConflictSource::System { name: name.into(), enabled: true }));
+        }
     }
 
     #[test]

@@ -112,7 +112,7 @@ impl DictationSettings {
         let config = m.config.clone();
         let toggle = config.hotkeys.toggle;
         let ptt = config.hotkeys.push_to_talk;
-        let im_missing = ptt.is_some() && m.permission(Permission::InputMonitoring) != PermissionState::Granted;
+        let im_missing = (config.hotkeys.needs_input_monitoring() || self.recorder.window_only) && m.permission(Permission::InputMonitoring) != PermissionState::Granted;
         let mut conflicts = self.recorder.conflicts(m, toggle);
         conflicts.extend(self.recorder.conflicts(m, ptt));
         let start = |this: &mut Self, slot: Slot, window: &mut Window, cx: &mut Context<Self>| this.start(slot, window, cx);
@@ -164,6 +164,11 @@ impl DictationSettings {
             g = g.child(banner(BannerKind::Warning, recorder::conflict_text(c, false), cx));
         }
         if im_missing {
+            let note = if ptt.is_some() {
+                t!(crate::shell::os_text!("settings.dictation.input_monitoring_note_mac", "settings.dictation.input_monitoring_note_other"))
+            } else {
+                t!(crate::shell::os_text!("onboarding.hotkeys.im_off_mac", "onboarding.hotkeys.im_off_other"))
+            };
             g = g.child(
                 div().py(px(8.)).child(
                     div()
@@ -172,7 +177,7 @@ impl DictationSettings {
                         .gap(px(12.))
                         .child(div().flex_1().child(super::kit::notice(
                             BannerKind::Warning,
-                            t!(crate::shell::os_text!("settings.dictation.input_monitoring_note_mac", "settings.dictation.input_monitoring_note_other")),
+                            note,
                             cx)))
                         .child(Button::new("open-im", crate::shell::open_permission_settings()).small().on_click(cx.listener(|this, _, _, cx| {
                             this.model.update(cx, |m, _| m.open_permission_settings(Permission::InputMonitoring));

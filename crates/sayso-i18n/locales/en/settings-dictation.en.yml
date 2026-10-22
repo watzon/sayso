@@ -14,7 +14,7 @@ settings:
     toggle: "Start and stop dictation"
     toggle_detail: "Press once to start, again to stop."
     push_to_talk: "Push to talk"
-    push_to_talk_detail: "Hold to record, release to insert. A single key such as Right Option works."
+    push_to_talk_detail: "Hold to record, release to insert. Modifier-only keys also start recording during ordinary shortcuts. Prefer an unused right-side modifier or a chord."
     use_right_option: "Use Right Option"
     input_monitoring_note_mac: "Push to talk needs Input Monitoring. Turn on Sayso in Privacy and Security › Input Monitoring."
     input_monitoring_note_other: "This push-to-talk key needs keyboard access. Add yourself to the input group, then log out and log in again."

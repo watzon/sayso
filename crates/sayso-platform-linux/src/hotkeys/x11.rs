@@ -170,11 +170,7 @@ impl X11Keys {
             return Err("the X server has no XInput 2.1".into());
         }
         let s = &self.shared;
-        let mask = if on {
-            xinput::XIEventMask::RAW_KEY_PRESS | xinput::XIEventMask::RAW_KEY_RELEASE
-        } else {
-            xinput::XIEventMask::from(0u32)
-        };
+        let mask = raw_mask(on);
         let masks = [xinput::EventMask { deviceid: xinput::Device::ALL_MASTER.into(), mask: vec![mask] }];
         s.conn
             .xinput_xi_select_events(s.root, &masks)
@@ -234,6 +230,17 @@ fn grab(s: &Shared, keycode: u8, mods: u16) -> Result<(), String> {
     Ok(())
 }
 
+fn raw_mask(on: bool) -> xinput::XIEventMask {
+    if on {
+        // Smooth scrolling is encoded as valuators on raw motion, not always
+        // wheel buttons. Conservatively cancel on all pointer motion too.
+        xinput::XIEventMask::RAW_KEY_PRESS | xinput::XIEventMask::RAW_KEY_RELEASE
+            | xinput::XIEventMask::RAW_BUTTON_PRESS | xinput::XIEventMask::RAW_MOTION
+    } else {
+        xinput::XIEventMask::from(0u32)
+    }
+}
+
 /// The event thread. Never panics: errors are logged.
 fn run(s: Arc<Shared>, listen: Arc<Listen>) {
     // Grabbed keys that are down, to drop auto-repeat presses.
@@ -253,6 +260,7 @@ fn run(s: Arc<Shared>, listen: Arc<Listen>) {
         match event {
             Event::XinputRawKeyPress(e) => raw_key(&listen, e.detail, KeyAction::Down),
             Event::XinputRawKeyRelease(e) => raw_key(&listen, e.detail, KeyAction::Up),
+            Event::XinputRawButtonPress(_) | Event::XinputRawMotion(_) => listen.pointer_activity(),
             Event::KeyPress(e) => {
                 if s.raw.load(Ordering::SeqCst) {
                     raw_key(&listen, e.detail.into(), KeyAction::Down);
@@ -367,4 +375,17 @@ fn mod_masks(conn: &RustConnection) -> ModMasks {
     masks.alt = alt.unwrap_or(masks.alt);
     masks.super_ = super_.unwrap_or(masks.super_);
     masks
+}
+
+#[cfg(test)]
+mod pointer_tests {
+    use super::*;
+
+    #[test]
+    fn raw_mask_includes_buttons_and_smooth_scroll_motion() {
+        let mask = raw_mask(true);
+        assert_eq!(mask & xinput::XIEventMask::RAW_BUTTON_PRESS, xinput::XIEventMask::RAW_BUTTON_PRESS);
+        assert_eq!(mask & xinput::XIEventMask::RAW_MOTION, xinput::XIEventMask::RAW_MOTION);
+        assert_eq!(raw_mask(false), xinput::XIEventMask::from(0u32));
+    }
 }

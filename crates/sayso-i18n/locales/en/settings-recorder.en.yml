@@ -7,7 +7,7 @@ settings:
     action_paste_last: "Paste last text"
     action_cycle_style: "Next style"
     action_incognito: "Incognito"
-    solo_only_push_to_talk: "%{keys} on its own works only for Push to talk. Choose a key combination, for example %{example}."
+    solo_only_push_to_talk: "%{keys} works only for Start and stop dictation or Push to talk. Include a regular key, for example %{example}."
     used_by: "%{keys} is already used by %{action}. Choose another key."
     conflict_app: "%{name} also uses %{keys}. Both apps will react. Choose another key, or change the shortcut in %{name}."
     conflict_app_open_default: "%{name} is open and uses %{keys} by default. If you did not change it in %{name}, both apps will react. Choose another key, or change the shortcut in %{name}."

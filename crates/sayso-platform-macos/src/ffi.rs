@@ -47,6 +47,10 @@ pub const kCGHeadInsertEventTap: u32 = 0;
 pub const kCGEventTapOptionDefault: u32 = 0;
 pub const kCGEventTapOptionListenOnly: u32 = 1;
 
+pub const kCGEventLeftMouseDown: u32 = 1;
+pub const kCGEventRightMouseDown: u32 = 3;
+pub const kCGEventScrollWheel: u32 = 22;
+pub const kCGEventOtherMouseDown: u32 = 25;
 pub const kCGEventKeyDown: u32 = 10;
 pub const kCGEventKeyUp: u32 = 11;
 pub const kCGEventFlagsChanged: u32 = 12;
@@ -78,6 +82,7 @@ unsafe extern "C" {
     pub fn CGEventTapEnable(tap: CFTypeRef, enable: bool);
     pub fn CGEventGetIntegerValueField(event: *mut c_void, field: u32) -> i64;
     pub fn CGEventGetFlags(event: *mut c_void) -> u64;
+    pub fn CGEventSourceKeyState(state: i32, keycode: u16) -> bool;
     pub fn CGPreflightListenEventAccess() -> bool;
     pub fn CGRequestListenEventAccess() -> bool;
 }
@@ -87,6 +92,7 @@ unsafe extern "C" {
 pub const kCGHIDEventTap: u32 = 0;
 /// `kCGEventSourceStatePrivate`: the event does not inherit held modifier keys.
 pub const kCGEventSourceStatePrivate: i32 = -1;
+pub const kCGEventSourceStateHIDSystemState: i32 = 1;
 
 unsafe extern "C" {
     pub fn CGEventSourceCreate(state: i32) -> CFTypeRef;

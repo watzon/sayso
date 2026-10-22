@@ -118,6 +118,11 @@ mod optional_hotkey {
 }
 
 impl Hotkeys {
+    /// Global keyboard access for push-to-talk and modifier-only toggle keys.
+    pub fn needs_input_monitoring(&self) -> bool {
+        self.push_to_talk.is_some() || self.toggle.and_then(Hotkey::modifier_keys).is_some()
+    }
+
     /// Whether Send with Enter can work: it is on, and the toggle and
     /// push-to-talk hotkeys do not use Return, which it takes while recording.
     pub fn enter_sends_usable(&self) -> bool {
@@ -834,6 +839,8 @@ pub enum ConfigProblem {
     AiTimeoutTooShort,
     #[error("is the same key as hotkeys.toggle")]
     PushToTalkIsToggle,
+    #[error("{0} conflicts with hotkeys.toggle")]
+    HotkeyConflictsWithToggle(Hotkey),
     #[error("no provider has the id \"{0}\"")]
     UnknownProvider(String),
     #[error("\"{0}\" is not a known model")]
@@ -956,8 +963,22 @@ impl Config {
         if self.ai.http_timeout_ms < 500 || self.ai.cli_timeout_ms < 500 {
             issue("ai", ConfigProblem::AiTimeoutTooShort);
         }
-        if self.hotkeys.toggle.is_some() && self.hotkeys.toggle == self.hotkeys.push_to_talk {
-            issue("hotkeys.push_to_talk", ConfigProblem::PushToTalkIsToggle);
+        if let Some(toggle) = self.hotkeys.toggle {
+            for (field, hotkey) in [
+                ("hotkeys.push_to_talk", self.hotkeys.push_to_talk),
+                ("hotkeys.paste_last", self.hotkeys.paste_last),
+                ("hotkeys.cycle_style", self.hotkeys.cycle_style),
+                ("hotkeys.incognito", self.hotkeys.incognito),
+            ] {
+                if let Some(hotkey) = hotkey && hotkey.conflicts_with_toggle(toggle) {
+                    let problem = if field == "hotkeys.push_to_talk" && hotkey == toggle {
+                        ConfigProblem::PushToTalkIsToggle
+                    } else {
+                        ConfigProblem::HotkeyConflictsWithToggle(hotkey)
+                    };
+                    issue(field, problem);
+                }
+            }
         }
         if let Some(id) = &self.ai.default_provider
             && !self.ai.providers.iter().any(|p| &p.id == id) {
@@ -1395,6 +1416,30 @@ mod tests {
         let loaded = Config::parse("[sounds\nvolume = 1");
         assert_eq!(loaded.config, Config::default());
         assert_eq!(loaded.issues[0].field, "config.toml");
+    }
+
+    #[test]
+    fn validation_catches_modifier_toggle_conflicts() {
+        let mut c = Config::default();
+        c.hotkeys.toggle = Some("left_control+left_option".parse().unwrap());
+        c.hotkeys.push_to_talk = Some("left_control".parse().unwrap());
+        c.hotkeys.paste_last = c.hotkeys.toggle;
+        c.hotkeys.cycle_style = c.hotkeys.toggle;
+        c.hotkeys.incognito = c.hotkeys.toggle;
+        let fields: Vec<_> = c.validate().into_iter().map(|i| i.field).collect();
+        for field in ["hotkeys.push_to_talk", "hotkeys.paste_last", "hotkeys.cycle_style", "hotkeys.incognito"] {
+            assert!(fields.iter().any(|f| f == field), "missing conflict for {field}");
+        }
+    }
+
+    #[test]
+    fn modifier_toggle_allows_chords_and_reports_conflicts_loaded_from_file() {
+        let valid = Config::parse("[hotkeys]\ntoggle = 'left_control'\npush_to_talk = 'ctrl+opt+d'\n");
+        assert!(valid.issues.is_empty());
+        let invalid = Config::parse("[hotkeys]\ntoggle = 'left_control'\npush_to_talk = 'left_control+left_option'\n");
+        assert_eq!(invalid.issues.len(), 1);
+        assert_eq!(invalid.issues[0].field, "hotkeys.push_to_talk");
+        assert!(matches!(invalid.issues[0].problem, ConfigProblem::HotkeyConflictsWithToggle(_)));
     }
 
     #[test]

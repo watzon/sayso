@@ -46,11 +46,15 @@ impl Slot {
         }
     }
 
-    /// Another Sayso action that already uses `hotkey`.
+    /// Another Sayso action that uses or overlaps `hotkey`.
     pub fn clash(self, c: &Config, hotkey: &Hotkey) -> Option<Slot> {
         [Slot::Toggle, Slot::PushToTalk, Slot::PasteLast, Slot::CycleStyle, Slot::Incognito]
             .into_iter()
-            .find(|s| *s != self && s.get(c).as_ref() == Some(hotkey))
+            .find(|s| *s != self && s.get(c).is_some_and(|other| match (self, *s) {
+                (Slot::Toggle, _) => other.conflicts_with_toggle(*hotkey),
+                (_, Slot::Toggle) => hotkey.conflicts_with_toggle(other),
+                _ => other == *hotkey,
+            }))
     }
 
     /// The name of the action, for sentences.
@@ -69,7 +73,7 @@ impl Slot {
 /// so the note changes with the interface language.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Note {
-    /// A modifier key on its own, for an action other than push to talk.
+    /// Modifier-only keys for an action other than toggle or push-to-talk.
     SoloOnlyForPushToTalk(Hotkey),
     /// Another Sayso action uses the key.
     UsedBy(Hotkey, Slot),
@@ -147,6 +151,7 @@ pub fn start<V: 'static>(
 ) {
     let r = get(this);
     r.slot = Some(slot);
+    r.window_only = false;
     r.note = None;
     r.generation += 1;
     let generation = r.generation;
@@ -191,12 +196,11 @@ pub fn start<V: 'static>(
     cx.notify();
 }
 
-/// Why `slot` cannot use `hk`, as a note for the UI. Only push-to-talk can
-/// use a modifier key on its own: the other actions register system hotkeys,
-/// and those need a chord.
+/// Modifier keys work for start/stop and push-to-talk. The other actions
+/// keep their existing chords.
 fn unusable(slot: Slot, hk: &Hotkey) -> Option<Note> {
     match hk {
-        Hotkey::Solo(_) if slot != Slot::PushToTalk => Some(Note::SoloOnlyForPushToTalk(*hk)),
+        Hotkey::Solo(_) | Hotkey::ModifierOnly(_) if !matches!(slot, Slot::Toggle | Slot::PushToTalk) => Some(Note::SoloOnlyForPushToTalk(*hk)),
         _ => None,
     }
 }
@@ -404,10 +408,80 @@ mod tests {
     use sayso_core::hotkey::{Hotkey, SoloModifier};
 
     #[test]
-    fn solo_modifier_is_only_for_push_to_talk() {
+    fn modifier_toggle_conflicts_are_rejected_in_either_assignment_order() {
+        use sayso_core::config::Config;
+
+        for (toggle, other) in [
+            ("left_control", "left_control"),
+            ("left_control", "left_control+left_option"),
+            ("left_control+left_option", "left_control"),
+        ] {
+            let toggle: Hotkey = toggle.parse().unwrap();
+            let other: Hotkey = other.parse().unwrap();
+            for slot in [Slot::PushToTalk, Slot::PasteLast, Slot::CycleStyle, Slot::Incognito] {
+                let mut config = Config::default();
+                config.hotkeys.toggle = Some(toggle);
+                config.hotkeys.paste_last = None;
+                config.hotkeys.cycle_style = None;
+                assert_eq!(slot.clash(&config, &other), Some(Slot::Toggle), "{toggle}, {other}");
+                config.hotkeys.toggle = None;
+                match slot {
+                    Slot::PushToTalk => config.hotkeys.push_to_talk = Some(other),
+                    Slot::PasteLast => config.hotkeys.paste_last = Some(other),
+                    Slot::CycleStyle => config.hotkeys.cycle_style = Some(other),
+                    Slot::Incognito => config.hotkeys.incognito = Some(other),
+                    Slot::Toggle => unreachable!(),
+                }
+                assert_eq!(Slot::Toggle.clash(&config, &toggle), Some(slot));
+            }
+        }
+    }
+
+    #[test]
+    fn distinct_modifiers_and_existing_chords_remain_available() {
+        use sayso_core::config::Config;
+
+        for (toggle, ptt) in [
+            ("left_control+left_option", "right_control+right_option"),
+            ("left_control", "right_control"),
+            ("left_control+left_option", "shift+d"),
+            ("left_control+left_option", "ctrl+opt+d"),
+            ("left_control", "ctrl+opt+d"),
+            ("ctrl+opt+space", "ctrl+opt+d"),
+            ("opt+space", "right_option"),
+        ] {
+            let toggle = toggle.parse().unwrap();
+            let ptt = ptt.parse().unwrap();
+            let mut config = Config::default();
+            config.hotkeys.toggle = Some(toggle);
+            config.hotkeys.push_to_talk = Some(ptt);
+            config.hotkeys.paste_last = None;
+            config.hotkeys.cycle_style = None;
+            assert_eq!(Slot::PushToTalk.clash(&config, &ptt), None);
+            assert_eq!(Slot::Toggle.clash(&config, &toggle), None);
+            assert!(config.validate().is_empty(), "{toggle}, {ptt}");
+        }
+    }
+
+    #[test]
+    fn combined_modifiers_work_for_recording_without_changing_other_actions() {
+        for binding in ["left_command+left_option", "left_command+left_control+left_option+left_shift"] {
+            let hotkey = binding.parse::<Hotkey>().unwrap();
+            assert_eq!(unusable(Slot::Toggle, &hotkey), None);
+            assert_eq!(unusable(Slot::PushToTalk, &hotkey), None);
+            for slot in [Slot::PasteLast, Slot::CycleStyle, Slot::Incognito] {
+                assert!(unusable(slot, &hotkey).is_some());
+                assert_eq!(unusable(slot, &Hotkey::paste_last_default()), None);
+            }
+        }
+    }
+
+    #[test]
+    fn solo_modifiers_work_for_both_recording_actions() {
         let solo = Hotkey::Solo(SoloModifier::RightOption);
         assert_eq!(unusable(Slot::PushToTalk, &solo), None);
-        for slot in [Slot::Toggle, Slot::PasteLast, Slot::CycleStyle, Slot::Incognito] {
+        assert_eq!(unusable(Slot::Toggle, &solo), None);
+        for slot in [Slot::PasteLast, Slot::CycleStyle, Slot::Incognito] {
             assert_eq!(unusable(slot, &solo), Some(Note::SoloOnlyForPushToTalk(solo)));
         }
         assert_eq!(unusable(Slot::Toggle, &Hotkey::toggle_default()), None);

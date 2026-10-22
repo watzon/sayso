@@ -43,6 +43,10 @@ impl Listen {
         self.logic.lock().is_capturing() || self.captured_at.lock().is_some_and(|t| t.elapsed() < CAPTURE_MUTE)
     }
 
+    pub fn pointer_activity(&self) {
+        self.logic.lock().pointer_activity();
+    }
+
     /// Feed one key event from a backend thread.
     pub fn key(&self, code: u16, action: KeyAction) {
         let outcome = self.logic.lock().handle(code, action, Instant::now());

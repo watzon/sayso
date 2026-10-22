@@ -7,7 +7,7 @@ settings:
     action_paste_last: "마지막 텍스트 붙여넣기"
     action_cycle_style: "다음 스타일"
     action_incognito: "시크릿 모드"
-    solo_only_push_to_talk: "%{keys}: 단독 키는 누르고 말하기에서만 쓸 수 있어요. 키 조합을 선택하세요. 예: %{example}."
+    solo_only_push_to_talk: "%{keys}: 받아쓰기 시작 및 중지 또는 누르고 말하기에서만 쓸 수 있어요. 일반 키를 포함하세요. 예: %{example}."
     used_by: "%{keys}: 이미 %{action}에 사용 중이에요. 다른 키를 선택하세요."
     conflict_app: "%{keys}: %{name}도 사용 중이라 두 앱이 모두 반응해요. 다른 키를 선택하거나 %{name}에서 단축키를 바꾸세요."
     conflict_app_open_default: "%{keys}: %{name} 앱이 열려 있고 기본으로 사용해요. %{name}에서 바꾸지 않았다면 두 앱이 모두 반응해요. 다른 키를 선택하거나 %{name}에서 단축키를 바꾸세요."

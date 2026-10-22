@@ -13,6 +13,12 @@ A key that starts a dictation on the first press and stops it on the second pres
 **Push-to-talk hotkey**
 A key that records while you hold it and stops when you release it. It has no default.
 
+Both dictation hotkeys accept a chord, a single modifier, or a combination of modifiers. Modifier-only bindings distinguish left and right keys. macOS supports Command, Control, Option, Shift, and Fn; modifier-only toggles and push-to-talk need Input Monitoring. Windows and Linux do not support Fn. Modifier-only toggles fire on the first release within 400 ms of the first modifier press, unless another key, mouse button, or scroll was used. On XInput2, pointer motion also cancels a tap so smooth scrolling cannot activate dictation. Overlapping modifier-only bindings are rejected; regular chords can share modifiers.
+
+Modifier-only push-to-talk intentionally starts immediately on press, including when those modifiers begin an ordinary keyboard or mouse shortcut. Prefer a right-side modifier you do not normally use, or a chord, to avoid opening the microphone during shortcuts. A delay would change that press-to-record behavior; the minimum dictation duration discards short recordings but does not prevent capture or its start cue.
+
+Downgrading after saving left-side or combined modifier bindings: older builds may reject the whole `[hotkeys]` section and restore its defaults. Export or copy your shortcuts first, and check every hotkey after a downgrade.
+
 **Send with Enter**
 A setting on macOS and Windows, off by default (`hotkeys.enter_sends`). While a dictation records, Enter stops it, and Sayso presses Enter after the insert, so a chat sends the message. Sayso takes that first Enter from the app. Apart from the hotkeys of Sayso, Enter and Esc (see Block Esc) are the only keys that Sayso takes. It does not work when the toggle or push-to-talk hotkey uses Return. On Linux the command `sayso --push-to-talk-up-submit` does the same for push-to-talk.
 

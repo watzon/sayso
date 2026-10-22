@@ -158,7 +158,7 @@ impl OnboardingView {
         } else {
             div().child(text::ui(t!("onboarding.hotkeys.optional"), 13., FontWeight::NORMAL, c.graphite))
         };
-        let im_line: AnyElement = match (ptt.is_some(), im) {
+        let im_line: AnyElement = match (m.config.hotkeys.needs_input_monitoring() || window_only, im) {
             // Windows needs no permission to hear keys in other apps.
             _ if !crate::shell::HAS_INPUT_PERMISSIONS => {
                 text::ui(t!("onboarding.hotkeys.works_everywhere"), 13., FontWeight::NORMAL, c.graphite).into_any_element()

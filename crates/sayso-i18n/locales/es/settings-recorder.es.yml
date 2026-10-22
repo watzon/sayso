@@ -7,7 +7,7 @@ settings:
     action_paste_last: "Pegar el último texto"
     action_cycle_style: "Estilo siguiente"
     action_incognito: "Modo incógnito"
-    solo_only_push_to_talk: "%{keys} sola solo funciona con Mantener para hablar. Elige una combinación de teclas, por ejemplo %{example}."
+    solo_only_push_to_talk: "%{keys} solo funciona con Iniciar y detener el dictado o Mantener para hablar. Incluye una tecla que no sea modificadora, por ejemplo %{example}."
     used_by: "%{keys} ya la usa %{action}. Elige otra tecla."
     conflict_app: "%{name} también usa %{keys}. Las dos apps reaccionarán. Elige otra tecla o cambia el atajo en %{name}."
     conflict_app_open_default: "%{name} está abierta y usa %{keys} de forma predeterminada. Si no lo cambiaste en %{name}, las dos apps reaccionarán. Elige otra tecla o cambia el atajo en %{name}."

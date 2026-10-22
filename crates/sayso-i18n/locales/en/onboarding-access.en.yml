@@ -52,7 +52,7 @@ onboarding:
     change_ptt: "Change the push-to-talk key"
     clear_ptt: "Remove the push-to-talk key"
     optional: "Optional"
-    hold_hint: "Hold a key to record. Release to insert."
+    hold_hint: "Hold to record. Modifiers can open the mic during shortcuts; prefer an unused key."
     use_right_option: "Use Right Option"
     record_key: "Record a key"
     works_everywhere: "Works in every app while you hold it."

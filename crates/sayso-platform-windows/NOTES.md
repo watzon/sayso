@@ -12,9 +12,9 @@ dependency sits under `[target.'cfg(windows)'.dependencies]`).
 | Module | What it does |
 |---|---|
 | `hotkeys` | `HotkeySource`. Chords go through `RegisterHotKey` with `global-hotkey`. Push-to-talk, Esc, and the key recorder go through the hook. |
-| `hook`, `hook_logic` | A listen-only `WH_KEYBOARD_LL` hook on its own thread with its own message loop, installed only while push-to-talk is bound, a dictation records, or the key recorder is open. `hook_logic` holds the decisions (no FFI). `hook` holds the thread, the callback, and the mask key. |
+| `hook`, `hook_logic` | `WH_KEYBOARD_LL` on one thread and message loop while a modifier-only toggle or push-to-talk is bound, a dictation records, or the recorder is open. A listen-only `WH_MOUSE_LL` is installed on that thread only while a modifier-only toggle is bound. Mouse-hook failure pauses that toggle without removing the keyboard hook. `hook_logic` holds decisions without FFI; `hook` owns callbacks, lifecycle, and masking. |
 | `esc` | Double-Esc and single-Esc state machine, and `EscTake`, which decides when Sayso takes Esc from the app. Copied from the macOS crate. |
-| `keymap` | `Hotkey` to virtual-key code, `RegisterHotKey` flags, and `global-hotkey` types. Solo modifiers are `VK_RMENU`, `VK_LMENU`, `VK_RWIN`, `VK_RCONTROL`, `VK_RSHIFT`. |
+| `keymap` | `Hotkey` to virtual-key code, `RegisterHotKey` flags, and `global-hotkey` types. Modifier-only bindings support left and right Alt, Win, Ctrl, and Shift, singly or in combinations; Fn is unavailable. |
 | `conflicts` | A table of Windows shortcuts (every Win+letter counts), a table of apps (PowerToys Run, Command Palette, Copilot, ChatGPT, Raycast, Flow Launcher, Wox) checked against running processes, and a real `RegisterHotKey` probe. |
 | `input` | `SendInput` key lists (paste, typing, mask key, releasing held modifiers). |
 | `inserter` | Paste (save every memory clipboard format, publish with delayed rendering, Ctrl+V, wait for the read receipt, restore) and Type (Unicode key events in chunks of 20 UTF-16 units). Checks the foreground window and its integrity level first. |
@@ -140,17 +140,33 @@ as the only browser on the PC:
   (a search the user types) gives `None`.
 - **Fn** never reaches Windows. A hotkey with Fn is reported in `failed`.
 - **Mask key.** Releasing Alt alone opens the menu bar of the focused app, and
-  releasing Win alone opens Start. When Right Alt, Left Alt, or Right Win goes down as
-  a solo push-to-talk key (or in the key recorder), the hook thread sends an
+  releasing Win alone opens Start. When an Alt or Win key completes a
+  modifier-only toggle or push-to-talk binding (or is chosen in the recorder), the hook thread sends an
   unassigned key (`0xE8`) down and up, the trick AutoHotkey uses. The hook still
-  swallows nothing.
+  swallows no modifier. Masking occurs on press, before knowing whether a toggle
+  will qualify on release; a cancelled or long gesture can therefore still suppress
+  the menu/Start action. Language-switch shortcuts may still conflict.
+- **Modifier-only toggles.** A deliberate tap releases within 400 ms of the first
+  modifier press. Regular keys, mouse button presses, and either scroll wheel cancel
+  the candidate. Mouse motion alone does not. No additional permission prompt is
+  needed, but hooks do not observe the secure desktop and may miss elevated input.
+- **Modifier-only push-to-talk.** Starts immediately, even when these modifiers
+  begin an ordinary shortcut. Prefer an unused right-side modifier or a chord to
+  avoid opening the microphone during typing or mouse gestures. Short recordings
+  may be discarded, but capture and its start cue have already occurred.
 - **AltGr.** Layouts with AltGr send a fake Left Ctrl (scan code bit `0x200`) with
   Right Alt. The logic drops it, so Right Alt works as push-to-talk and AltGr+Q is
   recorded as Alt+Q, not Ctrl+Alt+Q. `RegisterHotKey` sees AltGr as Ctrl+Alt, so a
   chord recorded with AltGr only fires with Left Alt.
 - **Modifier state** comes from `GetAsyncKeyState` for every event, so a key-up lost
-  to the lock screen or Ctrl+Alt+Del does not stick. Auto-repeat is found by the
-  logic (a key-down for a key that is already down).
+  to the lock screen or Ctrl+Alt+Del does not stick. Only while the synthetic AltGr
+  Ctrl is active does tracked real Left Ctrl override that snapshot. Tracked keys
+  are pruned against async state so a missed release after Win+L or Ctrl+Alt+Del
+  does not disable the first subsequent modifier tap. The current regular key is
+  excluded because the snapshot precedes the event. The current modifier is
+  queried to distinguish a fresh press from repeat. Taken Enter/Esc stay tracked
+  until their observed release: Windows never adds swallowed downs to async state.
+  Auto-repeat is found by the logic (a key-down for a key that is already down).
 - **Injected keys** (Sayso's paste and typing, and any other program's) never
   trigger a hotkey.
 - **Slow hooks.** Windows removes a low-level hook without notice after about one
