@@ -140,6 +140,71 @@ fn live_x11() {
 }
 
 #[test]
+#[ignore = "needs an isolated X server and xdotool; sends keyboard and mouse input"]
+fn live_x11_modifier_toggle_rejects_long_holds() {
+    let hotkeys = LinuxHotkeys::new(session(SessionKind::X11));
+    let rx = hotkeys.events();
+    assert!(hotkeys.register(&bindings("right_control", "right_shift")).failed.is_empty());
+    let control = (keymap::KEY_RIGHTCTRL + keymap::X11_OFFSET).to_string();
+    xdotool(&["keydown", &control]);
+    std::thread::sleep(Duration::from_millis(450));
+    xdotool(&["keyup", &control]);
+    expect_quiet(&rx);
+    xdotool(&["keydown", &control]);
+    xdotool(&["keyup", &control]);
+    expect(&rx, HotkeyEvent::Toggle);
+}
+
+#[test]
+#[ignore = "needs an isolated X server and xdotool; sends keyboard and mouse input"]
+fn live_x11_modifier_toggle_rejects_mouse_gestures() {
+    let hotkeys = LinuxHotkeys::new(session(SessionKind::X11));
+    let rx = hotkeys.events();
+    assert!(hotkeys.register(&bindings("right_control", "right_shift")).failed.is_empty());
+    let control = (keymap::KEY_RIGHTCTRL + keymap::X11_OFFSET).to_string();
+    for button in ["1", "2", "3", "4", "6", "8"] {
+        xdotool(&["keydown", &control]);
+        xdotool(&["click", button]);
+        xdotool(&["keyup", &control]);
+        expect_quiet(&rx);
+    }
+    xdotool(&["keydown", &control]);
+    xdotool(&["mousemove_relative", "--", "1", "0"]);
+    xdotool(&["keyup", &control]);
+    expect_quiet(&rx);
+    xdotool(&["keydown", &control]);
+    xdotool(&["keyup", &control]);
+    expect(&rx, HotkeyEvent::Toggle);
+}
+
+/// Run under scripts/test-unreadable-input.sh: real XInput2, no readable evdev.
+#[test]
+#[ignore = "needs a private /dev/input with mode-000 event nodes and dropped capabilities"]
+fn unreadable_input_wayland_reports_access_failure() {
+    let hotkeys = LinuxHotkeys::new(session(SessionKind::Wayland));
+    assert_eq!(input_monitoring_state(hotkeys.session), PermissionState::Denied);
+    let reg = hotkeys.register(&bindings("right_shift", "right_control"));
+    assert!(reg.needs_input_monitoring, "missing input permission guidance: {reg:?}");
+    assert_eq!(reg.failed.len(), 2);
+    assert!(hotkeys.backends.lock().listening.is_none());
+    assert!(hotkeys.ensure_listening(&mut hotkeys.backends.lock()).is_err());
+    assert!(hotkeys.capture_next().recv_timeout(WAIT).is_err());
+}
+
+#[test]
+#[ignore = "needs isolated X11 and mode-000 /dev/input event nodes with dropped capabilities"]
+fn unreadable_input_x11_uses_xinput2() {
+    let hotkeys = LinuxHotkeys::new(session(SessionKind::X11));
+    assert_eq!(hotkeys.ensure_listening(&mut hotkeys.backends.lock()), Ok(ListenBackend::Xi2));
+    // Also exercise registration, PTT, Esc and recorder behavior via the live
+    // production call paths, not just the backend selection assertion.
+    drop(hotkeys);
+    live_x11();
+    live_x11_modifier_toggle_rejects_mouse_gestures();
+    live_x11_modifier_toggle_rejects_long_holds();
+}
+
+#[test]
 #[ignore = "needs /dev/uinput and read access to /dev/input (sudo)"]
 fn live_evdev() {
     use ::evdev::uinput::VirtualDevice;

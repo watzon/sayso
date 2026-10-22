@@ -113,7 +113,8 @@ Sayso runs on X11 and on Wayland. The parts that touch other apps (hotkeys, inse
 | UI windows | X11 | XWayland | Wayland | Wayland |
 | Overlay and pill | Over all windows, can be dragged | Over all windows, can be dragged | Layer surface at the bottom center | Layer surface at the bottom center |
 | Toggle and other chords | Key grab | Shortcuts portal (GNOME 48 or later), else keyboard access, else GNOME custom shortcuts | Shortcuts portal | Shortcuts portal (Hyprland), else keyboard access, else `sayso --toggle` |
-| Push-to-talk with a modifier alone, double Esc | Always | Keyboard access | Keyboard access | Keyboard access |
+| Modifier-only toggle | XInput2, or keyboard and pointer access | Keyboard and pointer access | Keyboard and pointer access | Keyboard and pointer access |
+| Push-to-talk, double Esc, key recorder | XInput2 or keyboard access | Keyboard access | Keyboard access | Keyboard access |
 | Paste key | XTest | Remote desktop portal, else `/dev/uinput` | Remote desktop portal, else `/dev/uinput` | Virtual keyboard protocol |
 | Clipboard | X11 selections | X11 selections, through XWayland | Data-control protocol | Data-control protocol |
 | Tray icon | Most panels | With the AppIndicator extension | Yes | With a tray in the bar (for example Waybar) |
@@ -169,9 +170,9 @@ Sayso needs paste access to send the paste key to the app you use.
 
 ### Keyboard access
 
-Keyboard access lets Sayso watch the keyboard without taking keys away from other apps. Sayso needs it on Wayland for three things:
+Keyboard access lets Sayso watch input without taking keys away from other apps. Sayso needs it on Wayland for these things:
 
-- A push-to-talk key that is a modifier alone (for example Right Ctrl).
+- Modifier-only toggle and push-to-talk bindings, including left/right modifier combinations (for example Right Ctrl or Left Ctrl+Left Shift).
 - Esc to cancel a dictation.
 - The key recorder outside Sayso's own windows.
 
@@ -181,7 +182,11 @@ To turn it on, add your user to the `input` group, then log out and log in again
 sudo usermod -aG input "$USER"
 ```
 
-Every app that runs as your user can then read the keyboard. If you do not want that, use a toggle key or a chord for push-to-talk.
+The evdev listener reads keyboards and pointer devices. Mouse buttons, touch contact, and scrolling cancel modifier-only toggle candidates. If an input event device cannot be opened, Sayso pauses modifier-only toggles because it cannot rule out an unseen mouse. Accessible keyboards still provide push-to-talk, Esc, chord detection, and the key recorder. Startup and hotplug use the same rule; a successful rescan restores modifier-only toggles. If no input device opens and any open failed, startup reports the access failure instead of registering an empty listener. On X11, Sayso prefers XInput2, which observes keyboards and pointers without input-group access, even if evdev could open some devices. It tries evdev only if XInput2 is unavailable. Pointer motion also cancels taps on XInput2 to cover smooth scrolling.
+
+Every app that runs as your user can then read keyboard and pointer input. If you do not want that, use a chord for toggle or push-to-talk through the shortcuts portal, or a desktop command below. The shortcuts portal does not provide modifier-only gestures. Sayso never masks desktop actions on Linux: Super taps or layout-switch combinations may also run a desktop shortcut. Choose another binding or disable the conflicting desktop shortcut yourself.
+
+Tap modifier-only toggle bindings within 400 ms; holding them longer does nothing. Push-to-talk is different: it starts on press, even when those modifiers begin another shortcut. Prefer unused right-side modifiers or a chord to avoid opening the microphone for ordinary typing, clicking, or window movement.
 
 ## Commands for desktop shortcuts
 

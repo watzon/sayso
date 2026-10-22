@@ -5,7 +5,7 @@
 //! | Job | X11 session | Wayland session | No display |
 //! |---|---|---|---|
 //! | Chords (toggle, paste last, cycle style, chord push-to-talk) | `XGrabKey` | GlobalShortcuts portal, else evdev, else GNOME custom shortcuts | evdev |
-//! | Listen-only stream (solo push-to-talk, Esc while recording, key recorder) | evdev, else XInput2 raw keys | evdev | evdev |
+//! | Listen-only stream (solo push-to-talk, Esc while recording, key recorder) | XInput2 raw keys, else evdev | evdev | evdev |
 //!
 //! - A chord backend takes the key, so the focused app does not get it. When
 //!   chords fall back to the evdev stream, the key also reaches the focused app.
@@ -108,6 +108,20 @@ impl LinuxHotkeys {
         if let Some(running) = b.listening {
             return Ok(running);
         }
+        // XInput2 observes every master keyboard and pointer without input-group
+        // access. Prefer it even when evdev opens a subset: that subset cannot
+        // tell us whether an unreadable device is the user's keyboard or mouse.
+        if self.session.kind == SessionKind::X11 {
+            match self.x11(b).and_then(|x11| x11.listen_raw(true)) {
+                Ok(()) => {
+                    self.listen.logic.lock().set_pointer_available(true);
+                    b.listening = Some(ListenBackend::Xi2);
+                    log::info!("the listen-only key stream uses XInput2");
+                    return Ok(ListenBackend::Xi2);
+                }
+                Err(e) => log::warn!("XInput2 unavailable: {e}; trying evdev"),
+            }
+        }
         let evdev_error = match evdev::EvdevReader::start(self.listen.clone()) {
             Ok(reader) => {
                 b.evdev = Some(reader);
@@ -117,14 +131,7 @@ impl LinuxHotkeys {
             }
             Err(e) => e,
         };
-        if self.session.kind != SessionKind::X11 {
-            return Err(evdev_error);
-        }
-        let x11 = self.x11(b)?;
-        x11.listen_raw(true).map_err(|e| format!("{evdev_error}; {e}"))?;
-        b.listening = Some(ListenBackend::Xi2);
-        log::info!("the listen-only key stream uses XInput2 ({evdev_error})");
-        Ok(ListenBackend::Xi2)
+        Err(evdev_error)
     }
 
     /// The X11 connection, made on first use.
@@ -188,8 +195,9 @@ impl LinuxHotkeys {
 #[derive(Debug, Default, PartialEq)]
 struct Plan {
     chords: Vec<(Hotkey, Chord, ChordAction)>,
-    /// A solo push-to-talk modifier. Only the listen-only stream sees it.
+    /// A modifier-only push-to-talk binding. Only the listen-only stream sees it.
     solo_ptt: Option<Hotkey>,
+    modifier_toggle: Option<Hotkey>,
     failed: Vec<(Hotkey, String)>,
 }
 
@@ -209,13 +217,20 @@ fn plan(bindings: &HotkeyBindings) -> Plan {
         (bindings.incognito, HotkeyEvent::ToggleIncognito),
     ] {
         if let Some(hotkey) = hotkey {
-            add_chord(&mut plan, hotkey, ChordAction::Press(event));
+            if hotkey.modifier_keys().is_some() && event == HotkeyEvent::Toggle {
+                match keymap::check_push_to_talk(&hotkey) {
+                    Ok(()) => plan.modifier_toggle = Some(hotkey),
+                    Err(reason) => plan.failed.push((hotkey, reason)),
+                }
+            } else {
+                add_chord(&mut plan, hotkey, ChordAction::Press(event));
+            }
         }
     }
     if let Some(ptt) = bindings.push_to_talk {
         match (keymap::check_push_to_talk(&ptt), ptt) {
             (Err(reason), _) => plan.failed.push((ptt, reason)),
-            (Ok(()), Hotkey::Solo(_)) => plan.solo_ptt = Some(ptt),
+            (Ok(()), Hotkey::Solo(_) | Hotkey::ModifierOnly(_)) => plan.solo_ptt = Some(ptt),
             (Ok(()), Hotkey::Chord { .. }) => add_chord(&mut plan, ptt, ChordAction::PushToTalk),
         }
     }
@@ -236,14 +251,14 @@ fn portal_binding(chord: &Chord, action: ChordAction) -> Option<portal::Binding>
 
 impl HotkeySource for LinuxHotkeys {
     fn register(&self, bindings: &HotkeyBindings) -> HotkeyRegistration {
-        let Plan { chords, solo_ptt, mut failed } = plan(bindings);
+        let Plan { chords, solo_ptt, modifier_toggle, mut failed } = plan(bindings);
         let mut b = self.backends.lock();
         let backend = if chords.is_empty() && b.chords.is_none() { ChordBackend::Listen } else { self.chord_backend(&mut b) };
 
         // Hotkeys that only the listen-only stream can see.
         let mut listen_ptt = solo_ptt;
         let mut listen_chords = Vec::new();
-        let mut listen_hotkeys: Vec<Hotkey> = solo_ptt.into_iter().collect();
+        let mut listen_hotkeys: Vec<Hotkey> = solo_ptt.into_iter().chain(modifier_toggle).collect();
         match backend {
             ChordBackend::X11Grab => match self.x11(&mut b) {
                 Ok(x11) => failed.extend(x11.set_grabs(&chords)),
@@ -303,6 +318,7 @@ impl HotkeySource for LinuxHotkeys {
             let mut logic = self.listen.logic.lock();
             logic.configure_esc(bindings.single_escape, bindings.double_escape_window);
             logic.set_chords(listen_chords);
+            logic.set_toggle_modifiers(modifier_toggle.and_then(Hotkey::modifier_keys));
             (logic.set_ptt(listen_ptt), logic.is_needed())
         };
         if let Some(event) = released {
@@ -402,9 +418,10 @@ mod tests {
     }
 
     #[test]
-    fn plan_rejects_fn_solo_toggles_and_duplicates() {
+    fn plan_accepts_solo_toggles_and_rejects_fn_and_duplicates() {
         let p = plan(&bindings(Some("right_option"), Some("fn")));
-        assert_eq!(p.failed.len(), 2);
+        assert_eq!(p.failed.len(), 1);
+        assert_eq!(p.modifier_toggle, Some("right_option".parse().unwrap()));
         assert!(p.chords.is_empty() && p.solo_ptt.is_none());
 
         let mut b = bindings(Some("ctrl+opt+space"), Some("ctrl+opt+space"));

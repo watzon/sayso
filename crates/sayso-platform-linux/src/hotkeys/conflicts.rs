@@ -7,7 +7,7 @@
 
 use crate::session::Desktop;
 use parking_lot::Mutex;
-use sayso_core::hotkey::{Hotkey, Key, Modifiers};
+use sayso_core::hotkey::{Hotkey, Key, Modifiers, SoloModifier};
 use sayso_platform::{ConflictSource, HotkeyConflict};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -23,11 +23,13 @@ struct GnomeKey {
     defaults: &'static [&'static str],
 }
 
+const MUTTER: &str = "org.gnome.mutter";
 const WM: &str = "org.gnome.desktop.wm.keybindings";
 const SHELL: &str = "org.gnome.shell.keybindings";
 const MEDIA: &str = "org.gnome.settings-daemon.plugins.media-keys";
 
 const GNOME: &[GnomeKey] = &[
+    GnomeKey { schema: MUTTER, key: "overlay-key", name: "GNOME Activities", defaults: &["Super_L"] },
     GnomeKey { schema: WM, key: "activate-window-menu", name: "the window menu", defaults: &["<Alt>space"] },
     GnomeKey { schema: WM, key: "switch-input-source", name: "Switch input source", defaults: &["<Super>space"] },
     GnomeKey {
@@ -56,6 +58,7 @@ const GNOME: &[GnomeKey] = &[
 ];
 
 const KDE: &[(&str, &str)] = &[
+    ("Super_L", "KDE application launcher"),
     ("<Alt>space", "KRunner"),
     ("<Alt>F2", "KRunner"),
     ("<Alt>Tab", "Walk through windows"),
@@ -139,11 +142,11 @@ fn gnome_shortcuts(values: HashMap<(String, String), Vec<String>>) -> Table {
     out
 }
 
-/// Read the three GNOME schemas with `gsettings list-recursively`. Missing
+/// Read the GNOME schemas with `gsettings list-recursively`. Missing
 /// schemas or a missing command give no values, so the defaults apply.
 fn read_gsettings() -> HashMap<(String, String), Vec<String>> {
     let mut values = HashMap::new();
-    for schema in [WM, SHELL, MEDIA] {
+    for schema in [WM, SHELL, MEDIA, MUTTER] {
         let output = super::gnome::host_gsettings().args(["list-recursively", schema]).output();
         match output {
             Ok(o) if o.status.success() => values.extend(parse_list_recursively(&String::from_utf8_lossy(&o.stdout))),
@@ -163,7 +166,13 @@ pub fn parse_list_recursively(text: &str) -> HashMap<(String, String), Vec<Strin
     for line in text.lines() {
         let mut parts = line.splitn(3, ' ');
         let (Some(schema), Some(key), Some(value)) = (parts.next(), parts.next(), parts.next()) else { continue };
-        if let Some(list) = parse_strv(value) {
+        // Mutter stores the overlay key as a string rather than a shortcut array.
+        let list = if schema == MUTTER && key == "overlay-key" {
+            parse_strv(&format!("[{value}]"))
+        } else {
+            parse_strv(value)
+        };
+        if let Some(list) = list {
             out.insert((schema.to_string(), key.to_string()), list);
         }
     }
@@ -195,6 +204,20 @@ pub fn parse_strv(value: &str) -> Option<Vec<String>> {
 /// Parse a GTK accelerator such as `<Primary><Alt>t`. `None` for keys that a
 /// Sayso hotkey cannot hold (for example `Print` or `XF86Keyboard`).
 pub fn parse_accelerator(accel: &str) -> Option<Hotkey> {
+    let solo = match accel.trim() {
+        "Super_L" => Some(SoloModifier::LeftCommand),
+        "Super_R" => Some(SoloModifier::RightCommand),
+        "Control_L" => Some(SoloModifier::LeftControl),
+        "Control_R" => Some(SoloModifier::RightControl),
+        "Alt_L" => Some(SoloModifier::LeftOption),
+        "Alt_R" => Some(SoloModifier::RightOption),
+        "Shift_L" => Some(SoloModifier::LeftShift),
+        "Shift_R" => Some(SoloModifier::RightShift),
+        _ => None,
+    };
+    if let Some(solo) = solo {
+        return Some(Hotkey::Solo(solo));
+    }
     let mut modifiers = Modifiers::default();
     let mut rest = accel.trim();
     while let Some(after) = rest.strip_prefix('<') {
@@ -278,6 +301,24 @@ mod tests {
     }
 
     #[test]
+    fn gnome_overlay_conflict_follows_the_configured_key() {
+        let default = gnome_shortcuts(HashMap::new());
+        assert!(default.contains(&(hk("left_command"), "GNOME Activities")));
+        for (setting, expected) in [
+            ("'Super_L'", Some("left_command")),
+            ("'Super_R'", Some("right_command")),
+            ("'Control_L'", Some("left_control")),
+            ("''", None),
+        ] {
+            let values = parse_list_recursively(&format!("org.gnome.mutter overlay-key {setting}\n"));
+            let table = gnome_shortcuts(values);
+            let overlays: Vec<_> = table.iter().filter(|(_, name)| *name == "GNOME Activities").map(|(hotkey, _)| *hotkey).collect();
+            let expected: Vec<_> = expected.into_iter().map(hk).collect();
+            assert_eq!(overlays, expected, "{setting}");
+        }
+    }
+
+    #[test]
     fn gnome_uses_read_values_and_defaults() {
         // The user turned the window menu off; the rest are defaults.
         let mut values = HashMap::new();
@@ -301,6 +342,16 @@ mod tests {
                 assert!(parse_accelerator(accel).is_some(), "{accel}");
             }
         }
+    }
+
+    #[test]
+    fn kde_reports_its_solo_meta_launcher() {
+        let kde = Conflicts::new(Desktop::Kde);
+        let conflicts = kde.conflicts(&hk("left_command"));
+        assert_eq!(conflicts.len(), 1);
+        assert_eq!(conflicts[0].source, ConflictSource::System { name: "KDE application launcher".into(), enabled: true });
+        assert!(kde.conflicts(&hk("right_command")).is_empty());
+        assert!(kde.conflicts(&hk("left_command+left_shift")).is_empty());
     }
 
     #[test]

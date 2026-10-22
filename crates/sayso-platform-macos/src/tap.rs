@@ -1,7 +1,7 @@
 //! The `CGEventTap`s, each on its own thread.
 //!
-//! The listen-only tap serves three jobs: push-to-talk (solo modifiers and
-//! chords), Esc cancel while recording, and the key recorder. It never
+//! The listen-only tap handles modifier-only toggle, push-to-talk, Esc cancel
+//! while recording, and the key recorder. It never
 //! swallows events, so it cannot break system shortcuts such as double-Fn
 //! dictation. It needs Input Monitoring.
 //!
@@ -14,8 +14,9 @@
 //!
 //! Spike result: with Secure Event Input on, the tap still gets
 //! `flagsChanged`, but no `keyDown` or `keyUp`. Solo-modifier push-to-talk
-//! keeps working. Chord push-to-talk, Esc, the key recorder, and the active
-//! tap do not.
+//! keeps working. Modifier-only toggles are disabled because an intervening
+//! regular key cannot be detected. Chord push-to-talk, Esc, the key recorder,
+//! and the active tap do not work.
 
 use crate::enter_send::EnterSend;
 use crate::esc::EscDetector;
@@ -24,7 +25,7 @@ use crate::keymap::{KC_ESCAPE, KC_KEYPAD_ENTER, KC_RETURN};
 use crate::tap_logic::{RawEvent, TapLogic};
 use crossbeam_channel::{Receiver, Sender};
 use parking_lot::Mutex;
-use sayso_core::hotkey::Hotkey;
+use sayso_core::hotkey::{Hotkey, ModifierSet};
 use sayso_platform::HotkeyEvent;
 use std::ffi::c_void;
 use std::panic::AssertUnwindSafe;
@@ -96,10 +97,11 @@ impl TapController {
         }
     }
 
-    /// Apply the push-to-talk, Esc, and Enter settings. Starts the taps when something needs them.
+    /// Apply the modifier-only toggle, push-to-talk, Esc, and Enter settings. Starts the taps when something needs them.
     pub fn configure(
         &self,
         ptt: Option<Hotkey>,
+        toggle_modifiers: Option<ModifierSet>,
         single_esc: bool,
         window: Duration,
         enter_sends: bool,
@@ -116,6 +118,7 @@ impl TapController {
         let (released, needed) = {
             let mut logic = self.logic.lock();
             logic.configure_esc(single_esc, window);
+            logic.set_toggle_modifiers(toggle_modifiers);
             let released = logic.set_ptt(ptt);
             (released, logic.is_needed())
         };
@@ -217,10 +220,16 @@ fn spawn_tap(job: Job) -> Result<TapThread, String> {
     }
 }
 
+fn listen_mask() -> u64 {
+    (1u64 << kCGEventKeyDown) | (1 << kCGEventKeyUp) | (1 << kCGEventFlagsChanged)
+        | (1 << kCGEventLeftMouseDown) | (1 << kCGEventRightMouseDown)
+        | (1 << kCGEventOtherMouseDown) | (1 << kCGEventScrollWheel)
+}
+
 fn run_tap_thread(job: Job, ready: Sender<Result<usize, String>>) {
     let keys = (1u64 << kCGEventKeyDown) | (1 << kCGEventKeyUp);
     let (option, mask) = match job {
-        Job::Listen { .. } => (kCGEventTapOptionListenOnly, keys | (1 << kCGEventFlagsChanged)),
+        Job::Listen { .. } => (kCGEventTapOptionListenOnly, listen_mask()),
         Job::Active { .. } => (kCGEventTapOptionDefault, keys),
     };
     let listen = matches!(job, Job::Listen { .. });
@@ -322,6 +331,8 @@ fn handle(ctx: &CallbackContext, etype: u32, event: *mut c_void) -> bool {
 }
 
 fn listen(logic: &Mutex<TapLogic>, sink: &TapSink, etype: u32, event: *mut c_void) {
+    let pointer = [kCGEventLeftMouseDown, kCGEventRightMouseDown,
+        kCGEventOtherMouseDown, kCGEventScrollWheel].contains(&etype);
     // SAFETY: `event` is a live CGEvent for the duration of the callback.
     let (code, flags, repeat) = unsafe {
         (
@@ -330,16 +341,31 @@ fn listen(logic: &Mutex<TapLogic>, sink: &TapSink, etype: u32, event: *mut c_voi
             CGEventGetIntegerValueField(event, kCGKeyboardEventAutorepeat) != 0,
         )
     };
-    let raw = if etype == kCGEventKeyDown {
+    let raw = if pointer {
+        RawEvent::PointerActivity
+    } else if etype == kCGEventKeyDown {
         RawEvent::KeyDown { code, flags, repeat }
     } else if etype == kCGEventKeyUp {
         RawEvent::KeyUp { code, flags }
     } else if etype == kCGEventFlagsChanged {
-        RawEvent::FlagsChanged { code, flags }
+        // SAFETY: this Carbon query takes no pointers and reads the current system state.
+        let secure_input = unsafe { IsSecureEventInputEnabled() };
+        RawEvent::FlagsChanged { code, flags, secure_input }
     } else {
         return;
     };
-    let outcome = logic.lock().handle(raw, Instant::now());
+    let outcome = {
+        let mut logic = logic.lock();
+        if etype == kCGEventFlagsChanged {
+            // SAFETY: this query takes only scalar values and reads HID state.
+            // Reconcile before gating the gesture, including the first event
+            // after secure input ended without any intervening flagsChanged.
+            logic.reconcile_pressed_keys(|code| unsafe {
+                CGEventSourceKeyState(kCGEventSourceStateHIDSystemState, code)
+            });
+        }
+        logic.handle(raw, Instant::now())
+    };
     for event in outcome.events {
         let _ = sink.events.send(event);
     }
@@ -356,23 +382,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn listen_mask_includes_buttons_and_scroll_without_mouse_motion() {
+        let mask = listen_mask();
+        for etype in [kCGEventKeyDown, kCGEventKeyUp, kCGEventFlagsChanged,
+            kCGEventLeftMouseDown, kCGEventRightMouseDown, kCGEventOtherMouseDown, kCGEventScrollWheel] {
+            assert_ne!(mask & (1u64 << etype), 0);
+        }
+        // Pointer motion alone must not cancel a keyboard gesture.
+        assert_eq!(mask & (1u64 << 5), 0);
+    }
+
+    #[test]
     #[ignore = "needs Accessibility for the test binary; sends no keys"]
     fn the_active_tap_runs_only_while_a_setting_needs_it() {
         let (tx, _rx) = crossbeam_channel::unbounded();
         let taps = TapController::new(tx, Arc::default());
         let window = Duration::from_millis(400);
-        taps.configure(None, false, window, true, false).unwrap();
+        taps.configure(None, None, false, window, true, false).unwrap();
         assert!(taps.active.lock().is_some(), "the active tap could not start");
         let _ = taps.set_recording(true);
         let _ = taps.set_recording(false);
         assert!(taps.active.lock().is_some(), "it stays for the next recording");
-        taps.configure(None, false, window, false, false).unwrap();
+        taps.configure(None, None, false, window, false, false).unwrap();
         assert!(taps.active.lock().is_none(), "both settings are off");
         let _ = taps.set_recording(true);
         assert!(taps.active.lock().is_none());
         let _ = taps.set_recording(false);
-        taps.configure(None, false, window, false, true).unwrap();
+        taps.configure(None, None, false, window, false, true).unwrap();
         assert!(taps.active.lock().is_some(), "taking Esc needs it too");
-        taps.configure(None, false, window, false, false).unwrap();
+        taps.configure(None, None, false, window, false, false).unwrap();
     }
 }

@@ -446,6 +446,7 @@ fn issue_text(problem: &ConfigProblem) -> String {
         ConfigProblem::VolumeRange => t!("settings.general.issue.volume_range"),
         ConfigProblem::AiTimeoutTooShort => t!("settings.general.issue.ai_timeout_too_short"),
         ConfigProblem::PushToTalkIsToggle => t!("settings.general.issue.push_to_talk_is_toggle"),
+        ConfigProblem::HotkeyConflictsWithToggle(hotkey) => super::recorder::Note::UsedBy(*hotkey, super::recorder::Slot::Toggle).text(),
         ConfigProblem::UnknownProvider(id) => t!("settings.general.issue.unknown_provider", id = id),
         ConfigProblem::UnknownModel(id) => t!("settings.general.issue.unknown_model", id = id),
         ConfigProblem::NotAStreamingModel(id) => t!("settings.general.issue.not_a_streaming_model", id = id),

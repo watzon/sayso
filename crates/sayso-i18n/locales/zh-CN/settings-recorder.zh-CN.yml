@@ -7,7 +7,7 @@ settings:
     action_paste_last: "粘贴上次文本"
     action_cycle_style: "下一个风格"
     action_incognito: "无痕模式"
-    solo_only_push_to_talk: "单独的 %{keys} 只能用于“按住说话”。请选择组合键，例如 %{example}。"
+    solo_only_push_to_talk: "%{keys} 只能用于“开始和停止听写”或“按住说话”。请在组合中加入普通按键，例如 %{example}。"
     used_by: "%{keys} 已被“%{action}”使用。请选择其他按键。"
     conflict_app: "%{name} 也使用 %{keys}。两个 App 都会响应。请选择其他按键，或在 %{name} 中更改快捷键。"
     conflict_app_open_default: "%{name} 已打开，并默认使用 %{keys}。如果你没有在 %{name} 中更改它，两个 App 都会响应。请选择其他按键，或在 %{name} 中更改快捷键。"

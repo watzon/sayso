@@ -32,6 +32,8 @@ impl AppModel {
     /// Record the next key combination through the system key listener.
     /// Unlike `capture_hotkey`, this also reports a failure and a timeout.
     pub fn record_hotkey(&mut self, cx: &mut Context<Self>, done: impl FnOnce(&mut Self, Recorded, &mut Context<Self>) + 'static) {
+        #[cfg(target_os = "macos")]
+        self.request_hotkey_access();
         let rx = self.services.platform.hotkeys.capture_next();
         cx.spawn(async move |this, cx| {
             let result = cx

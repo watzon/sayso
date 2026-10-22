@@ -90,6 +90,7 @@ fn spawn_chord_forwarder(
 /// Whether a hotkey needs the Fn key, which Windows never sees.
 fn uses_fn(hotkey: &Hotkey) -> bool {
     match hotkey {
+        Hotkey::ModifierOnly(keys) => !keymap::can_detect_modifiers(*keys),
         Hotkey::Solo(solo) => keymap::solo_vk(*solo).is_none(),
         Hotkey::Chord { modifiers, .. } => modifiers.function,
     }
@@ -99,9 +100,14 @@ impl HotkeySource for WinHotkeys {
     fn register(&self, bindings: &HotkeyBindings) -> HotkeyRegistration {
         let mut failed: Vec<(Hotkey, String)> = Vec::new();
 
-        // Chords through RegisterHotKey.
+        let mut modifier_toggle = bindings.toggle.filter(|h| h.modifier_keys().is_some());
+        if let Some(hotkey) = modifier_toggle.filter(uses_fn) {
+            failed.push((hotkey, keymap::FN_UNSUPPORTED.into()));
+            modifier_toggle = None;
+        }
+        // Chords through RegisterHotKey; modifier-only toggle uses the hook.
         let chords = [
-            (bindings.toggle, HotkeyEvent::Toggle),
+            (bindings.toggle.filter(|h| h.modifier_keys().is_none()), HotkeyEvent::Toggle),
             (bindings.paste_last, HotkeyEvent::PasteLast),
             (bindings.cycle_style, HotkeyEvent::CycleStyle),
             (bindings.incognito, HotkeyEvent::ToggleIncognito),
@@ -147,11 +153,15 @@ impl HotkeySource for WinHotkeys {
             failed.push((hotkey, keymap::FN_UNSUPPORTED.into()));
             ptt = None;
         }
-        if let Err(reason) =
-            self.hook.configure(ptt, bindings.single_escape, bindings.double_escape_window, bindings.enter_sends, bindings.take_escape)
-            && let Some(ptt) = ptt
-        {
-            failed.push((ptt, reason));
+        let toggle_modifiers = modifier_toggle.and_then(Hotkey::modifier_keys);
+        if let Err(reason) = self.hook.configure(
+            ptt, toggle_modifiers, bindings.single_escape, bindings.double_escape_window, bindings.enter_sends, bindings.take_escape,
+        ) {
+            for hotkey in [ptt, modifier_toggle].into_iter().flatten() {
+                failed.push((hotkey, reason.clone()));
+            }
+        } else if let Some(toggle) = modifier_toggle.filter(|_| !self.hook.modifier_toggle_available()) {
+            failed.push((toggle, "mouse monitoring is unavailable; modifier toggle is paused".into()));
         }
 
         // Windows needs no grant for the keyboard hook.
@@ -289,11 +299,24 @@ mod tests {
     }
 
     #[test]
-    fn a_solo_modifier_cannot_be_the_toggle() {
+    fn a_solo_modifier_can_be_the_toggle() {
         let hotkeys = WinHotkeys::new();
         let registration = hotkeys.register(&bindings("right_option", None));
-        assert_eq!(registration.failed.len(), 1);
+        assert!(registration.failed.is_empty());
+        assert!(!registration.needs_input_monitoring);
+        assert!(hotkeys.hook.is_installed());
         assert!(hotkeys.registered().is_empty());
+    }
+
+    #[test]
+    fn regression_mouse_install_failure_reports_only_toggle_registration() {
+        let hotkeys = WinHotkeys::new();
+        hotkeys.hook.fail_mouse_install();
+        let registration = hotkeys.register(&bindings("left_shift", Some("right_control")));
+        assert_eq!(registration.failed.len(), 1, "only the modifier toggle fails: {registration:?}");
+        assert_eq!(registration.failed[0].0, "left_shift".parse().unwrap());
+        assert!(hotkeys.hook.is_installed());
+        assert!(!registration.needs_input_monitoring);
     }
 
     #[test]

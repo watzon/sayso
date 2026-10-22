@@ -5,7 +5,7 @@
 //! follows: control is Ctrl, option is Alt, shift is Shift, and command is
 //! Super. Linux has no Fn modifier that software can see.
 
-use sayso_core::hotkey::{Hotkey, Key, Modifiers, SoloModifier};
+use sayso_core::hotkey::{Hotkey, Key, ModifierSet, Modifiers, SoloModifier};
 
 pub const KEY_ESC: u16 = 1;
 pub const KEY_BACKSPACE: u16 = 14;
@@ -65,20 +65,22 @@ pub fn solo_code(m: SoloModifier) -> Option<u16> {
         SoloModifier::RightOption => Some(KEY_RIGHTALT),
         SoloModifier::LeftOption => Some(KEY_LEFTALT),
         SoloModifier::RightCommand => Some(KEY_RIGHTMETA),
+        SoloModifier::LeftCommand => Some(KEY_LEFTMETA),
         SoloModifier::RightControl => Some(KEY_RIGHTCTRL),
+        SoloModifier::LeftControl => Some(KEY_LEFTCTRL),
         SoloModifier::RightShift => Some(KEY_RIGHTSHIFT),
+        SoloModifier::LeftShift => Some(KEY_LEFTSHIFT),
         SoloModifier::Fn => None,
     }
 }
 
+pub fn can_detect_modifiers(modifiers: ModifierSet) -> bool {
+    modifiers.iter().all(|m| solo_code(m).is_some())
+}
+
+
 pub fn solo_from_code(code_: u16) -> Option<SoloModifier> {
-    [
-        SoloModifier::RightOption,
-        SoloModifier::LeftOption,
-        SoloModifier::RightCommand,
-        SoloModifier::RightControl,
-        SoloModifier::RightShift,
-    ]
+    SoloModifier::ALL
     .into_iter()
     .find(|m| solo_code(*m) == Some(code_))
 }
@@ -136,6 +138,7 @@ pub fn chord(hotkey: &Hotkey) -> Result<Chord, String> {
 /// modifier other than Fn.
 pub fn check_push_to_talk(hotkey: &Hotkey) -> Result<(), String> {
     match hotkey {
+        Hotkey::ModifierOnly(keys) => if can_detect_modifiers(*keys) { Ok(()) } else { Err("Linux cannot see the fn key. Choose another key".into()) },
         Hotkey::Solo(m) => solo_code(*m)
             .map(|_| ())
             .ok_or_else(|| "Linux cannot see the fn key. Choose another key".to_string()),
@@ -188,6 +191,17 @@ mod tests {
     }
 
     #[test]
+    fn modifier_combinations_use_the_listen_stream() {
+        let pair = "left_command+left_option".parse().unwrap();
+        assert!(check_push_to_talk(&pair).is_ok());
+        assert!(chord(&pair).is_err());
+        assert!(check_push_to_talk(&"left_command".parse().unwrap()).is_ok());
+        assert!(check_push_to_talk(&"fn+left_command".parse().unwrap()).is_err());
+        assert!(check_push_to_talk(&"right_option".parse().unwrap()).is_ok());
+        assert!(check_push_to_talk(&Hotkey::toggle_default()).is_ok());
+    }
+
+    #[test]
     fn codes_follow_the_evdev_layout() {
         assert_eq!(code(Key::Space), Some(57));
         assert_eq!(code(Key::Escape), Some(1));
@@ -229,10 +243,11 @@ mod tests {
     fn solo_modifiers_map_to_one_side() {
         assert_eq!(solo_code(SoloModifier::RightOption), Some(KEY_RIGHTALT));
         assert_eq!(solo_code(SoloModifier::LeftOption), Some(KEY_LEFTALT));
+        assert_eq!(solo_code(SoloModifier::LeftCommand), Some(KEY_LEFTMETA));
         assert_eq!(solo_code(SoloModifier::RightCommand), Some(KEY_RIGHTMETA));
         assert_eq!(solo_code(SoloModifier::Fn), None);
         assert_eq!(solo_from_code(KEY_RIGHTCTRL), Some(SoloModifier::RightControl));
-        assert_eq!(solo_from_code(KEY_LEFTCTRL), None);
+        assert_eq!(solo_from_code(KEY_LEFTCTRL), Some(SoloModifier::LeftControl));
         assert_eq!(solo_from_code(KEY_SPACE), None);
     }
 

@@ -5,7 +5,7 @@
 
 use crate::ffi::{FLAG_ALT, FLAG_COMMAND, FLAG_CONTROL, FLAG_SECONDARY_FN, FLAG_SHIFT};
 use global_hotkey::hotkey::{Code, HotKey, Modifiers as GhModifiers};
-use sayso_core::hotkey::{Hotkey, Key, Modifiers, SoloModifier};
+use sayso_core::hotkey::{Hotkey, Key, ModifierSet, Modifiers, SoloModifier};
 
 /// Carbon modifier mask bits (`cmdKey`, `shiftKey`, `optionKey`, `controlKey`).
 pub const CARBON_CMD: u32 = 1 << 8;
@@ -128,22 +128,18 @@ pub fn solo_spec(m: SoloModifier) -> SoloSpec {
         SoloModifier::RightOption => (61, 0x40),
         SoloModifier::LeftOption => (58, 0x20),
         SoloModifier::RightCommand => (54, 0x10),
+        SoloModifier::LeftCommand => (55, 0x08),
         SoloModifier::RightControl => (62, 0x2000),
+        SoloModifier::LeftControl => (59, 0x01),
         SoloModifier::RightShift => (60, 0x04),
+        SoloModifier::LeftShift => (56, 0x02),
         SoloModifier::Fn => (63, FLAG_SECONDARY_FN),
     };
     SoloSpec { keycode, down_bit }
 }
 
 /// Every solo modifier, for the key recorder.
-pub const ALL_SOLO: [SoloModifier; 6] = [
-    SoloModifier::RightOption,
-    SoloModifier::LeftOption,
-    SoloModifier::RightCommand,
-    SoloModifier::RightControl,
-    SoloModifier::RightShift,
-    SoloModifier::Fn,
-];
+pub const ALL_SOLO: [SoloModifier; 9] = SoloModifier::ALL;
 
 pub fn solo_from_keycode(code: u16) -> Option<SoloModifier> {
     ALL_SOLO.into_iter().find(|m| solo_spec(*m).keycode == code)
@@ -152,6 +148,11 @@ pub fn solo_from_keycode(code: u16) -> Option<SoloModifier> {
 /// Whether a `flagsChanged` event for `code` shows the solo modifier as down.
 pub fn solo_is_down(m: SoloModifier, flags: u64) -> bool {
     flags & solo_spec(m).down_bit != 0
+}
+
+/// The side-specific modifier keys currently held, excluding Caps Lock.
+pub fn modifier_keys(flags: u64) -> ModifierSet {
+    SoloModifier::ALL.into_iter().filter(|m| solo_is_down(*m, flags)).collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -282,7 +283,7 @@ mod tests {
         assert!(solo_is_down(SoloModifier::Fn, FLAG_SECONDARY_FN));
         assert!(!solo_is_down(SoloModifier::Fn, 0));
         assert_eq!(solo_from_keycode(63), Some(SoloModifier::Fn));
-        assert_eq!(solo_from_keycode(55), None);
+        assert_eq!(solo_from_keycode(55), Some(SoloModifier::LeftCommand));
         let mut codes: Vec<u16> = ALL_SOLO.iter().map(|m| solo_spec(*m).keycode).collect();
         codes.sort_unstable();
         codes.dedup();

@@ -7,7 +7,7 @@ settings:
     action_paste_last: "Letzten Text einfügen"
     action_cycle_style: "Nächster Stil"
     action_incognito: "Inkognito"
-    solo_only_push_to_talk: "%{keys} allein funktioniert nur für „Gedrückt halten zum Sprechen“. Wähle eine Tastenkombination, zum Beispiel %{example}."
+    solo_only_push_to_talk: "%{keys} funktioniert nur für „Diktat starten und stoppen“ oder „Gedrückt halten zum Sprechen“. Füge eine normale Taste hinzu, zum Beispiel %{example}."
     used_by: "%{keys} wird schon für %{action} genutzt. Wähle eine andere Taste."
     conflict_app: "%{name} nutzt ebenfalls %{keys}. Beide Apps reagieren. Wähle eine andere Taste oder ändere das Kürzel in %{name}."
     conflict_app_open_default: "%{name} ist geöffnet und nutzt standardmäßig %{keys}. Wenn du das in %{name} nicht geändert hast, reagieren beide Apps. Wähle eine andere Taste oder ändere das Kürzel in %{name}."

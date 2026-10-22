@@ -7,7 +7,7 @@ settings:
     action_paste_last: "最後のテキストをペースト"
     action_cycle_style: "次のスタイル"
     action_incognito: "シークレットモード"
-    solo_only_push_to_talk: "%{keys} の単独使用は「押して話す」でのみ使えます。%{example} などのキーの組み合わせを選択してください。"
+    solo_only_push_to_talk: "%{keys} は「音声入力の開始/停止」または「押して話す」でのみ使えます。%{example} のように、修飾キー以外のキーを含む組み合わせを選択してください。"
     used_by: "%{keys} はすでに「%{action}」に使われています。別のキーを選択してください。"
     conflict_app: "%{name} も %{keys} を使っています。両方のアプリが反応します。別のキーを選択するか、%{name} でショートカットを変更してください。"
     conflict_app_open_default: "%{name} が開いていて、デフォルトで %{keys} を使います。%{name} で変更していない場合、両方のアプリが反応します。別のキーを選択するか、%{name} でショートカットを変更してください。"

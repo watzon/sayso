@@ -7,7 +7,7 @@ settings:
     action_paste_last: "Coller le dernier texte"
     action_cycle_style: "Style suivant"
     action_incognito: "Mode privé"
-    solo_only_push_to_talk: "%{keys} seule ne fonctionne que pour Maintenir pour parler. Choisissez une combinaison de touches, par exemple %{example}."
+    solo_only_push_to_talk: "%{keys} fonctionne uniquement pour Démarrer et arrêter la dictée ou Maintenir pour parler. Ajoutez une touche ordinaire, par exemple %{example}."
     used_by: "%{keys} est déjà utilisée par %{action}. Choisissez une autre touche."
     conflict_app: "%{name} utilise aussi %{keys}. Les deux apps réagiront. Choisissez une autre touche, ou changez le raccourci dans %{name}."
     conflict_app_open_default: "%{name} est ouverte et utilise %{keys} par défaut. Si vous ne l’avez pas modifié dans %{name}, les deux apps réagiront. Choisissez une autre touche, ou changez le raccourci dans %{name}."

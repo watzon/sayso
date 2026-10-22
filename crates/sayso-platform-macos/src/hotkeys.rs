@@ -2,7 +2,7 @@
 //!
 //! - Chords (toggle, paste last, cycle style) go through Carbon with the
 //!   `global-hotkey` crate. No permission is needed.
-//! - Push-to-talk and Esc go through our own listen-only event tap
+//! - Modifier-only toggle, push-to-talk, and Esc use our listen-only event tap
 //!   (see [`crate::tap`]). That needs Input Monitoring.
 //! - Send with Enter and taking Esc go through an active tap while one of the
 //!   settings is on. That needs Accessibility, as the paste does.
@@ -82,9 +82,10 @@ impl HotkeySource for MacHotkeys {
     fn register(&self, bindings: &HotkeyBindings) -> HotkeyRegistration {
         let mut failed: Vec<(Hotkey, String)> = Vec::new();
 
-        // Chords through Carbon.
+        let toggle_modifiers = bindings.toggle.and_then(Hotkey::modifier_keys);
+        // Chords through Carbon; modifier-only toggle uses the event tap.
         let chords = [
-            (bindings.toggle, HotkeyEvent::Toggle),
+            (bindings.toggle.filter(|_| toggle_modifiers.is_none()), HotkeyEvent::Toggle),
             (bindings.paste_last, HotkeyEvent::PasteLast),
             (bindings.cycle_style, HotkeyEvent::CycleStyle),
             (bindings.incognito, HotkeyEvent::ToggleIncognito),
@@ -119,16 +120,17 @@ impl HotkeySource for MacHotkeys {
             }
         }
 
-        // Push-to-talk, Esc, and Enter through the taps.
+        // Modifier-only toggle, push-to-talk, Esc, and Enter through the taps.
         let ptt = bindings.push_to_talk;
-        if let Err(reason) =
-            self.tap.configure(ptt, bindings.single_escape, bindings.double_escape_window, bindings.enter_sends, bindings.take_escape)
-            && let Some(ptt) = ptt
-        {
-            failed.push((ptt, reason));
+        if let Err(reason) = self.tap.configure(
+            ptt, toggle_modifiers, bindings.single_escape, bindings.double_escape_window, bindings.enter_sends, bindings.take_escape,
+        ) {
+            for hotkey in [ptt, bindings.toggle.filter(|_| toggle_modifiers.is_some())].into_iter().flatten() {
+                failed.push((hotkey, reason.clone()));
+            }
         }
         // SAFETY: plain permission query.
-        let needs_input_monitoring = ptt.is_some() && !unsafe { ffi::CGPreflightListenEventAccess() };
+        let needs_input_monitoring = (ptt.is_some() || toggle_modifiers.is_some()) && !unsafe { ffi::CGPreflightListenEventAccess() };
 
         HotkeyRegistration { failed, needs_input_monitoring }
     }

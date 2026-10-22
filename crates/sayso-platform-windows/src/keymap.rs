@@ -8,7 +8,7 @@
 //! No FFI here, so everything is unit-tested.
 
 use global_hotkey::hotkey::{Code, HotKey, Modifiers as GhModifiers};
-use sayso_core::hotkey::{Hotkey, Key, Modifiers, SoloModifier};
+use sayso_core::hotkey::{Hotkey, Key, ModifierSet, Modifiers, SoloModifier};
 
 pub const VK_BACK: u16 = 0x08;
 pub const VK_TAB: u16 = 0x09;
@@ -184,23 +184,28 @@ pub fn solo_vk(m: SoloModifier) -> Option<u16> {
         SoloModifier::RightOption => Some(VK_RMENU),
         SoloModifier::LeftOption => Some(VK_LMENU),
         SoloModifier::RightCommand => Some(VK_RWIN),
+        SoloModifier::LeftCommand => Some(VK_LWIN),
         SoloModifier::RightControl => Some(VK_RCONTROL),
+        SoloModifier::LeftControl => Some(VK_LCONTROL),
         SoloModifier::RightShift => Some(VK_RSHIFT),
+        SoloModifier::LeftShift => Some(VK_LSHIFT),
         SoloModifier::Fn => None,
     }
 }
 
+pub fn can_detect_modifiers(modifiers: ModifierSet) -> bool {
+    modifiers.iter().all(|m| solo_vk(m).is_some())
+}
+
 /// The solo modifiers Windows can detect, for the key recorder.
-pub const ALL_SOLO: [SoloModifier; 5] = [
-    SoloModifier::RightOption,
-    SoloModifier::LeftOption,
-    SoloModifier::RightCommand,
-    SoloModifier::RightControl,
-    SoloModifier::RightShift,
-];
+pub const ALL_SOLO: [SoloModifier; 9] = SoloModifier::ALL;
 
 pub fn solo_from_vk(vk: u16) -> Option<SoloModifier> {
     ALL_SOLO.into_iter().find(|m| solo_vk(*m) == Some(vk))
+}
+
+pub fn modifier_keys(held: ModKeys) -> ModifierSet {
+    SoloModifier::ALL.into_iter().filter(|m| solo_vk(*m).is_some_and(|vk| held.contains(vk))).collect()
 }
 
 /// Whether releasing this modifier on its own makes Windows do something:
@@ -354,16 +359,17 @@ mod tests {
     fn solo_modifiers_map_to_the_right_keys() {
         assert_eq!(solo_vk(SoloModifier::RightOption), Some(VK_RMENU));
         assert_eq!(solo_vk(SoloModifier::LeftOption), Some(VK_LMENU));
+        assert_eq!(solo_vk(SoloModifier::LeftCommand), Some(VK_LWIN));
         assert_eq!(solo_vk(SoloModifier::RightCommand), Some(VK_RWIN));
         assert_eq!(solo_vk(SoloModifier::RightControl), Some(VK_RCONTROL));
         assert_eq!(solo_vk(SoloModifier::RightShift), Some(VK_RSHIFT));
         assert_eq!(solo_vk(SoloModifier::Fn), None);
-        for m in ALL_SOLO {
+        for m in ALL_SOLO.into_iter().filter(|m| solo_vk(*m).is_some()) {
             assert_eq!(solo_from_vk(solo_vk(m).unwrap()), Some(m));
         }
-        assert_eq!(solo_from_vk(VK_LSHIFT), None);
-        assert_eq!(solo_from_vk(VK_LWIN), None);
-        assert_eq!(solo_from_vk(VK_LCONTROL), None);
+        assert_eq!(solo_from_vk(VK_LSHIFT), Some(SoloModifier::LeftShift));
+        assert_eq!(solo_from_vk(VK_LWIN), Some(SoloModifier::LeftCommand));
+        assert_eq!(solo_from_vk(VK_LCONTROL), Some(SoloModifier::LeftControl));
     }
 
     #[test]
