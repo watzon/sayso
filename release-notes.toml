@@ -20,6 +20,31 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.11.0"
+title = "Clean up text on this computer"
+
+[[release.item]]
+icon = "styles"
+title = "Local cleanup models"
+text = "S1-mini by Superwhisper and Cleanup 1 by Spokenly clean up your dictation on this computer, with no cloud provider. S1-mini is for English. Cleanup 1 has seven languages and three tones. Add one in Settings › Providers."
+
+[[release.item]]
+icon = "keyboard"
+title = "Dictate with a modifier key"
+text = "A shortcut can now be one modifier key, for example a modifier on the right side of the keyboard, or a set of modifiers. Set it in Settings › Dictation."
+
+[[release.item]]
+icon = "models"
+title = "Fluid Speech Mini on the GPU"
+text = "On Linux, Fluid Speech Mini now runs on the GPU through Vulkan. The Vulkan loader must be installed."
+systems = ["linux"]
+
+[[release.item]]
+icon = "mic"
+title = "A faster start"
+text = "The overlay opens as soon as you start a dictation, and the microphone opens before the live preview. Sayso also starts without a wait for the speech engine."
+
+[[release]]
 version = "0.10.0"
 title = "A notch for your dictation"
 
