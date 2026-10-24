@@ -19,6 +19,29 @@ for c in sayso-store sayso-enhance sayso-engine-client sayso-cleanup-client says
   check "$c" '^sayso-platform-' "only sayso-app may use a platform implementation"
 done
 check sayso-ui '^sayso-(store|enhance|engine-client)' "UI gets data through the app"
+check sayso-ink '^(sayso-|gpui)' "sayso-ink is MIT and published: it needs no Sayso crate and no GPUI"
+check sayso-ui '^sayso-([^i]|i[^n])' "sayso-ui is MIT and published: its only Sayso crate is sayso-ink"
+# The MIT crates (docs/adr/0002-mit-sdk-gpl-app.md) are published. They must say
+# so, and a dependency on the other one needs the workspace version, because
+# cargo publish needs a version for a path dependency.
+if ! echo "$meta" | python3 -c "
+import json, sys
+m = json.load(sys.stdin)
+pk = {p['name']: p for p in m['packages']}
+bad = []
+for name in ('sayso-ink', 'sayso-ui'):
+    p = pk[name]
+    if p['license'] != 'MIT' or p['publish'] == []:
+        bad.append(name + ' must have license MIT and be published')
+    for d in p['dependencies']:
+        if d['name'] in ('sayso-ink',) and d['req'] != '^' + p['version']:
+            bad.append(name + ' needs sayso-ink ' + p['version'] + ' but has ' + d['req'] + ' (change the version in Cargo.toml [workspace.dependencies])')
+print('\\n'.join(bad))
+sys.exit(1 if bad else 0)
+" > /tmp/check-deps-mit.$$; then
+  sed 's/^/FAIL: /' /tmp/check-deps-mit.$$; fail=1
+fi
+rm -f /tmp/check-deps-mit.$$
 check sayso-platform-common '^(sayso-(platform-(macos|linux|windows)|engine|store|enhance|ui|app)|gpui)' "portable platform code only"
 check sayso-update '^(sayso-(platform|engine|store|enhance|transcribe|ui|app)|gpui)' "the updater has no UI and no platform code"
 check sayso-engine '^(sayso-(platform|store|enhance|ui|app)|gpui)' "the engine is a separate process"

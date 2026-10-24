@@ -122,6 +122,13 @@ macro_rules! t {
     };
 }
 
+/// The text of a key that is known only at run time, in the current locale
+/// with the fallback to English. None when no catalog has the key. Use [`t!`]
+/// when the key is a literal: the catalog tests check those keys.
+pub fn translate(key: &str) -> Option<String> {
+    lookup(&rust_i18n::locale(), key)
+}
+
 #[doc(hidden)]
 pub fn __translate(key: &str, args: &[(&str, &dyn Display)]) -> String {
     let locale = rust_i18n::locale();

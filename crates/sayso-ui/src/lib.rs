@@ -5,6 +5,10 @@
 //! - [`texture`]: tiled rag-paper grain.
 //! - [`text`]: the type scale (Fraunces, Instrument Sans, IBM Plex Mono).
 //! - [`components`]: controls built from those pieces.
+//! - [`l10n`]: the few component texts in English, and hooks for an app that has its own catalogs.
+//!
+//! This crate is MIT-licensed and has no GPL dependency. The bundled fonts
+//! keep their own SIL Open Font License files (`assets/fonts/licenses`).
 //!
 //! The values come from the Paper file "Sayso — v0.1 Design".
 
@@ -12,6 +16,7 @@ pub mod a11y;
 pub mod assets;
 pub mod components;
 pub mod fonts;
+pub mod l10n;
 pub mod paper;
 pub mod text;
 pub mod texture;

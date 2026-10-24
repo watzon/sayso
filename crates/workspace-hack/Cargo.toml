@@ -56,6 +56,7 @@ serde = { version = "1", features = ["derive"] }
 serde_core = { version = "1", features = ["alloc"] }
 smallvec = { version = "1", default-features = false, features = ["const_generics"] }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "visit"] }
+syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
 winnow-ca01ad9e24f5d932 = { package = "winnow", version = "0.7" }
 
@@ -85,6 +86,7 @@ linux-raw-sys = { version = "0.12", default-features = false, features = ["auxve
 num-rational = { version = "0.4", features = ["num-bigint-std"] }
 once_cell = { version = "1" }
 proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = { version = "1" }
 rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "system", "time"] }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
@@ -112,7 +114,7 @@ simd-adler32 = { version = "0.3" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
 subtle = { version = "2", default-features = false, features = ["const-generics"] }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", default-features = false, features = ["full", "visit-mut"] }
-syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
+syn-f595c2ba2a3f28df = { package = "syn", version = "2", default-features = false, features = ["visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 toml_parser = { version = "1" }
 ureq = { version = "3", features = ["json"] }
@@ -132,6 +134,7 @@ linux-raw-sys = { version = "0.12", default-features = false, features = ["auxve
 num-rational = { version = "0.4", features = ["num-bigint-std"] }
 once_cell = { version = "1" }
 proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = { version = "1" }
 rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "system", "time"] }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
@@ -159,7 +162,7 @@ simd-adler32 = { version = "0.3" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
 subtle = { version = "2", default-features = false, features = ["const-generics"] }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", default-features = false, features = ["full", "visit-mut"] }
-syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
+syn-f595c2ba2a3f28df = { package = "syn", version = "2", default-features = false, features = ["visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 toml_parser = { version = "1" }
 ureq = { version = "3", features = ["json"] }
@@ -192,7 +195,7 @@ once_cell = { version = "1" }
 percent-encoding = { version = "2" }
 simd-adler32 = { version = "0.3" }
 subtle = { version = "2", default-features = false, features = ["const-generics"] }
-syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
+syn-f595c2ba2a3f28df = { package = "syn", version = "2", default-features = false, features = ["visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security_Credentials", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_LibraryLoader", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
