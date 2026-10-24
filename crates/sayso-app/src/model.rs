@@ -770,6 +770,20 @@ impl AppModel {
         .detach();
     }
 
+    /// The engine cannot read the files of a model that an older engine left: the
+    /// Parakeet files of the Windows engine before 0.12 (`EngineReason::FormatChanged`).
+    /// A model in use downloads again. The files of any other model go, so the model
+    /// shows as not downloaded.
+    pub fn replace_old_model_files(&mut self, id: ModelId, cx: &mut Context<Self>) {
+        if id == self.config.dictation.model || Some(&id) == self.preview_model().as_ref() {
+            log::info!("{id}: the files are in an old format; downloading the model again");
+            self.download_model(id, cx);
+        } else {
+            log::info!("{id}: the files are in an old format; deleting them");
+            self.delete_model(id, cx);
+        }
+    }
+
     pub fn delete_model(&mut self, id: ModelId, cx: &mut Context<Self>) {
         let Some(engine) = self.services.engine.clone() else { return };
         cx.spawn(async move |this, cx| {

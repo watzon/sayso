@@ -32,7 +32,7 @@ The raw text from the speech model, before any changes.
 The fixed steps that turn audio into inserted text: transcribe → apply replacements → apply spoken punctuation → apply style → insert. Spoken punctuation is a setting and is off by default.
 
 **Engine**
-The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows it is the portable sidecar (`native/portable`, also `SaysoEngine`) with transcribe-rs. On Linux it is the Rust sidecar (`sayso-engine`) with sherpa-onnx. The Windows and Linux engines run on the CPU. All three speak the same protocol. Rust code talks to the engine through the `SttBackend` trait. The engine never sees a cloud model. The engine on macOS also runs the language model of a style (see Apple Intelligence). Rust code reaches it through the `LanguageModel` trait.
+The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows and Linux it is the Rust sidecar (`sayso-engine`) with sherpa-onnx, and also whisper.cpp on Windows and parakeet.cpp on Linux. Both engines speak the same protocol. Rust code talks to the engine through the `SttBackend` trait. The engine never sees a cloud model. The engine on macOS also runs the language model of a style (see Apple Intelligence). Rust code reaches it through the `LanguageModel` trait.
 
 **Model**
 A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". A dictation uses a final model and, when the live preview is on, a preview model. A model is a local model or a cloud model.

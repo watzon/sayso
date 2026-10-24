@@ -4,9 +4,9 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Debug       debug app (faster), release engine
 #   powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer   also dist\Sayso-<version>-windows-x64-setup.exe
 #
-# The folder holds Sayso.exe, the speech engine SaysoEngine.exe, the cleanup
-# runtime sayso-cleanup.exe, the runtime files they need (the Visual C++
-# runtime), and the license. It runs from where it is, so it is
+# The folder holds Sayso.exe, the speech engine sayso-engine.exe with the
+# sherpa-onnx and ONNX Runtime DLLs, the cleanup runtime sayso-cleanup.exe,
+# the runtime files they need (the Visual C++ runtime), and the licenses. It runs from where it is, so it is
 # also the portable build. The installer needs Inno Setup 6 (ISCC.exe on PATH,
 # or in its default folder). Set SAYSO_BUNDLE_DIR to use another folder.
 #
@@ -32,7 +32,8 @@ function Invoke-Checked([string]$what, [scriptblock]$block) {
 
 # CMake, Ninja, and libclang for the speech engine and the cleanup runtime.
 . (Join-Path $PSScriptRoot 'windows-env.ps1')
-Invoke-Checked 'engine (cargo, release)' { cargo build --release --manifest-path native\portable\Cargo.toml }
+# whisper.cpp is slow in a debug build, so the engine is always a release build.
+Invoke-Checked 'engine (cargo, release)' { cargo build -p sayso-engine --release }
 # llama.cpp is slow in a debug build, so the runtime is always a release build.
 Invoke-Checked 'cleanup runtime (cargo, release)' { cargo build --release --manifest-path native\cleanup\Cargo.toml }
 if ($Debug) {
@@ -47,10 +48,13 @@ if (Test-Path $app) { Remove-Item -Recurse -Force $app }
 New-Item -ItemType Directory -Force $app | Out-Null
 
 Copy-Item "target\$profile\sayso.exe" (Join-Path $app 'Sayso.exe')
-$engineDir = 'native\portable\target\release'
-# The engine delay-loads DirectML.dll and never calls it (it runs on the CPU),
-# so the DirectML.dll that the build puts beside it stays out of the app.
-Copy-Item (Join-Path $engineDir 'SaysoEngine.exe') $app
+Copy-Item 'target\release\sayso-engine.exe' $app
+# sherpa-onnx comes as DLLs on Windows (crates\sayso-engine\Cargo.toml). Its
+# build script downloads them with their import libraries; ship every DLL of
+# that folder beside the engine.
+$sherpaApi = Get-ChildItem 'target\sherpa-onnx-prebuilt' -Recurse -Filter 'sherpa-onnx-c-api.dll' | Select-Object -First 1
+if (-not $sherpaApi) { throw 'sherpa-onnx-c-api.dll was not found in target\sherpa-onnx-prebuilt' }
+Get-ChildItem $sherpaApi.DirectoryName -Filter '*.dll' | Copy-Item -Destination $app
 # The app finds the cleanup runtime next to its exe (crates\sayso-cleanup-client\src\runtime.rs).
 Copy-Item 'native\cleanup\target\release\sayso-cleanup.exe' $app
 # The three exes need the Visual C++ runtime. Ship it beside them (app-local), so
@@ -64,6 +68,8 @@ foreach ($dll in 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvc
 }
 Copy-Item LICENSE (Join-Path $app 'LICENSE.txt')
 Copy-Item assets\fonts\licenses -Recurse (Join-Path $app 'licenses')
+# whisper.cpp in the engine is ggml's code, under ggml's MIT License.
+Copy-Item crates\sayso-engine\licenses\ggml.txt (Join-Path $app 'licenses')
 
 function Sign-File([string]$path) {
     if (-not $env:SAYSO_SIGN_CERT) { return }
@@ -76,7 +82,7 @@ function Sign-File([string]$path) {
     if ($LASTEXITCODE -ne 0) { throw "signing $path failed" }
 }
 Sign-File (Join-Path $app 'Sayso.exe')
-Sign-File (Join-Path $app 'SaysoEngine.exe')
+Sign-File (Join-Path $app 'sayso-engine.exe')
 Sign-File (Join-Path $app 'sayso-cleanup.exe')
 Write-Host "==> app folder: $app"
 

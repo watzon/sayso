@@ -219,7 +219,6 @@ jobs:
         with:
           workspaces: |
             .
-            native/portable
             native/cleanup
 
       # whisper.cpp in the speech engine and llama.cpp in the cleanup runtime

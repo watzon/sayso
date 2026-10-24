@@ -16,8 +16,8 @@ use crate::layout;
 use crate::partials::Partials;
 use crate::protocol::{Output, PROTOCOL_VERSION, Request};
 use crate::recognizer::{LivePreview, Loaded, Loader, ModelDirs, PreviewStream};
-use crate::spec::{ModelSpec, Recipe, Source};
-use crate::store::ModelStore;
+use crate::spec::{ModelSpec, Source};
+use crate::store::{Legacy, ModelStore};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -164,11 +164,35 @@ impl Engine {
     fn status(&self, model: &str, spec: &ModelSpec) -> (&'static str, Value) {
         match self.state().loaded.get(model) {
             Some((spec, loaded)) if final_pass_is_out(spec, loaded) => {
-                ("downloaded", json!({ "preview": true }))
+                return ("downloaded", json!({ "preview": true }));
             }
-            Some(_) => ("ready", json!({})),
-            None if self.store.is_downloaded(model, spec) => ("downloaded", json!({})),
-            None => ("not_downloaded", json!({})),
+            Some(_) => return ("ready", json!({})),
+            None => {}
+        }
+        if self.adopt_legacy(model, spec) == Legacy::FormatChanged {
+            let message = "the files of this model are in an old format; download the model again";
+            return ("failed", json!({ "message": message, "reason": "format_changed" }));
+        }
+        if self.store.is_downloaded(model, spec) {
+            ("downloaded", json!({}))
+        } else {
+            ("not_downloaded", json!({}))
+        }
+    }
+
+    /// Move the files of the Windows engine before 0.12 into place
+    /// (`ModelStore::adopt_legacy`). A model with a download or a delete in
+    /// progress is left alone. A failure leaves the files as they are.
+    fn adopt_legacy(&self, model: &str, spec: &ModelSpec) -> Legacy {
+        let Ok(_busy) = self.acquire(model) else {
+            return Legacy::None;
+        };
+        match self.store.adopt_legacy(model, spec) {
+            Ok(legacy) => legacy,
+            Err(e) => {
+                self.out.log("warning", &format!("{model}: cannot move the old files into place: {e:#}"));
+                Legacy::FormatChanged
+            }
         }
     }
 
@@ -205,7 +229,7 @@ impl Engine {
         let model = request.string("model")?;
         let spec = ModelSpec::from_json(request.value("engine")?)?;
         self.store.folder(model)?;
-        if self.store.is_downloaded(model, &spec) {
+        if self.adopt_legacy(model, &spec) != Legacy::FormatChanged && self.store.is_downloaded(model, &spec) {
             self.model_state(id, model, "downloaded", json!({}));
             self.out.ok(id, json!({}));
             return Ok(());
@@ -245,7 +269,7 @@ impl Engine {
         spec: &ModelSpec,
         progress: &mut Progress,
     ) -> Result<()> {
-        self.store.prepare_download(model)?;
+        self.store.prepare_download(model, spec)?;
         for archive in spec.archives() {
             let dest = self.store.archive_dir(model, archive)?;
             if dest.is_dir() {
@@ -313,6 +337,7 @@ impl Engine {
             }
             _ => None,
         };
+        self.adopt_legacy(model, &spec);
         if !self.store.is_downloaded(model, &spec) {
             bail!("model {model} is not downloaded");
         }
@@ -329,7 +354,15 @@ impl Engine {
                     final_pass,
                     preview: Some(preview),
                 }),
-            None => self.loader.load(&spec, &dirs),
+            None => self.loader.load(&spec, &dirs).and_then(|loaded| {
+                if !spec.redecode_preview {
+                    return Ok(loaded);
+                }
+                let final_pass = loaded
+                    .final_pass
+                    .ok_or_else(|| anyhow!("model {model} has no final pass for its live preview"))?;
+                Ok(crate::redecode::attach(final_pass))
+            }),
         };
         let loaded = match result {
             Ok(loaded) => loaded,
@@ -355,8 +388,9 @@ impl Engine {
     }
 
     /// `unload`: take a model out of memory. Its files stay on disk. With
-    /// `keep_preview`, a model that has a live preview keeps it, and only its
-    /// final pass leaves.
+    /// `keep_preview`, a model whose live preview is a model of its own (a
+    /// streaming archive) keeps it, and only its final pass leaves. A redecode
+    /// preview is the final pass, so all of that model leaves.
     fn unload(&self, request: &Request) -> Result<()> {
         let model = request.string("model")?;
         let keep_preview = request
@@ -369,7 +403,7 @@ impl Engine {
             .state()
             .loaded
             .get(model)
-            .is_some_and(|(_, loaded)| loaded.preview.is_some());
+            .is_some_and(|(spec, loaded)| loaded.preview.is_some() && spec.stream_archive().is_some());
         if keep_preview && has_preview {
             if self.evict_final_pass(model) {
                 let extra = json!({ "preview": true });
@@ -418,8 +452,12 @@ impl Engine {
         let model = request.string("model")?;
         let path = PathBuf::from(request.string("path")?);
         let language = request.optional_string("language").unwrap_or("en");
-        // Dictionary words: the sherpa-onnx models in the catalog cannot use them
-        // (hotwords work only for transducers with beam search), so they are ignored.
+        let vocabulary: Vec<String> = request
+            .value("vocabulary")
+            .ok()
+            .and_then(Value::as_array)
+            .map(|words| words.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .unwrap_or_default();
         let (spec, loaded) = self
             .state()
             .loaded
@@ -439,7 +477,7 @@ impl Engine {
         let start = Instant::now();
         let mut parts = Vec::new();
         for piece in audio::split(&samples, spec.recipe.max_chunk_seconds()) {
-            parts.push(final_pass.transcribe(piece, language)?);
+            parts.push(final_pass.transcribe(piece, language, &vocabulary)?);
         }
         let text = audio::join(&parts);
         let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -481,8 +519,8 @@ impl std::error::Error for Incomplete {}
 
 /// Check that each archive holds the files its recipe needs.
 fn check_files(spec: &ModelSpec, dirs: &ModelDirs) -> Result<()> {
-    // A GGUF is one file, checked by its size as it downloads.
-    if spec.recipe.final_pass() && spec.recipe != Recipe::ParakeetGguf {
+    // A GGUF or GGML model is one file, checked by its size as it downloads.
+    if spec.recipe.final_pass() && !spec.recipe.single_file() {
         layout::offline_files(spec.recipe, &dirs.main)?;
     }
     if let Some(stream) = &dirs.stream {
@@ -566,8 +604,15 @@ impl StreamWorker {
                 state.stream.accept(&samples);
                 if state.last_decode.elapsed() >= interval {
                     state.last_decode = Instant::now();
-                    let segment = state.stream.decode();
-                    state.partials.update(&segment);
+                    // After an ended segment, ask again at once: a stream can end a
+                    // segment and start the next one in the same decode.
+                    loop {
+                        let segment = state.stream.decode();
+                        state.partials.update(&segment);
+                        if !segment.endpoint {
+                            break;
+                        }
+                    }
                     send_partial(&self.engine.out, session, &mut state.partials);
                 }
             }

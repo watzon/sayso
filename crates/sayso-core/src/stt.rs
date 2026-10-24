@@ -37,6 +37,9 @@ pub enum EngineReason {
     LoadFailed,
     /// The model needs a discrete GPU with a Vulkan driver, and the engine found none.
     NoGpu,
+    /// The files of the model are in a format that this engine cannot read: the
+    /// Parakeet files of the Windows engine before 0.12. The model must download again.
+    FormatChanged,
     /// This Mac does not support Apple Intelligence.
     DeviceNotEligible,
     /// Apple Intelligence is off in System Settings.
@@ -69,6 +72,7 @@ impl EngineReason {
             EngineReason::DownloadFailed => "download_failed",
             EngineReason::LoadFailed => "load_failed",
             EngineReason::NoGpu => "no_gpu",
+            EngineReason::FormatChanged => "format_changed",
             EngineReason::DeviceNotEligible => "device_not_eligible",
             EngineReason::IntelligenceOff => "intelligence_off",
             EngineReason::ModelNotReady => "model_not_ready",

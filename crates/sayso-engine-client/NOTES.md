@@ -7,7 +7,7 @@ Find it at run time with `EngineClient::default_engine_path()`: env `SAYSO_ENGIN
 
 ## Windows and Linux
 
-The sidecar there is the portable Rust engine in `native/portable` (its own Cargo workspace): `cd native/portable && cargo build --release` gives `target/release/SaysoEngine(.exe)`, the dev build path on those platforms. It speaks the same protocol v1 and runs the kinds `onnx` (family `parakeet`) and `whisper_cpp` of the portable catalog with transcribe-rs. Its live preview decodes the growing recording again, so `committed` grows and `tentative` holds the re-decoded tail. On Windows the engine delay-loads `DirectML.dll` and never calls it, so the app does not ship it. Build steps, runtime files, and measured results are in `native/portable/NOTES.md`.
+The sidecar there is the Rust engine `sayso-engine` (`crates/sayso-engine`): `cargo build -p sayso-engine --release` gives `target/release/sayso-engine(.exe)`. The app looks for it next to its own binary; a debug app with a release engine needs `SAYSO_ENGINE_PATH` (`scripts/dev.ps1` sets it). It speaks the same protocol v1 and runs the kinds `sherpa`, `parakeet_cpp` (Linux), and `whisper_cpp` (Windows) of `sayso_core::models_onnx`. A `sherpa` model with `redecode_preview` (Parakeet TDT v3) gets its live preview by decoding the growing recording again, so `committed` grows and `tentative` holds the re-decoded tail. Windows used its own engine before 0.12 (`SaysoEngine.exe`, `native/portable`). Build steps, runtime files, and measured results are in `crates/sayso-engine/NOTES.md`.
 
 ## Protocol v1 (NDJSON over stdio)
 
@@ -46,7 +46,7 @@ The Swift engine loads the stream part only when `preview` is true. For Parakeet
 it also loads the CTC assets and builds a booster for the exact requested word list.
 Preparation and real requests share those loads. Preparation runs no inference.
 Unload closes the shared parts and rejects results that finish after unload.
-The Linux and portable engines accept `prepare` as a no-op. An older engine can reply
+The Rust engine accepts `prepare` as a no-op. An older engine can reply
 with `error`; the client logs the failure and keeps the model usable.
 
 `SttBackend::part_readiness(model, true)` returns preview readiness. Pass `false` for
@@ -62,10 +62,11 @@ An engine that sends no `reason` (an older engine) still works: the app shows a 
 
 | `reason` | Sent in | Meaning | Sent by |
 |---|---|---|---|
-| `incomplete_download` | `model_state failed` | A download ended, but the model files are not complete. | all three engines |
-| `download_failed` | `model_state failed` | A download stopped with an error (network, disk, HTTP status). | all three engines |
-| `load_failed` | `model_state failed` | The model is on disk, but loading it failed. | all three engines |
-| `no_gpu` | `model_state failed` | The model needs a discrete GPU with a Vulkan driver, and the engine found none. | Linux |
+| `incomplete_download` | `model_state failed` | A download ended, but the model files are not complete. | both engines |
+| `download_failed` | `model_state failed` | A download stopped with an error (network, disk, HTTP status). | both engines |
+| `load_failed` | `model_state failed` | The model is on disk, but loading it failed. | both engines |
+| `no_gpu` | `model_state failed` | The model needs a discrete GPU with a Vulkan driver, and the engine found none. | Rust (Linux) |
+| `format_changed` | `model_state failed` | The files on disk are in an old format (Parakeet files of the Windows engine before 0.12). The app downloads the model again when it is in use, and deletes it when not. | Rust (Windows) |
 | `device_not_eligible` | `language_model`, `generate` error | This Mac does not support Apple Intelligence. | Swift |
 | `intelligence_off` | `language_model`, `generate` error | Apple Intelligence is off in System Settings. | Swift |
 | `model_not_ready` | `language_model`, `generate` error | macOS still downloads the Apple Intelligence model. | Swift |
@@ -75,7 +76,7 @@ An engine that sends no `reason` (an older engine) still works: the app shows a 
 | `refused` | `generate` error | The model refused the text (guardrails). | Swift |
 | `failed` | `generate` error | The model failed in another way. | Swift |
 
-The `error` reply of a `download` or `load` carries no `reason`. The client keeps the reason of the `model_state failed` event that came just before it, when the message is the same. A model that an engine cannot run (`list_models` in the portable engine) is `failed` without a `reason`. The Linux and Windows engines have no language model, so they send none of the language model codes.
+The `error` reply of a `download` or `load` carries no `reason`. The client keeps the reason of the `model_state failed` event that came just before it, when the message is the same. The Rust engine has no language model, so it sends none of the language model codes.
 
 `language_model` and `generate` are additions to protocol v1 for AI enhancement on this computer. Only the Swift engine has them: it runs the language model of macOS (Apple Intelligence, `LanguageModel.swift`, macOS 26 and later) with guided generation, so the reply is bound to one `text` field. macOS owns the model, so there is no download, load, or unload. `generate` stops the model after `timeout_ms`, and the client waits 500 ms longer before it gives up. The other engines answer `error` (unknown request type), which the client reports as "not set up". `EngineClient` implements `sayso_core::enhance::LanguageModel` with these two requests.
 
@@ -83,9 +84,9 @@ Engine kinds (`engine.kind`, with their fields): `parakeet_unified {streaming_ti
 
 `language` is a code such as `en`, or `auto`. The client sends each model the nearest value the model supports (`ModelInfo::language_for`).
 
-`unload` takes a model out of memory and keeps its files. The three engines run it in arrival order (not on a thread or task of its own), so a `load` of the same model that follows starts a new load. The Swift engine and the portable engine end the live preview sessions of the model. In the Linux engine a stream or a final pass that runs keeps its part of the model until it ends. A model with a download, a load, or a delete in progress is `busy`. The Linux engine then calls `malloc_trim` (glibc), so the freed memory goes back to the system. The request is an addition to protocol v1: an engine without it answers `error`, which the client only logs.
+`unload` takes a model out of memory and keeps its files. Both engines run it in arrival order (not on a thread or task of its own), so a `load` of the same model that follows starts a new load. The Swift engine ends the live preview sessions of the model. In the Rust engine a stream or a final pass that runs keeps its part of the model until it ends. A model with a download, a load, or a delete in progress is `busy`. The Rust engine on Linux then calls `malloc_trim` (glibc), so the freed memory goes back to the system. The request is an addition to protocol v1: an engine without it answers `error`, which the client only logs.
 
-`keep_preview: true` is for a model that does the final pass and the live preview. The Linux engine holds such a model (for example `parakeet-tdt-v2`) as two parts. It then drops only the final pass and reports `model_state downloaded` with `preview: true`, also in `list_models`. In that state `stream_start` works, `transcribe` answers `model ... is not loaded`, and `load` loads only the final pass. A model with only a final pass leaves whole, and a model with only a live preview stays as it is. The Swift engine and the portable engine ignore the field and unload the whole model: the portable engine has one model for both passes. The Swift engine has two parts for Parakeet Unified (the batch manager and the streaming manager), but it does not split them yet.
+`keep_preview: true` is for a model that does the final pass and the live preview. The Rust engine holds such a model (for example `parakeet-tdt-v2`, with its streaming archive) as two parts. It then drops only the final pass and reports `model_state downloaded` with `preview: true`, also in `list_models`. In that state `stream_start` works, `transcribe` answers `model ... is not loaded`, and `load` loads only the final pass. A model with only a final pass leaves whole, and a model with only a live preview stays as it is. A model with a redecode preview (`parakeet-tdt-v3` in the Rust engine) leaves whole too: its preview is the final pass. The Swift engine ignores the field and unloads the whole model. The Swift engine has two parts for Parakeet Unified (the batch manager and the streaming manager), but it does not split them yet.
 
 The client keeps the `preview: true` models in a set behind `SttBackend::preview_ready`. Any other `model_state` of the model, and an engine crash, clear the entry. The status stays `Downloaded`.
 

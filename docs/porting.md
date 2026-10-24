@@ -10,8 +10,8 @@ This file says where the platform code lives, which seams the shared crates have
 |---|---|---|---|---|
 | Platform services (`Platform` in `sayso-platform`) | `sayso-platform-macos` | `sayso-platform-windows` | `sayso-platform-linux` | `crates/sayso-platform-<os>` with `<Os>Platform::new(sounds_dir)` |
 | App shell (`sayso-app/src/shell`) | `macos.rs` | `windows.rs` | `linux.rs` | A backend file with the same items (see below) |
-| Speech engine | Swift sidecar, `native/macos/SaysoEngine` | Portable Rust sidecar, `native/portable` (transcribe-rs) | Rust sidecar, `crates/sayso-engine` (sherpa-onnx) | Nothing: both Rust engines have no system-specific code |
-| Model catalog | `models::catalog()` Apple list | `models/portable.rs` | `models_onnx.rs` | Nothing |
+| Speech engine | Swift sidecar, `native/macos/SaysoEngine` | Rust sidecar, `crates/sayso-engine` (sherpa-onnx, whisper.cpp) | Rust sidecar, `crates/sayso-engine` (sherpa-onnx, parakeet.cpp) | A list of models in `models_onnx.rs`, and a link check of the native libraries |
+| Model catalog | `models::catalog()` Apple list | `models_onnx.rs`, `System::Windows` | `models_onnx.rs`, `System::Linux` | A `System` in `models_onnx.rs`, or the Linux list |
 | Secrets | `keyring` with the Keychain store | `keyring` with the Credential Manager store | `keyring` with the Secret Service store | A `keyring` feature in `sayso-enhance/Cargo.toml` |
 | Title bar | The native traffic lights | `caption.rs` (caption buttons) | `chrome.rs` (a setting; the system title bar by default) | Nothing, when the system draws the title bar |
 | Packaging | `scripts/bundle.sh`, DMG | `scripts/bundle-windows.ps1`, Inno Setup | `scripts/bundle-linux.sh`, tarball. `scripts/package-linux.sh` makes the `.deb`, the `.rpm`, the AppImage, and the Flatpak from it. `flake.nix` is the Nix package | A script and a job in `release.yml` |
@@ -29,8 +29,8 @@ Each seam is a small `cfg` block. A new platform adds a branch next to the other
 - **`sayso-app/src/hub/pages/player.rs`**: History playback (`shell::audio_player`, or `PlaySound` on Windows).
 - **`sayso-core/src/paths.rs`**: `PlatformDirs::for_env`, the folders without XDG variables. A system without its own branch gets the XDG defaults.
 - **`sayso-core/src/hotkey.rs`**: `ModifierNames` and `SoloModifier::label` (keycap words), the config file names of the modifiers, and the defaults (`toggle_default`, `paste_last_default`). `command` is the Windows or Super key off macOS.
-- **`sayso-core/src/models.rs`**: `catalog`, `default_model`, `preview_fallback` pick the Apple list on macOS, `portable` on Windows, and `models_onnx` elsewhere.
-- **`sayso-engine-client/src/client.rs`**: `ENGINE_FILE_NAME` and `DEV_ENGINE_PATH`. On Windows the development build is `native/portable/target/release/SaysoEngine.exe`. On Linux, `cargo build -p sayso-engine` puts `sayso-engine` next to the app binary.
+- **`sayso-core/src/models.rs`**: `catalog`, `default_model`, `preview_fallback` pick the Apple list on macOS and `models_onnx` elsewhere. `models_onnx::System::current` picks the Windows or the Linux list.
+- **`sayso-engine-client/src/client.rs`**: `ENGINE_FILE_NAME` and `DEV_ENGINE_PATH`. On Windows and Linux, `cargo build -p sayso-engine` puts `sayso-engine` next to the app binary of the same profile. `scripts/dev.ps1` builds a release engine for the debug app and sets `SAYSO_ENGINE_PATH`.
 - **`sayso-enhance`**: `detect.rs` (`find_executable`, `common_dirs`) and `cli.rs` (`new_command`). `win_shim.rs` is Windows only.
 - **`sayso-platform-macos`**: the crate is empty off macOS (`#![cfg(target_os = "macos")]`, target-specific dependencies), so `cargo test --workspace` works everywhere. A new platform crate does the same with its own `cfg`.
 
@@ -57,9 +57,9 @@ Coordinates are Cocoa-style on every platform: origin at the bottom left of the 
 
 The Windows crate also has `rect_from_physical`, `taskbar_is_dark`, `shell_open`, `reveal_in_explorer`, `play_wav`, `stop_wav`, `user_display_name`, and `claim_single_instance`. `shell/windows.rs` calls them.
 
-## The portable speech engine
+## The speech engine on Windows
 
-`native/portable` is its own Cargo workspace, so the main workspace does not build ONNX Runtime and whisper.cpp. It speaks the NDJSON protocol of `crates/sayso-engine-client/NOTES.md`, so `EngineClient` runs it like the Swift sidecar. Its notes are in `native/portable/NOTES.md`.
+Windows runs `crates/sayso-engine`, the engine of Linux, since 0.12 (ADR 0004). On Windows sherpa-onnx comes as DLLs, and Whisper runs on whisper.cpp. The notes are in `crates/sayso-engine/NOTES.md`. Before 0.12 Windows had its own engine, `native/portable` (transcribe-rs), in the history.
 
 ## Known gaps on Windows
 

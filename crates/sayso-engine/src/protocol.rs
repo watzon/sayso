@@ -25,8 +25,8 @@ impl Output {
 
     /// The real stdout, kept for the protocol only.
     ///
-    /// On Unix, fd 1 then points at stderr, so a stray print from a native
-    /// library cannot corrupt the stream. The Swift engine does the same.
+    /// Stdout then points at stderr, so a stray print from a native library
+    /// cannot corrupt the stream. The Swift engine does the same.
     pub fn protocol_stdout() -> Self {
         #[cfg(unix)]
         {
@@ -39,6 +39,10 @@ impl Output {
                     return Output::new(Box::new(std::fs::File::from_raw_fd(fd)));
                 }
             }
+        }
+        #[cfg(windows)]
+        if let Some(file) = windows_protocol_stdout() {
+            return Output::new(Box::new(file));
         }
         Output::new(Box::new(std::io::stdout()))
     }
@@ -71,6 +75,48 @@ impl Output {
 
     pub fn log(&self, level: &str, message: &str) {
         self.send("log", None, json!({ "level": level, "message": message }));
+    }
+}
+
+/// Windows has two layers: the C runtime's descriptor 1 (`printf`) and the
+/// Win32 standard output handle (Rust's `println!`, `WriteFile`). Both go to
+/// stderr. whisper.cpp links the same C runtime DLL as Rust, so it shares
+/// descriptor 1. sherpa-onnx and ONNX Runtime have their own C runtime; they
+/// are delay-loaded (`build.rs`), so it starts after this and takes stderr.
+#[cfg(windows)]
+fn windows_protocol_stdout() -> Option<std::fs::File> {
+    use std::os::raw::{c_int, c_void};
+    use std::os::windows::io::FromRawHandle;
+    const STD_OUTPUT_HANDLE: u32 = -11i32 as u32;
+    const STD_ERROR_HANDLE: u32 = -12i32 as u32;
+    unsafe extern "C" {
+        fn _dup(fd: c_int) -> c_int;
+        fn _dup2(src: c_int, dst: c_int) -> c_int;
+        fn _get_osfhandle(fd: c_int) -> isize;
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetStdHandle(which: u32) -> *mut c_void;
+        fn SetStdHandle(which: u32, handle: *mut c_void) -> i32;
+    }
+    // SAFETY: C runtime and Win32 calls on the standard handles. `_dup` makes a
+    // new descriptor with its own duplicated OS handle. The returned File owns
+    // that handle; the descriptor is never used or closed again.
+    unsafe {
+        let protocol = _dup(1);
+        if protocol < 0 {
+            return None;
+        }
+        let handle = _get_osfhandle(protocol);
+        if handle == -1 || handle == 0 {
+            return None;
+        }
+        let stderr = GetStdHandle(STD_ERROR_HANDLE);
+        if !stderr.is_null() && stderr as isize != -1 {
+            _dup2(2, 1);
+            SetStdHandle(STD_OUTPUT_HANDLE, stderr);
+        }
+        Some(std::fs::File::from_raw_handle(handle as *mut c_void))
     }
 }
 

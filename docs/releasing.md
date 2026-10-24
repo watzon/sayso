@@ -107,7 +107,7 @@ To change the package without a new Sayso version (for example a new dependency)
 
 ### Windows signing (optional)
 
-The Windows job signs the installer and the three exes (`Sayso.exe`, `SaysoEngine.exe`, and `sayso-cleanup.exe`) when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
+The Windows job signs the installer and the three exes (`Sayso.exe`, `sayso-engine.exe`, and `sayso-cleanup.exe`) when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
 
 | Secret | Contents |
 |---|---|
@@ -187,7 +187,7 @@ Each release file holds three programs: the app, the speech engine, and the clea
 | Release file | Where `sayso-cleanup` is | Signing |
 |---|---|---|
 | macOS DMG | `Sayso.app/Contents/MacOS/sayso-cleanup`, beside `Sayso` and `SaysoEngine` | Developer ID, hardened runtime, no entitlements, identifier `dev.sayso.Sayso.cleanup`. The notarization of the app covers it. |
-| Windows installer | `sayso-cleanup.exe` in the install folder, beside `Sayso.exe` and `SaysoEngine.exe` | Signed with the same certificate as the exes, when the secrets exist |
+| Windows installer | `sayso-cleanup.exe` in the install folder, beside `Sayso.exe` and `sayso-engine.exe` | Signed with the same certificate as the exes, when the secrets exist |
 | Linux tarball | `bin/sayso-cleanup`, beside `bin/sayso` | None |
 | `.deb`, `.rpm`, AUR | `/usr/lib/sayso/sayso-cleanup`, beside `sayso` (`/usr/bin/sayso` is a link) | None |
 | AppImage | `usr/bin/sayso-cleanup` | None |

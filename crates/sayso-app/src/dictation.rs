@@ -888,9 +888,13 @@ impl AppModel {
             EngineEvent::ModelStatus { model, status } => {
                 let became_downloaded = matches!(status, ModelStatus::Downloaded)
                     && !matches!(self.model_status.get(&model), Some(ModelStatus::Ready | ModelStatus::Optimizing));
+                let format_changed =
+                    matches!(status, ModelStatus::Failed { reason: Some(sayso_core::stt::EngineReason::FormatChanged), .. });
                 self.model_status.insert(model.clone(), status);
                 self.prepare_active_models();
-                if became_downloaded && (model == self.config.dictation.model || Some(&model) == self.preview_model().as_ref()) {
+                if format_changed {
+                    self.replace_old_model_files(model, cx);
+                } else if became_downloaded && (model == self.config.dictation.model || Some(&model) == self.preview_model().as_ref()) {
                     self.load_active_models(cx);
                 }
             }

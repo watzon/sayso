@@ -13,7 +13,7 @@ This file tells you how to build Sayso, run it during development, check a chang
 
 - macOS 14 or later on Apple Silicon, with Xcode 26 or later (Swift 6.2 toolchain) for the speech engine.
 - Or Linux (x86_64 or aarch64) with the packages in `scripts/linux-deps.sh` (Debian and Ubuntu names).
-- Or Windows 10 or 11 (x64), with the Visual Studio 2022 Build Tools ("Desktop development with C++" and a Windows SDK), and CMake and libclang for the speech engine (`LIBCLANG_PATH`; see [native/portable/NOTES.md](native/portable/NOTES.md)).
+- Or Windows 10 or 11 (x64), with the Visual Studio 2022 Build Tools ("Desktop development with C++" and a Windows SDK), and CMake and libclang for the speech engine (`LIBCLANG_PATH`; see [crates/sayso-engine/NOTES.md](crates/sayso-engine/NOTES.md)).
 - Rust 1.98.1. `rust-toolchain.toml` selects it.
 
 The macOS commands follow. Windows has its own section after them.
@@ -80,9 +80,9 @@ On Linux the permissions are capabilities, not grants, so a terminal run behaves
 ### Windows
 
 ```powershell
-# The portable speech engine (Rust: transcribe-rs with ONNX Runtime and whisper.cpp).
-# Needed once, and after engine changes. It is its own Cargo workspace.
-cargo build --release --manifest-path native\portable\Cargo.toml
+# The speech engine (Rust: sherpa-onnx and whisper.cpp), always a release build.
+# Needed once, and after engine changes.
+cargo build -p sayso-engine --release
 
 # The app folder in build\windows\Sayso (release build). -Installer also makes the installer.
 powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1
@@ -150,8 +150,7 @@ A pull request that changes the Linux packaging (`packaging/linux`, `scripts/bun
 | `crates/sayso-platform-windows` | Windows implementations: RegisterHotKey chords, low-level keyboard hook, clipboard paste with delayed rendering, privacy settings, cpal capture, Win32 window glue. |
 | `crates/sayso-engine-client` | Rust client for the engine sidecar (NDJSON over stdio, restart on crash). |
 | `native/macos/SaysoEngine` | Swift sidecar for the local models on macOS: Parakeet, Nemotron, Cohere, Canary, SenseVoice, Paraformer (FluidAudio), Whisper (WhisperKit), and Apple Speech (macOS 26). |
-| `crates/sayso-engine` | Rust sidecar for the local models on Linux: Parakeet, Whisper, SenseVoice, Moonshine, and a streaming Zipformer, on sherpa-onnx. |
-| `native/portable` | Rust sidecar for the local models on Windows: Parakeet (ONNX Runtime) and Whisper (whisper.cpp) through transcribe-rs. Same protocol as the Swift sidecar. |
+| `crates/sayso-engine` | Rust sidecar for the local models on Windows and Linux: Parakeet, Whisper, SenseVoice, Moonshine, and a streaming Zipformer on sherpa-onnx, Whisper on whisper.cpp (Windows), and Parakeet on parakeet.cpp (Linux GPU). Same protocol as the Swift sidecar. |
 | `crates/sayso-store` | SQLite history and dictionary, FLAC audio, retention. |
 | `crates/sayso-enhance` | AI styles: OpenAI-compatible HTTP, Claude CLI, Codex CLI. |
 | `crates/sayso-transcribe` | Cloud models: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI, and any OpenAI-compatible server. |

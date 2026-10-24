@@ -121,13 +121,13 @@ mod imp {
         // them on disk. With the cache empty (after a driver update) a first 3 s dictation took 8 s; these
         // three lengths build every pipeline the model uses, so later first decodes cost what repeats do.
         for seconds in [1, 30, 60] {
-            gguf.transcribe(&vec![0.0; SAMPLE_RATE as usize * seconds], "en")?;
+            gguf.transcribe(&vec![0.0; SAMPLE_RATE as usize * seconds], "en", &[])?;
         }
         Ok(Arc::new(gguf))
     }
 
     impl FinalPass for Gguf {
-        fn transcribe(&self, samples: &[f32], _language: &str) -> Result<String> {
+        fn transcribe(&self, samples: &[f32], _language: &str, _vocabulary: &[String]) -> Result<String> {
             let ctx = self.ctx.lock().unwrap_or_else(|e| e.into_inner());
             let n = c_int::try_from(samples.len()).context("the piece of audio is too long")?;
             // SAFETY: the context is live and locked; `samples` outlives the call. decoder 0 is the

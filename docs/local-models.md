@@ -8,7 +8,7 @@ An English speech model by FluidVoice, released on 2026-10-13. It is a quantized
 
 - Core ML build: `FluidVoice-Labs/fluid-speech-mini-coreml`, revision `d81c3160dfe5a5e1f8f7267164a07d30617a3a1a`, 253 MB, macOS 15 or later.
 - Linux: the GGUF build for parakeet.cpp, `FluidVoice-Labs/fluid-speech-mini-gguf`, revision `490bcd5de891f5efd0e732434dfb0a4b0899aead`, 347 MB, on the GPU through Vulkan ([linux.md](linux.md)).
-- Not on Windows. The ONNX build uses `MatMulNBits` 2-bit and 4-bit weights, which the Windows engine does not run.
+- Not on Windows. parakeet.cpp runs only on Linux, and the ONNX build uses `MatMulNBits` 2-bit and 4-bit weights, which the Windows engine before 0.12 did not run. Nobody tried that build with sherpa-onnx.
 
 ## License
 

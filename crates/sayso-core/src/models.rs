@@ -1,15 +1,14 @@
 //! The speech model catalog (plan §3, "Models").
 //!
 //! [`catalog`] lists the local models of this system: the Swift engine's
-//! models on macOS, the portable engine's models (`portable`) on Windows, and
-//! the sherpa-onnx models ([`crate::models_onnx`]) on Linux. Cloud models
-//! come from the configured speech providers (see [`crate::speech`]).
+//! models on macOS, and the models of the Rust engine `sayso-engine`
+//! ([`crate::models_onnx`]) on Windows and Linux. Cloud models come from the
+//! configured speech providers (see [`crate::speech`]).
 //!
 //! The catalog holds text in the interface language. It is built once for
 //! each locale that runs, and kept.
 
 mod benchmark;
-mod portable;
 
 use crate::config::PreviewChoice;
 use crate::languages;
@@ -63,22 +62,25 @@ pub enum EngineKind {
     Whisper { variant: String },
     /// Apple's SpeechAnalyzer model. macOS downloads and stores its files.
     AppleSpeech,
-    /// Portable engine: whisper.cpp with one GGML file, `file` in
-    /// `ggerganov/whisper.cpp` on Hugging Face.
+    /// whisper.cpp with one GGML file, `file` in `ggerganov/whisper.cpp` on
+    /// Hugging Face. The Rust engine `sayso-engine` runs it on Windows.
     WhisperCpp { file: String },
-    /// Portable engine: an ONNX model through transcribe-rs. `family` is the
-    /// transcribe-rs engine ("parakeet", "moonshine", ...). `repo` is the
-    /// Hugging Face repository with the files.
-    Onnx { family: String, repo: String },
     /// A speech provider's model. Rust sends the audio; the sidecar never sees it.
     Remote { provider: String, model: String },
-    /// A sherpa-onnx model in the Rust engine `sayso-engine` (Linux). `archive`
-    /// is the file name, without `.tar.bz2`, in the sherpa-onnx `asr-models`
-    /// release. `recipe` tells the engine how to load it: "parakeet_tdt",
-    /// "parakeet_tdt_ctc", "zipformer_streaming", "whisper", "sense_voice", or
-    /// "moonshine". `preview_archive` is a streaming model that comes with it
-    /// for the live preview.
-    Sherpa { recipe: String, archive: String, preview_archive: Option<String> },
+    /// A sherpa-onnx model in the Rust engine `sayso-engine` (Linux and Windows).
+    /// `archive` is the file name, without `.tar.bz2`, in the sherpa-onnx
+    /// `asr-models` release. `recipe` tells the engine how to load it:
+    /// "parakeet_tdt", "parakeet_tdt_ctc", "zipformer_streaming", "whisper",
+    /// "sense_voice", or "moonshine". `preview_archive` is a streaming model that
+    /// comes with it for the live preview. With `redecode_preview`, the model
+    /// gives its own live preview: the engine decodes the growing recording again.
+    Sherpa {
+        recipe: String,
+        archive: String,
+        preview_archive: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        redecode_preview: bool,
+    },
     /// A Parakeet TDT GGUF that parakeet.cpp runs through Vulkan in the Rust
     /// engine `sayso-engine` (Linux); it loads only on a discrete GPU. `file` is
     /// in the Hugging Face repository `repo` at the commit `revision`.
@@ -99,7 +101,6 @@ impl EngineKind {
     pub fn family(&self) -> Family {
         match self {
             EngineKind::ParakeetUnified { .. } | EngineKind::ParakeetEou | EngineKind::ParakeetTdt { .. } => Family::Parakeet,
-            EngineKind::Onnx { family, .. } if family == "parakeet" => Family::Parakeet,
             EngineKind::Whisper { .. } | EngineKind::WhisperCpp { .. } => Family::Whisper,
             EngineKind::Sherpa { recipe, .. } if recipe.starts_with("parakeet") => Family::Parakeet,
             EngineKind::Sherpa { recipe, .. } if recipe == "whisper" => Family::Whisper,
@@ -116,7 +117,6 @@ impl EngineKind {
             EngineKind::Remote { .. } => "Cloud",
             EngineKind::AppleSpeech => "macOS",
             EngineKind::WhisperCpp { .. } => "whisper.cpp",
-            EngineKind::Onnx { .. } => "ONNX Runtime",
             EngineKind::Sherpa { .. } => "sherpa-onnx",
             EngineKind::ParakeetCpp { .. } => "parakeet.cpp",
             _ => "FluidAudio",
@@ -225,8 +225,6 @@ const MB: u64 = 1_000_000;
 pub fn default_model() -> ModelId {
     if cfg!(target_os = "macos") {
         ModelId::new("parakeet-unified-en")
-    } else if cfg!(windows) {
-        ModelId::new(portable::DEFAULT_MODEL)
     } else {
         crate::models_onnx::default_model()
     }
@@ -270,8 +268,6 @@ fn by_os(mac: &'static str, windows: &'static str, linux: &'static str) -> &'sta
 pub fn preview_fallback() -> ModelId {
     if cfg!(target_os = "macos") {
         ModelId::new("parakeet-eou-120m")
-    } else if cfg!(windows) {
-        ModelId::new(portable::PREVIEW_FALLBACK)
     } else {
         crate::models_onnx::preview_fallback()
     }
@@ -415,8 +411,6 @@ pub fn catalog() -> &'static [ModelInfo] {
 fn build_catalog() -> Vec<ModelInfo> {
     if cfg!(target_os = "macos") {
         apple_catalog()
-    } else if cfg!(windows) {
-        portable::catalog()
     } else {
         crate::models_onnx::catalog()
     }
@@ -951,5 +945,15 @@ mod tests {
         assert_eq!(format_size(626 * MB), "626 MB");
         assert_eq!(format_size(1_271 * MB), "1.3 GB");
         assert_eq!(format_size(412_000), "412 KB");
+    }
+    #[test]
+    #[cfg(windows)] // `preview_for` reads the catalog of this platform.
+    fn whisper_borrows_the_parakeet_preview_in_parakeet_languages() {
+        let whisper = find(&ModelId::new("whisper-small")).unwrap();
+        let on = |ids: &'static [&'static str]| move |id: &ModelId| ids.contains(&id.as_str());
+        assert_eq!(preview_for(&whisper, &PreviewChoice::Auto, "en", on(&["parakeet-tdt-v3"])), Some(ModelId::new("parakeet-tdt-v3")));
+        assert_eq!(preview_for(&whisper, &PreviewChoice::Auto, "de", on(&["parakeet-tdt-v3"])), Some(ModelId::new("parakeet-tdt-v3")));
+        assert_eq!(preview_for(&whisper, &PreviewChoice::Auto, "ja", on(&["parakeet-tdt-v3"])), None);
+        assert_eq!(preview_for(&whisper, &PreviewChoice::Auto, "en", on(&[])), None);
     }
 }

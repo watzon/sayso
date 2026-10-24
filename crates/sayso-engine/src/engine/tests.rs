@@ -57,8 +57,12 @@ impl Loader for FakeLoader {
 struct FakeFinal;
 
 impl FinalPass for FakeFinal {
-    fn transcribe(&self, samples: &[f32], language: &str) -> Result<String> {
-        Ok(format!("{} samples in {language}", samples.len()))
+    fn transcribe(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<String> {
+        if vocabulary.is_empty() {
+            Ok(format!("{} samples in {language}", samples.len()))
+        } else {
+            Ok(format!("{} samples in {language} with {}", samples.len(), vocabulary.join("+")))
+        }
     }
 }
 
@@ -374,7 +378,7 @@ fn a_model_goes_from_not_downloaded_to_ready_and_back() {
     assert_eq!(reply.len(), 1);
     assert_eq!(reply[0]["type"], "final");
     assert_eq!(reply[0]["id"], "t1");
-    assert_eq!(reply[0]["text"], "16000 samples in en");
+    assert_eq!(reply[0]["text"], "16000 samples in en with Sayso", "the dictionary words reach the model");
     assert!(reply[0]["elapsed_ms"].is_u64());
 
     // Delete.
@@ -424,6 +428,90 @@ fn a_new_gguf_revision_downloads_again() {
         assert_eq!(last(&reply)["type"], "ok", "{reply:?}");
     }
     assert_eq!(std::fs::read(h.models_dir().join("m").join("beef").join("m.gguf")).unwrap(), b"new");
+}
+
+#[test]
+fn a_whisper_cpp_model_downloads_its_file_and_gets_the_dictionary_words() {
+    let server = serve_archives(vec![("ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin".into(), b"ggml".to_vec())]);
+    let h = harness(&server.base);
+    let engine = json!({"kind": "whisper_cpp", "file": "ggml-tiny.bin"});
+
+    let reply = h.call(json!({"v": 1, "type": "download", "id": "d1", "model": "w", "engine": engine}));
+    assert_eq!(last(&reply)["type"], "ok", "{reply:?}");
+    assert_eq!(std::fs::read(h.models_dir().join("w").join("main").join("ggml-tiny.bin")).unwrap(), b"ggml");
+
+    let reply = h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "w", "engine": engine}));
+    assert_eq!(states(&reply), ["optimizing", "ready"]);
+    let wav = h.models_dir().join("clip.wav");
+    write_wav(&wav, &[1000; 16_000]);
+    let reply = h.call(json!({"v": 1, "type": "transcribe", "id": "t1", "model": "w", "path": wav, "language": "de", "vocabulary": ["Sayso", "GitHub"]}));
+    assert_eq!(reply[0]["text"], "16000 samples in de with Sayso+GitHub");
+}
+
+/// A model folder as the Windows engine before 0.12 left it: the files, then the marker.
+fn old_windows_folder(h: &Harness, model: &str, files: &[&str]) {
+    let folder = h.models_dir().join(model);
+    std::fs::create_dir_all(&folder).unwrap();
+    for file in files {
+        std::fs::write(folder.join(file), b"old").unwrap();
+    }
+    std::fs::write(folder.join(".sayso-downloaded"), b"").unwrap();
+}
+
+#[test]
+fn whisper_files_of_the_old_windows_engine_stay_and_parakeet_files_need_a_new_download() {
+    let main = "sherpa-onnx-fake-main";
+    let server = serve_archives(vec![(
+        main.into(),
+        archive(main, &["encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx", "tokens.txt"]),
+    )]);
+    let h = harness(&server.base);
+    let whisper = json!({"kind": "whisper_cpp", "file": "ggml-tiny.bin"});
+    let parakeet = json!({"kind": "sherpa", "recipe": "parakeet_tdt", "archive": main, "preview_archive": null, "redecode_preview": true});
+    old_windows_folder(&h, "whisper-tiny", &["ggml-tiny.bin"]);
+    old_windows_folder(&h, "parakeet-tdt-v3", &["encoder-model.int8.onnx", "decoder_joint-model.int8.onnx", "nemo128.onnx", "vocab.txt"]);
+
+    let list = json!({"v": 1, "type": "list_models", "id": "l", "models": [
+        {"id": "whisper-tiny", "engine": whisper},
+        {"id": "parakeet-tdt-v3", "engine": parakeet},
+    ]});
+    let reply = h.call(list.clone());
+    assert_eq!(states(&reply), ["downloaded", "failed"]);
+    assert_eq!(reply[1]["reason"], "format_changed");
+    assert_eq!(server.requests.load(Ordering::SeqCst), 0, "the Whisper file did not download again");
+
+    // The download replaces the old files.
+    let reply = h.call(json!({"v": 1, "type": "download", "id": "d", "model": "parakeet-tdt-v3", "engine": parakeet}));
+    assert_eq!(last(&reply)["type"], "ok", "{reply:?}");
+    let mut left: Vec<String> = std::fs::read_dir(h.models_dir().join("parakeet-tdt-v3"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(left, [".complete", main]);
+    assert_eq!(states(&h.call(list)), ["downloaded", "downloaded"]);
+}
+
+#[test]
+fn a_redecode_model_gives_its_live_preview_from_the_final_pass() {
+    let h = harness("http://unused");
+    let parakeet = json!({"kind": "sherpa", "recipe": "parakeet_tdt", "archive": "main", "preview_archive": null, "redecode_preview": true});
+    install(&h, "p", &parakeet);
+    h.call(json!({"v": 1, "type": "load", "id": "o", "model": "p", "engine": parakeet}));
+    let mut worker = StreamWorker::new(Arc::clone(&h.engine));
+    let reply = h.stream(&mut worker, json!({"v": 1, "type": "stream_start", "id": "s1", "session": 3, "model": "p", "language": "en"}));
+    assert_eq!(reply, [json!({"v": 1, "type": "ok", "id": "s1"})]);
+    h.stream(&mut worker, json!({"v": 1, "type": "stream_audio", "session": 3, "pcm": pcm(&[1000; 8000])}));
+    let reply = h.stream(&mut worker, json!({"v": 1, "type": "stream_end", "id": "e1", "session": 3}));
+    // The end of the stream decodes the audio with the final pass.
+    assert_eq!(last(&reply)["text"], "8000 samples in auto");
+
+    // The preview is the final pass, so `keep_preview` cannot keep a part: all of the model leaves.
+    let reply = h.call(json!({"v": 1, "type": "unload", "id": "u", "model": "p", "keep_preview": true}));
+    assert_eq!(states(&reply), ["downloaded"]);
+    assert!(reply[0].get("preview").is_none());
+    let reply = h.stream(&mut worker, json!({"v": 1, "type": "stream_start", "id": "s2", "session": 4, "model": "p"}));
+    assert_eq!(reply[0]["message"], "model p is not loaded");
 }
 
 #[test]

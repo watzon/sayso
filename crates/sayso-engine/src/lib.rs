@@ -2,8 +2,9 @@
 //!
 //! `sayso-engine` is a sidecar process. It speaks the same NDJSON protocol (v1)
 //! as the Swift engine on macOS, so `sayso-engine-client` works with it
-//! unchanged. It runs sherpa-onnx models on the CPU, and `parakeet_cpp` models
-//! on a GPU with parakeet.cpp.
+//! unchanged. It runs sherpa-onnx models on the CPU, `parakeet_cpp` models on
+//! a GPU with parakeet.cpp (Linux), and `whisper_cpp` models on the CPU with
+//! whisper.cpp (Windows).
 //!
 //! Modules:
 //! - [`protocol`]: request parsing and the output writer.
@@ -11,6 +12,8 @@
 //! - [`store`]: the model folders on disk.
 //! - [`download`]: download and extract a model archive, or download one file.
 //! - [`parakeet`]: the final pass of a `parakeet_cpp` model, on parakeet.cpp.
+//! - [`whisper_cpp`]: the final pass of a `whisper_cpp` model, on whisper.cpp.
+//! - [`redecode`]: a live preview that decodes the recording again with the final pass.
 //! - [`engine`]: the request handlers and the stream worker.
 //! - [`recognizer`]: the traits that hide sherpa-onnx, so tests can use a fake.
 //! - [`sherpa`]: the sherpa-onnx implementation of the recognizer traits.
@@ -18,6 +21,10 @@
 //! On macOS this crate is empty. Sayso uses the Swift engine there.
 
 #![cfg(not(target_os = "macos"))]
+
+// parakeet.cpp and whisper.cpp each link their own ggml, and two copies in one binary clash.
+#[cfg(all(target_os = "linux", feature = "parakeet", feature = "whisper-cpp"))]
+compile_error!("the features `parakeet` and `whisper-cpp` link two copies of ggml; use `--no-default-features --features whisper-cpp`");
 
 pub mod audio;
 pub mod download;
@@ -27,9 +34,11 @@ pub mod parakeet;
 pub mod partials;
 pub mod protocol;
 pub mod recognizer;
+pub mod redecode;
 pub mod sherpa;
 pub mod spec;
 pub mod store;
+pub mod whisper_cpp;
 
 use engine::{Config, Engine};
 use protocol::Output;

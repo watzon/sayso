@@ -103,6 +103,41 @@ pub fn split(samples: &[f32], max_seconds: usize) -> Vec<&[f32]> {
     pieces
 }
 
+/// A duration in samples.
+pub const fn ms(ms: usize) -> usize {
+    ms * SAMPLE_RATE / 1000
+}
+
+/// Root mean square of a block of samples.
+pub fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    (samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32).sqrt()
+}
+
+/// The quietest point in `range`: the center of the 100 ms window with the
+/// lowest energy, scanned in 20 ms steps. A cut there rarely splits a word.
+pub fn quietest_point(samples: &[f32], range: std::ops::Range<usize>) -> usize {
+    let window = ms(100);
+    let hop = ms(20);
+    let end = range.end.min(samples.len());
+    let start = range.start.min(end);
+    if end - start <= window {
+        return (start + end) / 2;
+    }
+    let mut best = (f32::MAX, (start + end) / 2);
+    let mut at = start;
+    while at + window <= end {
+        let energy = rms(&samples[at..at + window]);
+        if energy < best.0 {
+            best = (energy, at + window / 2);
+        }
+        at += hop;
+    }
+    best.1
+}
+
 /// Join the texts of the pieces. A space goes between two pieces only when
 /// the left one ends in a script that uses spaces (not Chinese or Japanese).
 pub fn join(parts: &[String]) -> String {
@@ -197,6 +232,17 @@ mod tests {
         );
         assert_eq!(pieces.iter().map(|p| p.len()).sum::<usize>(), samples.len());
         assert!(pieces.iter().all(|p| p.len() <= SAMPLE_RATE * 10));
+    }
+
+    #[test]
+    fn the_quietest_point_is_in_the_silence() {
+        let mut samples = vec![0.5; ms(1_000)];
+        samples[ms(600)..ms(800)].fill(0.0);
+        let point = quietest_point(&samples, 0..samples.len());
+        assert!((ms(600)..ms(800)).contains(&point), "{point}");
+        assert_eq!(quietest_point(&samples, 10..20), 15, "a short range gives its middle");
+        assert_eq!(rms(&[]), 0.0);
+        assert!((rms(&[0.5, -0.5]) - 0.5).abs() < 1e-6);
     }
 
     #[test]

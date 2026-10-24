@@ -1,7 +1,9 @@
 //! The seam between the protocol and the speech library.
 //!
 //! The engine talks to models only through these traits. [`crate::sherpa`]
-//! implements them with sherpa-onnx. The tests use a fake.
+//! implements them with sherpa-onnx, [`crate::parakeet`] and
+//! [`crate::whisper_cpp`] add final passes on ggml, and [`crate::redecode`]
+//! makes a live preview from a final pass. The tests use a fake.
 
 use crate::partials::Segment;
 use crate::spec::ModelSpec;
@@ -43,8 +45,10 @@ pub struct Loaded {
 /// The final pass: whole recordings to text.
 pub trait FinalPass: Send + Sync {
     /// Transcribe one piece of 16 kHz mono audio. `language` is a language
-    /// code or "auto". The engine cuts long recordings into pieces first.
-    fn transcribe(&self, samples: &[f32], language: &str) -> Result<String>;
+    /// code or "auto". `vocabulary` holds the dictionary words; a model that
+    /// cannot use them ignores them. The engine cuts long recordings into
+    /// pieces first, unless the recipe cuts them itself.
+    fn transcribe(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<String>;
 }
 
 /// The live preview: a streaming model.
@@ -58,6 +62,7 @@ pub trait PreviewStream: Send {
     /// Add 16 kHz mono audio. This must be fast: it does not decode.
     fn accept(&mut self, samples: &[f32]);
     /// Decode the audio that is ready. Returns the text of the current segment.
+    /// After a segment with `endpoint`, the engine calls `decode` again at once.
     fn decode(&mut self) -> Segment;
     /// No more audio comes. Decode the rest and return the last segment,
     /// with `endpoint` set.

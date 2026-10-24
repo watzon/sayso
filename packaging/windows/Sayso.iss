@@ -66,6 +66,10 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[InstallDelete]
+; The speech engine before 0.12. sayso-engine.exe replaces it.
+Type: files; Name: "{app}\SaysoEngine.exe"
+
 [Icons]
 Name: "{autoprograms}\Sayso"; Filename: "{app}\Sayso.exe"
 Name: "{autodesktop}\Sayso"; Filename: "{app}\Sayso.exe"; Tasks: desktopicon
@@ -79,7 +83,7 @@ Filename: "{app}\Sayso.exe"; Description: "{cm:LaunchProgram,Sayso}"; Flags: now
 [UninstallRun]
 ; Quit a running Sayso, so its files can be removed.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM Sayso.exe /F"; Flags: runhidden; RunOnceId: "QuitSayso"
-Filename: "{sys}\taskkill.exe"; Parameters: "/IM SaysoEngine.exe /F"; Flags: runhidden; RunOnceId: "QuitEngine"
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-engine.exe /F"; Flags: runhidden; RunOnceId: "QuitEngine"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanup"
 
 [Registry]

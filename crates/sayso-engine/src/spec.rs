@@ -1,7 +1,7 @@
 //! The `engine` field of a request: how to download and load one model.
 //!
 //! The field is `EngineKind` from `sayso-core`, serialized. This engine runs
-//! the `sherpa` and `parakeet_cpp` kinds.
+//! the `sherpa`, `parakeet_cpp` (Linux), and `whisper_cpp` (Windows) kinds.
 
 use anyhow::{Result, anyhow, bail};
 use sayso_core::models::EngineKind;
@@ -16,6 +16,8 @@ pub enum Recipe {
     ParakeetTdtCtc,
     /// A Parakeet TDT GGUF, run by parakeet.cpp (`parakeet_cpp` kind).
     ParakeetGguf,
+    /// A Whisper GGML file, run by whisper.cpp (`whisper_cpp` kind).
+    WhisperCpp,
     /// A streaming zipformer transducer. Live preview only.
     ZipformerStreaming,
     Whisper,
@@ -44,14 +46,20 @@ impl Recipe {
     /// The longest piece of audio that one decode gets, in seconds. Longer
     /// recordings are cut at quiet points. Whisper reads 30 second windows.
     /// Moonshine (sherpa-onnx 1.13.8) returns no text for 10 seconds or more.
+    /// whisper.cpp cuts long audio into windows itself.
     pub fn max_chunk_seconds(self) -> usize {
         match self {
             Recipe::Whisper => 28,
             Recipe::SenseVoice => 25,
             Recipe::Moonshine => 7,
             Recipe::ParakeetTdt | Recipe::ParakeetTdtCtc | Recipe::ParakeetGguf => 60,
-            Recipe::ZipformerStreaming => usize::MAX,
+            Recipe::ZipformerStreaming | Recipe::WhisperCpp => usize::MAX,
         }
+    }
+
+    /// True when the main archive is one downloaded file, not an extracted archive.
+    pub fn single_file(self) -> bool {
+        matches!(self, Recipe::ParakeetGguf | Recipe::WhisperCpp)
     }
 }
 
@@ -66,6 +74,8 @@ pub struct ModelSpec {
     pub source: Source,
     /// The streaming archive that gives the live preview, if the main one cannot.
     pub preview_archive: Option<String>,
+    /// The final pass also gives the live preview: it decodes the growing recording again.
+    pub redecode_preview: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,6 +87,12 @@ pub enum Source {
     HuggingFace { repo: String, file: String },
 }
 
+/// The Hugging Face repository with the whisper.cpp GGML files.
+pub const WHISPER_CPP_REPO: &str = "ggerganov/whisper.cpp";
+/// The revision of a whisper.cpp file, and the name of its folder. The catalog
+/// names no commit for these files, so they come from the `main` branch.
+pub const WHISPER_CPP_REVISION: &str = "main";
+
 impl ModelSpec {
     /// Parse the `engine` object of a request.
     pub fn from_json(value: &Value) -> Result<ModelSpec> {
@@ -87,12 +103,20 @@ impl ModelSpec {
                 recipe,
                 archive,
                 preview_archive,
-            } => ModelSpec {
-                recipe: Recipe::parse(&recipe)?,
-                archive,
-                source: Source::SherpaRelease,
-                preview_archive,
-            },
+                redecode_preview,
+            } => {
+                let recipe = Recipe::parse(&recipe)?;
+                if redecode_preview && (preview_archive.is_some() || !recipe.final_pass()) {
+                    bail!("a model with redecode_preview needs a final pass and no preview archive");
+                }
+                ModelSpec {
+                    recipe,
+                    archive,
+                    source: Source::SherpaRelease,
+                    preview_archive,
+                    redecode_preview,
+                }
+            }
             EngineKind::ParakeetCpp {
                 repo,
                 revision,
@@ -106,6 +130,20 @@ impl ModelSpec {
                     archive: revision,
                     source: Source::HuggingFace { repo, file },
                     preview_archive,
+                    redecode_preview: false,
+                }
+            }
+            EngineKind::WhisperCpp { file } => {
+                check_archive_name(&file)?;
+                ModelSpec {
+                    recipe: Recipe::WhisperCpp,
+                    archive: WHISPER_CPP_REVISION.into(),
+                    source: Source::HuggingFace {
+                        repo: WHISPER_CPP_REPO.into(),
+                        file,
+                    },
+                    preview_archive: None,
+                    redecode_preview: false,
                 }
             }
             _ => {
@@ -131,6 +169,12 @@ impl ModelSpec {
             archives.push(preview);
         }
         archives
+    }
+
+    /// True when the model gives a live preview: from a streaming archive, or by
+    /// decoding again.
+    pub fn has_preview(&self) -> bool {
+        self.redecode_preview || self.stream_archive().is_some()
     }
 
     /// The archive that streams the live preview, if the model has one.
@@ -203,17 +247,52 @@ mod tests {
     }
 
     #[test]
+    fn parses_a_whisper_cpp_engine() {
+        let spec = ModelSpec::from_json(&json!({"kind": "whisper_cpp", "file": "ggml-tiny.bin"})).unwrap();
+        assert_eq!(spec.recipe, Recipe::WhisperCpp);
+        assert_eq!(
+            spec.source,
+            Source::HuggingFace { repo: WHISPER_CPP_REPO.into(), file: "ggml-tiny.bin".into() }
+        );
+        assert_eq!(spec.archives(), vec![WHISPER_CPP_REVISION]);
+        assert!(spec.recipe.final_pass() && spec.recipe.single_file() && !spec.has_preview());
+        for bad in ["../ggml-tiny.bin", "a/b.bin", ""] {
+            assert!(ModelSpec::from_json(&json!({"kind": "whisper_cpp", "file": bad})).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn parses_a_redecode_preview() {
+        let spec = ModelSpec::from_json(&json!({
+            "kind": "sherpa", "recipe": "parakeet_tdt", "archive": "a", "preview_archive": null, "redecode_preview": true
+        }))
+        .unwrap();
+        assert!(spec.redecode_preview && spec.has_preview());
+        assert_eq!(spec.stream_archive(), None);
+        assert_eq!(spec.archives(), vec!["a"]);
+        // Without the field there is no redecode preview.
+        let plain =
+            ModelSpec::from_json(&json!({"kind": "sherpa", "recipe": "parakeet_tdt", "archive": "a", "preview_archive": null}))
+                .unwrap();
+        assert!(!plain.redecode_preview && !plain.has_preview());
+        for bad in [
+            json!({"kind": "sherpa", "recipe": "parakeet_tdt", "archive": "a", "preview_archive": "p", "redecode_preview": true}),
+            json!({"kind": "sherpa", "recipe": "zipformer_streaming", "archive": "a", "preview_archive": null, "redecode_preview": true}),
+        ] {
+            assert!(ModelSpec::from_json(&bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn the_catalog_serializes_to_specs_this_engine_reads() {
-        for info in sayso_core::models_onnx::catalog() {
-            let value = serde_json::to_value(&info.engine).unwrap();
-            let spec = ModelSpec::from_json(&value).unwrap_or_else(|e| panic!("{}: {e}", info.id));
-            assert_eq!(
-                spec.stream_archive().is_some(),
-                info.live_preview,
-                "{}",
-                info.id
-            );
-            assert_eq!(spec.recipe.final_pass(), info.final_pass, "{}", info.id);
+        use sayso_core::models_onnx::{System, catalog_for};
+        for system in [System::Linux, System::Windows] {
+            for info in catalog_for(system) {
+                let value = serde_json::to_value(&info.engine).unwrap();
+                let spec = ModelSpec::from_json(&value).unwrap_or_else(|e| panic!("{}: {e}", info.id));
+                assert_eq!(spec.has_preview(), info.live_preview, "{system:?} {}", info.id);
+                assert_eq!(spec.recipe.final_pass(), info.final_pass, "{system:?} {}", info.id);
+            }
         }
     }
 

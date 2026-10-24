@@ -19,12 +19,16 @@ function Invoke-Checked([string]$what, [scriptblock]$block) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
 }
 
-Invoke-Checked 'engine (cargo, release)' { cargo build --release --manifest-path native\portable\Cargo.toml }
+# whisper.cpp is slow in a debug build, so the engine is always a release build.
+Invoke-Checked 'engine (cargo, release)' { cargo build -p sayso-engine --release }
 # The app finds this build when no sayso-cleanup.exe is beside it (or set SAYSO_CLEANUP_PATH).
 Invoke-Checked 'cleanup runtime (cargo, release)' { cargo build --release --manifest-path native\cleanup\Cargo.toml }
 Invoke-Checked 'app (cargo, debug)' { cargo build -p sayso-app }
 
 $exe = Join-Path $root 'target\debug\sayso.exe'
+# The debug app looks for the engine beside it, and the engine is in target\release.
+# Its DLLs (sherpa-onnx, ONNX Runtime) are beside it there.
+if (-not $env:SAYSO_ENGINE_PATH) { $env:SAYSO_ENGINE_PATH = Join-Path $root 'target\release\sayso-engine.exe' }
 
 # A dev Sayso that still runs would only open its Hub for the new one.
 $running = @(Get-Process -Name sayso -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe })
