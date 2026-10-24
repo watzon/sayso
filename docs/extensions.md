@@ -28,7 +28,7 @@ Sayso, when it serves extensions.
 The protocol between the host and an extension, over a local socket. It is a superset of the engine protocol.
 
 **Engine protocol**
-The NDJSON protocol of the engine (`crates/sayso-engine-client/NOTES.md`). Sayso uses it, and an app that runs the engine alone uses it.
+The NDJSON protocol of the engine (`docs/engine-protocol.md`). Sayso uses it, and an app that runs the engine alone uses it.
 
 **Capability**
 A permission that an extension declares in its manifest and the user grants at install, for example `audio.mic`.
@@ -556,7 +556,8 @@ Each step ends with a check that proves it.
 |---|---|---|
 | 1. Decisions | Done (2026-10-23) | This file and ADRs 0001 to 0004. |
 | 2. Windows on `sayso-engine` | Done, packaged app check open | Done: the Windows catalog (`models_onnx.rs`, `System`), `whisper_cpp` and `redecode` in `sayso-engine`, the Windows stdout redirect, the shared sherpa-onnx DLLs, the legacy files (`format_changed` and Whisper adoption), the app side of `format_changed`, the scripts, the installer, CI, and the deletion of `native/portable`. Tested on macOS and in Linux Docker, with real Parakeet TDT v3 on Linux. On the Windows reference machine (2026-10-23): the release build, the size and speed checks of "Check first", Parakeet TDT v3 and Whisper through the engine protocol, the preview, and the legacy files with a copy of real 0.11 files. Open: a dictation in the packaged Windows app, and an update from 0.11 through the installer. `crates/sayso-engine/NOTES.md` lists what is not tested. |
-| 3 to 12 | Not started | Registry (10) and Notetaker (12) are for a later session. |
+| 3. Engine protocol | In progress | Done (3a): the spec in `docs/engine-protocol.md` (MIT), `features` in `hello` (Swift, Rust, and the fake engine), and the conformance suite `sayso-engine-conformance` (MIT) with its core, model, and ready levels. The Swift engine passes all three levels with Parakeet Unified, the Rust engine passes the core and model levels in `cargo test`, and the fake engine passes the core and ready levels. Open: concurrent streams and segments (3b), VAD and diarization (3c), and public model ids. |
+| 4 to 12 | Not started | Step 7 (`sayso-ui` as MIT) has started on its own branch. Registry (10) and Notetaker (12) are for a later session. |
 
 The media extension and the Notetaker extension are products. Each gets its own design file before its step: what it does, its screens, and its data. This file covers only what they need from Sayso.
 

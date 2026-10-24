@@ -1,8 +1,11 @@
 // NDJSON protocol v1: one JSON object per line on stdin (requests) and stdout (responses
-// and events). Every message carries "v":1. See crates/sayso-engine-client/NOTES.md.
+// and events). Every message carries "v":1. See docs/engine-protocol.md.
 import Foundation
 
 let protocolVersion = 1
+/// The optional parts of the protocol that this engine has, sent in `hello`
+/// (docs/engine-protocol.md, "Features").
+let engineFeatures = ["language_model", "prepare", "unload"]
 let engineVersion = "0.1.0"
 
 /// A failure that is reported to the client as `{"type":"error"}`. Never crashes the process.

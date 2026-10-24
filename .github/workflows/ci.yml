@@ -62,6 +62,13 @@ jobs:
         run: cargo test --workspace
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The Rust engine and the fake engine run the suite in cargo test. The
+      # Swift engine is not a Cargo crate, so it runs the suite here.
+      - name: Engine conformance, Swift engine
+        run: |
+          swift build -c release --package-path native/macos/SaysoEngine
+          cargo run -q -p sayso-engine-conformance -- native/macos/SaysoEngine/.build/release/SaysoEngine \
+            --model parakeet-tdt-v2 --engine-json '{"kind":"parakeet_tdt","version":"v2"}'
 
   test-linux:
     name: Tests and clippy, Linux (manual)

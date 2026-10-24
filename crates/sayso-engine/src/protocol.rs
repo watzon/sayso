@@ -1,7 +1,7 @@
 //! NDJSON protocol v1: one JSON object per line. Every message has `"v":1`.
 //!
-//! The reference is the Swift engine (`native/macos/SaysoEngine`) and the
-//! client in `sayso-engine-client`.
+//! The spec is `docs/engine-protocol.md`. The other engine is the Swift engine
+//! (`native/macos/SaysoEngine`), and the client is `sayso-engine-client`.
 
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Map, Value, json};
@@ -9,6 +9,11 @@ use std::io::Write;
 use std::sync::Mutex;
 
 pub const PROTOCOL_VERSION: u64 = 1;
+
+/// The optional parts of the protocol that this engine has, sent in `hello`
+/// (`docs/engine-protocol.md`, "Features"). It accepts `prepare` but does
+/// nothing with it, so it does not list `prepare`.
+pub const FEATURES: &[&str] = &["keep_preview", "unload"];
 
 /// Writes protocol lines. Thread safe. One write call per line, so lines from
 /// different threads never mix.

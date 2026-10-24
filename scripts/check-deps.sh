@@ -22,6 +22,7 @@ check sayso-ui '^sayso-(store|enhance|engine-client)' "UI gets data through the 
 check sayso-platform-common '^(sayso-(platform-(macos|linux|windows)|engine|store|enhance|ui|app)|gpui)' "portable platform code only"
 check sayso-update '^(sayso-(platform|engine|store|enhance|transcribe|ui|app)|gpui)' "the updater has no UI and no platform code"
 check sayso-engine '^(sayso-(platform|store|enhance|ui|app)|gpui)' "the engine is a separate process"
+check sayso-engine-conformance '^(sayso-|gpui)' "MIT like the spec: no GPL crate of Sayso, and it tests an engine only through its process"
 check sayso-cleanup-client '^(sayso-(platform|engine|store|enhance|transcribe|ui|update|app)|gpui)' "the cleanup client needs only sayso-core"
 # workspace-hack (cargo hakari, .config/hakari.toml) must match the
 # dependencies. After you add, remove, or change a dependency, run:
