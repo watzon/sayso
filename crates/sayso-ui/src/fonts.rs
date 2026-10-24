@@ -1,4 +1,4 @@
-//! Bundled static fonts (see `assets/fonts/build.py`).
+//! Bundled static fonts (see `assets/fonts/build.py` in this crate).
 
 use gpui_kit::{App, FontFallbacks, Styled};
 use std::borrow::Cow;
@@ -13,7 +13,7 @@ pub const MONO: &str = "IBM Plex Mono";
 
 macro_rules! font {
     ($file:literal) => {
-        Cow::Borrowed(include_bytes!(concat!("../../../assets/fonts/", $file)) as &'static [u8])
+        Cow::Borrowed(include_bytes!(concat!("../assets/fonts/", $file)) as &'static [u8])
     };
 }
 
@@ -89,7 +89,7 @@ pub trait LocaleFonts: Styled + Sized {
     /// The fallbacks of the interface language for a face. Each window root
     /// sets the sans fallbacks, and each serif text sets the serif ones.
     fn locale_fonts(self, face: Face) -> Self {
-        self.fonts_for(&sayso_i18n::locale(), face)
+        self.fonts_for(&crate::l10n::locale(), face)
     }
 
     /// The fallbacks of a given locale, for text in that language whatever

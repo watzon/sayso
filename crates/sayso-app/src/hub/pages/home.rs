@@ -70,7 +70,7 @@ impl HomePage {
                 .items_center()
                 .gap(px(8.))
                 .child(ui(t!("home.hint.press"), 14., 18., FontWeight::NORMAL, c.graphite))
-                .child(Keycaps::hotkey(hk))
+                .child(crate::widgets::hotkey_keycaps(hk))
                 .child(ui(t!("home.hint.anywhere"), 14., 18., FontWeight::NORMAL, c.graphite)),
             None => {
                 let model = self.model.clone();

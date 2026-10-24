@@ -7199,6 +7199,7 @@ dependencies = [
  "parking_lot",
  "raw-window-handle",
  "regex",
+ "rust-embed",
  "sayso-cleanup-client",
  "sayso-core",
  "sayso-engine-client",
@@ -7248,6 +7249,7 @@ dependencies = [
  "log",
  "regex",
  "sayso-i18n",
+ "sayso-ink",
  "serde",
  "serde_json",
  "tempfile",
@@ -7326,6 +7328,15 @@ dependencies = [
  "regex",
  "rust-i18n",
  "sys-locale",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sayso-ink"
+version = "0.11.0"
+dependencies = [
+ "serde",
+ "toml 0.9.12+spec-1.1.0",
  "workspace-hack",
 ]
 
@@ -7468,8 +7479,7 @@ dependencies = [
  "image",
  "log",
  "rust-embed",
- "sayso-core",
- "sayso-i18n",
+ "sayso-ink",
  "workspace-hack",
 ]
 

@@ -250,7 +250,7 @@ impl Tray {
 }
 
 fn tray_icon_image(incognito: bool) -> Option<tray_icon::Icon> {
-    let bytes = sayso_ui::assets::bytes("app/tray.png")?;
+    let bytes = crate::app_assets::bytes("tray.png")?;
     let mut img = image::load_from_memory(&bytes).ok()?.into_rgba8();
     // The icon is a black template. On a dark taskbar it must be white to show.
     if win::taskbar_is_dark() {

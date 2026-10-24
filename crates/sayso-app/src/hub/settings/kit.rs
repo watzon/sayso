@@ -118,7 +118,7 @@ pub fn key_well(id: impl Into<ElementId>, label: &str, hotkey: &Hotkey, on_chang
         .shadows(sayso_ui::paper::debossed(&c))
         .cursor_pointer()
         .on_click(on_change)
-        .child(Keycaps::hotkey(hotkey))
+        .child(crate::widgets::hotkey_keycaps(hotkey))
         .child(div().pl(px(10.)).pr(px(8.)).child(text::ui(t!("settings.common.change"), 13., FontWeight::MEDIUM, c.accent)))
 }
 

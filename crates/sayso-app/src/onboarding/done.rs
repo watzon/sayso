@@ -71,7 +71,7 @@ impl OnboardingView {
             .bg(c.ink.opacity(0.1))
             .child(icon(Icon::Wordmark, 18., c.ink));
         let keys = match paste {
-            Some(hk) => div().child(Keycaps::hotkey(&hk).size(KeySize::Small)),
+            Some(hk) => div().child(crate::widgets::hotkey_keycaps(&hk).size(KeySize::Small)),
             None => div().child(text::ui(t!("onboarding.done.not_set"), 12., FontWeight::NORMAL, c.graphite)),
         };
 

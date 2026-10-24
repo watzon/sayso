@@ -25,7 +25,7 @@ use std::time::Duration;
 #[cfg(windows)]
 fn main() {
     env_logger::init();
-    let sounds_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/sounds");
+    let sounds_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sayso-ui/assets/sounds");
     let p = WinPlatform::new(sounds_dir);
 
     println!("== permissions");

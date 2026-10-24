@@ -5,6 +5,7 @@
 
 mod a11y;
 mod app;
+mod app_assets;
 mod caption;
 mod chrome;
 mod cleanup_models;

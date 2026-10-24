@@ -31,6 +31,7 @@ serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 # The other formats are for site icons. GPUI already builds them.
+rust-embed = { version = "8", features = ["include-exclude"] }
 image = { version = "0.25", default-features = false, features = ["png", "ico", "jpeg", "gif", "webp", "bmp"] }
 regex.workspace = true
 ureq = "3"

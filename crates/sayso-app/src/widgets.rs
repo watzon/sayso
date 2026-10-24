@@ -2,8 +2,18 @@
 
 use gpui_kit::component::input::InputState;
 use gpui_kit::*;
+use sayso_core::hotkey::Hotkey;
 use sayso_ui::ActivePaper;
+use sayso_ui::components::Keycaps;
 use sayso_ui::text;
+
+/// The keycaps of a hotkey, with the labels of this system (`["⌥", "Space"]`
+/// on macOS). `sayso-ui` takes labels, not a `Hotkey`, so that it does not
+/// depend on `sayso-core`.
+#[track_caller]
+pub fn hotkey_keycaps(hotkey: &Hotkey) -> Keycaps {
+    Keycaps::new(hotkey.keycaps())
+}
 
 /// A Hub page title with an optional subtitle and actions on the right.
 #[track_caller]

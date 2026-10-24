@@ -14,7 +14,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use sayso_core::cleanup::{CleanupModelInfo, CleanupSettings, Format, Layout, Settings, Tone};
 use sayso_core::config::{Provider, ProviderKind};
-use sayso_core::ink::NamedInk;
+use sayso_core::ink::{NamedInk, NamedInkLabel as _};
 use sayso_core::style::{CleanupField, RunPlan, Style, StyleOrigin};
 use sayso_core::style_rules::{self, TypedTarget};
 use sayso_i18n::t;
