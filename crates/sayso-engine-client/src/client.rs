@@ -30,12 +30,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 /// The sidecar's file name beside the app executable: the Swift engine on
-/// macOS, the portable engine (`native/portable`) on Windows, and
-/// `sayso-engine` (`crates/sayso-engine`) on other systems.
+/// macOS, and `sayso-engine` (`crates/sayso-engine`) on Windows and Linux.
 const ENGINE_FILE_NAME: &str = if cfg!(target_os = "macos") {
     "SaysoEngine"
 } else if cfg!(windows) {
-    "SaysoEngine.exe"
+    "sayso-engine.exe"
 } else {
     "sayso-engine"
 };
@@ -44,8 +43,6 @@ const ENGINE_FILE_NAME: &str = if cfg!(target_os = "macos") {
 /// builds the engine next to the app binary.
 const DEV_ENGINE_PATH: Option<&str> = if cfg!(target_os = "macos") {
     Some("../../native/macos/SaysoEngine/.build/release/SaysoEngine")
-} else if cfg!(windows) {
-    Some("../../native/portable/target/release/SaysoEngine.exe")
 } else {
     None
 };
@@ -292,9 +289,8 @@ impl EngineClient {
     /// the development build in this workspace. If none exists, the development path
     /// comes back so the spawn error names it.
     ///
-    /// The engine is `SaysoEngine` (Swift) on macOS, `SaysoEngine.exe` (Rust,
-    /// `native/portable`) on Windows, and `sayso-engine` (Rust,
-    /// `crates/sayso-engine`) on other systems.
+    /// The engine is `SaysoEngine` (Swift) on macOS, and `sayso-engine` (Rust,
+    /// `crates/sayso-engine`) on Windows and Linux.
     pub fn default_engine_path() -> PathBuf {
         if let Some(path) = std::env::var_os("SAYSO_ENGINE_PATH").filter(|p| !p.is_empty()) {
             return PathBuf::from(path);

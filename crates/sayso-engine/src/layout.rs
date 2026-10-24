@@ -207,6 +207,7 @@ pub fn offline_files(recipe: Recipe, dir: &Path) -> Result<OfflineFiles> {
         },
         Recipe::ZipformerStreaming => bail!("a streaming model has no final pass"),
         Recipe::ParakeetGguf => bail!("parakeet.cpp loads a GGUF model"),
+        Recipe::WhisperCpp => bail!("whisper.cpp loads a GGML model"),
     })
 }
 

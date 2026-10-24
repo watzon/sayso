@@ -1,4 +1,5 @@
-//! The recognizer traits on sherpa-onnx, on the CPU. A GGUF model's final pass goes to `parakeet.rs`.
+//! The recognizer traits on sherpa-onnx, on the CPU. The final pass of a GGUF model goes to `parakeet.rs`,
+//! and of a GGML model to `whisper_cpp.rs`.
 
 use crate::layout::{self, OfflineFiles};
 use crate::partials::Segment;
@@ -53,7 +54,11 @@ impl Loader for SherpaLoader {
         dirs: &ModelDirs,
     ) -> Result<Option<Arc<dyn FinalPass>>> {
         Ok(if let Source::HuggingFace { file, .. } = &spec.source {
-            Some(crate::parakeet::load(&dirs.main.join(file))?)
+            let file = dirs.main.join(file);
+            Some(match spec.recipe {
+                Recipe::WhisperCpp => crate::whisper_cpp::load(&file)?,
+                _ => crate::parakeet::load(&file)?,
+            })
         } else if spec.recipe.final_pass() {
             Some(Arc::new(Offline::load(spec.recipe, &dirs.main)?))
         } else {
@@ -204,7 +209,9 @@ impl<T> ByLanguage<T> {
 }
 
 impl FinalPass for Offline {
-    fn transcribe(&self, samples: &[f32], language: &str) -> Result<String> {
+    /// Dictionary words need hotwords, which work only for transducers with beam
+    /// search. The catalog models cannot use them, so they are ignored.
+    fn transcribe(&self, samples: &[f32], language: &str, _vocabulary: &[String]) -> Result<String> {
         let recognizer = self.recognizer(language)?;
         let stream = recognizer.create_stream();
         stream.accept_waveform(SAMPLE_RATE, samples);

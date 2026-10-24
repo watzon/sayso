@@ -5,6 +5,7 @@ engine:
   download_failed: "The download did not finish: %{detail}."
   load_failed: "Sayso could not load the model: %{detail}."
   no_gpu: "This model needs a dedicated graphics card with a Vulkan driver, and Sayso found none. Choose a model that runs on the CPU in Models."
+  format_changed: "This version of Sayso reads other files for this model. Download the model again."
   device_not_eligible: "This Mac does not support Apple Intelligence."
   intelligence_off: "Apple Intelligence is off. Turn it on in System Settings."
   model_not_ready: "macOS is still downloading the Apple Intelligence model. Try again in a few minutes."

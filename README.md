@@ -8,7 +8,7 @@ Sayso is a dictation app for macOS, Windows, and Linux. You press a key, speak, 
 
 ![The Sayso Hub in the light theme](docs/images/hub-home.png)
 
-Sayso is written in Rust with [GPUI](https://www.gpui.rs/). On macOS the speech engine is a Swift program that uses [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) and [FluidAudio](https://github.com/FluidInference/FluidAudio). On Windows it is a Rust program that uses [transcribe-rs](https://github.com/cjpais/transcribe-rs) (ONNX Runtime and whisper.cpp). On Linux it is a Rust program that uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx). The same developer made [Pindrop](https://github.com/watzon/pindrop).
+Sayso is written in Rust with [GPUI](https://www.gpui.rs/). On macOS the speech engine is a Swift program that uses [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) and [FluidAudio](https://github.com/FluidInference/FluidAudio). On Windows and Linux it is a Rust program that uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), and also [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on Windows. The same developer made [Pindrop](https://github.com/watzon/pindrop).
 
 ## What Sayso does
 

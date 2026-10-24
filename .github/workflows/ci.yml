@@ -106,10 +106,6 @@ jobs:
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            .
-            native/portable
       - name: Install CMake
         shell: pwsh
         run: |
@@ -135,8 +131,6 @@ jobs:
         run: cargo test --workspace
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Test the speech engine
-        run: cargo test --manifest-path native/portable/Cargo.toml
 
   # The cleanup runtime (native/cleanup, the sayso-cleanup binary) is its own
   # Cargo workspace. It builds llama.cpp with CMake, so no job above builds it.

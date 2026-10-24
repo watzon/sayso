@@ -1,6 +1,6 @@
 [package]
 name = "sayso-engine"
-description = "Speech engine sidecar for Linux and Windows: sherpa-onnx and parakeet.cpp models behind the NDJSON engine protocol."
+description = "Speech engine sidecar for Linux and Windows: sherpa-onnx, parakeet.cpp (Linux), and whisper.cpp (Windows) models behind the NDJSON engine protocol."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,6 +10,10 @@ publish.workspace = true
 default = ["parakeet"]
 # parakeet.cpp for the `parakeet_cpp` models (Linux only; build.rs).
 parakeet = []
+# whisper.cpp for the `whisper_cpp` models. Windows always has it. On Linux the
+# feature exists only to test that code; the Linux catalog has no such model.
+# It needs --no-default-features there: parakeet.cpp has its own ggml (lib.rs).
+whisper-cpp = ["dep:transcribe-rs"]
 
 [[bin]]
 name = "sayso-engine"
@@ -22,7 +26,6 @@ test = false
 sayso-core.workspace = true
 anyhow.workspace = true
 serde_json.workspace = true
-sherpa-onnx = "=1.13.8"
 ureq = "3"
 bzip2 = "0.6"
 tar = "0.4"
@@ -30,6 +33,17 @@ base64 = "0.22"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
 libc = "0.2"
+# Linked statically.
+sherpa-onnx = "=1.13.8"
+transcribe-rs = { version = "=0.3.12", default-features = false, features = ["whisper-cpp"], optional = true }
+
+# The Windows libraries of sherpa-onnx are built with the static C runtime (/MT),
+# and whisper.cpp with the DLL one (/MD). One exe cannot link both, so sherpa-onnx
+# comes as DLLs (sherpa-onnx-c-api.dll, onnxruntime.dll) that keep their own
+# runtime. The release copies them next to the exe (scripts/bundle-windows.ps1).
+[target.'cfg(windows)'.dependencies]
+sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["shared"] }
+transcribe-rs = { version = "=0.3.12", default-features = false, features = ["whisper-cpp"] }
 
 [dependencies]
 workspace-hack.workspace = true

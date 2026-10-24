@@ -1,4 +1,4 @@
-//! With the `parakeet` feature on Linux, build parakeet.cpp with ggml's Vulkan backend and link it
+//! Link options, and with the `parakeet` feature on Linux, build parakeet.cpp with ggml's Vulkan backend and link it
 //! statically. The build needs CMake, the Vulkan headers and `glslc` (`scripts/linux-deps.sh`, and on Ubuntu
 //! 22.04 `scripts/linux-vulkan-deps.sh`); the engine then needs only `libvulkan.so.1` at run time.
 //!
@@ -8,6 +8,14 @@
 
 fn main() {
     println!("cargo:rerun-if-env-changed=SAYSO_PARAKEET_CPP_DIR");
+    // On Windows, sherpa-onnx comes as DLLs with their own C runtime (Cargo.toml). The exe loads them at
+    // the first call, after `Output::protocol_stdout` pointed stdout at stderr, so their runtime starts
+    // with stderr as its stdout and a stray print cannot corrupt the protocol. The C API has functions
+    // only, which delay-loading needs.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc") {
+        println!("cargo:rustc-link-arg-bins=/DELAYLOAD:sherpa-onnx-c-api.dll");
+        println!("cargo:rustc-link-arg-bins=delayimp.lib");
+    }
     // The build dependencies are for a Linux host only (Cargo.toml), so this part compiles only there.
     #[cfg(target_os = "linux")]
     if std::env::var_os("CARGO_FEATURE_PARAKEET").is_some() && std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {

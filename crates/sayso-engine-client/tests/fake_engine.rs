@@ -800,7 +800,7 @@ fn default_engine_path_names_the_sidecar() {
         let name = if cfg!(target_os = "macos") {
             "SaysoEngine"
         } else if cfg!(windows) {
-            "SaysoEngine.exe"
+            "sayso-engine.exe"
         } else {
             "sayso-engine"
         };

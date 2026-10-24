@@ -181,6 +181,7 @@ windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Grap
 zeroize = { version = "1", features = ["zeroize_derive"] }
 
 [target.x86_64-pc-windows-msvc.build-dependencies]
+bitflags = { version = "2", default-features = false, features = ["serde"] }
 byteorder = { version = "1" }
 cc = { version = "1", default-features = false, features = ["parallel"] }
 crc32fast = { version = "1" }
@@ -191,7 +192,7 @@ once_cell = { version = "1" }
 percent-encoding = { version = "2" }
 simd-adler32 = { version = "0.3" }
 subtle = { version = "2", default-features = false, features = ["const-generics"] }
-syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit"] }
+syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full", "visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security_Credentials", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_LibraryLoader", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }

@@ -287,7 +287,7 @@ pub fn model_runs_here(_info: &ModelInfo) -> bool {
     true
 }
 
-/// The portable engine needs no extra environment.
+/// The engine needs no extra environment on Windows.
 pub fn engine_env() -> Vec<(String, String)> {
     Vec::new()
 }

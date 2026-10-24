@@ -15,7 +15,7 @@ The result is `target/release/sayso-cleanup` (`.exe` on Windows).
 
 - `llama-cpp-2` is pinned to `=0.1.160` with default features off. That means no OpenMP (no `libgomp` on Linux), no `common` (llama.cpp's command-line helpers; the crate builds and runs without it), and no Android C++ runtime.
 - On macOS arm64 the `metal` feature is on. Everywhere else the runtime uses the CPU.
-- Build needs: a C++ compiler, CMake, and libclang (for the bindgen step of `llama-cpp-sys-2`). On Windows use the Visual Studio Build Tools and, with a long checkout path, `CMAKE_GENERATOR=Ninja` (see `native/portable/NOTES.md`). Windows and Linux builds are not tested yet.
+- Build needs: a C++ compiler, CMake, and libclang (for the bindgen step of `llama-cpp-sys-2`). On Windows use the Visual Studio Build Tools and, with a long checkout path, `CMAKE_GENERATOR=Ninja` (see `crates/sayso-engine/NOTES.md`). Windows and Linux builds are not tested yet.
 
 ## Protocol
 
@@ -41,7 +41,7 @@ NDJSON, protocol version 1: one JSON object per line on stdin, one reply line on
 
 - The main thread reads stdin and handles each request. There is no other Rust thread. llama.cpp starts its own compute threads: on the CPU backend up to 8 (the number of cores, at most 8); with Metal the llama.cpp default.
 - The backend starts at the first `load`, not at the start. `hello`, bad lines, and `unload` are cheap.
-- At start the runtime duplicates the real stdout for the protocol and points file descriptor 1 at stderr (on Windows also the Win32 standard output handle). The code is `src/stdio.rs`, the same as `native/portable/src/stdio.rs`. So a print from ggml or Metal cannot corrupt the stream. Stdout carries protocol lines only.
+- At start the runtime duplicates the real stdout for the protocol and points file descriptor 1 at stderr (on Windows also the Win32 standard output handle). The code is `src/stdio.rs`, the same as `Output::protocol_stdout` in `crates/sayso-engine/src/protocol.rs`. So a print from ggml or Metal cannot corrupt the stream. Stdout carries protocol lines only.
 - A panic while it handles a request becomes `error decode_failed` and the process keeps running (`catch_unwind`). The panic message goes to stderr.
 - Logs go to stderr, level from `SAYSO_CLEANUP_LOG` (default `info`: one line at start, one per load and unload). llama.cpp and ggml logs are dropped, also during the backend start (the Metal setup writes about 30 lines). `SAYSO_CLEANUP_LOG=debug` (or `trace`) keeps them.
 - End of stdin exits with code 0. A write error on stdout exits with code 1. The client kills the process to cancel a request (see `docs/cleanup-models.md`).

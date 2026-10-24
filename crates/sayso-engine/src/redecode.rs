@@ -1,22 +1,166 @@
-//! Live preview for models without a streaming decoder (Parakeet through
-//! transcribe-rs): decode the recording again while it grows.
+//! A live preview for a model with no streaming decoder: decode the growing
+//! recording again with the final pass (`redecode_preview` in the catalog).
+//! Windows uses it for Parakeet TDT v3, which has no streaming archive.
 //!
 //! A worker thread decodes the uncommitted audio about every 600 ms, when at
-//! least 300 ms of new audio arrived, and reports `(committed, tentative)` only
-//! when the text changed. To keep the cost bounded in a long dictation, once
-//! the uncommitted audio passes 10 s the older part is decoded one last time
-//! and its text is committed. The cut is at the quietest point between 7 s and
-//! 2 s before the end, so it rarely splits a word. `committed` then only grows,
-//! and `tentative` is the text of the last 2 to 7 s, decoded again each time.
-//! The cost of a decode grows faster than its length (NOTES.md), so a short
-//! tail keeps the preview fast.
+//! least 300 ms of new audio arrived. To keep the cost bounded in a long
+//! dictation, once the uncommitted audio passes 10 s the older part is decoded
+//! one last time and its text is committed. The cut is at the quietest point
+//! between 7 s and 2 s before the end, so it rarely splits a word. `committed`
+//! then only grows, and `tentative` is the text of the last 2 to 7 s, decoded
+//! again each time. The cost of a decode grows faster than its length
+//! (NOTES.md), so a short tail keeps the preview fast.
+//!
+//! The preview and the final pass share one model. While a final pass runs,
+//! no preview decode starts, and the end of a stream skips its last decode.
 
-use crate::audio::{join_texts, ms, quietest_point};
-use crate::protocol::Result;
+use crate::audio::{self, ms, quietest_point};
+use crate::partials::Segment;
+use crate::recognizer::{FinalPass, LivePreview, Loaded, PreviewStream};
+use anyhow::{Result, anyhow};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
+
+/// Give a loaded final pass a redecode live preview. The final pass that the
+/// engine keeps counts its runs, so the preview pauses during them.
+pub fn attach(final_pass: Arc<dyn FinalPass>) -> Loaded {
+    let running = Arc::new(AtomicUsize::new(0));
+    let preview = RedecodePreview {
+        model: Arc::clone(&final_pass),
+        running: Arc::clone(&running),
+        config: Config::default(),
+    };
+    Loaded {
+        final_pass: Some(Arc::new(Counted {
+            inner: final_pass,
+            running,
+        })),
+        preview: Some(Arc::new(preview)),
+    }
+}
+
+/// A final pass that counts the runs in progress.
+struct Counted {
+    inner: Arc<dyn FinalPass>,
+    running: Arc<AtomicUsize>,
+}
+
+impl FinalPass for Counted {
+    fn transcribe(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<String> {
+        self.running.fetch_add(1, Ordering::SeqCst);
+        let result = self.inner.transcribe(samples, language, vocabulary);
+        self.running.fetch_sub(1, Ordering::SeqCst);
+        result
+    }
+}
+
+struct RedecodePreview {
+    model: Arc<dyn FinalPass>,
+    /// Final passes in progress.
+    running: Arc<AtomicUsize>,
+    config: Config,
+}
+
+impl LivePreview for RedecodePreview {
+    fn start(&self) -> Result<Box<dyn PreviewStream>> {
+        let latest = Arc::new(Mutex::new((String::new(), String::new())));
+        let sink = Arc::clone(&latest);
+        let running = Arc::clone(&self.running);
+        let session = Session::start(
+            self.config.clone(),
+            Box::new(ModelDecoder(Arc::clone(&self.model))),
+            move || running.load(Ordering::SeqCst) > 0,
+            move |committed, tentative| {
+                *lock(&sink) = (committed.to_string(), tentative.to_string());
+            },
+        )?;
+        Ok(Box::new(RedecodeStream {
+            session: Some(session),
+            latest,
+            reported: String::new(),
+            running: Arc::clone(&self.running),
+        }))
+    }
+}
+
+/// The preview decodes with the final pass. Parakeet detects the language
+/// itself, and the preview never uses the dictionary words.
+struct ModelDecoder(Arc<dyn FinalPass>);
+
+impl Decoder for ModelDecoder {
+    fn decode(&mut self, samples: &[f32]) -> Result<String> {
+        self.0.transcribe(samples, "auto", &[])
+    }
+}
+
+/// One stream. The worker thread decodes; `decode` only reads its last text.
+struct RedecodeStream {
+    session: Option<Session>,
+    /// The last `(committed, tentative)` of the worker.
+    latest: Arc<Mutex<(String, String)>>,
+    /// The committed text that went out as ended segments.
+    reported: String,
+    running: Arc<AtomicUsize>,
+}
+
+impl RedecodeStream {
+    /// The part of `committed` that did not go out yet.
+    fn unreported<'a>(&self, committed: &'a str) -> &'a str {
+        committed.strip_prefix(self.reported.as_str()).unwrap_or(committed).trim()
+    }
+}
+
+impl PreviewStream for RedecodeStream {
+    fn accept(&mut self, samples: &[f32]) {
+        if let Some(session) = &self.session {
+            session.push(samples);
+        }
+    }
+
+    /// Newly committed text goes out as an ended segment first. The engine then
+    /// asks again at once and gets the tentative text.
+    fn decode(&mut self) -> Segment {
+        let (committed, tentative) = lock(&self.latest).clone();
+        let new = self.unreported(&committed).to_string();
+        if !new.is_empty() {
+            self.reported = committed;
+            return Segment {
+                text: new,
+                endpoint: true,
+            };
+        }
+        Segment {
+            text: tentative,
+            endpoint: false,
+        }
+    }
+
+    fn finish(&mut self) -> Segment {
+        let Some(session) = self.session.take() else {
+            return Segment {
+                text: String::new(),
+                endpoint: true,
+            };
+        };
+        // A final pass that runs now has the processor; the preview text it
+        // has stays as it is.
+        let busy = self.running.load(Ordering::SeqCst) > 0;
+        let text = session.finish(busy);
+        let rest = self.unreported(&text).to_string();
+        self.reported = text;
+        Segment {
+            text: rest,
+            endpoint: true,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The text state and the worker
+// ---------------------------------------------------------------------------
 
 /// Turns samples into text. The engine implements it with a loaded model;
 /// tests use a fake.
@@ -68,6 +212,11 @@ impl Job {
             Job::Commit { samples, .. } | Job::Tail { samples, .. } => samples,
         }
     }
+}
+
+/// Two texts with a space between them where the script uses spaces.
+fn join_texts(left: &str, right: &str) -> String {
+    audio::join(&[left.to_string(), right.to_string()])
 }
 
 /// The text state of one preview. No threads; [`Session`] drives it.
@@ -130,7 +279,7 @@ impl Preview {
     pub fn apply(&mut self, job: &Job, text: &str) -> Option<(String, String)> {
         match job {
             Job::Commit { cut, .. } => {
-                self.committed = join_texts([self.committed.as_str(), text]);
+                self.committed = join_texts(&self.committed, text);
                 self.audio.drain(..*cut);
                 self.decoded = 0;
                 self.stale = true;
@@ -159,23 +308,7 @@ impl Preview {
 
     /// Committed and tentative text together.
     pub fn text(&self) -> String {
-        join_texts([self.committed.as_str(), self.tentative.as_str()])
-    }
-
-    /// The last partial of a stream: all the text, committed. None when it is
-    /// the text that went out last.
-    pub fn final_partial(&mut self) -> Option<String> {
-        let text = self.text();
-        let last = self
-            .sent
-            .as_ref()
-            .map(|(c, t)| join_texts([c.as_str(), t.as_str()]))
-            .unwrap_or_default();
-        if text == last {
-            return None;
-        }
-        self.sent = Some((text.clone(), String::new()));
-        Some(text)
+        join_texts(&self.committed, &self.tentative)
     }
 
     pub fn committed(&self) -> &str {
@@ -189,22 +322,13 @@ impl Preview {
 }
 
 /// The end of a stream: decode the new audio one last time (when there is a
-/// decoder), then the final partial (None when the text the client saw last
-/// is the full text) and the full text.
-pub fn finish_preview(
-    preview: Preview,
-    decoder: Option<&mut dyn Decoder>,
-) -> (Option<String>, String) {
-    let sent = preview.sent.clone();
+/// decoder), then return the full text.
+pub fn finish_preview(preview: Preview, decoder: Option<&mut dyn Decoder>) -> String {
     let state = Mutex::new(preview);
     if let Some(decoder) = decoder {
-        // These partials are not sent; the final partial covers them.
         drive(&state, decoder, true, || false);
     }
-    let mut preview = state.into_inner().unwrap_or_else(|e| e.into_inner());
-    preview.sent = sent;
-    let partial = preview.final_partial();
-    (partial, preview.text())
+    lock(&state).text()
 }
 
 /// Run one job. Audio shorter than `min_decode` has no text. A panic in the
@@ -214,7 +338,7 @@ fn run_job(decoder: &mut dyn Decoder, job: &Job, min_decode: usize) -> Result<St
         return Ok(String::new());
     }
     catch_unwind(AssertUnwindSafe(|| decoder.decode(job.samples())))
-        .unwrap_or_else(|_| Err("the decoder panicked".into()))
+        .unwrap_or_else(|_| Err(anyhow!("the decoder panicked")))
 }
 
 /// Decode every due job (a commit is followed by a tail decode at once).
@@ -236,13 +360,7 @@ pub fn drive(
         let Some(job) = lock(preview).next_job(finishing) else {
             break;
         };
-        let started = Instant::now();
         let result = run_job(decoder, &job, min_decode);
-        log::debug!(
-            "preview decode of {} ms of audio took {} ms",
-            job.samples().len() / ms(1),
-            started.elapsed().as_millis()
-        );
         let mut state = lock(preview);
         match result {
             Ok(text) => {
@@ -251,7 +369,7 @@ pub fn drive(
                 }
             }
             Err(e) => {
-                log::warn!("preview decode failed: {e}");
+                eprintln!("sayso-engine: a live preview decode failed: {e:#}");
                 state.skip(&job);
                 break;
             }
@@ -288,7 +406,7 @@ impl Session {
         decoder: Box<dyn Decoder>,
         paused: impl Fn() -> bool + Send + 'static,
         on_partial: impl Fn(&str, &str) + Send + 'static,
-    ) -> Session {
+    ) -> Result<Session> {
         let interval = config.interval;
         let shared = Arc::new(Shared {
             preview: Mutex::new(Preview::new(config)),
@@ -297,7 +415,7 @@ impl Session {
         });
         let worker_shared = Arc::clone(&shared);
         let worker = std::thread::Builder::new()
-            .name("sayso-preview".into())
+            .name("preview-redecode".into())
             .spawn(move || {
                 let shared = worker_shared;
                 let mut decoder = decoder;
@@ -326,9 +444,7 @@ impl Session {
                         continue;
                     }
                     let stop = || *lock(&shared.stop) || paused();
-                    for (committed, tentative) in
-                        drive(&shared.preview, decoder.as_mut(), false, stop)
-                    {
+                    for (committed, tentative) in drive(&shared.preview, decoder.as_mut(), false, stop) {
                         on_partial(&committed, &tentative);
                     }
                     // A decode longer than the interval (a long tail on a slow
@@ -339,11 +455,11 @@ impl Session {
                 }
                 decoder
             })
-            .ok();
-        if worker.is_none() {
-            log::error!("cannot start the preview thread; the preview stays empty");
-        }
-        Session { shared, worker }
+            .map_err(|e| anyhow!("cannot start the live preview thread: {e}"))?;
+        Ok(Session {
+            shared,
+            worker: Some(worker),
+        })
     }
 
     pub fn push(&self, samples: &[f32]) {
@@ -352,13 +468,10 @@ impl Session {
 
     /// Stop the worker (it ends after the decode that runs now, if any), then
     /// decode the new audio one last time unless `skip_decode`. Returns the
-    /// final partial (None when the text did not change) and the full text.
-    pub fn finish(mut self, skip_decode: bool) -> (Option<String>, String) {
+    /// full text.
+    pub fn finish(mut self, skip_decode: bool) -> String {
         let mut decoder = self.stop_worker().filter(|_| !skip_decode);
-        let preview = std::mem::replace(
-            &mut *lock(&self.shared.preview),
-            Preview::new(Config::default()),
-        );
+        let preview = std::mem::replace(&mut *lock(&self.shared.preview), Preview::new(Config::default()));
         let decoder: Option<&mut dyn Decoder> = match decoder.as_mut() {
             Some(decoder) => Some(decoder.as_mut()),
             None => None,
@@ -384,7 +497,8 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use crate::partials::Partials;
+    use std::sync::atomic::AtomicBool;
 
     /// Synthetic speech: word `k` is 400 ms of the constant `level(k)`, then
     /// 100 ms of silence (every 5th gap is 300 ms).
@@ -403,14 +517,29 @@ mod tests {
     }
 
     fn expected(words: usize) -> String {
-        (0..words)
-            .map(|k| format!("w{k}"))
-            .collect::<Vec<_>>()
-            .join(" ")
+        (0..words).map(|k| format!("w{k}")).collect::<Vec<_>>().join(" ")
     }
 
-    /// Hears one word per run of non-zero samples longer than 50 ms. Records
-    /// the length of every decode.
+    /// Hears one word per run of non-zero samples longer than 50 ms.
+    fn words_in(samples: &[f32]) -> String {
+        let mut words = Vec::new();
+        let mut run = 0;
+        let mut value = 0.0;
+        for &s in samples.iter().chain(std::iter::once(&0.0)) {
+            if s != 0.0 {
+                run += 1;
+                value = s;
+            } else {
+                if run > ms(50) {
+                    words.push(format!("w{}", ((value - 0.1) / 0.001).round() as usize));
+                }
+                run = 0;
+            }
+        }
+        words.join(" ")
+    }
+
+    /// Records the length of every decode.
     #[derive(Clone, Default)]
     struct FakeDecoder {
         lengths: Arc<Mutex<Vec<usize>>>,
@@ -421,30 +550,27 @@ mod tests {
         fn decode(&mut self, samples: &[f32]) -> Result<String> {
             self.lengths.lock().unwrap().push(samples.len());
             std::thread::sleep(self.delay);
-            let mut words = Vec::new();
-            let mut run = 0;
-            let mut value = 0.0;
-            for &s in samples.iter().chain(std::iter::once(&0.0)) {
-                if s != 0.0 {
-                    run += 1;
-                    value = s;
-                } else {
-                    if run > ms(50) {
-                        words.push(format!("w{}", ((value - 0.1) / 0.001).round() as usize));
-                    }
-                    run = 0;
-                }
-            }
-            Ok(words.join(" "))
+            Ok(words_in(samples))
+        }
+    }
+
+    /// The fake as a final pass. It counts its calls and can wait in each one.
+    #[derive(Default)]
+    struct FakeModel {
+        calls: AtomicUsize,
+        delay: Duration,
+    }
+
+    impl FinalPass for FakeModel {
+        fn transcribe(&self, samples: &[f32], _language: &str, _vocabulary: &[String]) -> Result<String> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            std::thread::sleep(self.delay);
+            Ok(words_in(samples))
         }
     }
 
     /// Feed the audio in 160 ms chunks and decode whenever a job is due, without threads.
-    fn run_sync(
-        samples: &[f32],
-        config: Config,
-        decoder: &mut FakeDecoder,
-    ) -> (Vec<(String, String)>, Preview) {
+    fn run_sync(samples: &[f32], config: Config, decoder: &mut FakeDecoder) -> (Vec<(String, String)>, Preview) {
         let preview = Mutex::new(Preview::new(config));
         let mut partials = Vec::new();
         for chunk in samples.chunks(ms(160)) {
@@ -455,29 +581,35 @@ mod tests {
         (partials, preview.into_inner().unwrap())
     }
 
+    fn fast_config() -> Config {
+        Config {
+            interval: Duration::from_millis(20),
+            ..Config::default()
+        }
+    }
+
+    fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !done() {
+            assert!(Instant::now() < deadline, "timed out: {what}");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     #[test]
     fn short_dictation_previews_without_commits() {
         let samples = speech(8); // 4.4 s
         let mut decoder = FakeDecoder::default();
         let (partials, mut preview) = run_sync(&samples, Config::default(), &mut decoder);
         assert!(partials.len() >= 5, "{partials:?}");
-        assert!(
-            partials.iter().all(|(c, _)| c.is_empty()),
-            "nothing is committed in 4 s"
-        );
+        assert!(partials.iter().all(|(c, _)| c.is_empty()), "nothing is committed in 4 s");
         assert_eq!(preview.text(), expected(8));
-        assert_eq!(
-            partials.last().map(|(_, t)| t.as_str()),
-            Some(expected(8).as_str())
-        );
-        assert_eq!(preview.final_partial(), None, "the text went out already");
-        // The end of the stream decodes the last word; that text goes out.
-        preview.push(&speech(9)[speech(8).len()..]);
-        let (partial, text) = finish_preview(preview, Some(&mut decoder));
-        assert_eq!(text, expected(9));
-        assert_eq!(partial, Some(expected(9)));
+        assert_eq!(partials.last().map(|(_, t)| t.as_str()), Some(expected(8).as_str()));
         // Partials only go out when the text changed.
         assert!(partials.windows(2).all(|w| w[0] != w[1]));
+        // The end of the stream decodes the last word.
+        preview.push(&speech(9)[speech(8).len()..]);
+        assert_eq!(finish_preview(preview, Some(&mut decoder)), expected(9));
     }
 
     #[test]
@@ -489,27 +621,13 @@ mod tests {
         let (partials, preview) = run_sync(&samples, config.clone(), &mut decoder);
         assert_eq!(preview.text(), expected(words), "no word lost or repeated");
         assert!(!preview.committed().is_empty());
-        let longest = decoder
-            .lengths
-            .lock()
-            .unwrap()
-            .iter()
-            .copied()
-            .max()
-            .unwrap();
-        assert!(
-            longest <= config.commit_after + ms(160),
-            "decodes stay bounded: {longest}"
-        );
+        let longest = decoder.lengths.lock().unwrap().iter().copied().max().unwrap();
+        assert!(longest <= config.commit_after + ms(160), "decodes stay bounded: {longest}");
         assert!(preview.pending() <= config.commit_after);
-        // `committed` only grows, and each partial is a prefix of the final text
-        // up to its tentative tail.
+        // `committed` only grows, and it is always a prefix of the final text.
         let mut last = String::new();
         for (committed, _) in &partials {
-            assert!(
-                committed.starts_with(last.as_str()),
-                "{last:?} -> {committed:?}"
-            );
+            assert!(committed.starts_with(last.as_str()), "{last:?} -> {committed:?}");
             assert!(expected(words).starts_with(committed.as_str()));
             last = committed.clone();
         }
@@ -537,18 +655,11 @@ mod tests {
         assert!(matches!(job, Job::Tail { end, .. } if end == ms(200)));
         // Too short to decode: empty text, no decoder call.
         let mut decoder = FakeDecoder::default();
-        assert_eq!(
-            run_job(
-                &mut decoder,
-                &Job::Tail {
-                    end: 10,
-                    samples: vec![0.1; 10]
-                },
-                ms(200)
-            )
-            .unwrap(),
-            ""
-        );
+        let short = Job::Tail {
+            end: 10,
+            samples: vec![0.1; 10],
+        };
+        assert_eq!(run_job(&mut decoder, &short, ms(200)).unwrap(), "");
         assert!(decoder.lengths.lock().unwrap().is_empty());
     }
 
@@ -568,43 +679,25 @@ mod tests {
         assert!(run_job(&mut Panicky, &job, 0).is_err());
     }
 
-    fn fast_config() -> Config {
-        Config {
-            interval: Duration::from_millis(20),
-            ..Config::default()
-        }
-    }
-
     #[test]
-    fn session_thread_sends_partials_and_finishes_with_the_full_text() {
+    fn a_session_sends_partials_and_finishes_with_the_full_text() {
         let samples = speech(10);
         let decoder = FakeDecoder {
             delay: Duration::from_millis(2),
             ..FakeDecoder::default()
         };
         let (tx, rx) = std::sync::mpsc::channel();
-        let session = Session::start(
-            fast_config(),
-            Box::new(decoder),
-            || false,
-            move |c, t| {
-                tx.send(join_texts([c, t])).unwrap();
-            },
-        );
+        let session = Session::start(fast_config(), Box::new(decoder), || false, move |c, t| {
+            tx.send(join_texts(c, t)).unwrap();
+        })
+        .unwrap();
         for chunk in samples.chunks(ms(160)) {
             session.push(chunk);
             std::thread::sleep(Duration::from_millis(15));
         }
-        let (partial, text) = session.finish(false);
-        assert_eq!(text, expected(10));
+        assert_eq!(session.finish(false), expected(10));
         let partials: Vec<String> = rx.try_iter().collect();
         assert!(partials.len() >= 3, "{partials:?}");
-        if let Some(partial) = partial {
-            assert_eq!(partial, text);
-            assert_ne!(partials.last(), Some(&text));
-        } else {
-            assert_eq!(partials.last(), Some(&text));
-        }
     }
 
     #[test]
@@ -613,17 +706,12 @@ mod tests {
         let lengths = Arc::clone(&decoder.lengths);
         let paused = Arc::new(AtomicBool::new(true));
         let flag = Arc::clone(&paused);
-        let session = Session::start(
-            fast_config(),
-            Box::new(decoder),
-            move || flag.load(Ordering::SeqCst),
-            |_, _| {},
-        );
+        let session =
+            Session::start(fast_config(), Box::new(decoder), move || flag.load(Ordering::SeqCst), |_, _| {}).unwrap();
         session.push(&speech(4));
         std::thread::sleep(Duration::from_millis(100));
         assert!(lengths.lock().unwrap().is_empty(), "paused");
-        let (partial, text) = session.finish(true);
-        assert_eq!((partial, text), (None, String::new()));
+        assert_eq!(session.finish(true), "");
         assert!(lengths.lock().unwrap().is_empty());
     }
 
@@ -633,25 +721,73 @@ mod tests {
             delay: Duration::from_millis(50),
             ..FakeDecoder::default()
         };
-        let calls = Arc::new(AtomicUsize::new(0));
-        let counter = Arc::clone(&calls);
-        let session = Session::start(
-            fast_config(),
-            Box::new(decoder),
-            || false,
-            move |_, _| {
-                counter.fetch_add(1, Ordering::SeqCst);
-            },
-        );
+        let session = Session::start(fast_config(), Box::new(decoder), || false, |_, _| {}).unwrap();
         session.push(&speech(6));
         std::thread::sleep(Duration::from_millis(40));
         let started = Instant::now();
-        let (_, text) = session.finish(true);
-        assert!(
-            started.elapsed() < Duration::from_millis(500),
-            "{:?}",
-            started.elapsed()
-        );
-        let _ = text;
+        session.finish(true);
+        assert!(started.elapsed() < Duration::from_millis(500), "{:?}", started.elapsed());
+    }
+
+    /// Run a stream as the engine's stream worker does: after an ended segment
+    /// it asks again at once.
+    fn update(stream: &mut dyn PreviewStream, partials: &mut Partials) {
+        loop {
+            let segment = stream.decode();
+            partials.update(&segment);
+            if !segment.endpoint {
+                break;
+            }
+        }
+    }
+
+    #[test]
+    fn the_stream_reports_commits_as_ended_segments_and_keeps_every_word() {
+        let model = Arc::new(FakeModel::default());
+        let loaded = attach(model.clone());
+        let preview = RedecodePreview {
+            model: model.clone(),
+            running: Arc::new(AtomicUsize::new(0)),
+            config: fast_config(),
+        };
+        assert!(loaded.preview.is_some() && loaded.final_pass.is_some());
+        let mut stream = preview.start().unwrap();
+        let mut partials = Partials::default();
+        let words = 30; // about 16 s: at least one commit
+        for chunk in speech(words).chunks(ms(160)) {
+            stream.accept(chunk);
+            std::thread::sleep(Duration::from_millis(4));
+            update(stream.as_mut(), &mut partials);
+        }
+        let mut committed_seen = false;
+        wait_until("a commit", || {
+            update(stream.as_mut(), &mut partials);
+            committed_seen |= partials.changed().is_some_and(|(c, _)| !c.is_empty());
+            committed_seen
+        });
+        partials.update(&stream.finish());
+        assert_eq!(partials.text(), expected(words));
+        assert!(model.calls.load(Ordering::SeqCst) > 2);
+    }
+
+    #[test]
+    fn a_running_final_pass_pauses_the_preview() {
+        let model = Arc::new(FakeModel {
+            delay: Duration::from_millis(300),
+            ..FakeModel::default()
+        });
+        let loaded = attach(model.clone());
+        let final_pass = loaded.final_pass.unwrap();
+        let preview = loaded.preview.unwrap();
+        let mut stream = preview.start().unwrap();
+        stream.accept(&speech(4));
+        let final_thread = std::thread::spawn(move || final_pass.transcribe(&speech(2), "en", &[]).unwrap());
+        wait_until("the final pass starts", || model.calls.load(Ordering::SeqCst) == 1);
+        // The preview interval is 600 ms; while the final pass runs no decode starts,
+        // and the end of the stream skips its last decode.
+        let segment = stream.finish();
+        assert_eq!(segment, Segment { text: String::new(), endpoint: true });
+        assert_eq!(final_thread.join().unwrap(), expected(2));
+        assert_eq!(model.calls.load(Ordering::SeqCst), 1, "only the final pass decoded");
     }
 }
