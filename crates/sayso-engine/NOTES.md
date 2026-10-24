@@ -38,6 +38,8 @@ The exe delay-loads `sherpa-onnx-c-api.dll` (`build.rs`). Windows loads it at th
 - Every DLL beside `sherpa-onnx-c-api.dll` in `target\sherpa-onnx-prebuilt\...\lib` (at least `sherpa-onnx-c-api.dll` and `onnxruntime.dll`). The build script of `sherpa-onnx-sys` also copies them to `target\release`, so a development run finds them.
 - The Visual C++ 2015-2022 runtime (`vcruntime140.dll`, `vcruntime140_1.dll`, `msvcp140.dll`, `msvcp140_1.dll`), which the app ships beside the exes.
 
+Size (release build, 2026-10-23): `sayso-engine.exe` 3.9 MB, `onnxruntime.dll` 17.8 MB, `sherpa-onnx-c-api.dll` 4.6 MB, `sherpa-onnx-cxx-api.dll` 0.3 MB, `onnxruntime_providers_shared.dll` 0.1 MB. Together about 26.7 MB. The `SaysoEngine.exe` of 0.11 was 25.5 MB.
+
 `scripts\bundle-windows.ps1` copies all of these. The installer deletes the old `SaysoEngine.exe` on an update.
 
 ## Files of the Windows engine before 0.12
@@ -66,6 +68,17 @@ Windows 11, i9-13900K, the old engine (same preview logic, Parakeet v3 on ONNX R
 - A 93 s recording streamed at speaking speed: with a commit point of 10 s, 90 decodes, mean 679 to 687 ms, longest 1038 to 1099 ms, 70 partials, about one update per second. With 20 s, the longest decode was 2 s and the updates came every 1.8 s. The last preview text had the same 252 words as the final pass with both.
 - Words lost or added at the commit points against one final pass: none for 10 s (keep 2 s, search 5 s). A search of 4 s cut "export" into "ex" and "port" where no pause was found.
 
+Windows 11, i9-13900K, this engine against the old engine of 0.11, the same clips (8.1 s and 29.2 s), run in turns in the same session, 2026-10-23:
+
+| | Load | 8.1 s clip | 29.2 s clip |
+|---|---|---|---|
+| Old engine, Parakeet v3 (istupakov export, ONNX Runtime through transcribe-rs) | 978 to 1053 ms | 296 to 315 ms | 3469 to 4006 ms |
+| This engine, Parakeet v3 int8 (sherpa-onnx, 8 threads) | 1374 to 1400 ms | 264 to 293 ms (one 479 ms) | 2066 to 2093 ms |
+| This engine, Whisper base (whisper.cpp) | 305 ms | 682 to 738 ms | 1620 to 1798 ms |
+
+- The final pass of Parakeet uses 8 threads (`final_pass_threads`). On this processor (8 P-cores, 16 E-cores) 4 threads took about 2850 ms for the 29.2 s clip, 16 threads about 2780 ms, and 24 or more threads took 4 s and longer.
+- The redecode preview of the 8.1 s clip streamed at speaking speed: the first partial at 0.85 s, then one about every 0.69 s. The committed text was the same as the final pass. A final pass right after `stream_end` took 787 ms.
+
 Linux arm64 in Docker on an Apple M-series Mac, this engine (sherpa-onnx, Parakeet v3 int8), 2026-10-23:
 
 - Download 487 MB in 22 s, load 930 ms. Final pass: 3.9 s clip in 123 ms, 24.9 s clip in 503 ms.
@@ -79,6 +92,5 @@ Linux arm64 in Docker on an Apple M-series Mac, this engine (sherpa-onnx, Parake
 
 ## Not tested yet
 
-- A Windows build and run of this engine. The Windows-only parts are the `shared` sherpa-onnx link, the delay-load, the stdout redirect in `protocol.rs`, and the delete retry in `store.rs`.
-- The packaged Windows app and the update from 0.11 (legacy Whisper adoption and the Parakeet `format_changed` path with real old files).
+- The packaged Windows app (`bundle-windows.ps1` and the installer) and the update from 0.11 through the app. The engine alone was tested on Windows on 2026-10-23: the release build, the delay-load (`sherpa-onnx-c-api.dll` is a delay import, and the exe does not import `onnxruntime.dll`), legacy Whisper adoption and the Parakeet `format_changed` download with a copy of real 0.11 files, transcription, the preview, `unload`, and `delete`.
 - Resume of an interrupted download: this engine starts a file again; the old Windows engine resumed it with a `Range` request.
