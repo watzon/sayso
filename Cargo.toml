@@ -16,6 +16,7 @@ sayso-platform-macos = { path = "crates/sayso-platform-macos" }
 sayso-platform-linux = { path = "crates/sayso-platform-linux" }
 sayso-platform-windows = { path = "crates/sayso-platform-windows" }
 sayso-engine-client = { path = "crates/sayso-engine-client" }
+sayso-engine-conformance = { path = "crates/sayso-engine-conformance" }
 sayso-store = { path = "crates/sayso-store" }
 sayso-enhance = { path = "crates/sayso-enhance" }
 sayso-transcribe = { path = "crates/sayso-transcribe" }

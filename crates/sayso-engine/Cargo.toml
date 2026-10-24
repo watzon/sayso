@@ -59,6 +59,7 @@ ureq = "3"
 
 [target.'cfg(not(target_os = "macos"))'.dev-dependencies]
 sayso-engine-client.workspace = true
+sayso-engine-conformance.workspace = true
 sayso-platform.workspace = true
 crossbeam-channel.workspace = true
 tempfile.workspace = true
