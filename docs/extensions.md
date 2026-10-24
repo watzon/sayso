@@ -204,9 +204,9 @@ Dictation with a local model does not work until the download ends. The release 
 
 Do these checks before the other work of step 2, on a Windows machine or a Windows runner of GitHub Actions:
 
-- `sayso-engine` links with sherpa-onnx and whisper.cpp in one MSVC binary. If the two use different C runtimes (`/MT` and `/MD`), use the feature `shared` of sherpa-onnx and ship its DLLs beside the engine. Answer: they do differ (the sherpa-onnx 1.13.8 Windows archives are `/MT`), so the engine uses `shared`. A Windows build must still prove that the link works.
-- The size of the engine binary. Today `SaysoEngine.exe` is 25 MB.
-- The speed of Parakeet TDT v3 and Whisper on `short.wav` and `long30.wav`, against the table in `native/portable/NOTES.md`, on the same i9-13900K. Parakeet on sherpa-onnx must not be more than 20 % slower. If it is, stop and decide again.
+- `sayso-engine` links with sherpa-onnx and whisper.cpp in one MSVC binary. If the two use different C runtimes (`/MT` and `/MD`), use the feature `shared` of sherpa-onnx and ship its DLLs beside the engine. Answer: they do differ (the sherpa-onnx 1.13.8 Windows archives are `/MT`), so the engine uses `shared`. The release build on the i9-13900K links and runs (2026-10-23).
+- The size of the engine binary. Today `SaysoEngine.exe` is 25 MB. Answer: the exe and its DLLs are about 26.7 MB together.
+- The speed of Parakeet TDT v3 and Whisper on `short.wav` and `long30.wav`, against the table in `native/portable/NOTES.md`, on the same i9-13900K. Parakeet on sherpa-onnx must not be more than 20 % slower. If it is, stop and decide again. Answer: the old and the new engine ran in turns on the same day. Parakeet on sherpa-onnx is faster: `short.wav` 264 to 293 ms against 296 to 315 ms, `long30.wav` 2066 to 2093 ms against 3469 to 4006 ms. The model loads about 0.4 s slower. The old table (1550 to 1600 ms for `long30.wav`) was not reproduced with the same old binary. `crates/sayso-engine/NOTES.md` has the figures.
 
 ## Host API
 
@@ -555,7 +555,7 @@ Each step ends with a check that proves it.
 | Step | State | Notes |
 |---|---|---|
 | 1. Decisions | Done (2026-10-23) | This file and ADRs 0001 to 0004. |
-| 2. Windows on `sayso-engine` | Code done, Windows check open | Done: the Windows catalog (`models_onnx.rs`, `System`), `whisper_cpp` and `redecode` in `sayso-engine`, the Windows stdout redirect, the shared sherpa-onnx DLLs, the legacy files (`format_changed` and Whisper adoption), the app side of `format_changed`, the scripts, the installer, CI, and the deletion of `native/portable`. Tested on macOS and in Linux Docker, with real Parakeet TDT v3 on Linux. Open: a Windows build (CI `test-windows`, or the reference machine), the size and speed checks of "Check first", a dictation with Parakeet TDT v3 and Whisper on Windows, and an update from 0.11 with old files. `crates/sayso-engine/NOTES.md` lists what is not tested. |
+| 2. Windows on `sayso-engine` | Done, packaged app check open | Done: the Windows catalog (`models_onnx.rs`, `System`), `whisper_cpp` and `redecode` in `sayso-engine`, the Windows stdout redirect, the shared sherpa-onnx DLLs, the legacy files (`format_changed` and Whisper adoption), the app side of `format_changed`, the scripts, the installer, CI, and the deletion of `native/portable`. Tested on macOS and in Linux Docker, with real Parakeet TDT v3 on Linux. On the Windows reference machine (2026-10-23): the release build, the size and speed checks of "Check first", Parakeet TDT v3 and Whisper through the engine protocol, the preview, and the legacy files with a copy of real 0.11 files. Open: a dictation in the packaged Windows app, and an update from 0.11 through the installer. `crates/sayso-engine/NOTES.md` lists what is not tested. |
 | 3 to 12 | Not started | Registry (10) and Notetaker (12) are for a later session. |
 
 The media extension and the Notetaker extension are products. Each gets its own design file before its step: what it does, its screens, and its data. This file covers only what they need from Sayso.
