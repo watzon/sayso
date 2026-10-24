@@ -8,7 +8,6 @@ use crate::fonts::{MONO, UI};
 use crate::paper::{self, PaperStyled};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use sayso_i18n::t;
 
 /// A tooltip with one line of text, for a control that shows only an icon.
 pub fn text_tooltip(label: impl Into<SharedString>) -> impl Fn(&mut Window, &mut App) -> AnyView + 'static {
@@ -618,7 +617,7 @@ impl Stepper {
             .rounded(px(9.))
             .bg(c.deboss)
             .shadows(paper::debossed(&c))
-            .child(step("dec", "−", t!("a11y.decrease").into(), -1, self.on_change.clone()))
+            .child(step("dec", "−", crate::l10n::text("a11y.decrease").into(), -1, self.on_change.clone()))
             .child(
                 div()
                     .min_w(px(40.))
@@ -632,7 +631,7 @@ impl Stepper {
                     .text_color(c.ink)
                     .child(self.value),
             )
-            .child(step("inc", "+", t!("a11y.increase").into(), 1, self.on_change))
+            .child(step("inc", "+", crate::l10n::text("a11y.increase").into(), 1, self.on_change))
     }
 }
 

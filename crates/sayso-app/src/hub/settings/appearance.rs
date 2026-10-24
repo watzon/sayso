@@ -6,7 +6,7 @@ use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use sayso_core::config::ThemeMode;
-use sayso_core::ink::{Appearance, Ink, NamedInk, Palette, Rgb};
+use sayso_core::ink::{Appearance, Ink, NamedInk, NamedInkLabel as _, Palette, Rgb};
 use sayso_i18n::t;
 use sayso_ui::a11y::{A11yExt as _, Pressable, Role};
 use sayso_ui::assets::Icon;

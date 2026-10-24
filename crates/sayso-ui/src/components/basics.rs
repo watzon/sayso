@@ -7,7 +7,6 @@ use crate::fonts::{MONO, UI};
 use crate::paper::{self, PaperStyled};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use sayso_core::hotkey::Hotkey;
 
 pub fn icon(icon: Icon, size: f32, color: Hsla) -> Svg {
     svg().path(icon.path()).size(px(size)).flex_none().text_color(color)
@@ -33,16 +32,14 @@ pub struct Keycaps {
 }
 
 impl Keycaps {
+    /// The labels of the keys, for example `["⌥", "Space"]`. The app makes the
+    /// labels, so that they follow the system and the language.
     #[track_caller]
     pub fn new(caps: impl IntoIterator<Item = impl Into<SharedString>>) -> Self {
         let caps: Vec<SharedString> = caps.into_iter().map(Into::into).collect();
         let pressed = vec![false; caps.len()];
         let id = a11y::call_site_id(&caps.join(" "));
         Self { id, caps, size: KeySize::Medium, pressed, plus: false }
-    }
-    #[track_caller]
-    pub fn hotkey(hotkey: &Hotkey) -> Self {
-        Self::new(hotkey.keycaps())
     }
     pub fn size(mut self, size: KeySize) -> Self {
         self.size = size;

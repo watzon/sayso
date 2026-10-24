@@ -3,7 +3,7 @@
 Each output is an RGBA overlay. Paint it on top of a flat surface color, so one
 texture works for every ink and for light and dark mode.
 
-Usage: python3 assets/textures/generate.py
+Usage: python3 crates/sayso-ui/assets/textures/generate.py
 """
 
 from pathlib import Path

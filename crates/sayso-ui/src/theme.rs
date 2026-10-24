@@ -2,7 +2,7 @@
 
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::{App, Global, Hsla, px, rgb};
-use sayso_core::ink::{Appearance, Ink, Palette, Rgb};
+use sayso_ink::{Appearance, Ink, Palette, Rgb};
 
 /// Palette colors as GPUI colors. Field meanings match [`Palette`].
 #[derive(Debug, Clone, Copy)]

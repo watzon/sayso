@@ -61,6 +61,9 @@ pub fn run() {
     // when the last window closes.
     gpui_kit::application().with_quit_mode(QuitMode::Explicit).with_assets(sayso_ui::assets::Assets).run(move |cx| {
         gpui_kit::init(cx);
+        // sayso-ui has English texts only. These hooks give it the catalogs and
+        // the locale of the app, so a change of language shows at the next render.
+        sayso_ui::l10n::install(sayso_i18n::translate, sayso_i18n::locale);
         sayso_ui::init(cx);
         // The Insertion sends Shift+Insert on Linux, and the text fields bind
         // only Ctrl+V. Without this, a dictation into Sayso's own fields fails.
@@ -331,4 +334,20 @@ pub fn finish_onboarding(model: &Entity<AppModel>, window: &mut Window, cx: &mut
     cx.global_mut::<Windows>().onboarding = None;
     window.remove_window();
     open_hub(model, Route::Home, cx);
+}
+
+#[cfg(test)]
+mod tests {
+    /// `sayso-ui` asks for its texts by key at run time, so the catalog test of
+    /// `sayso-i18n` does not see them. Each key must be in `en.yml`, with the
+    /// text that `sayso-ui` has built in.
+    #[test]
+    fn the_catalogs_have_the_keys_of_sayso_ui() {
+        let en = sayso_i18n::__messages("en").expect("the English catalog");
+        for (key, text) in sayso_ui::l10n::TEXTS {
+            let found = en.iter().find(|(k, _)| k == key).map(|(_, t)| t.as_str());
+            assert_eq!(found, Some(*text), "{key} in en.yml");
+            assert!(sayso_i18n::translate(key).is_some(), "{key} has no text in the current locale");
+        }
+    }
 }

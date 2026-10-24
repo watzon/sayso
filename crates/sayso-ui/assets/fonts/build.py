@@ -9,7 +9,7 @@ Fraunces gets two optical sizes as two families:
 
 Usage:
     python3 -m venv /tmp/fontvenv && /tmp/fontvenv/bin/pip install fonttools
-    /tmp/fontvenv/bin/python assets/fonts/build.py /path/to/google-fonts-sources
+    /tmp/fontvenv/bin/python crates/sayso-ui/assets/fonts/build.py /path/to/google-fonts-sources
 
 The sources are the OFL files from github.com/google/fonts (ofl/fraunces,
 ofl/instrumentsans, ofl/ibmplexmono).

@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 OUT = Path(__file__).parent
-TEXTURE = OUT.parent / "textures" / "board-light.png"
+TEXTURE = OUT.parents[1] / "crates" / "sayso-ui" / "assets" / "textures" / "board-light.png"
 W, H = 600, 400
 BOARD = (139, 113, 86)
 INK = (29, 27, 24)

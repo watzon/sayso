@@ -1,0 +1,16 @@
+[package]
+name = "sayso-ink"
+description = "The ink, palette, and appearance types of Sayso: contrast-checked colors for paper-and-ink interfaces."
+version.workspace = true
+edition.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
+license = "MIT"
+publish = true
+repository = "https://github.com/watzon/sayso"
+
+[dependencies]
+serde.workspace = true
+workspace-hack.workspace = true
+
+[dev-dependencies]
+toml.workspace = true

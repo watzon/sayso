@@ -1,4 +1,4 @@
-//! Tiled rag-paper grain (`assets/textures`, made by `generate.py`).
+//! Tiled rag-paper grain (`assets/textures` in this crate, made by `generate.py`).
 //!
 //! The board (window background, sidebar) carries the visible grain. Content
 //! sheets get a much softer grain so text sits on a nearly clean page.
