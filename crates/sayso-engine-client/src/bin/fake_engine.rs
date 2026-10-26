@@ -22,8 +22,13 @@
 //!
 //! The file `hello-delay-ms` makes `hello` wait that many milliseconds. The file
 //! `exit-at-hello` makes the process end at `hello`, with no answer.
+//!
+//! It passes the core and ready levels of `sayso-engine-conformance`. It does
+//! not keep download or load state for `load`, `transcribe`, and
+//! `stream_start`, so it does not pass the model level.
 
 use serde_json::{Value, json};
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, OpenOptions};
 use std::io::{BufRead, Write};
 use std::path::PathBuf;
@@ -41,6 +46,9 @@ fn main() {
     );
 
     let mut chunks = 0u64;
+    // The text of each open stream session, for the reply of `stream_end`.
+    let mut sessions: HashMap<u64, String> = HashMap::new();
+    let loaded = Arc::new(Mutex::new(HashSet::new()));
     for line in std::io::stdin().lock().lines().map_while(Result::ok) {
         if line.trim().is_empty() {
             continue;
@@ -59,24 +67,47 @@ fn main() {
             );
             continue;
         };
-        let kind = request["type"].as_str().unwrap_or_default().to_string();
+        let Some(kind) = request["type"].as_str().map(str::to_string) else {
+            send(&out, json!({"type": "error", "message": "missing type"}));
+            continue;
+        };
         match kind.as_str() {
+            // The stream requests run in order, like the real engines.
+            "stream_start" => match request["session"].as_u64() {
+                Some(session) => {
+                    sessions.insert(session, String::new());
+                    reply(&out, &request, "ok", json!({}));
+                }
+                None => reply(&out, &request, "error", json!({"message": "missing integer field session"})),
+            },
             "stream_audio" => {
-                // Handled in order, like the real engine.
+                let session = request["session"].as_u64().unwrap_or_default();
+                let Some(text) = sessions.get_mut(&session) else {
+                    send(&out, json!({"type": "error", "message": format!("unknown stream session {session}")}));
+                    continue;
+                };
                 chunks += 1;
                 if let Some(ms) = fs::read_to_string(dir.join("slow-audio")).ok().and_then(|t| t.trim().parse().ok()) {
                     thread::sleep(Duration::from_millis(ms));
                 }
                 let len = request["pcm"].as_str().map_or(0, str::len);
+                *text = format!("chunk {chunks} len {len}");
                 send(
                     &out,
                     json!({
                         "type": "partial",
-                        "session": request["session"],
-                        "committed": format!("chunk {chunks} len {len}"),
+                        "session": session,
+                        "committed": text,
                         "tentative": "",
                     }),
                 );
+            }
+            "stream_end" => {
+                let session = request["session"].as_u64().unwrap_or_default();
+                match sessions.remove(&session) {
+                    Some(text) => reply(&out, &request, "ok", json!({"session": session, "text": text})),
+                    None => reply(&out, &request, "error", json!({"message": format!("unknown stream session {session}")})),
+                }
             }
             "shutdown" => {
                 reply(&out, &request, "ok", json!({}));
@@ -85,14 +116,26 @@ fn main() {
             _ => {
                 let out = Arc::clone(&out);
                 let dir = dir.clone();
-                thread::spawn(move || handle(&out, &dir, &request, &kind));
+                let loaded = Arc::clone(&loaded);
+                thread::spawn(move || handle(&out, &dir, &loaded, &request, &kind));
             }
         }
     }
 }
 
-fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Value, kind: &str) {
+fn handle(
+    out: &Arc<Mutex<std::io::Stdout>>,
+    dir: &std::path::Path,
+    loaded: &Mutex<HashSet<String>>,
+    request: &Value,
+    kind: &str,
+) {
     let model = request["model"].as_str().unwrap_or_default().to_string();
+    let needs_model = matches!(kind, "download" | "delete" | "load" | "unload" | "prepare" | "transcribe");
+    if needs_model && request["model"].as_str().is_none() {
+        reply(out, request, "error", json!({"message": "missing string field model"}));
+        return;
+    }
     match kind {
         "prepare" => {
             if dir.join("reject-prepare").exists() {
@@ -123,7 +166,11 @@ fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Va
                 out,
                 request,
                 "hello",
-                json!({"version": "fake", "protocol": 1}),
+                json!({
+                    "version": "fake",
+                    "protocol": 1,
+                    "features": ["keep_preview", "language_model", "prepare", "unload"],
+                }),
             )
         }
         "list_models" => {
@@ -167,6 +214,7 @@ fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Va
             reply(out, request, "ok", json!({}));
         }
         "delete" => {
+            loaded.lock().unwrap().remove(&model);
             fs::remove_file(dir.join(format!("downloaded-{model}"))).ok();
             reply(
                 out,
@@ -186,6 +234,7 @@ fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Va
             if fail(out, dir, request, &model, "fail-load", "load stopped") {
                 return;
             }
+            loaded.lock().unwrap().insert(model.clone());
             reply(
                 out,
                 request,
@@ -196,11 +245,14 @@ fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Va
         }
         "unload" => {
             // Like the Linux engine: with `keep_preview`, the live preview stays.
-            let mut state = json!({"model": model, "state": "downloaded"});
-            if request["keep_preview"] == true {
-                state["preview"] = json!(true);
+            // A model that is not in memory gets only `ok`.
+            if loaded.lock().unwrap().remove(&model) {
+                let mut state = json!({"model": model, "state": "downloaded"});
+                if request["keep_preview"] == true {
+                    state["preview"] = json!(true);
+                }
+                reply(out, request, "model_state", state);
             }
-            reply(out, request, "model_state", state);
             reply(out, request, "ok", json!({}));
         }
         "transcribe" => {
@@ -228,7 +280,6 @@ fn handle(out: &Arc<Mutex<std::io::Stdout>>, dir: &std::path::Path, request: &Va
                 ),
             }
         }
-        "stream_start" | "stream_end" => reply(out, request, "ok", json!({})),
         "language_model" => {
             let body = if dir.join("no-language-model").exists() {
                 let mut body = json!({"available": false, "message": "Apple Intelligence is off"});

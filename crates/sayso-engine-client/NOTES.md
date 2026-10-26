@@ -7,40 +7,17 @@ Find it at run time with `EngineClient::default_engine_path()`: env `SAYSO_ENGIN
 
 ## Windows and Linux
 
-The sidecar there is the Rust engine `sayso-engine` (`crates/sayso-engine`): `cargo build -p sayso-engine --release` gives `target/release/sayso-engine(.exe)`. The app looks for it next to its own binary; a debug app with a release engine needs `SAYSO_ENGINE_PATH` (`scripts/dev.ps1` sets it). It speaks the same protocol v1 and runs the kinds `sherpa`, `parakeet_cpp` (Linux), and `whisper_cpp` (Windows) of `sayso_core::models_onnx`. A `sherpa` model with `redecode_preview` (Parakeet TDT v3) gets its live preview by decoding the growing recording again, so `committed` grows and `tentative` holds the re-decoded tail. Windows used its own engine before 0.12 (`SaysoEngine.exe`, `native/portable`). Build steps, runtime files, and measured results are in `crates/sayso-engine/NOTES.md`.
+The sidecar there is the Rust engine `sayso-engine` (`crates/sayso-engine`): `cargo build -p sayso-engine --release` gives `target/release/sayso-engine(.exe)`. The app looks for it next to its own binary; a debug app with a release engine needs `SAYSO_ENGINE_PATH` (`scripts/dev.ps1` sets it). It speaks the same protocol (`docs/engine-protocol.md`) and runs the kinds `sherpa`, `parakeet_cpp` (Linux), and `whisper_cpp` (Windows) of `sayso_core::models_onnx`. A `sherpa` model with `redecode_preview` (Parakeet TDT v3) gets its live preview by decoding the growing recording again, so `committed` grows and `tentative` holds the re-decoded tail. Windows used its own engine before 0.12 (`SaysoEngine.exe`, `native/portable`). Build steps, runtime files, and measured results are in `crates/sayso-engine/NOTES.md`.
 
-## Protocol v1 (NDJSON over stdio)
+## Protocol
 
-One JSON object per line. Every message has `"v":1`. The sidecar needs env `SAYSO_MODELS_DIR`. It exits when stdin closes.
+The protocol is specified in `docs/engine-protocol.md`. This section has only what the spec leaves to the client and to each engine.
 
-Every request with an `id` gets exactly one **reply**: `hello`, `ok`, `final`, or `error`. Events (`model_state`, `download_progress`, `part_state`, `partial`, `log`) can arrive at any time, and they echo the `id` of the request that caused them. `engine` is the `EngineKind` JSON of `sayso-core`.
+### Features
 
-| Request | Fields | Reply and events |
-|---|---|---|
-| `hello` | | `hello {version, protocol}` |
-| `list_models` | `models:[{id, engine}]` | one `model_state` per model (disk check, no network), then `ok` |
-| `download` | `model, engine, size_bytes?` | `model_state downloading` and `download_progress {fraction, bytes_done, bytes_total}` (at most 8 per second), `model_state downloaded`, `ok` |
-| `delete` | `model, engine?` | `model_state not_downloaded`, `ok` |
-| `load` | `model, engine` | `model_state optimizing`, `model_state ready {load_ms}`, `ok` |
-| `prepare` | `model, preview: bool, vocabulary: [String]` | `part_state {model, part, state}` per requested part, then `ok` |
-| `unload` | `model, keep_preview?` | `model_state downloaded` (with `preview: true` when the live preview stayed) when the model was in memory, then `ok` |
-| `stream_start` | `session, model, language?` | `ok`, then `partial {session, committed, tentative}` events |
-| `stream_audio` | `session, pcm` (base64 of 16 kHz mono little-endian i16), no `id` | none (errors have no `id`) |
-| `stream_end` | `session` | last `partial` if the text changed, `ok {text}` |
-| `transcribe` | `model, path` (16 kHz mono WAV), `language, vocabulary` | `final {text, elapsed_ms}` |
-| `language_model` | | `ok {available, model?, message?, reason?}`: the name of the language model, or why it cannot run |
-| `generate` | `instructions, prompt, timeout_ms, temperature?` | `ok {text, model}` |
-| `shutdown` | | `ok`, then exit |
-
-States: `not_downloaded`, `downloading`, `optimizing`, `downloaded`, `ready`, `failed {message, reason?}`.
-Other events: `log {level, message}`. Errors: `error {message, code?, reason?}` with the request `id`. `generate` sets `code` to `unavailable`, `refused`, or `timeout`.
+`hello` lists the optional parts of the protocol in `features`. The Swift engine lists `language_model`, `prepare`, and `unload`. The Rust engine lists `keep_preview` and `unload`. The client does not read `features` yet: it sends `prepare`, `unload`, and `language_model` to each engine and handles the `error` reply of an engine that does not have them.
 
 ### Optional part preparation
-
-Send `prepare` after `load`, and again when the preview setting or dictionary words change.
-`part` is `preview` or `dictionary`. Its `state` is `preparing`, `ready`, or `failed`.
-Each event carries the prepare request id. `ok` means that preparation ended, even when a part failed.
-A failed part logs a warning and stays available for a later load on demand. It does not change model status.
 
 The Swift engine loads the stream part only when `preview` is true. For Parakeet Unified,
 it also loads the CTC assets and builds a booster for the exact requested word list.
@@ -56,41 +33,31 @@ and an engine restart clear the record. No overlay text changes with this protoc
 
 ### Reason codes
 
-`reason` is an optional string. The engine sends it in `model_state` with `state: "failed"`, in the `language_model` reply when `available` is `false`, and in `error` replies of `generate`. It is a small, stable `snake_case` code. `message` stays the English detail. The app translates the code (`crates/sayso-app/src/engine_text.rs`, catalog `engine.en.yml`, keys `engine.<reason>`) and shows `message` only as a detail, or when there is no usable `reason`.
+The app translates the `reason` code (`crates/sayso-app/src/engine_text.rs`, catalog `engine.en.yml`, keys `engine.<reason>`) and shows `message` only as a detail, or when there is no usable `reason`. An engine that sends no `reason` (an older engine) still works: the app shows a general sentence with `message`. A `reason` that the client does not know gives the same result. The client reads the code into `sayso_core::stt::EngineReason` (`ModelStatus::Failed { message, reason }`, and `Unavailable { reason, message }` from `LanguageModel::availability`). A new code therefore needs a variant in `EngineReason`, a key in `engine.en.yml`, and a line in the table of the spec.
 
-An engine that sends no `reason` (an older engine) still works: the app shows a general sentence with `message`. A `reason` that the client does not know gives the same result. The client reads the code into `sayso_core::stt::EngineReason` (`ModelStatus::Failed { message, reason }`, and `Unavailable { reason, message }` from `LanguageModel::availability`). A new code therefore needs a variant in `EngineReason`, a key in `engine.en.yml`, and a line in this table.
+Who sends which code: both engines send `incomplete_download`, `download_failed`, and `load_failed`. The Rust engine sends `no_gpu` (Linux) and `format_changed` (Windows, for the Parakeet files of the Windows engine before 0.12). The Swift engine sends the language model codes.
 
-| `reason` | Sent in | Meaning | Sent by |
-|---|---|---|---|
-| `incomplete_download` | `model_state failed` | A download ended, but the model files are not complete. | both engines |
-| `download_failed` | `model_state failed` | A download stopped with an error (network, disk, HTTP status). | both engines |
-| `load_failed` | `model_state failed` | The model is on disk, but loading it failed. | both engines |
-| `no_gpu` | `model_state failed` | The model needs a discrete GPU with a Vulkan driver, and the engine found none. | Rust (Linux) |
-| `format_changed` | `model_state failed` | The files on disk are in an old format (Parakeet files of the Windows engine before 0.12). The app downloads the model again when it is in use, and deletes it when not. | Rust (Windows) |
-| `device_not_eligible` | `language_model`, `generate` error | This Mac does not support Apple Intelligence. | Swift |
-| `intelligence_off` | `language_model`, `generate` error | Apple Intelligence is off in System Settings. | Swift |
-| `model_not_ready` | `language_model`, `generate` error | macOS still downloads the Apple Intelligence model. | Swift |
-| `needs_macos_26` | `language_model`, `generate` error | Apple Intelligence needs macOS 26 or later. | Swift |
-| `unavailable` | `language_model`, `generate` error | The language model is not available, with no better reason. | Swift |
-| `timeout` | `generate` error | The model gave no reply in time. | Swift |
-| `refused` | `generate` error | The model refused the text (guardrails). | Swift |
-| `failed` | `generate` error | The model failed in another way. | Swift |
+The `error` reply of a `download` or `load` carries no `reason`. The client keeps the reason of the `model_state failed` event that came just before it, when the message is the same.
 
-The `error` reply of a `download` or `load` carries no `reason`. The client keeps the reason of the `model_state failed` event that came just before it, when the message is the same. The Rust engine has no language model, so it sends none of the language model codes.
+### Language model
 
-`language_model` and `generate` are additions to protocol v1 for AI enhancement on this computer. Only the Swift engine has them: it runs the language model of macOS (Apple Intelligence, `LanguageModel.swift`, macOS 26 and later) with guided generation, so the reply is bound to one `text` field. macOS owns the model, so there is no download, load, or unload. `generate` stops the model after `timeout_ms`, and the client waits 500 ms longer before it gives up. The other engines answer `error` (unknown request type), which the client reports as "not set up". `EngineClient` implements `sayso_core::enhance::LanguageModel` with these two requests.
+Only the Swift engine has `language_model` and `generate`: it runs the language model of macOS (Apple Intelligence, `LanguageModel.swift`, macOS 26 and later) with guided generation, so the reply is bound to one `text` field. The client waits 500 ms longer than `timeout_ms` before it gives up. The Rust engine answers `error` (unknown request type), which the client reports as "not set up". `EngineClient` implements `sayso_core::enhance::LanguageModel` with these two requests.
 
-Engine kinds (`engine.kind`, with their fields): `parakeet_unified {streaming_tier}`, `parakeet_eou`, `parakeet_tdt {version}` (`v2`, `v3`, `ultra`, `redux`, `phonon2`, `tdt_ctc_110m`, `ja`, `fluid_mini`), `nemotron {chunk_ms}`, `nemotron_multilingual {chunk_ms}`, `cohere`, `canary`, `sense_voice`, `paraformer`, `whisper {variant}`, `apple_speech`. The kind `remote` (a cloud model) never reaches the sidecar: `sayso-app` sends that audio with `sayso-transcribe`.
+### Engine kinds
 
-`language` is a code such as `en`, or `auto`. The client sends each model the nearest value the model supports (`ModelInfo::language_for`).
+The Swift engine runs these kinds (`engine.kind`, with their fields): `parakeet_unified {streaming_tier}`, `parakeet_eou`, `parakeet_tdt {version}` (`v2`, `v3`, `ultra`, `redux`, `phonon2`, `tdt_ctc_110m`, `ja`, `fluid_mini`), `nemotron {chunk_ms}`, `nemotron_multilingual {chunk_ms}`, `cohere`, `canary`, `sense_voice`, `paraformer`, `whisper {variant}`, `apple_speech`. The Rust engine runs `sherpa`, `parakeet_cpp` (Linux), and `whisper_cpp` (Windows). The kind `remote` (a cloud model) never reaches an engine: `sayso-app` sends that audio with `sayso-transcribe`.
 
-`unload` takes a model out of memory and keeps its files. Both engines run it in arrival order (not on a thread or task of its own), so a `load` of the same model that follows starts a new load. The Swift engine ends the live preview sessions of the model. In the Rust engine a stream or a final pass that runs keeps its part of the model until it ends. A model with a download, a load, or a delete in progress is `busy`. The Rust engine on Linux then calls `malloc_trim` (glibc), so the freed memory goes back to the system. The request is an addition to protocol v1: an engine without it answers `error`, which the client only logs.
+The client sends each model the nearest `language` value the model supports (`ModelInfo::language_for`).
 
-`keep_preview: true` is for a model that does the final pass and the live preview. The Rust engine holds such a model (for example `parakeet-tdt-v2`, with its streaming archive) as two parts. It then drops only the final pass and reports `model_state downloaded` with `preview: true`, also in `list_models`. In that state `stream_start` works, `transcribe` answers `model ... is not loaded`, and `load` loads only the final pass. A model with only a final pass leaves whole, and a model with only a live preview stays as it is. A model with a redecode preview (`parakeet-tdt-v3` in the Rust engine) leaves whole too: its preview is the final pass. The Swift engine ignores the field and unloads the whole model. The Swift engine has two parts for Parakeet Unified (the batch manager and the streaming manager), but it does not split them yet.
+### Unload
+
+The Swift engine ends the live preview sessions of the model. In the Rust engine a stream or a final pass that runs keeps its part of the model until it ends. The Rust engine on Linux then calls `malloc_trim` (glibc), so the freed memory goes back to the system.
+
+`keep_preview`: the Rust engine holds a model with a streaming archive (for example `parakeet-tdt-v2`) as two parts, and drops only the final pass. A model with a redecode preview (`parakeet-tdt-v3` in the Rust engine) leaves whole: its preview is the final pass. The Swift engine ignores the field and unloads the whole model. It has two parts for Parakeet Unified (the batch manager and the streaming manager), but it does not split them yet.
 
 The client keeps the `preview: true` models in a set behind `SttBackend::preview_ready`. Any other `model_state` of the model, and an engine crash, clear the entry. The status stays `Downloaded`.
 
-The engines never unload a model by themselves. `sayso-app` does it (`crates/sayso-app/src/memory.rs`): it keeps the active model and the live-preview model in memory, unloads every other model, and unloads the active model after the idle time of `dictation.keep_model_minutes`. When the active model also gives the live preview, that unload has `keep_preview: true`.
+`sayso-app` decides when a model leaves memory (`crates/sayso-app/src/memory.rs`): it keeps the active model and the live-preview model in memory, unloads every other model, and unloads the active model after the idle time of `dictation.keep_model_minutes`. When the active model also gives the live preview, that unload has `keep_preview: true`.
 
 Notes for the sidecar side:
 
@@ -121,7 +88,7 @@ Notes for the sidecar side:
 
 ## Tests
 
-- `cargo test -p sayso-engine-client`: unit tests for the protocol code, and `tests/fake_engine.rs` against `sayso-fake-engine` (`src/bin/fake_engine.rs`). They cover reply matching with out-of-order replies, temp WAV cleanup, broadcast to two subscribers, the status cache from `download_progress`, crash then `Crashed`, restart, model reload and `Restarted`, `unload` (status at once, no reload after a restart), fast failure of a pending call, fast failure while the sidecar is down, shutdown on drop, and a non-blocking `push_audio`.
+- `cargo test -p sayso-engine-client`: unit tests for the protocol code, `tests/conformance.rs` (the core and ready levels of `sayso-engine-conformance` against the fake engine), and `tests/fake_engine.rs` against `sayso-fake-engine` (`src/bin/fake_engine.rs`). They cover reply matching with out-of-order replies, temp WAV cleanup, broadcast to two subscribers, the status cache from `download_progress`, crash then `Crashed`, restart, model reload and `Restarted`, `unload` (status at once, no reload after a restart), fast failure of a pending call, fast failure while the sidecar is down, shutdown on drop, and a non-blocking `push_audio`.
 - `cargo test -p sayso-engine-client --test real_engine -- --ignored --nocapture`: the real sidecar and the spike models (linked read-only into `target/engine-it-models`). It downloads the CTC helper once (about 100 MB). It lists, loads, transcribes with and without vocabulary, and streams `short.wav` in 160 ms chunks.
 
 - `SAYSO_REAL_MODELS=<ids or all> cargo test -p sayso-engine-client --test real_models -- --ignored --nocapture`: for each model, download into `target/engine-it-models`, load, final pass on `short.wav` and `long30.wav`, and a stream plus a final pass for the streaming models. English models must hear a known word in each clip. The other models must return without an error.

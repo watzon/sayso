@@ -7271,6 +7271,7 @@ dependencies = [
  "libc",
  "sayso-core",
  "sayso-engine-client",
+ "sayso-engine-conformance",
  "sayso-platform",
  "serde_json",
  "sha2 0.10.9",
@@ -7292,7 +7293,18 @@ dependencies = [
  "log",
  "parking_lot",
  "sayso-core",
+ "sayso-engine-conformance",
  "sayso-platform",
+ "serde_json",
+ "tempfile",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sayso-engine-conformance"
+version = "0.11.0"
+dependencies = [
+ "base64 0.22.1",
  "serde_json",
  "tempfile",
  "workspace-hack",

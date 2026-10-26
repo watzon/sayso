@@ -1,0 +1,14 @@
+[package]
+name = "sayso-engine-conformance"
+description = "Conformance tests for engines that speak the Sayso engine protocol (docs/engine-protocol.md)."
+version.workspace = true
+edition.workspace = true
+# MIT like the spec, so the writer of another engine can use the suite.
+license = "MIT"
+publish.workspace = true
+
+[dependencies]
+serde_json.workspace = true
+base64 = "0.22"
+tempfile.workspace = true
+workspace-hack.workspace = true

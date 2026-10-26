@@ -14,7 +14,7 @@ use crate::audio;
 use crate::download::{self, Progress};
 use crate::layout;
 use crate::partials::Partials;
-use crate::protocol::{Output, PROTOCOL_VERSION, Request};
+use crate::protocol::{FEATURES, Output, PROTOCOL_VERSION, Request};
 use crate::recognizer::{LivePreview, Loaded, Loader, ModelDirs, PreviewStream};
 use crate::spec::{ModelSpec, Source};
 use crate::store::{Legacy, ModelStore};
@@ -133,7 +133,11 @@ impl Engine {
                 self.out.send(
                     "hello",
                     id,
-                    json!({ "version": env!("CARGO_PKG_VERSION"), "protocol": PROTOCOL_VERSION }),
+                    json!({
+                        "version": env!("CARGO_PKG_VERSION"),
+                        "protocol": PROTOCOL_VERSION,
+                        "features": FEATURES,
+                    }),
                 );
                 Ok(())
             }

@@ -87,6 +87,7 @@ Linux arm64 in Docker on an Apple M-series Mac, this engine (sherpa-onnx, Parake
 ## Tests
 
 - `cargo test -p sayso-engine`: unit tests with a fake recognizer (protocol, downloads against a local server, legacy files, the redecode logic with synthetic speech), and the client test of the built binary.
+- `tests/conformance.rs` runs the core and model levels of `sayso-engine-conformance` (`docs/engine-protocol.md`, "Conformance tests") against the built engine. For the ready level, point the suite at a models folder with the model on disk, for example on Windows: `cargo run -p sayso-engine-conformance -- target\release\sayso-engine.exe --model parakeet-tdt-v3 --engine-json <the engine object of the catalog entry> --models-dir <folder> --audio short.wav --stream`.
 - `cargo test -p sayso-engine --no-default-features --features whisper-cpp` builds whisper.cpp on Linux and runs the same tests with it.
 - `tests/real_models.rs` (ignored) downloads real models and runs them through `EngineClient`. On Windows its default models are `parakeet-tdt-v3` and `whisper-base`. It needs `SAYSO_IT_AUDIO_DIR`: a folder with `short.wav` (16 kHz mono, with the word "dictation") and `long30.wav` (about 30 s, with "deployment"). The first-partial time it prints is measured when the test reads the events, after the stream ends, so it is not the latency of the preview.
 

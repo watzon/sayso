@@ -34,6 +34,12 @@ The fixed steps that turn audio into inserted text: transcribe → apply replace
 **Engine**
 The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows and Linux it is the Rust sidecar (`sayso-engine`) with sherpa-onnx, and also whisper.cpp on Windows and parakeet.cpp on Linux. Both engines speak the same protocol. Rust code talks to the engine through the `SttBackend` trait. The engine never sees a cloud model. The engine on macOS also runs the language model of a style (see Apple Intelligence). Rust code reaches it through the `LanguageModel` trait.
 
+**Engine protocol**
+The NDJSON protocol between an engine and its client (`docs/engine-protocol.md`, MIT). Sayso uses it, and an app that runs an engine alone uses it.
+
+**Engine feature**
+An optional part of the engine protocol that an engine lists in its `hello` reply, for example `unload`. A client checks for a feature before it uses it.
+
 **Model**
 A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". A dictation uses a final model and, when the live preview is on, a preview model. A model is a local model or a cloud model.
 

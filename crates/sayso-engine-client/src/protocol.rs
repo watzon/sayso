@@ -1,7 +1,7 @@
 //! NDJSON protocol v1: message building, parsing, and audio encoding.
 //!
 //! One JSON object per line. Every message has `"v":1`. Requests carry an `"id"`
-//! when they expect a reply. See `NOTES.md` for the full reference.
+//! when they expect a reply. The spec is `docs/engine-protocol.md`.
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;

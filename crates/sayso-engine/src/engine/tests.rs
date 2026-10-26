@@ -268,6 +268,7 @@ fn hello_and_unknown_requests() {
     assert_eq!(reply[0]["type"], "hello");
     assert_eq!(reply[0]["id"], "r1");
     assert_eq!(reply[0]["protocol"], 1);
+    assert_eq!(reply[0]["features"], json!(["keep_preview", "unload"]));
 
     let prepared = h.call(json!({"v":1,"type":"prepare","id":"p","model":"m","preview":true,"vocabulary":["Sayso"]}));
     assert_eq!(prepared[0]["type"], "ok");

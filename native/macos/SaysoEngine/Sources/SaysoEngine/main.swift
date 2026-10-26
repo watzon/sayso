@@ -30,7 +30,9 @@ func handle(_ request: Request) async {
     do {
         switch request.type {
         case "hello":
-            out.send("hello", id: id, ["version": engineVersion, "protocol": protocolVersion])
+            out.send(
+                "hello", id: id,
+                ["version": engineVersion, "protocol": protocolVersion, "features": engineFeatures])
         case "list_models":
             await engine.listModels(try request.models(), id: id)
         case "download":
