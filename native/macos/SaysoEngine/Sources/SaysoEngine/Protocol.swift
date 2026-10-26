@@ -6,7 +6,7 @@ let protocolVersion = 1
 /// The optional parts of the protocol that this engine has, sent in `hello`
 /// (docs/engine-protocol.md, "Features").
 let engineFeatures = [
-    "concurrent_streams", "diarization", "language_model", "prepare", "segments", "unload", "vad",
+    "catalog", "concurrent_streams", "diarization", "language_model", "prepare", "segments", "unload", "vad",
 ]
 let engineVersion = "0.1.0"
 
@@ -233,20 +233,30 @@ struct Request: @unchecked Sendable {
 
     func stringArray(_ key: String) -> [String] { (fields[key] as? [String]) ?? [] }
 
-    func engine(key: String = "engine") throws -> EngineSpec {
-        guard let json = fields[key] as? [String: Any] else { throw EngineError("missing object field \(key)") }
+    /// The `engine` object of a model: a request may leave it out (absent or null), then the
+    /// engine takes it from the catalog.
+    func optionalEngine(key: String = "engine") throws -> EngineSpec? {
+        guard let value = fields[key], !(value is NSNull) else { return nil }
+        guard let json = value as? [String: Any] else { throw EngineError("\(key) is not an object") }
         return try EngineSpec(json: json)
     }
 
-    /// The `models` array of `list_models`.
-    func models() throws -> [(id: String, spec: EngineSpec)] {
-        guard let list = fields["models"] as? [[String: Any]] else { throw EngineError("missing models array") }
+    /// The engine of `model`: the `engine` object of the request, else the one of the catalog.
+    func engine(of model: String, catalog: Catalog) throws -> EngineSpec {
+        try optionalEngine() ?? catalog.spec(of: model)
+    }
+
+    /// The `models` array of `list_models`, or nil when the request has none (absent or null).
+    func models(catalog: Catalog) throws -> [(id: String, spec: EngineSpec)]? {
+        guard let value = fields["models"], !(value is NSNull) else { return nil }
+        guard let list = value as? [[String: Any]] else { throw EngineError("missing models array") }
         return try list.map { entry in
             guard let id = entry["id"] as? String else { throw EngineError("models[].id is missing") }
-            guard let engine = entry["engine"] as? [String: Any] else {
-                throw EngineError("models[].engine is missing")
+            if let engine = entry["engine"], !(engine is NSNull) {
+                guard let json = engine as? [String: Any] else { throw EngineError("models[].engine is not an object") }
+                return (id, try EngineSpec(json: json))
             }
-            return (id, try EngineSpec(json: engine))
+            return (id, try catalog.spec(of: id))
         }
     }
 }

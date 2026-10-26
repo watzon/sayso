@@ -20,6 +20,14 @@ else {
 let modelsDir = URL(fileURLWithPath: modelsPath, isDirectory: true)
 try? FileManager.default.createDirectory(at: modelsDir, withIntermediateDirectories: true)
 
+let catalog: Catalog
+do {
+    catalog = try Catalog.builtIn()
+} catch {
+    out.error("\(error)")
+    exit(2)
+}
+
 let engine = Engine(modelsDir: modelsDir, out: out)
 out.log("info", "SaysoEngine \(engineVersion) ready, models in \(modelsDir.path), pid \(getpid())")
 
@@ -34,17 +42,22 @@ func handle(_ request: Request) async {
                 "hello", id: id,
                 ["version": engineVersion, "protocol": protocolVersion, "features": engineFeatures])
         case "list_models":
-            await engine.listModels(try request.models(), id: id)
+            if let models = try request.models(catalog: catalog) {
+                await engine.listModels(models, id: id)
+            } else {
+                await engine.listModels(catalog.models.map { ($0.id, $0.spec) }, id: id, reply: catalog.reply)
+            }
         case "download":
+            let model = try request.string("model")
             try await engine.download(
-                model: try request.string("model"), spec: try request.engine(),
+                model: model, spec: try request.engine(of: model, catalog: catalog),
                 sizeBytes: request.optionalInt64("size_bytes"), id: id)
         case "delete":
-            let spec = request.optionalString("model") != nil ? try? request.engine() : nil
+            let spec = request.optionalString("model") != nil ? try? request.optionalEngine() : nil
             try await engine.delete(model: try request.string("model"), spec: spec, id: id)
         case "load":
-            try await engine.load(
-                model: try request.string("model"), spec: try request.engine(), id: id)
+            let model = try request.string("model")
+            try await engine.load(model: model, spec: try request.engine(of: model, catalog: catalog), id: id)
         case "prepare":
             try await engine.prepare(model: try request.string("model"),
                 preview: request.optionalBool("preview"), vocabulary: request.stringArray("vocabulary"), id: id)

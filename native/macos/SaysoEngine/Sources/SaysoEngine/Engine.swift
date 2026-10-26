@@ -349,15 +349,16 @@ actor Engine {
         return store.isDownloaded(spec)
     }
 
-    /// `list_models`: one `model_state` per model, from disk only.
-    func listModels(_ models: [(id: String, spec: EngineSpec)], id: String?) async {
+    /// `list_models`: one `model_state` per model, from disk only. `reply` holds the extra
+    /// fields of the `ok` (the catalog, when the request had no `models`).
+    func listModels(_ models: [(id: String, spec: EngineSpec)], id: String?, reply: [String: Any] = [:]) async {
         for entry in models {
             registry[entry.id] = entry.spec
             out.send(
                 "model_state", id: id,
                 ["model": entry.id, "state": await state(of: entry.id, spec: entry.spec)])
         }
-        out.ok(id: id)
+        out.ok(id: id, reply)
     }
 
     // MARK: - Download
