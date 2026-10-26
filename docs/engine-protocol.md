@@ -71,6 +71,8 @@ An engine that sends no `features` is older than this spec. A client can still s
 | `language_model` | The requests `language_model` and `generate`: the language model of the system. | yes | no |
 | `concurrent_streams` | Streams that run at the same time (see "Streams"). | yes | yes |
 | `segments` | The field `segments` of `transcribe` (see "Segments"). | yes | yes |
+| `vad` | The requests `vad` and `vad_start`, and the events `speech_start` and `speech_end` (see "VAD"). | yes | yes |
+| `diarization` | The request `diarize` (see "Diarization"). | yes | yes |
 
 The Rust engine replies `ok` to `prepare` and does nothing, so it does not list `prepare`.
 
@@ -89,8 +91,11 @@ The Rust engine replies `ok` to `prepare` and does nothing, so it does not list 
 | `prepare` | `model, preview, vocabulary` | `part_state` for each part, then `ok` |
 | `transcribe` | `model, path, language, vocabulary, segments?` | `final {text, elapsed_ms, segments?}` |
 | `stream_start` | `session, model, language?` | `ok`, then `partial` events |
-| `stream_audio` | `session, pcm` (no `id`) | `partial` events, no reply |
-| `stream_end` | `session` | the last `partial` when the text changed, then `ok {session, text}` |
+| `stream_audio` | `session, pcm` (no `id`) | `partial` or `speech_start` and `speech_end` events, no reply |
+| `stream_end` | `session` | the last `partial` when the text changed, then `ok {session, text}`; for a VAD session, the last `speech_end`, then `ok {session}` |
+| `vad` | `model, path` | `ok {speech: [{start_ms, end_ms}]}` |
+| `vad_start` | `session, model` | `ok`, then `speech_start` and `speech_end` events |
+| `diarize` | `model, path, speakers?` | `ok {speakers, turns: [{start_ms, end_ms, speaker}]}` |
 | `language_model` | | `ok {available, model?, message?, reason?}` |
 | `generate` | `instructions, prompt, timeout_ms, temperature?` | `ok {text, model}` |
 | `shutdown` | | `ok`, then the engine exits |
@@ -163,6 +168,34 @@ An engine without the feature has one stream for each model. A `stream_start` on
 
 A stream is only a preview. The client keeps the audio and sends the whole recording to `transcribe` for the final text.
 
+### VAD
+
+With the feature `vad`, an engine runs voice activity detection (VAD) models. A VAD model finds the parts of the audio with speech. It is a model like the others: `list_models`, `download`, `load`, `unload`, and `delete` work the same. `vad` and `vad_start` need a VAD model that is loaded. A VAD model in `transcribe` or `stream_start`, and a speech model in `vad` or `vad_start`, get an `error`.
+
+- `vad {model, path}` finds the speech in a WAV file (the same format as for `transcribe`). The reply is `ok {speech: [{start_ms, end_ms}]}`: the parts with speech, in order, without overlaps. A file without speech gets an empty list.
+- `vad_start {session, model}` opens a VAD session on audio that the client sends live. A VAD session is a stream: the client sends audio with `stream_audio {session, pcm}` and closes the session with `stream_end {session}`. With `concurrent_streams`, it counts as one of the streams.
+- `speech_start {session, start_ms}` comes when speech starts, and `speech_end {session, start_ms, end_ms}` when it ends. The times are in milliseconds from the first audio of the session. An event can come some time after its audio, because the model must hear a pause first. Each `speech_end` comes after its `speech_start`.
+- `stream_end` of a VAD session sends `speech_end` for speech that has not ended, then `ok {session}`. No event of the session comes after that reply.
+
+Each engine uses these rules, so the parts are about the same on each engine:
+
+- Speech that is shorter than 250 ms is left out.
+- A pause that is shorter than 500 ms does not end the speech.
+- A part is at most 30 s long. Longer speech is cut into parts of at most 30 s. The next part starts where the last part ends.
+
+### Diarization
+
+With the feature `diarization`, an engine runs diarization models. A diarization model finds who speaks when. Like a VAD model, it is a model of its own: it needs `download` and `load`, and other requests with it get an `error`. A diarization model can have more than one file (for example a segmentation model and a speaker embedding model), but it is one model with one id.
+
+`diarize {model, path, speakers?}` runs on a whole WAV file. `speakers` is the number of speakers, an integer of 1 or more, when the client knows it. Without it, the engine finds the number. The reply is `ok {speakers, turns: [{start_ms, end_ms, speaker}]}`:
+
+- `speaker` is an integer from 0. The speakers have numbers in the order in which they first speak.
+- `speakers` is the number of different speakers in `turns`.
+- The turns are in the order of `start_ms`. The turns of two speakers can overlap, when two persons speak at the same time. The turns of one speaker do not overlap.
+- A file without speech gets `speakers: 0` and no turns.
+
+`diarize` runs offline on a whole file. It can take some time for a long recording.
+
 ### `language_model` and `generate`
 
 These run the language model of the system (on macOS 26 and later, Apple Intelligence). The system owns the model, so there is no download, load, or unload.
@@ -178,6 +211,8 @@ These run the language model of the system (on macOS 26 and later, Apple Intelli
 | `download_progress` | `model, fraction, bytes_done, bytes_total` |
 | `part_state` | `model, part, state` |
 | `partial` | `session, committed, tentative` |
+| `speech_start` | `session, start_ms` |
+| `speech_end` | `session, start_ms, end_ms` |
 | `log` | `level, message` |
 
 Model states:
@@ -215,6 +250,8 @@ Model states:
 
 A model has an id, such as `parakeet-tdt-v3`, and an `engine` object. The `engine` object has a `kind` and the settings of that kind. For example, the Swift engine runs `{"kind":"parakeet_tdt","version":"v3"}`, and the Rust engine runs `{"kind":"sherpa","recipe":"parakeet_tdt", ...}`. The two engines know different kinds, and an engine replies `error` to a kind that it does not know.
 
+VAD and diarization models have kinds of their own. The Rust engine runs `{"kind":"sherpa_vad","recipe":"silero","file":"silero_vad.onnx"}` (or `"recipe":"ten"`) and `{"kind":"sherpa_diarization","segmentation":"sherpa-onnx-pyannote-segmentation-3-0","embedding":"<file>.onnx"}`. The Swift engine runs the FluidAudio models: `{"kind":"fluid_vad"}` and `{"kind":"fluid_diarization"}`.
+
 Today the client sends the `engine` object of each model, from the model catalog of Sayso (`crates/sayso-core/src/models.rs` for macOS, `crates/sayso-core/src/models_onnx.rs` for Linux and Windows). The catalog is not part of this spec yet.
 
 ## Conformance tests
@@ -225,13 +262,16 @@ Today the client sends the `engine` object of each model, from the model catalog
 |---|---|---|
 | core | nothing | `hello` and `features`, `"v":1` and `type` on every line, one reply for each request, the errors of this spec, unknown stream sessions, `unload` and `language_model` when listed, `shutdown`, and the exit when stdin closes |
 | model | a model id and its `engine` object | `list_models`, `delete`, and the errors for a model that is not downloaded or not loaded |
-| ready | a models folder with the model on disk, and a WAV file with speech | `list_models`, `load`, `transcribe`, a stream (with `--stream`), and `unload` |
+| ready | a models folder with the model on disk, and a WAV file with speech | `list_models`, `load`, `transcribe`, a stream (with `--stream`), and `unload`; with the features, segments, three streams at the same time, VAD (with `--vad`), and diarization (with `--diarization`) |
 
 ```text
 cargo run -p sayso-engine-conformance -- <engine> \
     [--model <id> --engine-json <json>] \
-    [--models-dir <dir> --audio <wav> [--stream]]
+    [--models-dir <dir> --audio <wav> [--stream]] \
+    [--vad <id> <json>] [--diarization <id> <json>]
 ```
+
+`--vad` and `--diarization` give a VAD model and a diarization model in the same models folder.
 
 The suite does not download or delete in the ready level, but the engine can write to the models folder (for example, a cache).
 
@@ -245,7 +285,7 @@ A feature is in this spec only when each engine passes its tests, or each engine
 
 ## Next
 
-These parts come in step 3 of `docs/extensions.md`, each with a feature: VAD, diarization, and public model ids.
+These parts come in step 3 of `docs/extensions.md`: public model ids. Later changes can add progress and cancel for long `diarize` requests.
 
 ## License
 
