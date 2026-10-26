@@ -55,6 +55,12 @@ func handle(_ request: Request) async {
                 model: try request.string("model"), path: try request.string("path"),
                 language: request.optionalString("language") ?? "en",
                 vocabulary: request.stringArray("vocabulary"), segments: request.optionalBool("segments"), id: id)
+        case "vad":
+            try await engine.vad(model: try request.string("model"), path: try request.string("path"), id: id)
+        case "diarize":
+            try await engine.diarize(
+                model: try request.string("model"), path: try request.string("path"),
+                speakers: try request.optionalCount("speakers"), id: id)
         case "language_model":
             switch SystemModel.status() {
             case .success(let model): out.ok(id: id, ["available": true, "model": model])
@@ -81,8 +87,9 @@ func handle(_ request: Request) async {
     }
 }
 
-/// Streaming requests must run in arrival order, so they share one serial queue. The end
-/// of a stream replies when its text is ready (see `Engine.streamEnd`).
+/// Streaming requests must run in arrival order, so they share one serial queue. A VAD
+/// session is a stream too. The end of a stream replies when its text is ready (see
+/// `Engine.streamEnd`).
 func handleStream(_ request: Request) async {
     let id = request.id
     do {
@@ -93,9 +100,17 @@ func handleStream(_ request: Request) async {
                 session: session, model: try request.string("model"),
                 language: request.optionalString("language") ?? "auto")
             out.ok(id: id)
+        case "vad_start":
+            try await engine.vadStart(session: session, model: try request.string("model"))
+            out.ok(id: id)
         case "stream_audio":
             try await engine.streamAudio(session: session, pcm: try request.string("pcm"))
         case "stream_end":
+            // A VAD session sends its last `speech_end` before the reply.
+            if try await engine.endVadSession(session) {
+                out.ok(id: id, ["session": session])
+                return
+            }
             let finishing = try await engine.streamEnd(session: session)
             // The end of a stream can wait for the load of its model. The stream requests
             // after it do not wait for that.
@@ -131,7 +146,7 @@ for await line in lines {
         continue
     }
     switch request.type {
-    case "stream_start", "stream_audio", "stream_end":
+    case "stream_start", "vad_start", "stream_audio", "stream_end":
         if request.type == "stream_end", let session = try? request.int("session") {
             // Before the requests after it: a final pass that follows waits for this stream.
             await engine.streamEnding(session: session)

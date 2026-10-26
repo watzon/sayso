@@ -12,7 +12,9 @@
 //!   WAV file ([`Ready`]). It loads the model, transcribes, streams, and
 //!   unloads. With the features `segments` and `concurrent_streams`, it also
 //!   checks the segments of a transcription and three streams at the same
-//!   time. It does not download or delete.
+//!   time. With the features `vad` and `diarization`, and a VAD model or a
+//!   diarization model in [`Ready`], it checks `vad`, a VAD session, and
+//!   `diarize`. It does not download or delete.
 //!
 //! Every line of every engine also gets these checks: it is a JSON object
 //! with `"v":1` and a string `type`, and no request gets two replies.
@@ -44,6 +46,11 @@ pub struct Ready {
     pub audio: PathBuf,
     /// The model has a live preview, so the suite also streams the audio.
     pub stream: bool,
+    /// A VAD model in the same folder. The suite checks it when the engine lists the feature `vad`.
+    pub vad: Option<Model>,
+    /// A diarization model in the same folder. The suite checks it when the engine lists the
+    /// feature `diarization`.
+    pub diarization: Option<Model>,
 }
 
 /// What to test.
@@ -394,23 +401,13 @@ fn ready_level(suite: &Suite, ready: &Ready, features: &[String], report: &mut R
         reply.expect_state(&model.id, "downloaded")
     })());
 
-    let loaded = (|| {
-        let reply = engine.request("load", json!({ "model": model.id, "engine": model.engine }), suite.load_timeout)?;
-        reply.expect_type("ok")?;
-        let ready_event = reply
-            .events
-            .iter()
-            .find(|e| e["type"] == "model_state" && e["model"] == json!(model.id) && e["state"] == "ready")
-            .ok_or_else(|| format!("no model_state ready before ok: {:?}", reply.events))?;
-        match ready_event["load_ms"].as_u64() {
-            Some(_) => Ok(()),
-            None => Err(format!("model_state ready has no integer load_ms: {ready_event}")),
-        }
-    })();
+    let loaded = load_ready(suite, &mut engine, model);
     let load_failed = loaded.is_err();
     report.record("load reports ready with load_ms, then ok", loaded);
     if load_failed {
         report.skip("transcribe, stream, and unload", "the load failed");
+        voice_models(suite, ready, features, &samples, &mut engine, report);
+        report.record("the ready level ends with valid lines", engine.finish(suite.timeout));
         return;
     }
 
@@ -460,6 +457,9 @@ fn ready_level(suite: &Suite, ready: &Ready, features: &[String], report: &mut R
         report.skip("stream", "the model has no live preview");
     }
 
+    // The speech model is still loaded here, so the wrong-model checks of VAD and diarization use it.
+    voice_models(suite, ready, features, &samples, &mut engine, report);
+
     if features.iter().any(|f| f == "unload") {
         report.record("unload reports downloaded, then ok", (|| {
             let reply = engine.request("unload", json!({ "model": model.id }), suite.timeout)?;
@@ -470,6 +470,21 @@ fn ready_level(suite: &Suite, ready: &Ready, features: &[String], report: &mut R
         report.skip("unload after load", "the engine does not list the feature unload");
     }
     report.record("the ready level ends with valid lines", engine.finish(suite.timeout));
+}
+
+/// `load` of a model that is on disk: `model_state ready` with `load_ms`, then `ok`.
+fn load_ready(suite: &Suite, engine: &mut Engine, model: &Model) -> Result<(), String> {
+    let reply = engine.request("load", json!({ "model": model.id, "engine": model.engine }), suite.load_timeout)?;
+    reply.expect_type("ok")?;
+    let ready_event = reply
+        .events
+        .iter()
+        .find(|e| e["type"] == "model_state" && e["model"] == json!(model.id) && e["state"] == "ready")
+        .ok_or_else(|| format!("no model_state ready before ok: {:?}", reply.events))?;
+    match ready_event["load_ms"].as_u64() {
+        Some(_) => Ok(()),
+        None => Err(format!("model_state ready has no integer load_ms: {ready_event}")),
+    }
 }
 
 /// Stream the audio in 160 ms chunks at eight times real time.
@@ -575,6 +590,293 @@ fn check_segments(segments: &Value, audio_ms: u64) -> Result<(), String> {
                 return Err(format!("word is not inside its segment: {word} in {segment}"));
             }
         }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Ready level: VAD and diarization
+// ---------------------------------------------------------------------------
+
+/// Times may pass the end of the audio, and the longest part, by a little, for rounding.
+const SLACK_MS: u64 = 100;
+/// The longest part of VAD (the spec, "VAD").
+const MAX_PART_MS: u64 = 30_000;
+
+/// The checks for the VAD model and the diarization model, when the engine lists the features.
+fn voice_models(suite: &Suite, ready: &Ready, features: &[String], samples: &[i16], engine: &mut Engine, report: &mut Report) {
+    let has = |name: &str| features.iter().any(|f| f == name);
+    let audio_ms = samples.len() as u64 * 1000 / 16_000;
+    match (&ready.vad, has("vad")) {
+        (Some(model), true) => vad_checks(suite, ready, model, samples, features, engine, report),
+        (None, true) => report.skip("VAD", "no VAD model given (--vad)"),
+        (_, false) => report.skip("VAD", "the engine does not list the feature vad"),
+    }
+    match (&ready.diarization, has("diarization")) {
+        (Some(model), true) => diarization_checks(suite, ready, model, audio_ms, features, engine, report),
+        (None, true) => report.skip("diarization", "no diarization model given (--diarization)"),
+        (_, false) => report.skip("diarization", "the engine does not list the feature diarization"),
+    }
+}
+
+/// `list_models` says `downloaded`, then `load`. False when the model did not load.
+fn load_extra(suite: &Suite, engine: &mut Engine, kind: &str, model: &Model, report: &mut Report) -> bool {
+    let entry = json!([{ "id": model.id, "engine": model.engine }]);
+    report.record(&format!("{kind}: list_models reports downloaded"), (|| {
+        let reply = engine.request("list_models", json!({ "models": entry }), suite.timeout)?;
+        reply.expect_type("ok")?;
+        reply.expect_state(&model.id, "downloaded")
+    })());
+    let loaded = load_ready(suite, engine, model);
+    let ok = loaded.is_ok();
+    report.record(&format!("{kind}: load reports ready with load_ms, then ok"), loaded);
+    ok
+}
+
+fn unload_extra(suite: &Suite, engine: &mut Engine, kind: &str, model: &Model, features: &[String], report: &mut Report) {
+    if !features.iter().any(|f| f == "unload") {
+        return;
+    }
+    report.record(&format!("{kind}: unload reports downloaded, then ok"), (|| {
+        let reply = engine.request("unload", json!({ "model": model.id }), suite.timeout)?;
+        reply.expect_type("ok")?;
+        reply.expect_state(&model.id, "downloaded")
+    })());
+}
+
+fn vad_checks(suite: &Suite, ready: &Ready, model: &Model, samples: &[i16], features: &[String], engine: &mut Engine, report: &mut Report) {
+    let audio_ms = samples.len() as u64 * 1000 / 16_000;
+    if !load_extra(suite, engine, "VAD", model, report) {
+        report.skip("VAD: the other checks", "the load failed");
+        return;
+    }
+    report.record("VAD: vad gives ordered parts inside the audio, none longer than 30 s", (|| {
+        let reply = engine.request("vad", json!({ "model": model.id, "path": ready.audio }), suite.load_timeout)?;
+        reply.expect_type("ok")?;
+        check_speech_parts(&reply.reply["speech"], audio_ms)
+    })());
+    report.record("VAD: vad of a missing file gets an error", (|| {
+        let missing = engine.models.path().join("missing.wav");
+        engine
+            .request("vad", json!({ "model": model.id, "path": missing }), suite.load_timeout)?
+            .expect_error()
+    })());
+    report.record(
+        "VAD: a session gives speech_start and speech_end in pairs, and stream_end replies ok",
+        vad_session(suite, engine, &model.id, samples, audio_ms),
+    );
+    report.record("VAD: transcribe and stream_start with a VAD model get an error", (|| {
+        let fields = json!({ "model": model.id, "path": ready.audio, "language": "en", "vocabulary": [] });
+        engine.request("transcribe", fields, suite.load_timeout)?.expect_error()?;
+        engine
+            .request("stream_start", json!({ "session": 62, "model": model.id }), suite.timeout)?
+            .expect_error()
+    })());
+    report.record("VAD: vad and vad_start with the speech model get an error", (|| {
+        let speech = &ready.model.id;
+        engine
+            .request("vad", json!({ "model": speech, "path": ready.audio }), suite.load_timeout)?
+            .expect_error()?;
+        engine
+            .request("vad_start", json!({ "session": 63, "model": speech }), suite.timeout)?
+            .expect_error()
+    })());
+    unload_extra(suite, engine, "VAD", model, features, report);
+}
+
+/// A VAD session on the audio, in chunks of 160 ms at eight times real time.
+fn vad_session(suite: &Suite, engine: &mut Engine, model: &str, samples: &[i16], audio_ms: u64) -> Result<(), String> {
+    const SESSION: u64 = 61;
+    engine
+        .request("vad_start", json!({ "session": SESSION, "model": model }), suite.load_timeout)?
+        .expect_type("ok")?;
+    for chunk in samples.chunks(2560) {
+        let bytes: Vec<u8> = chunk.iter().flat_map(|s| s.to_le_bytes()).collect();
+        let fields = json!({ "session": SESSION, "pcm": STANDARD.encode(bytes) });
+        engine.send_line(&line("stream_audio", None, fields))?;
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let reply = engine.request("stream_end", json!({ "session": SESSION }), suite.load_timeout)?;
+    reply.expect_type("ok")?;
+    if reply.reply["session"] != json!(SESSION) {
+        return Err(format!("stream_end reply has session {}, not {SESSION}", reply.reply["session"]));
+    }
+    let before: Vec<Value> = engine.other[..reply.other_seen]
+        .iter()
+        .filter(|m| m["session"] == json!(SESSION))
+        .cloned()
+        .collect();
+    check_speech_events(&before, audio_ms)?;
+    // No event of the session after the reply of stream_end.
+    std::thread::sleep(Duration::from_millis(300));
+    engine.drain();
+    let late = engine.other.iter().skip(reply.other_seen).find(|m| {
+        matches!(m["type"].as_str(), Some("speech_start" | "speech_end")) && m["session"] == json!(SESSION)
+    });
+    match late {
+        Some(event) => Err(format!("an event came after stream_end: {event}")),
+        None => Ok(()),
+    }
+}
+
+fn diarization_checks(
+    suite: &Suite,
+    ready: &Ready,
+    model: &Model,
+    audio_ms: u64,
+    features: &[String],
+    engine: &mut Engine,
+    report: &mut Report,
+) {
+    if !load_extra(suite, engine, "diarization", model, report) {
+        report.skip("diarization: the other checks", "the load failed");
+        return;
+    }
+    report.record("diarization: diarize gives numbered speakers and ordered turns inside the audio", (|| {
+        let reply = engine.request("diarize", json!({ "model": model.id, "path": ready.audio }), suite.load_timeout)?;
+        reply.expect_type("ok")?;
+        check_turns(&reply.reply, audio_ms, None)
+    })());
+    report.record("diarization: diarize with speakers 1 finds exactly one speaker", (|| {
+        let fields = json!({ "model": model.id, "path": ready.audio, "speakers": 1 });
+        let reply = engine.request("diarize", fields, suite.load_timeout)?;
+        reply.expect_type("ok")?;
+        check_turns(&reply.reply, audio_ms, Some(1))
+    })());
+    report.record("diarization: diarize of a missing file gets an error", (|| {
+        let missing = engine.models.path().join("missing.wav");
+        engine
+            .request("diarize", json!({ "model": model.id, "path": missing }), suite.load_timeout)?
+            .expect_error()
+    })());
+    report.record("diarization: transcribe with a diarization model, and diarize with the speech model, get an error", (|| {
+        let fields = json!({ "model": model.id, "path": ready.audio, "language": "en", "vocabulary": [] });
+        engine.request("transcribe", fields, suite.load_timeout)?.expect_error()?;
+        let fields = json!({ "model": ready.model.id, "path": ready.audio });
+        engine.request("diarize", fields, suite.load_timeout)?.expect_error()
+    })());
+    unload_extra(suite, engine, "diarization", model, features, report);
+}
+
+/// The `speech` list of a `vad` reply: parts in time order, without overlaps, inside the
+/// audio, at most 30 s long. The audio has speech, so there is at least one part.
+fn check_speech_parts(speech: &Value, audio_ms: u64) -> Result<(), String> {
+    let list = speech.as_array().ok_or_else(|| format!("speech is not an array: {speech}"))?;
+    if list.is_empty() {
+        return Err("no speech parts for audio with speech".into());
+    }
+    let mut last_end = 0;
+    for part in list {
+        let (Some(start), Some(end)) = (part["start_ms"].as_u64(), part["end_ms"].as_u64()) else {
+            return Err(format!("start_ms and end_ms must be integers: {part}"));
+        };
+        check_part(start, end, audio_ms)?;
+        if start < last_end {
+            return Err(format!("part starts before the one in front of it ends ({last_end} ms): {part}"));
+        }
+        last_end = end;
+    }
+    Ok(())
+}
+
+/// One speech part: start before end, inside the audio, at most 30 s.
+fn check_part(start: u64, end: u64, audio_ms: u64) -> Result<(), String> {
+    if start > end || end > audio_ms + SLACK_MS {
+        return Err(format!("{start} to {end} ms is not inside the audio of {audio_ms} ms"));
+    }
+    if end - start > MAX_PART_MS + SLACK_MS {
+        return Err(format!("{start} to {end} ms is longer than 30 s"));
+    }
+    Ok(())
+}
+
+/// The events of one VAD session, in the order they came, up to the reply of `stream_end`:
+/// `speech_start`, then `speech_end` with the same start, again and again. No speech is open at
+/// the end, and there is at least one pair for audio with speech.
+fn check_speech_events(events: &[Value], audio_ms: u64) -> Result<(), String> {
+    let mut open: Option<u64> = None;
+    let mut last_end = 0;
+    let mut pairs = 0;
+    for event in events {
+        let kind = event["type"].as_str().unwrap_or_default();
+        let time = |key: &str| event[key].as_u64().ok_or_else(|| format!("{key} is not an integer: {event}"));
+        match kind {
+            "speech_start" => {
+                if open.is_some() {
+                    return Err(format!("speech_start while speech is open: {event}"));
+                }
+                let start = time("start_ms")?;
+                if start < last_end {
+                    return Err(format!("speech starts before the last speech ended ({last_end} ms): {event}"));
+                }
+                open = Some(start);
+            }
+            "speech_end" => {
+                let (start, end) = (time("start_ms")?, time("end_ms")?);
+                if open != Some(start) {
+                    return Err(format!("speech_end does not match a speech_start (open: {open:?}): {event}"));
+                }
+                check_part(start, end, audio_ms)?;
+                open = None;
+                last_end = end;
+                pairs += 1;
+            }
+            _ => {}
+        }
+    }
+    if open.is_some() {
+        return Err("a speech_start has no speech_end before the reply of stream_end".into());
+    }
+    if pairs == 0 {
+        return Err("no speech_start and speech_end for audio with speech".into());
+    }
+    Ok(())
+}
+
+/// The reply of `diarize` for audio with speech: `speakers` of 1 or more (exactly `expected`
+/// when given), `turns` in the order of `start_ms`, inside the audio, with speaker numbers from 0 in
+/// the order of first speech, and no overlap between two turns of one speaker.
+fn check_turns(reply: &Value, audio_ms: u64, expected: Option<u64>) -> Result<(), String> {
+    let speakers = reply["speakers"].as_u64().ok_or_else(|| format!("speakers is not an integer: {reply}"))?;
+    if speakers == 0 {
+        return Err("no speakers for audio with speech".into());
+    }
+    if let Some(expected) = expected
+        && speakers != expected
+    {
+        return Err(format!("speakers is {speakers}, not {expected}"));
+    }
+    let turns = reply["turns"].as_array().ok_or_else(|| format!("turns is not an array: {reply}"))?;
+    let mut next_speaker = 0;
+    let mut last_start = 0;
+    let mut last_end_of: Vec<u64> = Vec::new();
+    for turn in turns {
+        let (Some(start), Some(end), Some(speaker)) =
+            (turn["start_ms"].as_u64(), turn["end_ms"].as_u64(), turn["speaker"].as_u64())
+        else {
+            return Err(format!("start_ms, end_ms, and speaker must be integers: {turn}"));
+        };
+        if start > end || end > audio_ms + SLACK_MS {
+            return Err(format!("times are not inside the audio of {audio_ms} ms: {turn}"));
+        }
+        if start < last_start {
+            return Err(format!("turns are not in the order of start_ms: {turn}"));
+        }
+        last_start = start;
+        if speaker > next_speaker {
+            return Err(format!("speaker {speaker} comes before speaker {next_speaker}: {turn}"));
+        }
+        if speaker == next_speaker {
+            next_speaker += 1;
+            last_end_of.push(0);
+        }
+        if start < last_end_of[speaker as usize] {
+            return Err(format!("two turns of speaker {speaker} overlap: {turn}"));
+        }
+        last_end_of[speaker as usize] = end;
+    }
+    if next_speaker != speakers {
+        return Err(format!("speakers is {speakers}, but the turns have {next_speaker} speakers"));
     }
     Ok(())
 }
@@ -824,6 +1126,10 @@ impl Engine {
             self.problems.push(format!("no string type: {line}"));
         }
         match message["id"].as_str() {
+            Some(id) if matches!(message["type"].as_str(), Some("speech_start" | "speech_end")) => {
+                self.problems.push(format!("a speech event with an id ({id}): {line}"));
+                self.pending.push(message);
+            }
             Some(id) => {
                 if is_reply(&message) && !self.answered.insert(id.to_string()) {
                     self.problems.push(format!("a second reply to {id}: {line}"));
@@ -971,6 +1277,97 @@ mod tests {
         ];
         for segments in bad {
             assert!(check_segments(&segments, 2_000).is_err(), "{segments}");
+        }
+    }
+
+    #[test]
+    fn speech_parts_must_be_in_order_inside_the_audio_and_at_most_30_s() {
+        let good = json!([{"start_ms": 100, "end_ms": 900}, {"start_ms": 900, "end_ms": 31_000}, {"start_ms": 31_000, "end_ms": 40_050}]);
+        assert_eq!(check_speech_parts(&good, 40_000), Ok(()));
+        let bad = [
+            json!([]),
+            json!({"start_ms": 0}),
+            json!([{"start_ms": 0, "end_ms": 900}, {"start_ms": 800, "end_ms": 1000}]),
+            json!([{"start_ms": 900, "end_ms": 100}]),
+            json!([{"start_ms": 0, "end_ms": 40_500}]),
+            json!([{"start_ms": 0, "end_ms": 31_000}]),
+            json!([{"start_ms": 0.5, "end_ms": 900}]),
+        ];
+        for speech in bad {
+            assert!(check_speech_parts(&speech, 40_000).is_err(), "{speech}");
+        }
+    }
+
+    fn event(kind: &str, start_ms: u64, end_ms: Option<u64>) -> Value {
+        let mut event = json!({"v": 1, "type": kind, "session": 61, "start_ms": start_ms});
+        if let Some(end_ms) = end_ms {
+            event["end_ms"] = json!(end_ms);
+        }
+        event
+    }
+
+    #[test]
+    fn speech_events_come_in_pairs_in_order() {
+        let good = [
+            json!({"v": 1, "type": "partial", "session": 61, "committed": "", "tentative": ""}),
+            event("speech_start", 100, None),
+            event("speech_end", 100, Some(900)),
+            event("speech_start", 1_500, None),
+            event("speech_end", 1_500, Some(2_000)),
+        ];
+        assert_eq!(check_speech_events(&good, 2_000), Ok(()));
+        let bad: [&[Value]; 7] = [
+            &[],
+            &[event("speech_start", 100, None)],
+            &[event("speech_end", 100, Some(900))],
+            &[event("speech_start", 100, None), event("speech_start", 200, None)],
+            &[event("speech_start", 100, None), event("speech_end", 150, Some(900))],
+            &[
+                event("speech_start", 100, None),
+                event("speech_end", 100, Some(900)),
+                event("speech_start", 800, None),
+                event("speech_end", 800, Some(1_000)),
+            ],
+            &[event("speech_start", 100, None), event("speech_end", 100, Some(5_000))],
+        ];
+        for events in bad {
+            assert!(check_speech_events(events, 2_000).is_err(), "{events:?}");
+        }
+    }
+
+    #[test]
+    fn turns_have_numbered_speakers_in_order_without_overlap_for_one_speaker() {
+        let good = json!({"speakers": 2, "turns": [
+            {"start_ms": 0, "end_ms": 1_500, "speaker": 0},
+            {"start_ms": 1_000, "end_ms": 2_000, "speaker": 1},
+            {"start_ms": 1_800, "end_ms": 2_000, "speaker": 0}
+        ]});
+        assert_eq!(check_turns(&good, 2_000, None), Ok(()));
+        assert_eq!(check_turns(&good, 2_000, Some(2)), Ok(()));
+        assert!(check_turns(&good, 2_000, Some(1)).is_err());
+        let bad = [
+            json!({"speakers": 0, "turns": []}),
+            json!({"speakers": 1, "turns": []}),
+            json!({"speakers": 2, "turns": [{"start_ms": 0, "end_ms": 900, "speaker": 0}]}),
+            json!({"speakers": 1, "turns": [{"start_ms": 0, "end_ms": 900, "speaker": 1}]}),
+            json!({"speakers": 2, "turns": [
+                {"start_ms": 0, "end_ms": 900, "speaker": 1},
+                {"start_ms": 900, "end_ms": 1_000, "speaker": 0}
+            ]}),
+            json!({"speakers": 1, "turns": [
+                {"start_ms": 500, "end_ms": 900, "speaker": 0},
+                {"start_ms": 0, "end_ms": 400, "speaker": 0}
+            ]}),
+            json!({"speakers": 1, "turns": [
+                {"start_ms": 0, "end_ms": 900, "speaker": 0},
+                {"start_ms": 800, "end_ms": 1_000, "speaker": 0}
+            ]}),
+            json!({"speakers": 1, "turns": [{"start_ms": 0, "end_ms": 5_000, "speaker": 0}]}),
+            json!({"speakers": 1.0, "turns": [{"start_ms": 0, "end_ms": 900, "speaker": 0}]}),
+            json!({"speakers": 1, "turns": [{"start_ms": 0, "end_ms": 900}]}),
+        ];
+        for reply in bad {
+            assert!(check_turns(&reply, 2_000, None).is_err(), "{reply}");
         }
     }
 

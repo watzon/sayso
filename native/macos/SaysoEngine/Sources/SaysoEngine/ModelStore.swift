@@ -43,6 +43,8 @@ struct ModelStore {
         case .canary: return repoDir(.canary1bV2)
         case .senseVoice: return repoDir(.senseVoiceSmall)
         case .paraformer: return repoDir(.paraformerLargeZh)
+        case .fluidVad: return repoDir(.vad)
+        case .fluidDiarization: return repoDir(.diarizer)
         }
     }
 
@@ -155,7 +157,8 @@ struct ModelStore {
         case .senseVoice:
             // A folder from before the fp32 encoder needs a new download.
             return isMarked(spec) && ownFolder(spec).map(SenseVoice.encoderExists) == true
-        case .parakeetTdt, .nemotron, .nemotronMultilingual, .cohere, .canary, .paraformer:
+        case .parakeetTdt, .nemotron, .nemotronMultilingual, .cohere, .canary, .paraformer, .fluidVad,
+            .fluidDiarization:
             return isMarked(spec)
         case .appleSpeech:
             return false  // macOS holds the assets. The engine asks macOS (see `Engine.onDisk`).
@@ -174,7 +177,8 @@ struct ModelStore {
             return whisperComplete(variant)
         case .senseVoice:
             return isMarked(spec) && ownFolder(spec).map(SenseVoice.encoderExists) == true
-        case .parakeetTdt, .nemotron, .nemotronMultilingual, .cohere, .canary, .paraformer:
+        case .parakeetTdt, .nemotron, .nemotronMultilingual, .cohere, .canary, .paraformer, .fluidVad,
+            .fluidDiarization:
             return isMarked(spec)
         case .appleSpeech:
             return false
@@ -194,7 +198,8 @@ struct ModelStore {
         case .whisper(let variant):
             // The tokenizer folder is shared between variants, so it stays.
             try remove(whisperDir(variant))
-        case .parakeetTdt, .nemotron, .nemotronMultilingual, .cohere, .canary, .senseVoice, .paraformer:
+        case .parakeetTdt, .nemotron, .nemotronMultilingual, .cohere, .canary, .senseVoice, .paraformer,
+            .fluidVad, .fluidDiarization:
             if let folder = ownFolder(spec) { try remove(folder) }
         case .appleSpeech:
             throw EngineError("macOS manages the Apple Speech files. Sayso cannot delete them.")

@@ -3,22 +3,25 @@
 //! Threads, as in the Swift engine:
 //! - The stdin loop reads requests. It never runs a model.
 //! - Each request that has one reply (`hello`, `list_models`, `download`,
-//!   `delete`, `load`, `transcribe`) runs on its own thread, so a long
-//!   download or load never blocks other requests.
+//!   `delete`, `load`, `transcribe`, `vad`, `diarize`) runs on its own thread,
+//!   so a long download or load never blocks other requests.
 //! - `unload` runs on the stdin loop, so a later `load` of the same model
 //!   finds the model gone.
-//! - The streaming requests (`stream_start`, `stream_audio`, `stream_end`)
-//!   run in arrival order on one stream worker thread.
+//! - The streaming requests (`stream_start`, `vad_start`, `stream_audio`,
+//!   `stream_end`) run in arrival order on one stream worker thread. A VAD
+//!   session is a stream: it has a session id and counts toward the limit.
 
 use crate::audio;
+use crate::diarization;
 use crate::download::{self, Progress};
 use crate::layout;
 use crate::partials::Partials;
 use crate::protocol::{Coded, FEATURES, Output, PROTOCOL_VERSION, Request};
 use crate::timing::{self, Piece};
-use crate::recognizer::{LivePreview, Loaded, Loader, ModelDirs, PreviewStream};
-use crate::spec::{ModelSpec, Source};
+use crate::recognizer::{Diarizer, LivePreview, Loaded, Loader, ModelDirs, PreviewStream, VadModel};
+use crate::spec::{ModelSpec, Source, Task};
 use crate::store::{Legacy, ModelStore};
+use crate::vad::{self, Tracker};
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -33,7 +36,8 @@ use std::time::{Duration, Instant};
 pub struct Config {
     /// `SAYSO_MODELS_DIR`.
     pub models_dir: PathBuf,
-    /// Where the archives come from. `SAYSO_MODELS_URL` overrides the sherpa-onnx release.
+    /// Where the archives come from. `SAYSO_MODELS_URL` overrides the sherpa-onnx release. The
+    /// releases of the diarization models are next to it (`download::sibling_release_url`).
     pub base_url: String,
     /// Where a GGUF file comes from. `SAYSO_HF_ENDPOINT` overrides Hugging Face, as in the Windows engine.
     pub hf_endpoint: String,
@@ -152,6 +156,8 @@ impl Engine {
             "load" => self.load(request),
             "unload" => self.unload(request),
             "transcribe" => self.transcribe(request),
+            "vad" => self.vad(request),
+            "diarize" => self.diarize(request),
             other => Err(anyhow!("unknown request type {other}")),
         };
         if let Err(e) = result {
@@ -281,12 +287,7 @@ impl Engine {
                 continue; // A complete archive from a download that stopped later.
             }
             let staging = self.store.staging_dir(model, archive)?;
-            let (url, file) = match &spec.source {
-                Source::HuggingFace { repo, file } if archive == spec.archive => {
-                    (download::hf_file_url(&self.config.hf_endpoint, repo, archive, file), Some(file.as_str()))
-                }
-                _ => (download::archive_url(&self.config.base_url, archive), None),
-            };
+            let (url, file) = self.source_of(spec, archive);
             download::fetch(&self.agent, &url, file, &staging, &dest, &mut |bytes| {
                 progress.add(bytes);
                 if progress.due(Instant::now()) {
@@ -300,6 +301,27 @@ impl Engine {
             return Err(Incomplete("download finished but the files are incomplete".into()).into());
         }
         Ok(())
+    }
+
+    /// Where one archive of a model comes from: its URL, and its file name when it is one
+    /// file and not a `.tar.bz2` archive.
+    fn source_of<'a>(&self, spec: &'a ModelSpec, archive: &str) -> (String, Option<&'a str>) {
+        let base = &self.config.base_url;
+        match &spec.source {
+            Source::HuggingFace { repo, file } if archive == spec.archive => {
+                (download::hf_file_url(&self.config.hf_endpoint, repo, archive, file), Some(file.as_str()))
+            }
+            Source::SherpaFile { file } => (download::file_url(base, file), Some(file.as_str())),
+            Source::Diarization { embedding } if spec.embedding_archive() == Some(archive) => {
+                let release = download::sibling_release_url(base, download::EMBEDDING_RELEASE);
+                (download::file_url(&release, embedding), Some(embedding.as_str()))
+            }
+            Source::Diarization { .. } => {
+                let release = download::sibling_release_url(base, download::SEGMENTATION_RELEASE);
+                (download::archive_url(&release, archive), None)
+            }
+            _ => (download::archive_url(base, archive), None),
+        }
     }
 
     fn delete(&self, request: &Request) -> Result<()> {
@@ -320,6 +342,10 @@ impl Engine {
         Ok(ModelDirs {
             main: self.store.archive_dir(model, &spec.archive)?,
             stream: match spec.stream_archive() {
+                Some(archive) => Some(self.store.archive_dir(model, archive)?),
+                None => None,
+            },
+            embedding: match spec.embedding_archive() {
                 Some(archive) => Some(self.store.archive_dir(model, archive)?),
                 None => None,
             },
@@ -358,6 +384,7 @@ impl Engine {
                 .map(|final_pass| Loaded {
                     final_pass,
                     preview: Some(preview),
+                    ..Loaded::default()
                 }),
             None => self.loader.load(&spec, &dirs).and_then(|loaded| {
                 if !spec.redecode_preview {
@@ -469,6 +496,7 @@ impl Engine {
             .get(model)
             .cloned()
             .ok_or_else(|| anyhow!("model {model} is not loaded"))?;
+        check_task(model, &spec, Task::Speech)?;
         if final_pass_is_out(&spec, &loaded) {
             bail!("model {model} is not loaded");
         }
@@ -506,18 +534,97 @@ impl Engine {
         Ok(())
     }
 
-    /// The live preview of a loaded model.
-    fn preview(&self, model: &str) -> Result<Arc<dyn LivePreview>> {
+    // -----------------------------------------------------------------------
+    // VAD and diarization
+    // -----------------------------------------------------------------------
+
+    /// `vad`: the parts of a WAV file with speech. It uses the same tracker as a VAD
+    /// session, so a session that gets the same audio finds the same parts.
+    fn vad(&self, request: &Request) -> Result<()> {
+        let model = request.string("model")?;
+        let path = PathBuf::from(request.string("path")?);
+        let vad_model = self.vad_model(model)?;
+        let samples = audio::read_wav(&path)?;
+        let mut tracker = Tracker::new(vad_model.detector()?);
+        let mut events = tracker.accept(&samples);
+        events.extend(tracker.finish());
+        let speech: Vec<Value> = vad::parts(&events)
+            .into_iter()
+            .map(|(start_ms, end_ms)| json!({ "start_ms": start_ms, "end_ms": end_ms }))
+            .collect();
+        self.out.ok(request.id(), json!({ "speech": speech }));
+        Ok(())
+    }
+
+    /// `diarize`: who speaks when in a WAV file.
+    fn diarize(&self, request: &Request) -> Result<()> {
+        let model = request.string("model")?;
+        let path = PathBuf::from(request.string("path")?);
+        let speakers = speakers(request)?;
+        let diarizer = self.diarizer(model)?;
+        let samples = audio::read_wav(&path)?;
+        let audio_ms = (samples.len() * 1000 / audio::SAMPLE_RATE) as u64;
+        let raw = if samples.is_empty() { Vec::new() } else { diarizer.diarize(&samples, speakers)? };
+        self.out.ok(request.id(), diarization::finish(&raw, audio_ms).to_json());
+        Ok(())
+    }
+
+    /// The VAD of a loaded VAD model.
+    fn vad_model(&self, model: &str) -> Result<Arc<dyn VadModel>> {
         let state = self.state();
-        let (_, loaded) = state
+        let (spec, loaded) = state
             .loaded
             .get(model)
             .ok_or_else(|| anyhow!("model {model} is not loaded"))?;
+        check_task(model, spec, Task::Vad)?;
+        loaded.vad.clone().ok_or_else(|| anyhow!("model {model} has no VAD"))
+    }
+
+    /// The diarizer of a loaded diarization model.
+    fn diarizer(&self, model: &str) -> Result<Arc<dyn Diarizer>> {
+        let state = self.state();
+        let (spec, loaded) = state
+            .loaded
+            .get(model)
+            .ok_or_else(|| anyhow!("model {model} is not loaded"))?;
+        check_task(model, spec, Task::Diarization)?;
+        loaded.diarizer.clone().ok_or_else(|| anyhow!("model {model} has no diarizer"))
+    }
+
+    /// The live preview of a loaded model.
+    fn preview(&self, model: &str) -> Result<Arc<dyn LivePreview>> {
+        let state = self.state();
+        let (spec, loaded) = state
+            .loaded
+            .get(model)
+            .ok_or_else(|| anyhow!("model {model} is not loaded"))?;
+        check_task(model, spec, Task::Speech)?;
         loaded
             .preview
             .clone()
             .ok_or_else(|| anyhow!("model {model} has no live preview"))
     }
+}
+
+/// The `speakers` field of `diarize`: not there, or an integer of 1 or more.
+fn speakers(request: &Request) -> Result<Option<u32>> {
+    match request.value("speakers") {
+        Err(_) | Ok(Value::Null) => Ok(None),
+        Ok(value) => match value.as_u64().filter(|n| *n >= 1) {
+            Some(n) => Ok(Some(u32::try_from(n).unwrap_or(u32::MAX))),
+            None => bail!("speakers must be an integer of 1 or more"),
+        },
+    }
+}
+
+/// Fail when the model does another task than `task`. A speech request gets a speech model,
+/// a VAD request a VAD model, and so on.
+fn check_task(model: &str, spec: &ModelSpec, task: Task) -> Result<()> {
+    let actual = spec.recipe.task();
+    if actual != task {
+        bail!("model {model} is a {} model, not a {} model", actual.name(), task.name());
+    }
+    Ok(())
 }
 
 /// A download that ended with files that are not complete. The `reason` of the
@@ -543,6 +650,16 @@ fn check_files(spec: &ModelSpec, dirs: &ModelDirs) -> Result<()> {
     if let Some(stream) = &dirs.stream {
         layout::online_files(stream)?;
     }
+    match &spec.source {
+        Source::SherpaFile { file } => {
+            layout::vad_file(&dirs.main, file)?;
+        }
+        Source::Diarization { embedding } => {
+            let folder = dirs.embedding.as_ref().context("a diarization model has an embedding folder")?;
+            layout::diarization_files(&dirs.main, folder, embedding)?;
+        }
+        _ => {}
+    }
     Ok(())
 }
 
@@ -566,7 +683,13 @@ fn release_free_memory() {
 // Live preview
 // ---------------------------------------------------------------------------
 
-struct Session {
+/// A stream: a live preview, or a VAD session.
+enum Session {
+    Preview(PreviewSession),
+    Vad(Tracker),
+}
+
+struct PreviewSession {
     stream: Box<dyn PreviewStream>,
     partials: Partials,
     last_decode: Instant,
@@ -597,29 +720,42 @@ impl StreamWorker {
         }
     }
 
+    /// Make room for the session `session`. A session id that is open already starts again
+    /// (`concurrent_streams`). The limit counts preview streams and VAD sessions together.
+    fn reserve(&mut self, session: u64) -> Result<()> {
+        self.sessions.remove(&session);
+        if self.sessions.len() >= MAX_STREAMS {
+            return Err(Coded {
+                code: "too_many_streams",
+                message: format!("{MAX_STREAMS} streams are open; end one first"),
+            }
+            .into());
+        }
+        Ok(())
+    }
+
     fn run(&mut self, request: &Request) -> Result<()> {
         let session = request.u64("session")?;
         match request.kind.as_str() {
             "stream_start" => {
                 let model = request.string("model")?;
                 let preview = self.engine.preview(model)?;
-                // Streams are independent (`concurrent_streams`). A session id
-                // that is open already starts again.
-                self.sessions.remove(&session);
-                if self.sessions.len() >= MAX_STREAMS {
-                    return Err(Coded {
-                        code: "too_many_streams",
-                        message: format!("{MAX_STREAMS} streams are open; end one first"),
-                    }
-                    .into());
-                }
+                self.reserve(session)?;
                 let stream = preview.start()?;
-                let session_state = Session {
+                let session_state = PreviewSession {
                     stream,
                     partials: Partials::default(),
                     last_decode: Instant::now(),
                 };
-                self.sessions.insert(session, session_state);
+                self.sessions.insert(session, Session::Preview(session_state));
+                self.engine.out.ok(request.id(), json!({}));
+            }
+            "vad_start" => {
+                let model = request.string("model")?;
+                let vad_model = self.engine.vad_model(model)?;
+                self.reserve(session)?;
+                let tracker = Tracker::new(vad_model.detector()?);
+                self.sessions.insert(session, Session::Vad(tracker));
                 self.engine.out.ok(request.id(), json!({}));
             }
             "stream_audio" => {
@@ -629,33 +765,46 @@ impl StreamWorker {
                     .get_mut(&session)
                     .ok_or_else(|| anyhow!("unknown stream session {session}"))?;
                 let samples = audio::decode_pcm(request.string("pcm")?)?;
-                state.stream.accept(&samples);
-                if state.last_decode.elapsed() >= interval {
-                    state.last_decode = Instant::now();
-                    // After an ended segment, ask again at once: a stream can end a
-                    // segment and start the next one in the same decode.
-                    loop {
-                        let segment = state.stream.decode();
-                        state.partials.update(&segment);
-                        if !segment.endpoint {
-                            break;
+                match state {
+                    Session::Preview(state) => {
+                        state.stream.accept(&samples);
+                        if state.last_decode.elapsed() >= interval {
+                            state.last_decode = Instant::now();
+                            // After an ended segment, ask again at once: a stream can end a
+                            // segment and start the next one in the same decode.
+                            loop {
+                                let segment = state.stream.decode();
+                                state.partials.update(&segment);
+                                if !segment.endpoint {
+                                    break;
+                                }
+                            }
+                            send_partial(&self.engine.out, session, &mut state.partials);
                         }
                     }
-                    send_partial(&self.engine.out, session, &mut state.partials);
+                    Session::Vad(tracker) => send_speech(&self.engine.out, session, tracker.accept(&samples)),
                 }
             }
             "stream_end" => {
-                let mut state = self
+                let state = self
                     .sessions
                     .remove(&session)
                     .ok_or_else(|| anyhow!("unknown stream session {session}"))?;
-                let segment = state.stream.finish();
-                state.partials.update(&segment);
-                send_partial(&self.engine.out, session, &mut state.partials);
-                let text = state.partials.text();
-                self.engine
-                    .out
-                    .ok(request.id(), json!({ "session": session, "text": text }));
+                match state {
+                    Session::Preview(mut state) => {
+                        let segment = state.stream.finish();
+                        state.partials.update(&segment);
+                        send_partial(&self.engine.out, session, &mut state.partials);
+                        let text = state.partials.text();
+                        self.engine
+                            .out
+                            .ok(request.id(), json!({ "session": session, "text": text }));
+                    }
+                    Session::Vad(mut tracker) => {
+                        send_speech(&self.engine.out, session, tracker.finish());
+                        self.engine.out.ok(request.id(), json!({ "session": session }));
+                    }
+                }
             }
             other => bail!("unknown request type {other}"),
         }
@@ -670,6 +819,22 @@ fn send_partial(out: &Output, session: u64, partials: &mut Partials) {
             None,
             json!({ "session": session, "committed": committed, "tentative": tentative }),
         );
+    }
+}
+
+/// Send the `speech_start` and `speech_end` events of a VAD session.
+fn send_speech(out: &Output, session: u64, events: Vec<vad::Event>) {
+    for event in events {
+        match event {
+            vad::Event::Start { start_ms } => {
+                out.send("speech_start", None, json!({ "session": session, "start_ms": start_ms }));
+            }
+            vad::Event::End { start_ms, end_ms } => out.send(
+                "speech_end",
+                None,
+                json!({ "session": session, "start_ms": start_ms, "end_ms": end_ms }),
+            ),
+        }
     }
 }
 
@@ -704,7 +869,7 @@ pub fn serve(input: impl BufRead, engine: Arc<Engine>) {
             }
         };
         match request.kind.as_str() {
-            "stream_start" | "stream_audio" | "stream_end" => {
+            "stream_start" | "vad_start" | "stream_audio" | "stream_end" => {
                 let _ = stream_tx.send(request);
             }
             "shutdown" => {

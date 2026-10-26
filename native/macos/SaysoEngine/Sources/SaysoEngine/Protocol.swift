@@ -5,7 +5,9 @@ import Foundation
 let protocolVersion = 1
 /// The optional parts of the protocol that this engine has, sent in `hello`
 /// (docs/engine-protocol.md, "Features").
-let engineFeatures = ["concurrent_streams", "language_model", "prepare", "segments", "unload"]
+let engineFeatures = [
+    "concurrent_streams", "diarization", "language_model", "prepare", "segments", "unload", "vad",
+]
 let engineVersion = "0.1.0"
 
 /// A failure that is reported to the client as `{"type":"error"}`. Never crashes the process.
@@ -91,6 +93,10 @@ enum EngineSpec: Equatable {
     case paraformer
     case whisper(variant: String)
     case appleSpeech
+    /// The Silero VAD of FluidAudio.
+    case fluidVad
+    /// The offline speaker diarization of FluidAudio: segmentation, embeddings, clustering.
+    case fluidDiarization
 
     init(json: [String: Any]) throws {
         guard let kind = json["kind"] as? String else { throw EngineError("engine.kind is missing") }
@@ -123,8 +129,26 @@ enum EngineSpec: Equatable {
                 throw EngineError("engine.variant is missing for kind whisper")
             }
             self = .whisper(variant: variant)
+        case "fluid_vad":
+            // Silero only. The FSMN VAD of FluidAudio has no API for a live session.
+            let recipe = (json["recipe"] as? String) ?? "silero"
+            guard recipe == "silero" else { throw EngineError("engine.recipe \(recipe) is not known for kind fluid_vad") }
+            self = .fluidVad
+        case "fluid_diarization":
+            self = .fluidDiarization
         default:
             throw EngineError("unknown engine kind \(kind)")
+        }
+    }
+
+    /// What the model does. A request for one task needs a model of that task.
+    var task: ModelTask {
+        switch self {
+        case .fluidVad: return .vad
+        case .fluidDiarization: return .diarization
+        case .parakeetUnified, .parakeetEou, .parakeetTdt, .nemotron, .nemotronMultilingual, .cohere, .canary,
+            .senseVoice, .paraformer, .whisper, .appleSpeech:
+            return .speech
         }
     }
 
@@ -132,6 +156,25 @@ enum EngineSpec: Equatable {
         let value = (json["chunk_ms"] as? NSNumber)?.intValue ?? 1120
         guard allowed.contains(value) else { throw EngineError("engine.chunk_ms \(value) is not a known tier") }
         return value
+    }
+}
+
+/// What a model does.
+enum ModelTask {
+    /// Audio to text: a final pass, a live preview, or both.
+    case speech
+    /// Finds the parts with speech (`vad`, `vad_start`).
+    case vad
+    /// Finds who speaks when (`diarize`).
+    case diarization
+
+    /// The name of the task in an error message.
+    var name: String {
+        switch self {
+        case .speech: return "speech"
+        case .vad: return "VAD"
+        case .diarization: return "diarization"
+        }
     }
 }
 
@@ -172,6 +215,16 @@ struct Request: @unchecked Sendable {
         if let value = fields[key] as? Int { return value }
         if let value = fields[key] as? NSNumber { return value.intValue }
         throw EngineError("missing integer field \(key)")
+    }
+
+    /// An optional count: absent or null gives nil, else it must be an integer of 1 or more.
+    func optionalCount(_ key: String) throws -> Int? {
+        guard let value = fields[key], !(value is NSNull) else { return nil }
+        // JSON true and 2.5 are NSNumbers too.
+        guard let number = value as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID(),
+            !CFNumberIsFloatType(number), number.int64Value >= 1
+        else { throw EngineError("\(key) must be an integer of 1 or more") }
+        return Int(number.int64Value)
     }
 
     func optionalInt64(_ key: String) -> Int64? { (fields[key] as? NSNumber)?.int64Value }

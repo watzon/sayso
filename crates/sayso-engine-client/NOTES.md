@@ -15,7 +15,7 @@ The protocol is specified in `docs/engine-protocol.md`. This section has only wh
 
 ### Features
 
-`hello` lists the optional parts of the protocol in `features`. The Swift engine lists `language_model`, `prepare`, and `unload`. The Rust engine lists `keep_preview` and `unload`. The client does not read `features` yet: it sends `prepare`, `unload`, and `language_model` to each engine and handles the `error` reply of an engine that does not have them.
+`hello` lists the optional parts of the protocol in `features`. The Swift engine lists `language_model`, `prepare`, and `unload`. The Rust engine lists `concurrent_streams`, `diarization`, `keep_preview`, `segments`, `unload`, and `vad`. The client does not read `features` yet: it sends `prepare`, `unload`, and `language_model` to each engine and handles the `error` reply of an engine that does not have them.
 
 ### Optional part preparation
 

@@ -2,9 +2,9 @@
 //!
 //! `sayso-engine` is a sidecar process. It speaks the same NDJSON protocol (v1)
 //! as the Swift engine on macOS, so `sayso-engine-client` works with it
-//! unchanged. It runs sherpa-onnx models on the CPU, `parakeet_cpp` models on
-//! a GPU with parakeet.cpp (Linux), and `whisper_cpp` models on the CPU with
-//! whisper.cpp (Windows).
+//! unchanged. It runs sherpa-onnx models on the CPU (speech, VAD, and diarization),
+//! `parakeet_cpp` models on a GPU with parakeet.cpp (Linux), and `whisper_cpp`
+//! models on the CPU with whisper.cpp (Windows).
 //!
 //! Modules:
 //! - [`protocol`]: request parsing and the output writer.
@@ -13,6 +13,8 @@
 //! - [`download`]: download and extract a model archive, or download one file.
 //! - [`parakeet`]: the final pass of a `parakeet_cpp` model, on parakeet.cpp.
 //! - [`whisper_cpp`]: the final pass of a `whisper_cpp` model, on whisper.cpp.
+//! - [`vad`]: the rules of voice activity detection, on top of a detector.
+//! - [`diarization`]: the turns of the protocol, made from the turns of the model.
 //! - [`redecode`]: a live preview that decodes the recording again with the final pass.
 //! - [`engine`]: the request handlers and the stream worker.
 //! - [`recognizer`]: the traits that hide sherpa-onnx, so tests can use a fake.
@@ -27,6 +29,7 @@
 compile_error!("the features `parakeet` and `whisper-cpp` link two copies of ggml; use `--no-default-features --features whisper-cpp`");
 
 pub mod audio;
+pub mod diarization;
 pub mod download;
 pub mod engine;
 pub mod layout;
@@ -39,6 +42,7 @@ pub mod sherpa;
 pub mod spec;
 pub mod store;
 pub mod timing;
+pub mod vad;
 pub mod whisper_cpp;
 
 use engine::{Config, Engine};

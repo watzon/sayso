@@ -21,6 +21,8 @@ fn the_fake_engine_passes_the_core_and_ready_levels() {
         model,
         audio,
         stream: true,
+        vad: None,
+        diarization: None,
     });
     let report = run(&suite);
     assert!(report.passed(), "{report}");
