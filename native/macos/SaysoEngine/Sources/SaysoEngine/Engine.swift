@@ -11,9 +11,10 @@ import WhisperKit
 /// The batch part loads with the model, because the final pass waits for the model to be
 /// ready and must not wait for a load after that. The stream part loads at the first live
 /// preview (see `Engine.streamStart`), so a final model with no preview never holds it.
+/// Each other stream at the same time loads a copy of the stream part (see `StreamerPool`).
 final class UnifiedModel: @unchecked Sendable {
     let batch: UnifiedAsrManager
-    let stream: LazyPart<StreamingUnifiedAsrManager>
+    let stream: StreamerPool<Streamer>
     let vocabulary: KeyedParts<[String], VocabularyBooster>
     private let ctc: LazyPart<VocabularyBooster.CtcAssets>
 
@@ -34,15 +35,14 @@ final class UnifiedModel: @unchecked Sendable {
             try await VocabularyBooster(words: words, assets: assets.get())
         }
         self.batch = batch
-        stream = LazyPart(
+        stream = StreamerPool(
             load: {
                 let manager = StreamingUnifiedAsrManager(config: config)
                 let start = nowMs()
                 try await manager.loadModels(from: directory)
                 out.log("debug", "preview part loaded in \(Int(nowMs() - start)) ms")
-                return manager
-            },
-            free: { await $0.cleanup() })
+                return .standard(manager)
+            })
     }
 
     /// Free both parts.
@@ -57,10 +57,10 @@ final class UnifiedModel: @unchecked Sendable {
 /// A model that is held in memory.
 enum LoadedModel {
     case parakeetUnified(UnifiedModel)
-    case parakeetEou(StreamingEouAsrManager)
+    case parakeetEou(StreamerPool<Streamer>)
     case parakeetTdt(AsrManager)
-    case nemotron(StreamingNemotronAsrManager)
-    case nemotronMultilingual(StreamingNemotronMultilingualAsrManager)
+    case nemotron(StreamerPool<Streamer>)
+    case nemotronMultilingual(StreamerPool<Streamer>)
     case cohere(CoherePipeline, CoherePipeline.LoadedModels)
     case canary(CanaryManager)
     case senseVoice(SenseVoiceModels)
@@ -69,21 +69,27 @@ enum LoadedModel {
     /// Apple Speech holds nothing in memory between dictations.
     case appleSpeech
 
-    /// The streaming side of the model, if it has one. Loads a part that loads on first use.
-    func streamer() async throws -> Streamer? {
+    /// The streaming managers of the model, if it has a streaming side.
+    var streamers: StreamerPool<Streamer>? {
         switch self {
-        case .parakeetUnified(let unified): return .standard(try await unified.stream.get())
-        case .parakeetEou(let eou): return .standard(eou)
-        case .nemotron(let nemotron): return .standard(nemotron)
-        case .nemotronMultilingual(let nemotron): return .nemotronMultilingual(nemotron)
+        case .parakeetUnified(let unified): return unified.stream
+        case .parakeetEou(let pool), .nemotron(let pool), .nemotronMultilingual(let pool): return pool
         case .parakeetTdt, .cohere, .canary, .senseVoice, .paraformer, .whisper, .appleSpeech: return nil
         }
     }
 }
 
+extension StreamerPool where Value == Streamer {
+    /// A pool whose managers all come from `load`. The main manager loads at the first use.
+    init(load: @escaping @Sendable () async throws -> Streamer) {
+        let free: @Sendable (Streamer) async -> Void = { await $0.cleanup() }
+        self.init(main: LazyPart(load: load, free: free), loadCopy: load, free: free)
+    }
+}
+
 /// One interface over the streaming managers. Nemotron multilingual has its own API
 /// (a language prompt, float samples) and does not conform to `StreamingAsrManager`.
-enum Streamer {
+enum Streamer: Sendable {
     case standard(any StreamingAsrManager)
     case nemotronMultilingual(StreamingNemotronMultilingualAsrManager)
 
@@ -120,6 +126,52 @@ enum Streamer {
         }
     }
 
+    /// Finish, and give the text with the word times of the model. `offset` is the time in
+    /// seconds of the audio before the recording (the silence of a final pass). `audioMs`
+    /// is the length of the recording.
+    func finishTimed(offset: Double, audioMs: Int) async throws -> Timed {
+        switch self {
+        case .standard(let manager):
+            if let nemotron = manager as? StreamingNemotronAsrManager {
+                let result = try await nemotron.finishWithTokenTimings()
+                return Self.timed(result.text, result.timings, offset: offset, audioMs: audioMs)
+            }
+            if let eou = manager as? StreamingEouAsrManager {
+                // `finish` clears the tokens, so take them first. The last chunk that
+                // `finish` decodes is silence, so it adds no tokens.
+                let tokens = await eou.getRawTokenStrings()
+                let startsMs = await eou.getTokenTimestampsMs()
+                let text = try await eou.finish()
+                guard tokens.count == startsMs.count else { return .untimed(text) }
+                let words = Segments.words(
+                    tokens: tokens, starts: startsMs.map { Double($0) / 1000 - offset }, durations: nil,
+                    audioMs: audioMs)
+                return Timed(text: text, timing: words.isEmpty ? .none : .words(words))
+            }
+            return .untimed(try await manager.finish())
+        case .nemotronMultilingual(let manager):
+            let result = try await manager.finishWithTokenTimings()
+            return Self.timed(result.text, result.timings, offset: offset, audioMs: audioMs)
+        }
+    }
+
+    /// Text with the word times from FluidAudio token times. `offset` (seconds) moves the
+    /// times back to the start of the recording.
+    static func timed(_ text: String, _ timings: [TokenTiming], offset: Double = 0, audioMs: Int) -> Timed {
+        let words = Segments.words(
+            tokens: timings.map(\.token), starts: timings.map { $0.startTime - offset },
+            durations: timings.map { $0.endTime - $0.startTime }, audioMs: audioMs)
+        return Timed(text: text, timing: words.isEmpty ? .none : .words(words))
+    }
+
+    /// Free the models of the manager.
+    func cleanup() async {
+        switch self {
+        case .standard(let manager): await manager.cleanup()
+        case .nemotronMultilingual(let manager): await manager.cleanup()
+        }
+    }
+
     /// The prompt key for a language code. The model lists some languages with a region
     /// only ("ja-JP"), so a plain code falls back to the first key with that prefix.
     static func promptKey(for language: String, in prompts: [String: Int]) -> String {
@@ -146,14 +198,17 @@ enum Streamer {
 private struct StreamSession {
     enum Phase {
         case running(Streamer)
-        /// The stream part of the model loads. The audio waits here and goes to the model
+        /// The manager of the stream loads. The audio waits here and goes to the model
         /// with the first audio or the end of the stream that comes after the load.
-        case waiting(part: LazyPart<StreamingUnifiedAsrManager>, language: String, held: HeldAudio)
+        case waiting(language: String, held: HeldAudio)
     }
 
     var phase: Phase
     let model: String
     let tracker: PartialTracker
+    /// The manager of the stream, from `pool`. It goes back to the pool when the stream ends.
+    let part: LazyPart<Streamer>
+    let pool: StreamerPool<Streamer>
 }
 
 /// The `PreviewTail` of one stream. The partial callback and the end of the stream
@@ -243,8 +298,13 @@ actor Engine {
     private var loaded: [String: LoadedModel] = [:]
     private var busy: Set<String> = []
     private var sessions: [Int: StreamSession] = [:]
-    /// Models whose streaming manager runs a final pass now. A new stream must wait.
-    private var finalPasses: Set<String> = []
+    /// Open sessions whose `stream_end` arrived and did not run yet.
+    private var ending: Set<Int> = []
+    /// The managers of streams that end now. They go back to their pools soon.
+    private var closing: [LazyPart<Streamer>] = []
+    /// The most streams that are open at the same time, on all models together. The
+    /// protocol asks for at least 3: a dictation, and the two sources of a live session.
+    static let maxStreams = 8
 
     init(modelsDir: URL, out: Output) {
         self.store = ModelStore(root: modelsDir)
@@ -452,19 +512,17 @@ actor Engine {
     private func unload(_ model: String) async throws -> Bool {
         for (session, info) in sessions where info.model == model {
             sessions[session] = nil
+            await info.pool.give(info.part)
         }
         guard let entry = loaded.removeValue(forKey: model) else { return false }
         switch entry {
         case .parakeetUnified(let unified):
             await unified.cleanup()
-        case .parakeetEou(let eou):
-            await eou.cleanup()
         case .parakeetTdt(let manager):
             await manager.cleanup()
-        case .nemotron(let manager):
-            await manager.cleanup()
-        case .nemotronMultilingual(let manager):
-            await manager.cleanup()
+        case .parakeetEou(let pool), .nemotron(let pool), .nemotronMultilingual(let pool):
+            // A final pass that runs keeps its manager until it ends.
+            await pool.close()
         case .cohere, .canary, .senseVoice, .paraformer, .whisper, .appleSpeech:
             break  // Released with the last reference.
         }
@@ -518,9 +576,12 @@ actor Engine {
                 batch: batch, config: config, directory: store.unifiedDir, ctcDirectory: store.ctcDir,
                 ctcComplete: { [store] in store.ctcComplete() }, out: out))
         case .parakeetEou:
-            let eou = StreamingEouAsrManager(chunkSize: .ms160)
-            try await eou.loadModels(from: store.eouDir)
-            return .parakeetEou(eou)
+            let dir = store.eouDir
+            return .parakeetEou(try await loadedPool {
+                let eou = StreamingEouAsrManager(chunkSize: .ms160)
+                try await eou.loadModels(from: dir)
+                return .standard(eou)
+            })
         case .whisper(let variant):
             let config = WhisperKitConfig(
                 downloadBase: store.root, modelFolder: store.whisperDir(variant).path,
@@ -551,13 +612,19 @@ actor Engine {
             try await manager.loadModels(models)
             return .parakeetTdt(manager)
         case .nemotron:
-            let manager = StreamingNemotronAsrManager()
-            try await manager.loadModels(from: try folder(spec))
-            return .nemotron(manager)
+            let dir = try folder(spec)
+            return .nemotron(try await loadedPool {
+                let manager = StreamingNemotronAsrManager()
+                try await manager.loadModels(from: dir)
+                return .standard(manager)
+            })
         case .nemotronMultilingual:
-            let manager = StreamingNemotronMultilingualAsrManager()
-            try await manager.loadModels(from: try folder(spec))
-            return .nemotronMultilingual(manager)
+            let dir = try folder(spec)
+            return .nemotronMultilingual(try await loadedPool {
+                let manager = StreamingNemotronMultilingualAsrManager()
+                try await manager.loadModels(from: dir)
+                return .nemotronMultilingual(manager)
+            })
         case .cohere:
             let dir = try folder(spec)
             let models = try await CoherePipeline.loadModels(encoderDir: dir, decoderDir: dir, vocabDir: dir)
@@ -573,6 +640,16 @@ actor Engine {
         }
     }
 
+    /// The managers of a streaming model. The main manager loads now: the model does its
+    /// final pass with it, and the final pass must not wait for a load.
+    private func loadedPool(_ load: @escaping @Sendable () async throws -> Streamer) async throws
+        -> StreamerPool<Streamer>
+    {
+        let pool = StreamerPool(load: load)
+        _ = try await pool.main.get()
+        return pool
+    }
+
     private func folder(_ spec: EngineSpec) throws -> URL {
         guard let folder = store.ownFolder(spec) else { throw EngineError("the model has no folder") }
         return folder
@@ -581,65 +658,68 @@ actor Engine {
     // MARK: - Transcribe
 
     func transcribe(
-        model: String, path: String, language: String, vocabulary: [String], id: String?
+        model: String, path: String, language: String, vocabulary: [String], segments: Bool, id: String?
     ) async throws {
         guard let entry = loaded[model] else { throw EngineError("model \(model) is not loaded") }
         let samples = try AudioConverter().resampleAudioFile(path: path)
         guard !samples.isEmpty else { throw EngineError("audio file has no samples") }
 
         let start = nowMs()
-        let text: String
+        let audioMs = samples.count * 1000 / AudioChunks.sampleRate
+        // The whole recording as one piece.
+        func whole(_ timed: Timed) -> (text: String, pieces: [AudioPiece]) {
+            (timed.text, [AudioPiece(startMs: 0, endMs: audioMs, timed: timed)])
+        }
+        let result: (text: String, pieces: [AudioPiece])
         switch entry {
         case .parakeetUnified(let unified):
-            text = try await transcribeParakeet(unified, samples: samples, vocabulary: vocabulary)
+            result = whole(try await transcribeParakeet(
+                unified, samples: samples, vocabulary: vocabulary, timed: segments))
         case .whisper(let kit):
-            text = try await transcribeWhisper(
-                kit, samples: samples, language: language, vocabulary: vocabulary)
+            result = whole(try await transcribeWhisper(
+                kit, samples: samples, language: language, vocabulary: vocabulary, timed: segments))
         case .parakeetTdt(let manager):
             var state = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
             // The language is a hint for the v3 family. The other versions ignore it.
-            let result = try await manager.transcribe(
+            let asr = try await manager.transcribe(
                 samples, decoderState: &state, language: Language(rawValue: language))
-            text = result.text
-        case .nemotron(let manager):
-            text = try await transcribeStreaming(
-                model: model, streamer: .standard(manager), samples: samples, language: language)
-        case .nemotronMultilingual(let manager):
-            // The words bias the decoder. An empty list turns the bias off.
-            await manager.setCustomVocabulary(vocabulary.map { CustomVocabularyTerm(text: $0) })
-            text = try await transcribeStreaming(
-                model: model, streamer: .nemotronMultilingual(manager), samples: samples, language: language)
+            result = whole(Streamer.timed(asr.text, asr.tokenTimings ?? [], audioMs: audioMs))
+        case .nemotron(let pool):
+            result = whole(try await transcribeStreaming(
+                pool: pool, samples: samples, language: language, vocabulary: nil))
+        case .nemotronMultilingual(let pool):
+            result = whole(try await transcribeStreaming(
+                pool: pool, samples: samples, language: language, vocabulary: vocabulary))
         case .cohere(let pipeline, let models):
             // Cohere needs a language. Detection is not possible, so "auto" means English.
-            let result = try await pipeline.transcribeLong(
+            let cohere = try await pipeline.transcribeLong(
                 audio: samples, models: models,
                 language: CohereAsrConfig.Language(rawValue: language) ?? .english)
-            text = result.text
+            result = whole(.untimed(cohere.text))
         case .canary(let manager):
-            text = try await manager.transcribe(audio: samples)
+            result = whole(.untimed(try await manager.transcribe(audio: samples)))
         case .senseVoice(let models):
-            var parts: [String] = []
-            for chunk in AudioChunks.split(samples, maxSeconds: SenseVoice.maxSeconds) {
-                parts.append(try SenseVoice.transcribe(models: models, audio: chunk, language: SenseVoice.language(language)))
+            result = try await AudioChunks.transcribe(samples, maxSeconds: SenseVoice.maxSeconds) { chunk in
+                try SenseVoice.transcribe(models: models, audio: chunk, language: SenseVoice.language(language))
             }
-            text = AudioChunks.join(parts)
         case .paraformer(let manager):
-            var parts: [String] = []
-            for chunk in AudioChunks.split(samples, maxSeconds: 25) {
-                parts.append(try await manager.transcribe(audio: chunk))
+            result = try await AudioChunks.transcribe(samples, maxSeconds: 25) { chunk in
+                try await manager.transcribe(audio: chunk)
             }
-            text = AudioChunks.join(parts)
         case .appleSpeech:
             guard #available(macOS 26, *) else { throw EngineError("Apple Speech needs macOS 26") }
-            text = try await AppleSpeech.transcribe(
-                url: URL(fileURLWithPath: path), language: language, vocabulary: vocabulary)
-        case .parakeetEou(let eou):
-            text = try await transcribeStreaming(
-                model: model, streamer: .standard(eou), samples: samples, language: language)
+            result = whole(try await AppleSpeech.transcribe(
+                url: URL(fileURLWithPath: path), language: language, vocabulary: vocabulary,
+                timed: segments, audioMs: audioMs))
+        case .parakeetEou(let pool):
+            result = whole(try await transcribeStreaming(
+                pool: pool, samples: samples, language: language, vocabulary: nil))
         }
-        out.send(
-            "final", id: id,
-            ["text": text.trimmingCharacters(in: .whitespacesAndNewlines), "elapsed_ms": Int(nowMs() - start)])
+        var fields: [String: Any] = [
+            "text": result.text.trimmingCharacters(in: .whitespacesAndNewlines), "elapsed_ms": Int(nowMs() - start),
+        ]
+        if segments { fields["segments"] = Segments.json(Segments.of(result.pieces)) }
+        out.send("final", id: id, fields)
     }
 
     /// One second of silence before and after the audio of a streaming final pass. The
@@ -649,38 +729,66 @@ actor Engine {
     /// worse with lead-in silence.
     static let streamSilence = [Float](repeating: 0, count: 16_000)
 
-    /// Final pass with a streaming model: feed the whole recording through its stream.
+    /// Final pass with a streaming model: feed the whole recording through a manager of
+    /// the model. Streams of the model that are open keep their managers. `vocabulary`
+    /// biases Nemotron multilingual, and nil leaves the manager as it is.
     private func transcribeStreaming(
-        model: String, streamer: Streamer, samples: [Float], language: String
-    ) async throws -> String {
-        // The live preview of the same dictation uses the same manager. Its `stream_end`
-        // can arrive after this request, so wait for it.
+        pool: StreamerPool<Streamer>, samples: [Float], language: String, vocabulary: [String]?
+    ) async throws -> Timed {
+        // The live preview of the same dictation usually ends just before its final pass,
+        // but its `stream_end` can run after this request. Wait a little for its manager,
+        // so that the final pass does not load a copy of the model.
         let deadline = nowMs() + 5000
-        while sessions.values.contains(where: { $0.model == model }) || finalPasses.contains(model) {
-            guard nowMs() < deadline else { throw EngineError("model \(model) is busy with another stream") }
+        while await !pool.mainIsFree, nowMs() < deadline,
+            closing.contains(where: { $0 === pool.main })
+                || sessions.contains(where: { ending.contains($0.key) && $0.value.part === pool.main })
+        {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
-        finalPasses.insert(model)
-        defer { finalPasses.remove(model) }
-        try await streamer.begin(language: language, onPartial: { _ in })
-        try await streamer.feed(Self.streamSilence + samples + Self.streamSilence)
-        return try await streamer.finish()
+        let part = try await pool.take()
+        do {
+            let streamer = try await part.get()
+            if let vocabulary, case .nemotronMultilingual(let manager) = streamer {
+                // The words bias the decoder. An empty list turns the bias off.
+                await manager.setCustomVocabulary(vocabulary.map { CustomVocabularyTerm(text: $0) })
+            }
+            try await streamer.begin(language: language, onPartial: { _ in })
+            try await streamer.feed(Self.streamSilence + samples + Self.streamSilence)
+            let timed = try await streamer.finishTimed(
+                offset: Double(Self.streamSilence.count) / Double(AudioChunks.sampleRate),
+                audioMs: samples.count * 1000 / AudioChunks.sampleRate)
+            await pool.give(part)
+            return timed
+        } catch {
+            await pool.give(part)
+            throw error
+        }
     }
 
+    /// Final pass with Parakeet Unified. With `timed`, or with dictionary words, the pass
+    /// also gives the token times.
     private func transcribeParakeet(
-        _ unified: UnifiedModel, samples: [Float], vocabulary: [String]
-    ) async throws -> String {
+        _ unified: UnifiedModel, samples: [Float], vocabulary: [String], timed: Bool
+    ) async throws -> Timed {
+        let audioMs = samples.count * 1000 / AudioChunks.sampleRate
+        var booster: VocabularyBooster?
         if !vocabulary.isEmpty {
-            let booster: VocabularyBooster?
             do { booster = try await unified.vocabulary.get(vocabulary) }
-            catch { out.log("warn", "vocabulary ignored: \(error)"); booster = nil }
-            if let booster {
-                let result = try await unified.batch.transcribeWithTimings(samples)
-                return await booster.rescore(
-                    text: result.text, tokenTimings: result.tokenTimings, samples: samples)
-            }
+            catch { out.log("warn", "vocabulary ignored: \(error)") }
         }
-        return try await unified.batch.transcribe(samples)
+        guard timed || booster != nil else { return .untimed(try await unified.batch.transcribe(samples)) }
+        let result = try await unified.batch.transcribeWithTimings(samples)
+        var text = result.text
+        if let booster {
+            text = await booster.rescore(text: result.text, tokenTimings: result.tokenTimings, samples: samples)
+        }
+        var timing = Streamer.timed(result.text, result.tokenTimings, audioMs: audioMs).timing
+        // Dictionary words can change the text. The times then stay with the words that
+        // they replace, or are lost when the number of words changed.
+        if text != result.text, case .words(let words) = timing {
+            timing = Segments.retext(words, to: text).map(Timing.words) ?? .none
+        }
+        return Timed(text: text, timing: timing)
     }
 
     /// Load optional parts before a dictation. Failure leaves lazy loading available.
@@ -695,7 +803,7 @@ actor Engine {
                 group.addTask {
                     report("preview", "preparing")
                     do {
-                        _ = try await entry.streamer()
+                        _ = try await entry.streamers?.main.get()
                         report("preview", "ready")
                     } catch {
                         report("preview", "failed")
@@ -721,9 +829,10 @@ actor Engine {
         out.ok(id: id)
     }
 
+    /// Final pass with Whisper. With `timed`, WhisperKit also gives word times.
     private func transcribeWhisper(
-        _ kit: WhisperKit, samples: [Float], language: String, vocabulary: [String]
-    ) async throws -> String {
+        _ kit: WhisperKit, samples: [Float], language: String, vocabulary: [String], timed: Bool
+    ) async throws -> Timed {
         let detect = language.isEmpty || language == "auto"
         var options = DecodingOptions(
             language: detect ? nil : language, detectLanguage: detect)
@@ -743,42 +852,56 @@ actor Engine {
                 .filter { $0 < tokenizer.specialTokens.specialTokenBegin }
             options.usePrefillPrompt = true
         }
+        options.wordTimestamps = timed
         let results = try await kit.transcribe(audioArray: samples, decodeOptions: options)
-        return results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = results.map(\.text).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Each word of Whisper starts with a space, except the parts of a word.
+        let words = results.flatMap(\.segments).flatMap { $0.words ?? [] }
+        let timedWords = Segments.words(
+            tokens: words.map(\.word), starts: words.map { Double($0.start) },
+            durations: words.map { Double($0.end - $0.start) }, audioMs: samples.count * 1000 / WhisperKit.sampleRate)
+        return Timed(text: text, timing: timedWords.isEmpty ? .none : .words(timedWords))
     }
 
     // MARK: - Streaming
 
+    /// Open a stream. Streams are independent (`concurrent_streams`): each stream has a
+    /// manager of its own (see `StreamerPool`). A session id that is open already starts again.
     func streamStart(session: Int, model: String, language: String) async throws {
         guard let entry = loaded[model] else { throw EngineError("model \(model) is not loaded") }
-        if case .parakeetUnified(let unified) = entry {
-            guard !finalPasses.contains(model) else { throw EngineError("model \(model) is busy with a final pass") }
-            // The first preview of a loaded model loads the stream part. The load can take a
-            // minute after an update (Core ML compiles the model), and the app waits for this
-            // reply while the user starts to speak. So reply now, and let the audio wait.
-            if await !unified.stream.isLoaded {
-                guard loaded[model] != nil else { throw EngineError("model \(model) is not loaded") }
-                for (other, info) in sessions where info.model == model { sessions[other] = nil }
-                sessions[session] = StreamSession(
-                    phase: .waiting(part: unified.stream, language: language, held: HeldAudio()),
-                    model: model, tracker: PartialTracker())
-                warm(unified.stream, model: model)
-                return
-            }
+        guard let pool = entry.streamers else { throw EngineError("model \(model) has no live preview") }
+        if let old = sessions.removeValue(forKey: session) { await old.pool.give(old.part) }
+        guard sessions.count < Self.maxStreams else {
+            throw EngineError("\(Self.maxStreams) streams are open; end one first", code: "too_many_streams")
         }
-        guard let streamer = try await entry.streamer() else {
-            throw EngineError("model \(model) has no live preview")
-        }
-        guard !finalPasses.contains(model) else { throw EngineError("model \(model) is busy with a final pass") }
-        // One live stream per manager. A new session replaces an older one.
-        for (other, info) in sessions where info.model == model { sessions[other] = nil }
+        let part = try await pool.take()
         let tracker = PartialTracker()
-        try await streamer.begin(language: language, onPartial: partialHandler(session: session, tracker: tracker))
-        sessions[session] = StreamSession(phase: .running(streamer), model: model, tracker: tracker)
+        var phase = StreamSession.Phase.waiting(language: language, held: HeldAudio())
+        if let streamer = await part.loadedValue {
+            do {
+                try await streamer.begin(
+                    language: language, onPartial: partialHandler(session: session, tracker: tracker))
+            } catch {
+                await pool.give(part)
+                throw error
+            }
+            phase = .running(streamer)
+        }
+        // The model may have been unloaded while the stream started.
+        guard loaded[model]?.streamers === pool else {
+            await pool.give(part)
+            throw EngineError("model \(model) is not loaded")
+        }
+        sessions[session] = StreamSession(phase: phase, model: model, tracker: tracker, part: part, pool: pool)
+        // The first preview of a loaded model, or a second stream on it, loads a manager.
+        // The load can take a minute after an update (Core ML compiles the model), and the
+        // app waits for this reply while the user starts to speak. So reply now, and let
+        // the audio wait.
+        if case .waiting = phase { warm(part, model: model) }
     }
 
     /// Load a part in the background. A failure goes to the log. The next stream tries again.
-    private func warm(_ part: LazyPart<StreamingUnifiedAsrManager>, model: String) {
+    private func warm(_ part: LazyPart<Streamer>, model: String) {
         let out = self.out
         Task {
             do { _ = try await part.get() } catch is LazyPartError {} catch {
@@ -800,14 +923,18 @@ actor Engine {
     /// The streamer of a session that waited for its model, started and given the audio
     /// that came before. Nil while the model is not in memory yet.
     private func startWaiting(session: Int, info: StreamSession) async throws -> Streamer? {
-        guard case .waiting(let part, let language, var held) = info.phase,
-            let manager = await part.loadedValue
+        guard case .waiting(let language, var held) = info.phase,
+            let streamer = await info.part.loadedValue
         else { return nil }
-        let streamer = Streamer.standard(manager)
         try await streamer.begin(language: language, onPartial: partialHandler(session: session, tracker: info.tracker))
         let audio = held.take()
         if !audio.isEmpty { try await streamer.feed(audio) }
         return streamer
+    }
+
+    /// True when `info` is still the open stream of `session`.
+    private func isOpen(_ session: Int, _ info: StreamSession) -> Bool {
+        sessions[session]?.part === info.part
     }
 
     func streamAudio(session: Int, pcm: String) async throws {
@@ -819,36 +946,59 @@ actor Engine {
         switch info.phase {
         case .running(let streamer):
             try await streamer.feed(samples)
-        case .waiting(let part, let language, var held):
+        case .waiting(let language, var held):
             // Put the new audio behind the audio that waits, then run both when the model is in memory.
             held.append(samples)
-            info.phase = .waiting(part: part, language: language, held: held)
+            info.phase = .waiting(language: language, held: held)
             guard let streamer = try await startWaiting(session: session, info: info) else {
-                if sessions[session] != nil { sessions[session] = info }
+                if isOpen(session, info) { sessions[session] = info }
                 return
             }
-            // The stream may have ended or been replaced while the model started.
-            guard sessions[session] != nil else { return }
+            // The stream may have ended while the model started.
+            guard isOpen(session, info) else { return }
             info.phase = .running(streamer)
             sessions[session] = info
         }
     }
 
-    /// Finish a stream. Returns the final preview text.
-    func streamEnd(session: Int) async throws -> String {
-        guard let info = sessions[session] else {
+    /// Mark a stream whose `stream_end` arrived, before it runs. A final pass that comes
+    /// after it can then wait for the manager of the stream.
+    func streamEnding(session: Int) {
+        if sessions[session] != nil { ending.insert(session) }
+    }
+
+    /// End a stream. It leaves the open streams now, so its session id is free again. The
+    /// task finishes the stream and gives its last text. The task can wait for the load of
+    /// the manager of the stream, so the caller does not wait for it before the next
+    /// stream request.
+    func streamEnd(session: Int) throws -> Task<String, Error> {
+        ending.remove(session)
+        guard let info = sessions.removeValue(forKey: session) else {
             throw EngineError("unknown stream session \(session)")
         }
-        // The session stays registered until the manager is done, so a final pass on the
-        // same manager waits for it.
-        defer { sessions[session] = nil }
+        // A final pass that comes now waits for this manager and does not load a copy.
+        closing.append(info.part)
+        return Task {
+            do {
+                let text = try await finishStream(session: session, info: info)
+                await release(info)
+                return text
+            } catch {
+                await release(info)
+                throw error
+            }
+        }
+    }
+
+    private func finishStream(session: Int, info: StreamSession) async throws -> String {
         let streamer: Streamer
         switch info.phase {
         case .running(let running):
             streamer = running
         case .waiting:
-            // A stream that ends before its model loads gives no text. The preview is for the
-            // overlay only, and the next stream must not wait for the load behind this request.
+            // The manager of the stream still loads. Wait for it, then decode the audio
+            // that waited. The first load of a model can take a minute after an update.
+            _ = try await info.part.get()
             guard let started = try await startWaiting(session: session, info: info) else { return "" }
             streamer = started
         }
@@ -857,6 +1007,12 @@ actor Engine {
             out.send("partial", ["session": session, "committed": committed, "tentative": ""])
         }
         return text
+    }
+
+    /// Give the manager of an ended stream back to its pool.
+    private func release(_ info: StreamSession) async {
+        closing.removeAll { $0 === info.part }
+        await info.pool.give(info.part)
     }
 
     /// 16 kHz mono little-endian Int16 bytes to float samples.
@@ -905,6 +1061,22 @@ enum AudioChunks {
         }
         pieces.append(Array(samples[start...]))
         return pieces
+    }
+
+    /// Transcribe each piece of `split` alone. Returns the joined text, and each piece
+    /// with its time and text (timestamp level `none`).
+    static func transcribe(
+        _ samples: [Float], maxSeconds: Int, _ pass: ([Float]) async throws -> String
+    ) async throws -> (text: String, pieces: [AudioPiece]) {
+        var pieces: [AudioPiece] = []
+        var offset = 0
+        for chunk in split(samples, maxSeconds: maxSeconds) {
+            let text = try await pass(chunk)
+            let startMs = offset * 1000 / sampleRate
+            offset += chunk.count
+            pieces.append(AudioPiece(startMs: startMs, endMs: offset * 1000 / sampleRate, timed: .untimed(text)))
+        }
+        return (join(pieces.map(\.timed.text)), pieces)
     }
 
     /// Join the texts of the pieces. A space goes between two pieces only when the left

@@ -40,6 +40,12 @@ The NDJSON protocol between an engine and its client (`docs/engine-protocol.md`,
 **Engine feature**
 An optional part of the engine protocol that an engine lists in its `hello` reply, for example `unload`. A client checks for a feature before it uses it.
 
+**Segment**
+A part of a transcript with its start and end time in the audio. `transcribe` gives segments when the client asks for them.
+
+**Timestamp level**
+How much timing a model gives with its text: `word` (segments with the time of each word), `segment` (the model's own segments), or `none`. The model catalog says the level of each model.
+
 **Model**
 A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". A dictation uses a final model and, when the live preview is on, a preview model. A model is a local model or a cloud model.
 

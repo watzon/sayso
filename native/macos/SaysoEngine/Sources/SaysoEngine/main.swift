@@ -54,7 +54,7 @@ func handle(_ request: Request) async {
             try await engine.transcribe(
                 model: try request.string("model"), path: try request.string("path"),
                 language: request.optionalString("language") ?? "en",
-                vocabulary: request.stringArray("vocabulary"), id: id)
+                vocabulary: request.stringArray("vocabulary"), segments: request.optionalBool("segments"), id: id)
         case "language_model":
             switch SystemModel.status() {
             case .success(let model): out.ok(id: id, ["available": true, "model": model])
@@ -77,11 +77,12 @@ func handle(_ request: Request) async {
     } catch let failure as LanguageModelError {
         out.error(failure.message, id: id, code: failure.code, reason: failure.reason)
     } catch {
-        out.error("\(error)", id: id)
+        out.error("\(error)", id: id, code: (error as? EngineError)?.code)
     }
 }
 
-/// Streaming requests must run in arrival order, so they share one serial queue.
+/// Streaming requests must run in arrival order, so they share one serial queue. The end
+/// of a stream replies when its text is ready (see `Engine.streamEnd`).
 func handleStream(_ request: Request) async {
     let id = request.id
     do {
@@ -95,13 +96,19 @@ func handleStream(_ request: Request) async {
         case "stream_audio":
             try await engine.streamAudio(session: session, pcm: try request.string("pcm"))
         case "stream_end":
-            let text = try await engine.streamEnd(session: session)
-            out.ok(id: id, ["session": session, "text": text])
+            let finishing = try await engine.streamEnd(session: session)
+            // The end of a stream can wait for the load of its model. The stream requests
+            // after it do not wait for that.
+            Task {
+                do { out.ok(id: id, ["session": session, "text": try await finishing.value]) } catch {
+                    out.error("\(error)", id: id, code: (error as? EngineError)?.code)
+                }
+            }
         default:
             throw EngineError("unknown request type \(request.type)")
         }
     } catch {
-        out.error("\(error)", id: id)
+        out.error("\(error)", id: id, code: (error as? EngineError)?.code)
     }
 }
 
@@ -125,6 +132,10 @@ for await line in lines {
     }
     switch request.type {
     case "stream_start", "stream_audio", "stream_end":
+        if request.type == "stream_end", let session = try? request.int("session") {
+            // Before the requests after it: a final pass that follows waits for this stream.
+            await engine.streamEnding(session: session)
+        }
         streamSink.yield(request)
     case "unload":
         // In arrival order: a `load` that follows must not find the model.

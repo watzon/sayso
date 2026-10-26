@@ -88,6 +88,20 @@ pub enum EngineKind {
     ParakeetCpp { repo: String, revision: String, file: String, preview_archive: Option<String> },
 }
 
+/// How much timing a model gives with its text: the timestamp level of
+/// `transcribe` with `segments: true` (`docs/engine-protocol.md`, "Segments").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Timestamps {
+    /// Segments with the time of each word.
+    Word,
+    /// The model's own segments, without word times.
+    Segment,
+    /// No times: one segment for each piece of audio that the engine
+    /// transcribes alone.
+    None,
+}
+
 /// A group of models in the Models page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Family {
@@ -120,6 +134,35 @@ impl EngineKind {
             EngineKind::Sherpa { .. } => "sherpa-onnx",
             EngineKind::ParakeetCpp { .. } => "parakeet.cpp",
             _ => "FluidAudio",
+        }
+    }
+
+    /// The timestamp level of the model. Checked with real models in both
+    /// engines (2026-10-26), except where a comment says otherwise.
+    pub fn timestamps(&self) -> Timestamps {
+        match self {
+            // FluidAudio token times. EOU and Nemotron multilingual are
+            // checked only in the code; they use the same path as Nemotron.
+            EngineKind::ParakeetUnified { .. }
+            | EngineKind::ParakeetEou
+            | EngineKind::ParakeetTdt { .. }
+            | EngineKind::Nemotron { .. }
+            | EngineKind::NemotronMultilingual { .. } => Timestamps::Word,
+            EngineKind::Whisper { .. } | EngineKind::AppleSpeech => Timestamps::Word,
+            EngineKind::WhisperCpp { .. } => Timestamps::Segment,
+            // sherpa-onnx gives token times for these recipes only.
+            EngineKind::Sherpa { recipe, .. } => match recipe.as_str() {
+                "parakeet_tdt" | "parakeet_tdt_ctc" | "sense_voice" => Timestamps::Word,
+                _ => Timestamps::None,
+            },
+            // parakeet.cpp gives only the text. A cloud model's text comes
+            // from the provider, not from an engine.
+            EngineKind::ParakeetCpp { .. }
+            | EngineKind::Cohere
+            | EngineKind::Canary
+            | EngineKind::SenseVoice
+            | EngineKind::Paraformer
+            | EngineKind::Remote { .. } => Timestamps::None,
         }
     }
 
@@ -815,6 +858,17 @@ mod tests {
         assert_eq!(suggested_for("en", any), default_model());
         assert_eq!(suggested_for(languages::AUTO, any), default_model());
         assert_eq!(suggested_for("zh", any), ModelId::new(by_os("sensevoice-small", "whisper-large-v3-turbo", "sensevoice-small")));
+    }
+
+    #[test]
+    fn timestamp_levels_follow_the_engines() {
+        let tdt = EngineKind::Sherpa { recipe: "parakeet_tdt".into(), archive: "a".into(), preview_archive: None, redecode_preview: false };
+        let whisper = EngineKind::Sherpa { recipe: "whisper".into(), archive: "a".into(), preview_archive: None, redecode_preview: false };
+        assert_eq!(tdt.timestamps(), Timestamps::Word);
+        assert_eq!(whisper.timestamps(), Timestamps::None);
+        assert_eq!(EngineKind::WhisperCpp { file: "f".into() }.timestamps(), Timestamps::Segment);
+        assert_eq!(EngineKind::Cohere.timestamps(), Timestamps::None);
+        assert_eq!(serde_json::to_value(Timestamps::Word).unwrap(), "word");
     }
 
     #[test]
