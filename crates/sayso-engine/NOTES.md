@@ -14,6 +14,23 @@ Windows used its own engine before 0.12: `SaysoEngine.exe`, a separate Cargo wor
 
 The catalogs are in `crates/sayso-core/src/models_onnx.rs` (`catalog_for`). Windows has Whisper on whisper.cpp; Linux has Whisper on sherpa-onnx. Both systems run Parakeet TDT v3 with a redecode live preview.
 
+## VAD and diarization
+
+The kinds `sherpa_vad` and `sherpa_diarization` (`spec.rs` reads them; the catalog of Sayso does not have them yet) give the requests `vad`, `vad_start`, and `diarize` (spec: "VAD" and "Diarization").
+
+| Model | Files in `<models>/<id>/` | Download |
+|---|---|---|
+| `sherpa_vad` silero or ten | `<file without .onnx>/<file>` | `<file>` in the `asr-models` release (`silero_vad.onnx` 643,854 bytes, `ten-vad.onnx` 332,211 bytes) |
+| `sherpa_diarization` | `<segmentation>/` (extracted, uses `model.onnx`) and `<embedding without .onnx>/<embedding>` | `<segmentation>.tar.bz2` in the release `speaker-segmentation-models`, `<embedding>` in the release `speaker-recongition-models` (sic) |
+
+The two other releases are next to the release of `SAYSO_MODELS_URL` (`download::sibling_release_url`). Any embedding file name works.
+
+- The rules of VAD (250 ms, 500 ms, 30 s) are in `vad.rs`. sherpa-onnx 1.13.8 follows the first two (`min_speech_duration`, `min_silence_duration`). Its `max_speech_duration` is not a limit: after that length it only lowers the pause that ends speech to 100 ms and raises the threshold to 0.9, so it splits at a short pause, and not at all in speech without one. A split leaves a gap under 500 ms between two parts. So the detector gets `max_speech_duration` of one hour, and `vad::Tracker` cuts the speech at 30 s. The next part starts at the cut. The threshold is the sherpa-onnx default, 0.5.
+- The detector of sherpa-onnx makes one decision for each call, and a call with several windows can hide a pause. So `Tracker` gives it one window at a time (512 samples for Silero, 256 for TEN), and any chunk size from the client gives the same events. The `vad` request and a VAD session use the same `Tracker`.
+- `speech_start` comes when the detector has the speech open (250 ms of speech and two windows after it began), with the start that the detector reports at the end of the part. The cut at 30 s waits for 750 ms more speech, so the part after the cut is not shorter than 250 ms. At the end of the audio, `Tracker` gives the detector a pause (and no `flush`), so the last speech ends where it stops and not at the end of the audio.
+- Diarization uses `OfflineSpeakerDiarization` with fast clustering. `speakers` is `num_clusters`. Without it, the clustering threshold is `diarization::CLUSTER_THRESHOLD` (0.5, the sherpa-onnx default). `diarization::finish` numbers the speakers, joins the turns of one speaker, and sorts the turns.
+- The conformance suite runs these checks with `--vad <id> <json>` and `--diarization <id> <json>` (see `sayso-engine-conformance`).
+
 ## Build on Windows
 
 ```text

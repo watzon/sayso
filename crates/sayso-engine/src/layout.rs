@@ -99,6 +99,15 @@ pub struct OnlineFiles {
     pub tokens: PathBuf,
 }
 
+/// The files of a diarization model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiarizationFiles {
+    /// The pyannote segmentation model.
+    pub segmentation: PathBuf,
+    /// The speaker embedding model.
+    pub embedding: PathBuf,
+}
+
 /// The model files in one folder, not in subfolders.
 struct Listing {
     dir: PathBuf,
@@ -208,6 +217,7 @@ pub fn offline_files(recipe: Recipe, dir: &Path) -> Result<OfflineFiles> {
         Recipe::ZipformerStreaming => bail!("a streaming model has no final pass"),
         Recipe::ParakeetGguf => bail!("parakeet.cpp loads a GGUF model"),
         Recipe::WhisperCpp => bail!("whisper.cpp loads a GGML model"),
+        Recipe::SileroVad | Recipe::TenVad | Recipe::Diarization => bail!("a VAD or diarization model has no final pass"),
     })
 }
 
@@ -219,6 +229,36 @@ pub fn online_files(dir: &Path) -> Result<OnlineFiles> {
         joiner: list.model("joiner")?,
         tokens: list.tokens()?,
     })
+}
+
+/// The file of a VAD model: `file` in `dir`.
+pub fn vad_file(dir: &Path, file: &str) -> Result<PathBuf> {
+    model_file(&dir.join(file))
+}
+
+/// The files of a diarization model. The segmentation archive holds `model.onnx` and
+/// `model.int8.onnx`. The full precision file is the one that the sherpa-onnx examples use.
+pub fn diarization_files(segmentation_dir: &Path, embedding_dir: &Path, embedding: &str) -> Result<DiarizationFiles> {
+    let list = Listing::read(segmentation_dir)?;
+    let segmentation = match list.files.iter().find(|p| Listing::name(p) == "model.onnx") {
+        Some(path) => path.clone(),
+        None => list.model("model")?,
+    };
+    Ok(DiarizationFiles {
+        segmentation: model_file(&segmentation)?,
+        embedding: model_file(&embedding_dir.join(embedding))?,
+    })
+}
+
+/// `path`, when it is a file with content.
+fn model_file(path: &Path) -> Result<PathBuf> {
+    let size = std::fs::metadata(path)
+        .with_context(|| format!("cannot read {}", path.display()))?
+        .len();
+    if size == 0 {
+        bail!("{} is empty", path.display());
+    }
+    Ok(path.to_path_buf())
 }
 
 #[cfg(test)]
@@ -351,5 +391,26 @@ mod tests {
             offline_files(Recipe::SenseVoice, dir.path()).is_err(),
             "no tokens"
         );
+    }
+
+    #[test]
+    fn vad_and_diarization_files() {
+        let dir = folder(&["silero_vad.onnx"]);
+        assert!(vad_file(dir.path(), "silero_vad.onnx").unwrap().ends_with("silero_vad.onnx"));
+        assert!(vad_file(dir.path(), "ten-vad.onnx").is_err(), "a file that is not there");
+        std::fs::write(dir.path().join("empty.onnx"), b"").unwrap();
+        assert!(vad_file(dir.path(), "empty.onnx").unwrap_err().to_string().ends_with("is empty"));
+
+        let segmentation = folder(&["model.int8.onnx", "model.onnx", "LICENSE"]);
+        let embedding = folder(&["speaker.onnx"]);
+        let files = diarization_files(segmentation.path(), embedding.path(), "speaker.onnx").unwrap();
+        assert!(files.segmentation.ends_with("model.onnx") && !files.segmentation.ends_with("model.int8.onnx"));
+        assert!(files.embedding.ends_with("speaker.onnx"));
+
+        let int8_only = folder(&["model.int8.onnx"]);
+        let files = diarization_files(int8_only.path(), embedding.path(), "speaker.onnx").unwrap();
+        assert!(files.segmentation.ends_with("model.int8.onnx"));
+        assert!(diarization_files(segmentation.path(), embedding.path(), "other.onnx").is_err());
+        assert!(diarization_files(folder(&["LICENSE"]).path(), embedding.path(), "speaker.onnx").is_err());
     }
 }

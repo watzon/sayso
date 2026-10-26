@@ -13,7 +13,7 @@ pub const PROTOCOL_VERSION: u64 = 1;
 /// The optional parts of the protocol that this engine has, sent in `hello`
 /// (`docs/engine-protocol.md`, "Features"). It accepts `prepare` but does
 /// nothing with it, so it does not list `prepare`.
-pub const FEATURES: &[&str] = &["concurrent_streams", "keep_preview", "segments", "unload"];
+pub const FEATURES: &[&str] = &["concurrent_streams", "diarization", "keep_preview", "segments", "unload", "vad"];
 
 /// An error with a stable `code` for the `error` reply, for example
 /// `too_many_streams`.

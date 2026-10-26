@@ -2,6 +2,9 @@
 //!
 //! The field is `EngineKind` from `sayso-core`, serialized. This engine runs
 //! the `sherpa`, `parakeet_cpp` (Linux), and `whisper_cpp` (Windows) kinds.
+//! It also runs `sherpa_vad` and `sherpa_diarization`, which the engine
+//! protocol has and the catalog of Sayso does not have yet. This file reads
+//! those two itself.
 
 use anyhow::{Result, anyhow, bail};
 use sayso_core::models::EngineKind;
@@ -23,6 +26,35 @@ pub enum Recipe {
     Whisper,
     SenseVoice,
     Moonshine,
+    /// Silero VAD: one ONNX file. Finds speech, no text.
+    SileroVad,
+    /// TEN VAD: one ONNX file. Finds speech, no text.
+    TenVad,
+    /// Speaker diarization: a pyannote segmentation model and a speaker
+    /// embedding model. Finds who speaks when, no text.
+    Diarization,
+}
+
+/// What a model does with audio.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Task {
+    /// Audio to text: a final pass, a live preview, or both.
+    Speech,
+    /// Finds the parts with speech (`vad`, `vad_start`).
+    Vad,
+    /// Finds who speaks when (`diarize`).
+    Diarization,
+}
+
+impl Task {
+    /// The name of the task in an error message.
+    pub fn name(self) -> &'static str {
+        match self {
+            Task::Speech => "speech",
+            Task::Vad => "VAD",
+            Task::Diarization => "diarization",
+        }
+    }
 }
 
 impl Recipe {
@@ -38,9 +70,17 @@ impl Recipe {
         })
     }
 
+    pub fn task(self) -> Task {
+        match self {
+            Recipe::SileroVad | Recipe::TenVad => Task::Vad,
+            Recipe::Diarization => Task::Diarization,
+            _ => Task::Speech,
+        }
+    }
+
     /// True when the main archive can do the final pass.
     pub fn final_pass(self) -> bool {
-        self != Recipe::ZipformerStreaming
+        self.task() == Task::Speech && self != Recipe::ZipformerStreaming
     }
 
     /// The longest piece of audio that one decode gets, in seconds. Longer
@@ -53,7 +93,11 @@ impl Recipe {
             Recipe::SenseVoice => 25,
             Recipe::Moonshine => 7,
             Recipe::ParakeetTdt | Recipe::ParakeetTdtCtc | Recipe::ParakeetGguf => 60,
-            Recipe::ZipformerStreaming | Recipe::WhisperCpp => usize::MAX,
+            Recipe::ZipformerStreaming
+            | Recipe::WhisperCpp
+            | Recipe::SileroVad
+            | Recipe::TenVad
+            | Recipe::Diarization => usize::MAX,
         }
     }
 
@@ -85,6 +129,14 @@ pub enum Source {
     /// `file` in a Hugging Face repository at the commit `archive`. A new commit gets a new folder, so
     /// it downloads again even when the file keeps its name.
     HuggingFace { repo: String, file: String },
+    /// `file` in the sherpa-onnx `asr-models` release (a VAD model). Its folder, `archive`, is
+    /// the file name without `.onnx`.
+    SherpaFile { file: String },
+    /// A diarization model. `archive` is a `.tar.bz2` in the sherpa-onnx release
+    /// `speaker-segmentation-models`. `embedding` is an ONNX file in the release
+    /// `speaker-recongition-models` (sic). It has a folder of its own, named after the file
+    /// without `.onnx` ([`ModelSpec::embedding_archive`]).
+    Diarization { embedding: String },
 }
 
 /// The Hugging Face repository with the whisper.cpp GGML files.
@@ -96,6 +148,11 @@ pub const WHISPER_CPP_REVISION: &str = "main";
 impl ModelSpec {
     /// Parse the `engine` object of a request.
     pub fn from_json(value: &Value) -> Result<ModelSpec> {
+        match value.get("kind").and_then(Value::as_str) {
+            Some("sherpa_vad") => return vad_spec(value),
+            Some("sherpa_diarization") => return diarization_spec(value),
+            _ => {}
+        }
         let kind: EngineKind = serde_json::from_value(value.clone())
             .map_err(|e| anyhow!("invalid engine field: {e}"))?;
         let spec = match kind {
@@ -168,7 +225,16 @@ impl ModelSpec {
         {
             archives.push(preview);
         }
+        archives.extend(self.embedding_archive());
         archives
+    }
+
+    /// The folder of the speaker embedding model of a diarization model.
+    pub fn embedding_archive(&self) -> Option<&str> {
+        match &self.source {
+            Source::Diarization { embedding } => Some(file_stem(embedding)),
+            _ => None,
+        }
     }
 
     /// True when the model gives a live preview: from a streaming archive, or by
@@ -185,6 +251,55 @@ impl ModelSpec {
             self.preview_archive.as_deref()
         }
     }
+}
+
+/// A string field of an `engine` object.
+fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("invalid engine field: missing string {key}"))
+}
+
+/// The name of a model file without `.onnx`. It is the name of the folder of the file.
+fn file_stem(file: &str) -> &str {
+    file.strip_suffix(".onnx").unwrap_or(file)
+}
+
+/// `{"kind":"sherpa_vad","recipe":"silero"|"ten","file":"silero_vad.onnx"}`
+fn vad_spec(value: &Value) -> Result<ModelSpec> {
+    let recipe = match text(value, "recipe")? {
+        "silero" => Recipe::SileroVad,
+        "ten" => Recipe::TenVad,
+        other => bail!("unknown VAD recipe {other}"),
+    };
+    let file = text(value, "file")?;
+    check_archive_name(file)?;
+    Ok(ModelSpec {
+        recipe,
+        archive: file_stem(file).to_string(),
+        source: Source::SherpaFile { file: file.to_string() },
+        preview_archive: None,
+        redecode_preview: false,
+    })
+}
+
+/// `{"kind":"sherpa_diarization","segmentation":"<archive>","embedding":"<file>.onnx"}`
+fn diarization_spec(value: &Value) -> Result<ModelSpec> {
+    let segmentation = text(value, "segmentation")?;
+    let embedding = text(value, "embedding")?;
+    check_archive_name(segmentation)?;
+    check_archive_name(embedding)?;
+    if file_stem(embedding) == segmentation {
+        bail!("the segmentation and the embedding model need different names");
+    }
+    Ok(ModelSpec {
+        recipe: Recipe::Diarization,
+        archive: segmentation.to_string(),
+        source: Source::Diarization { embedding: embedding.to_string() },
+        preview_archive: None,
+        redecode_preview: false,
+    })
 }
 
 /// A Hugging Face repository id becomes part of a URL: `owner/name`, each one plain path part.
@@ -258,6 +373,62 @@ mod tests {
         assert!(spec.recipe.final_pass() && spec.recipe.single_file() && !spec.has_preview());
         for bad in ["../ggml-tiny.bin", "a/b.bin", ""] {
             assert!(ModelSpec::from_json(&json!({"kind": "whisper_cpp", "file": bad})).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn parses_a_vad_engine() {
+        let spec = ModelSpec::from_json(&json!({"kind": "sherpa_vad", "recipe": "silero", "file": "silero_vad.onnx"})).unwrap();
+        assert_eq!(spec.recipe, Recipe::SileroVad);
+        assert_eq!(spec.source, Source::SherpaFile { file: "silero_vad.onnx".into() });
+        assert_eq!(spec.archives(), vec!["silero_vad"]);
+        assert_eq!(spec.recipe.task(), Task::Vad);
+        assert!(!spec.recipe.final_pass() && !spec.has_preview() && spec.embedding_archive().is_none());
+
+        let ten = ModelSpec::from_json(&json!({"kind": "sherpa_vad", "recipe": "ten", "file": "ten-vad.onnx"})).unwrap();
+        assert_eq!((ten.recipe, ten.archives()), (Recipe::TenVad, vec!["ten-vad"]));
+
+        for bad in [
+            json!({"kind": "sherpa_vad", "recipe": "nope", "file": "a.onnx"}),
+            json!({"kind": "sherpa_vad", "recipe": "silero"}),
+            json!({"kind": "sherpa_vad", "file": "a.onnx"}),
+            json!({"kind": "sherpa_vad", "recipe": "silero", "file": "../a.onnx"}),
+            json!({"kind": "sherpa_vad", "recipe": "silero", "file": 7}),
+        ] {
+            assert!(ModelSpec::from_json(&bad).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn parses_a_diarization_engine() {
+        let value = json!({
+            "kind": "sherpa_diarization",
+            "segmentation": "sherpa-onnx-pyannote-segmentation-3-0",
+            "embedding": "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
+        });
+        let spec = ModelSpec::from_json(&value).unwrap();
+        assert_eq!(spec.recipe, Recipe::Diarization);
+        assert_eq!(spec.recipe.task(), Task::Diarization);
+        assert_eq!(spec.archive, "sherpa-onnx-pyannote-segmentation-3-0");
+        assert_eq!(spec.embedding_archive(), Some("3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"));
+        assert_eq!(
+            spec.archives(),
+            vec!["sherpa-onnx-pyannote-segmentation-3-0", "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced"]
+        );
+        assert!(!spec.recipe.final_pass() && !spec.has_preview());
+
+        // Any file name works for the embedding model, with or without `.onnx`.
+        let other = ModelSpec::from_json(&json!({"kind": "sherpa_diarization", "segmentation": "s", "embedding": "model"})).unwrap();
+        assert_eq!(other.archives(), vec!["s", "model"]);
+
+        for bad in [
+            json!({"kind": "sherpa_diarization", "segmentation": "s"}),
+            json!({"kind": "sherpa_diarization", "embedding": "e.onnx"}),
+            json!({"kind": "sherpa_diarization", "segmentation": "../s", "embedding": "e.onnx"}),
+            json!({"kind": "sherpa_diarization", "segmentation": "s", "embedding": "a/e.onnx"}),
+            json!({"kind": "sherpa_diarization", "segmentation": "e", "embedding": "e.onnx"}),
+        ] {
+            assert!(ModelSpec::from_json(&bad).is_err(), "{bad}");
         }
     }
 

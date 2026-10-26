@@ -1,19 +1,24 @@
 //! The recognizer traits on sherpa-onnx, on the CPU. The final pass of a GGUF model goes to `parakeet.rs`,
 //! and of a GGML model to `whisper_cpp.rs`.
 
+use crate::diarization::{CLUSTER_THRESHOLD, RawTurn};
 use crate::layout::{self, OfflineFiles};
 use crate::partials::Segment;
 use crate::recognizer::{
-    FinalPass, LazyPreview, LivePreview, Loaded, Loader, ModelDirs, PreviewStream,
+    Diarizer, FinalPass, LazyPreview, LivePreview, Loaded, Loader, ModelDirs, PreviewStream, VadModel,
 };
-use crate::spec::{ModelSpec, Recipe, Source};
+use crate::spec::{ModelSpec, Recipe, Source, Task};
 use crate::timing::{self, Timed, Timing};
+use crate::vad::{self, Detector};
 use anyhow::{Context, Result, anyhow, bail};
 use sherpa_onnx::{
-    OfflineModelConfig, OfflineMoonshineModelConfig, OfflineNemoEncDecCtcModelConfig,
-    OfflineRecognizer, OfflineRecognizerConfig, OfflineSenseVoiceModelConfig,
+    FastClusteringConfig, OfflineModelConfig, OfflineMoonshineModelConfig,
+    OfflineNemoEncDecCtcModelConfig, OfflineRecognizer, OfflineRecognizerConfig,
+    OfflineSenseVoiceModelConfig, OfflineSpeakerDiarization, OfflineSpeakerDiarizationConfig,
+    OfflineSpeakerSegmentationModelConfig, OfflineSpeakerSegmentationPyannoteModelConfig,
     OfflineTransducerModelConfig, OfflineWhisperModelConfig, OnlineModelConfig, OnlineRecognizer,
-    OnlineRecognizerConfig, OnlineStream, OnlineTransducerModelConfig,
+    OnlineRecognizerConfig, OnlineStream, OnlineTransducerModelConfig, SileroVadModelConfig,
+    SpeakerEmbeddingExtractorConfig, TenVadModelConfig, VadModelConfig, VoiceActivityDetector,
 };
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -68,6 +73,11 @@ impl Loader for SherpaLoader {
     }
 
     fn load(&self, spec: &ModelSpec, dirs: &ModelDirs) -> Result<Loaded> {
+        match spec.recipe.task() {
+            Task::Vad => return load_vad(spec, dirs),
+            Task::Diarization => return load_diarization(spec, dirs),
+            Task::Speech => {}
+        }
         let final_pass = self.load_final_pass(spec, dirs)?;
         let preview: Option<Arc<dyn LivePreview>> = match &dirs.stream {
             // A streaming model with no final pass is the preview only: load it now.
@@ -87,6 +97,7 @@ impl Loader for SherpaLoader {
         Ok(Loaded {
             final_pass,
             preview,
+            ..Loaded::default()
         })
     }
 }
@@ -436,6 +447,194 @@ impl PreviewStream for OnlineSession {
             text: self.text(),
             endpoint: true,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VAD
+// ---------------------------------------------------------------------------
+
+/// The speech probability above which a window is speech. This is the default of sherpa-onnx.
+const VAD_THRESHOLD: f32 = 0.5;
+
+/// The `max_speech_duration` of the detector, in seconds. It is long on purpose. The detector
+/// does not cut speech at that length. It only splits at a short pause, and it does not split
+/// speech without one. A split at a short pause leaves a gap under the pause that ends speech
+/// (500 ms) between two parts, which the protocol does not allow. So `vad::Tracker` cuts the
+/// speech at 30 s, and the detector keeps its other rules.
+const VAD_MAX_SPEECH_SECONDS: f32 = 3600.0;
+
+/// The seconds of audio that the buffer of a detector holds at first. It grows when needed (and
+/// sherpa-onnx writes a line to the log each time).
+const VAD_BUFFER_SECONDS: f32 = 60.0;
+
+/// A VAD model: the configuration of sherpa-onnx. Each audio gets its own detector, because
+/// a detector keeps the state of the audio it hears.
+struct SherpaVad {
+    config: VadModelConfig,
+    window: usize,
+}
+
+fn vad_config(recipe: Recipe, model: &Path) -> VadModelConfig {
+    let seconds = |ms: usize| ms as f32 / 1000.0;
+    let mut config = VadModelConfig {
+        sample_rate: SAMPLE_RATE,
+        num_threads: 1,
+        provider: Some("cpu".into()),
+        ..Default::default()
+    };
+    match recipe {
+        Recipe::TenVad => {
+            config.ten_vad = TenVadModelConfig {
+                model: path(model),
+                threshold: VAD_THRESHOLD,
+                min_silence_duration: seconds(vad::MIN_SILENCE_MS),
+                min_speech_duration: seconds(vad::MIN_SPEECH_MS),
+                window_size: 256,
+                max_speech_duration: VAD_MAX_SPEECH_SECONDS,
+            };
+        }
+        _ => {
+            config.silero_vad = SileroVadModelConfig {
+                model: path(model),
+                threshold: VAD_THRESHOLD,
+                min_silence_duration: seconds(vad::MIN_SILENCE_MS),
+                min_speech_duration: seconds(vad::MIN_SPEECH_MS),
+                window_size: 512,
+                max_speech_duration: VAD_MAX_SPEECH_SECONDS,
+            };
+        }
+    }
+    config
+}
+
+fn load_vad(spec: &ModelSpec, dirs: &ModelDirs) -> Result<Loaded> {
+    let Source::SherpaFile { file } = &spec.source else {
+        bail!("a VAD model is one file");
+    };
+    let config = vad_config(spec.recipe, &layout::vad_file(&dirs.main, file)?);
+    let window = match spec.recipe {
+        Recipe::TenVad => config.ten_vad.window_size,
+        _ => config.silero_vad.window_size,
+    } as usize;
+    let model = SherpaVad { config, window };
+    // A model that sherpa-onnx cannot read fails at the load.
+    model.detector()?;
+    Ok(Loaded {
+        vad: Some(Arc::new(model)),
+        ..Loaded::default()
+    })
+}
+
+impl VadModel for SherpaVad {
+    fn detector(&self) -> Result<Box<dyn Detector>> {
+        let vad = VoiceActivityDetector::create(&self.config, VAD_BUFFER_SECONDS)
+            .ok_or_else(|| anyhow!("sherpa-onnx cannot load the VAD model (see the engine log)"))?;
+        Ok(Box::new(SherpaDetector { vad, window: self.window }))
+    }
+}
+
+struct SherpaDetector {
+    vad: VoiceActivityDetector,
+    window: usize,
+}
+
+impl Detector for SherpaDetector {
+    fn window(&self) -> usize {
+        self.window
+    }
+
+    fn accept(&mut self, window: &[f32]) {
+        self.vad.accept_waveform(window);
+    }
+
+    fn detected(&self) -> bool {
+        self.vad.detected()
+    }
+
+    fn next_segment(&mut self) -> Option<(u64, u64)> {
+        let segment = self.vad.front()?;
+        let start = u64::try_from(segment.start()).unwrap_or(0);
+        let end = start + u64::try_from(segment.n()).unwrap_or(0);
+        drop(segment);
+        self.vad.pop();
+        Some((start, end))
+    }
+
+    fn flush(&mut self) {
+        self.vad.flush();
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Diarization
+// ---------------------------------------------------------------------------
+
+/// Pyannote segmentation, a speaker embedding model, and fast clustering.
+struct SherpaDiarizer {
+    /// The clustering changes with each request, so a request sets it and runs under the lock.
+    diarizer: Mutex<OfflineSpeakerDiarization>,
+    config: OfflineSpeakerDiarizationConfig,
+}
+
+fn load_diarization(spec: &ModelSpec, dirs: &ModelDirs) -> Result<Loaded> {
+    let (Source::Diarization { embedding }, Some(embedding_dir)) = (&spec.source, &dirs.embedding) else {
+        bail!("a diarization model has a segmentation model and an embedding model");
+    };
+    let files = layout::diarization_files(&dirs.main, embedding_dir, embedding)?;
+    let threads = final_pass_threads();
+    let config = OfflineSpeakerDiarizationConfig {
+        segmentation: OfflineSpeakerSegmentationModelConfig {
+            pyannote: OfflineSpeakerSegmentationPyannoteModelConfig {
+                model: path(&files.segmentation),
+                ..Default::default()
+            },
+            num_threads: threads,
+            ..Default::default()
+        },
+        embedding: SpeakerEmbeddingExtractorConfig {
+            model: path(&files.embedding),
+            num_threads: threads,
+            ..Default::default()
+        },
+        clustering: clustering(None),
+        ..Default::default()
+    };
+    let diarizer = OfflineSpeakerDiarization::create(&config)
+        .ok_or_else(|| anyhow!("sherpa-onnx cannot load the diarization model (see the engine log)"))?;
+    if diarizer.sample_rate() != SAMPLE_RATE {
+        bail!("the diarization model needs {} Hz audio, not {SAMPLE_RATE} Hz", diarizer.sample_rate());
+    }
+    Ok(Loaded {
+        diarizer: Some(Arc::new(SherpaDiarizer { diarizer: Mutex::new(diarizer), config })),
+        ..Loaded::default()
+    })
+}
+
+/// With a number of speakers, the clustering makes that many clusters. Without one, it
+/// merges the embeddings that are closer than the threshold.
+fn clustering(speakers: Option<u32>) -> FastClusteringConfig {
+    FastClusteringConfig {
+        num_clusters: speakers.map_or(-1, |n| i32::try_from(n).unwrap_or(i32::MAX)),
+        threshold: CLUSTER_THRESHOLD,
+        compute_confidence: false,
+    }
+}
+
+impl Diarizer for SherpaDiarizer {
+    fn diarize(&self, samples: &[f32], speakers: Option<u32>) -> Result<Vec<RawTurn>> {
+        let mut config = self.config.clone();
+        config.clustering = clustering(speakers);
+        let diarizer = self.diarizer.lock().unwrap_or_else(|e| e.into_inner());
+        diarizer.set_config(&config);
+        let result = diarizer
+            .process(samples)
+            .ok_or_else(|| anyhow!("sherpa-onnx cannot diarize the audio (see the engine log)"))?;
+        Ok(result
+            .sort_by_start_time()
+            .into_iter()
+            .map(|turn| RawTurn { start: turn.start, end: turn.end, speaker: turn.speaker })
+            .collect())
     }
 }
 

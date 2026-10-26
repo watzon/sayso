@@ -15,6 +15,12 @@ use std::time::{Duration, Instant};
 pub const DEFAULT_BASE_URL: &str =
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models";
 
+/// The release with the segmentation models of diarization.
+pub const SEGMENTATION_RELEASE: &str = "speaker-segmentation-models";
+
+/// The release with the speaker embedding models. The tag is spelled so on GitHub.
+pub const EMBEDDING_RELEASE: &str = "speaker-recongition-models";
+
 /// Time between two progress messages.
 pub const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
 
@@ -23,6 +29,19 @@ pub const DEFAULT_HF_ENDPOINT: &str = "https://huggingface.co";
 
 pub fn archive_url(base_url: &str, archive: &str) -> String {
     format!("{}/{archive}.tar.bz2", base_url.trim_end_matches('/'))
+}
+
+/// A file of a release, such as a VAD model.
+pub fn file_url(base_url: &str, file: &str) -> String {
+    format!("{}/{file}", base_url.trim_end_matches('/'))
+}
+
+/// The release `release` next to the release at `base_url`: the same place, another last part.
+pub fn sibling_release_url(base_url: &str, release: &str) -> String {
+    match base_url.trim_end_matches('/').rsplit_once('/') {
+        Some((parent, _)) => format!("{parent}/{release}"),
+        None => release.to_string(),
+    }
 }
 
 pub fn hf_file_url(hf_endpoint: &str, repo: &str, revision: &str, file: &str) -> String {
@@ -259,5 +278,11 @@ mod tests {
         assert_eq!(archive_url("http://h/x/", "a-b"), "http://h/x/a-b.tar.bz2");
         assert!(archive_url(DEFAULT_BASE_URL, "a").starts_with("https://github.com/"));
         assert_eq!(hf_file_url("http://h/", "o/r", "c0ffee", "m.gguf"), "http://h/o/r/resolve/c0ffee/m.gguf");
+        assert_eq!(file_url("http://h/x/", "silero_vad.onnx"), "http://h/x/silero_vad.onnx");
+        assert_eq!(
+            sibling_release_url(DEFAULT_BASE_URL, EMBEDDING_RELEASE),
+            "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models"
+        );
+        assert_eq!(sibling_release_url("http://h/redirect/", "r"), "http://h/r");
     }
 }

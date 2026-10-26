@@ -3,11 +3,14 @@
 //! The engine talks to models only through these traits. [`crate::sherpa`]
 //! implements them with sherpa-onnx, [`crate::parakeet`] and
 //! [`crate::whisper_cpp`] add final passes on ggml, and [`crate::redecode`]
-//! makes a live preview from a final pass. The tests use a fake.
+//! makes a live preview from a final pass. VAD and diarization models are here
+//! too. The tests use a fake.
 
+use crate::diarization::RawTurn;
 use crate::partials::Segment;
 use crate::spec::ModelSpec;
 use crate::timing::Timed;
+use crate::vad::Detector;
 use anyhow::{Result, anyhow};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
@@ -20,6 +23,8 @@ pub struct ModelDirs {
     pub main: PathBuf,
     /// The archive that streams the live preview, if the model has one.
     pub stream: Option<PathBuf>,
+    /// The speaker embedding model of a diarization model. Its segmentation model is `main`.
+    pub embedding: Option<PathBuf>,
 }
 
 /// Loads models. Loading is slow, so the engine calls it on a worker thread.
@@ -34,13 +39,28 @@ pub trait Loader: Send + Sync {
     ) -> Result<Option<Arc<dyn FinalPass>>>;
 }
 
-/// A model in memory. A model has a final pass, a live preview, or both.
+/// A model in memory. A speech model has a final pass, a live preview, or both.
 /// After an `unload` with `keep_preview`, the final pass of a model with both
-/// is out and the live preview stays.
-#[derive(Clone)]
+/// is out and the live preview stays. A VAD model has `vad`, and a diarization
+/// model has `diarizer`. They have no other part.
+#[derive(Clone, Default)]
 pub struct Loaded {
     pub final_pass: Option<Arc<dyn FinalPass>>,
     pub preview: Option<Arc<dyn LivePreview>>,
+    pub vad: Option<Arc<dyn VadModel>>,
+    pub diarizer: Option<Arc<dyn Diarizer>>,
+}
+
+/// A VAD model. It makes one detector for each audio.
+pub trait VadModel: Send + Sync {
+    fn detector(&self) -> Result<Box<dyn Detector>>;
+}
+
+/// A diarization model.
+pub trait Diarizer: Send + Sync {
+    /// Who speaks when in 16 kHz mono audio, with the speaker numbers of the model.
+    /// `speakers` is the number of speakers when the client knows it, else the model finds it.
+    fn diarize(&self, samples: &[f32], speakers: Option<u32>) -> Result<Vec<RawTurn>>;
 }
 
 /// The final pass: whole recordings to text.

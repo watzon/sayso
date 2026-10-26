@@ -1,9 +1,12 @@
 //! Engine tests with a fake recognizer and a local HTTP server for the archives.
 
 use super::*;
+use crate::diarization::RawTurn;
 use crate::partials::Segment;
 use crate::protocol::tests::Captured;
 use crate::recognizer::FinalPass;
+use crate::vad::Detector;
+use crate::vad::fake::{EnergyDetector, audio_of};
 use base64::Engine as _;
 use std::io::Write;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -18,6 +21,8 @@ struct FakeLoader {
     loads: AtomicUsize,
     /// Loads of a final pass only.
     final_loads: AtomicUsize,
+    /// The `speakers` of each `diarize` that reached a fake diarization model.
+    diarized: Arc<Mutex<Vec<Option<u32>>>>,
 }
 
 impl Loader for FakeLoader {
@@ -38,6 +43,16 @@ impl Loader for FakeLoader {
         if !dirs.main.is_dir() {
             bail!("missing {}", dirs.main.display());
         }
+        match spec.recipe.task() {
+            Task::Vad => {
+                return Ok(Loaded { vad: Some(Arc::new(FakeVad)), ..Loaded::default() });
+            }
+            Task::Diarization => {
+                let diarizer = FakeDiarizer { calls: Arc::clone(&self.diarized) };
+                return Ok(Loaded { diarizer: Some(Arc::new(diarizer)), ..Loaded::default() });
+            }
+            Task::Speech => {}
+        }
         let final_pass: Option<Arc<dyn FinalPass>> = spec
             .recipe
             .final_pass()
@@ -49,7 +64,34 @@ impl Loader for FakeLoader {
         Ok(Loaded {
             final_pass,
             preview,
+            ..Loaded::default()
         })
+    }
+}
+
+/// Speech is a window with a root mean square above 0.01 (`vad::fake`).
+struct FakeVad;
+
+impl VadModel for FakeVad {
+    fn detector(&self) -> Result<Box<dyn Detector>> {
+        Ok(Box::new(EnergyDetector::new()))
+    }
+}
+
+/// Two speakers with the numbers 9 and 4 in its own order. The turns of 9 overlap and are not
+/// in order. With one speaker, one turn for the whole audio.
+struct FakeDiarizer {
+    calls: Arc<Mutex<Vec<Option<u32>>>>,
+}
+
+impl Diarizer for FakeDiarizer {
+    fn diarize(&self, samples: &[f32], speakers: Option<u32>) -> Result<Vec<RawTurn>> {
+        self.calls.lock().unwrap().push(speakers);
+        if speakers == Some(1) {
+            return Ok(vec![RawTurn { start: 0.0, end: samples.len() as f32 / 16_000.0, speaker: 7 }]);
+        }
+        let turn = |start, end, speaker| RawTurn { start, end, speaker };
+        Ok(vec![turn(2.0, 3.0, 4), turn(0.0, 1.0, 9), turn(0.5, 1.5, 9), turn(2.5, 3.5, 9)])
     }
 }
 
@@ -153,9 +195,13 @@ fn serve_archives(archives: Vec<(String, Vec<u8>)>) -> Server {
                 let _ = request.respond(tiny_http::Response::empty(302).with_header(location));
                 continue;
             }
+            // The releases of the diarization models are beside the redirect folder: `/<release>/<file>`.
             let found = archives
                 .iter()
-                .find(|(name, _)| url == format!("/files/{name}.tar.bz2") || url == format!("/files/{name}"))
+                .find(|(name, _)| {
+                    [format!("/files/{name}.tar.bz2"), format!("/files/{name}"), format!("/{name}.tar.bz2"), format!("/{name}")]
+                        .contains(&url)
+                })
                 .map(|(_, bytes)| bytes.clone());
             let _ = match found {
                 Some(bytes) => request.respond(tiny_http::Response::from_data(bytes)),
@@ -187,6 +233,7 @@ fn harness(base_url: &str) -> Harness {
     let loader = Arc::new(FakeLoader {
         loads: AtomicUsize::new(0),
         final_loads: AtomicUsize::new(0),
+        diarized: Arc::new(Mutex::new(Vec::new())),
     });
     let config = Config {
         models_dir: dir.path().join("models"),
@@ -268,7 +315,10 @@ fn hello_and_unknown_requests() {
     assert_eq!(reply[0]["type"], "hello");
     assert_eq!(reply[0]["id"], "r1");
     assert_eq!(reply[0]["protocol"], 1);
-    assert_eq!(reply[0]["features"], json!(["concurrent_streams", "keep_preview", "segments", "unload"]));
+    assert_eq!(
+        reply[0]["features"],
+        json!(["concurrent_streams", "diarization", "keep_preview", "segments", "unload", "vad"])
+    );
 
     let prepared = h.call(json!({"v":1,"type":"prepare","id":"p","model":"m","preview":true,"vocabulary":["Sayso"]}));
     assert_eq!(prepared[0]["type"], "ok");
@@ -911,4 +961,343 @@ fn serve_routes_requests_and_stops_on_shutdown() {
             .iter()
             .any(|m| m["message"] == "invalid JSON line" && m.get("id").is_none())
     );
+}
+
+// ---------------------------------------------------------------------------
+// VAD
+// ---------------------------------------------------------------------------
+
+fn silero() -> Value {
+    json!({"kind": "sherpa_vad", "recipe": "silero", "file": "silero_vad.onnx"})
+}
+
+fn diarization_engine() -> Value {
+    json!({"kind": "sherpa_diarization", "segmentation": "seg-archive", "embedding": "speaker.onnx"})
+}
+
+/// 16 kHz samples of loud and quiet pieces: `(milliseconds, loud)`.
+fn clip(pieces: &[(usize, bool)]) -> Vec<i16> {
+    audio_of(pieces).iter().map(|s| (s * 32767.0) as i16).collect()
+}
+
+fn load_model(h: &Harness, model: &str, engine: &Value) {
+    install(h, model, engine);
+    let reply = h.call(json!({"v": 1, "type": "load", "id": "load", "model": model, "engine": engine}));
+    assert_eq!(last(&reply)["type"], "ok", "{reply:?}");
+}
+
+#[test]
+fn a_vad_model_downloads_one_file_loads_and_is_deleted() {
+    let server = serve_archives(vec![("silero_vad.onnx".into(), b"onnx".to_vec())]);
+    let h = harness(&server.base);
+    let engine = silero();
+    let list = json!({"v": 1, "type": "list_models", "id": "l1", "models": [{"id": "v", "engine": engine}]});
+    assert_eq!(states(&h.call(list.clone())), ["not_downloaded"]);
+
+    let reply = h.call(json!({"v": 1, "type": "download", "id": "d1", "model": "v", "engine": engine}));
+    assert_eq!(last(&reply), &json!({"v": 1, "type": "ok", "id": "d1"}));
+    assert_eq!(states(&reply).last().map(String::as_str), Some("downloaded"));
+    assert_eq!(std::fs::read(h.models_dir().join("v/silero_vad/silero_vad.onnx")).unwrap(), b"onnx");
+    assert_eq!(states(&h.call(list.clone())), ["downloaded"]);
+
+    let reply = h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "v", "engine": engine}));
+    assert_eq!(states(&reply), ["optimizing", "ready"]);
+    assert_eq!(states(&h.call(list.clone())), ["ready"]);
+    let reply = h.call(json!({"v": 1, "type": "unload", "id": "u1", "model": "v"}));
+    assert_eq!(states(&reply), ["downloaded"]);
+    h.call(json!({"v": 1, "type": "load", "id": "o2", "model": "v", "engine": engine}));
+
+    let reply = h.call(json!({"v": 1, "type": "delete", "id": "x1", "model": "v"}));
+    assert_eq!(states(&reply), ["not_downloaded"]);
+    assert!(!h.models_dir().join("v").exists());
+    assert_eq!(states(&h.call(list)), ["not_downloaded"]);
+}
+
+#[test]
+fn an_empty_vad_file_fails_the_download_as_incomplete() {
+    let server = serve_archives(vec![("silero_vad.onnx".into(), Vec::new())]);
+    let h = harness(&server.base);
+    let reply = h.call(json!({"v": 1, "type": "download", "id": "d1", "model": "v", "engine": silero()}));
+    assert_eq!(last(&reply)["type"], "error");
+    let failed = reply.iter().find(|m| m["state"] == "failed").expect("model_state failed");
+    assert_eq!(failed["reason"], "incomplete_download");
+    assert!(!h.models_dir().join("v/.complete").exists());
+}
+
+#[test]
+fn a_diarization_model_downloads_from_its_two_releases() {
+    let seg = "seg-archive";
+    let server = serve_archives(vec![
+        (
+            "speaker-segmentation-models/seg-archive".into(),
+            archive(seg, &["model.onnx", "model.int8.onnx"]),
+        ),
+        ("speaker-recongition-models/speaker.onnx".into(), b"embedding".to_vec()),
+    ]);
+    let h = harness(&server.base);
+    let engine = diarization_engine();
+    let reply = h.call(json!({"v": 1, "type": "download", "id": "d1", "model": "d", "engine": engine}));
+    assert_eq!(last(&reply)["type"], "ok", "{reply:?}");
+    let folder = h.models_dir().join("d");
+    assert!(folder.join("seg-archive/model.onnx").is_file());
+    assert_eq!(std::fs::read(folder.join("speaker/speaker.onnx")).unwrap(), b"embedding");
+    assert_eq!(std::fs::read_to_string(folder.join(".complete")).unwrap(), "seg-archive\nspeaker\n");
+
+    let list = json!({"v": 1, "type": "list_models", "id": "l1", "models": [{"id": "d", "engine": engine}]});
+    assert_eq!(states(&h.call(list.clone())), ["downloaded"]);
+    let reply = h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "d", "engine": engine}));
+    assert_eq!(states(&reply), ["optimizing", "ready"]);
+
+    h.call(json!({"v": 1, "type": "unload", "id": "u1", "model": "d"}));
+    let other = json!({"kind": "sherpa_diarization", "segmentation": "seg-archive", "embedding": "other.onnx"});
+    let list_other = json!({"v": 1, "type": "list_models", "id": "l2", "models": [{"id": "d", "engine": other}]});
+    assert_eq!(states(&h.call(list_other)), ["not_downloaded"], "another embedding model is another download");
+    h.call(json!({"v": 1, "type": "delete", "id": "x1", "model": "d"}));
+    assert_eq!(states(&h.call(list)), ["not_downloaded"]);
+}
+
+#[test]
+fn a_diarization_archive_without_the_segmentation_model_fails_the_download() {
+    let server = serve_archives(vec![
+        ("speaker-segmentation-models/seg-archive".into(), archive("seg-archive", &["README.md"])),
+        ("speaker-recongition-models/speaker.onnx".into(), b"embedding".to_vec()),
+    ]);
+    let h = harness(&server.base);
+    let reply = h.call(json!({"v": 1, "type": "download", "id": "d1", "model": "d", "engine": diarization_engine()}));
+    assert_eq!(last(&reply)["type"], "error");
+    assert!(!h.models_dir().join("d/.complete").exists());
+}
+
+#[test]
+fn the_vad_request_and_a_vad_session_find_the_same_parts() {
+    let h = harness("http://unused");
+    load_model(&h, "v", &silero());
+    let samples = clip(&[(800, false), (2500, true), (1200, false), (600, true), (300, false), (900, true), (1500, false)]);
+    let wav = h.models_dir().join("speech.wav");
+    write_wav(&wav, &samples);
+
+    let reply = h.call(json!({"v": 1, "type": "vad", "id": "v1", "model": "v", "path": wav}));
+    assert_eq!(reply.len(), 1, "{reply:?}");
+    let speech = reply[0]["speech"].as_array().expect("speech");
+    assert_eq!(speech.len(), 2, "the 300 ms pause does not end the second part: {reply:?}");
+    assert_eq!(reply[0]["id"], "v1");
+
+    let mut worker = StreamWorker::new(Arc::clone(&h.engine));
+    let reply = h.stream(&mut worker, json!({"v": 1, "type": "vad_start", "id": "s1", "session": 9, "model": "v"}));
+    assert_eq!(reply, [json!({"v": 1, "type": "ok", "id": "s1"})]);
+    let mut events = Vec::new();
+    for chunk in samples.chunks(2560) {
+        events.extend(h.stream(&mut worker, json!({"v": 1, "type": "stream_audio", "session": 9, "pcm": pcm(chunk)})));
+    }
+    let end = h.stream(&mut worker, json!({"v": 1, "type": "stream_end", "id": "e1", "session": 9}));
+    // The last speech_end comes before the reply, and nothing comes after it.
+    assert_eq!(last(&end), &json!({"v": 1, "type": "ok", "id": "e1", "session": 9}));
+    events.extend(end[..end.len() - 1].iter().cloned());
+    assert!(events.iter().all(|m| m.get("id").is_none() && m["session"] == 9), "{events:?}");
+
+    let types: Vec<&str> = events.iter().map(|m| m["type"].as_str().unwrap()).collect();
+    assert_eq!(types, ["speech_start", "speech_end", "speech_start", "speech_end"], "{events:?}");
+    let ends: Vec<&Value> = events.iter().filter(|m| m["type"] == "speech_end").collect();
+    for (part, event) in speech.iter().zip(&ends) {
+        assert_eq!(event["start_ms"], part["start_ms"]);
+        assert_eq!(event["end_ms"], part["end_ms"]);
+    }
+    for pair in events.chunks(2) {
+        assert_eq!(pair[0]["start_ms"], pair[1]["start_ms"], "speech_end repeats the start of its speech_start");
+    }
+
+    // The session is gone.
+    let reply = h.stream(&mut worker, json!({"v": 1, "type": "stream_audio", "session": 9, "pcm": pcm(&[0; 160])}));
+    assert_eq!(reply[0]["message"], "unknown stream session 9");
+}
+
+#[test]
+fn stream_end_closes_speech_that_is_still_open() {
+    let h = harness("http://unused");
+    load_model(&h, "v", &silero());
+    let mut worker = StreamWorker::new(Arc::clone(&h.engine));
+    h.stream(&mut worker, json!({"v": 1, "type": "vad_start", "id": "s1", "session": 1, "model": "v"}));
+    let samples = clip(&[(500, false), (1500, true)]);
+    let mut events = Vec::new();
+    for chunk in samples.chunks(2560) {
+        events.extend(h.stream(&mut worker, json!({"v": 1, "type": "stream_audio", "session": 1, "pcm": pcm(chunk)})));
+    }
+    let types: Vec<&str> = events.iter().map(|m| m["type"].as_str().unwrap()).collect();
+    assert_eq!(types, ["speech_start"], "the speech has no pause after it yet");
+    let end = h.stream(&mut worker, json!({"v": 1, "type": "stream_end", "id": "e1", "session": 1}));
+    assert_eq!(end.len(), 2, "{end:?}");
+    assert_eq!(end[0]["type"], "speech_end");
+    assert_eq!(end[0]["start_ms"], events[0]["start_ms"]);
+    assert!(end[0]["end_ms"].as_u64().unwrap() <= 2000, "{end:?}");
+    assert_eq!(end[1]["type"], "ok");
+}
+
+#[test]
+fn a_vad_request_on_audio_without_speech_gets_an_empty_list() {
+    let h = harness("http://unused");
+    load_model(&h, "v", &silero());
+    let wav = h.models_dir().join("quiet.wav");
+    write_wav(&wav, &clip(&[(2000, false)]));
+    let reply = h.call(json!({"v": 1, "type": "vad", "id": "v1", "model": "v", "path": wav}));
+    assert_eq!(reply[0]["speech"], json!([]));
+    let missing = h.models_dir().join("missing.wav");
+    let reply = h.call(json!({"v": 1, "type": "vad", "id": "v2", "model": "v", "path": missing}));
+    assert_eq!(reply[0]["type"], "error");
+}
+
+#[test]
+fn vad_sessions_count_toward_the_stream_limit() {
+    let h = harness("http://unused");
+    let streaming = spec_json("zipformer_streaming", "stream", None);
+    load_model(&h, "s", &streaming);
+    load_model(&h, "v", &silero());
+    let mut worker = StreamWorker::new(Arc::clone(&h.engine));
+    let preview = |session: u64| json!({"v": 1, "type": "stream_start", "id": "s", "session": session, "model": "s"});
+    let vad = |session: u64| json!({"v": 1, "type": "vad_start", "id": "s", "session": session, "model": "v"});
+    for session in 0..4 {
+        assert_eq!(h.stream(&mut worker, preview(session))[0]["type"], "ok");
+        assert_eq!(h.stream(&mut worker, vad(100 + session))[0]["type"], "ok");
+    }
+    assert_eq!(MAX_STREAMS, 8, "the test opens eight streams");
+    for reply in [h.stream(&mut worker, vad(200)), h.stream(&mut worker, preview(200))] {
+        assert_eq!(reply[0]["type"], "error");
+        assert_eq!(reply[0]["code"], "too_many_streams");
+    }
+    // The same session id again takes its own place. A session that ends gives its place back.
+    assert_eq!(h.stream(&mut worker, vad(100))[0]["type"], "ok");
+    h.stream(&mut worker, json!({"v": 1, "type": "stream_end", "id": "e", "session": 101}));
+    assert_eq!(h.stream(&mut worker, vad(200))[0]["type"], "ok");
+}
+
+#[test]
+fn a_request_with_the_wrong_kind_of_model_gets_an_error() {
+    let h = harness("http://unused");
+    let speech = spec_json("zipformer_streaming", "stream", None);
+    let batch = spec_json("sense_voice", "batch", None);
+    load_model(&h, "s", &speech);
+    load_model(&h, "b", &batch);
+    load_model(&h, "v", &silero());
+    load_model(&h, "d", &diarization_engine());
+    let wav = h.models_dir().join("clip.wav");
+    write_wav(&wav, &clip(&[(1000, true)]));
+    let mut worker = StreamWorker::new(Arc::clone(&h.engine));
+
+    let message = |reply: Vec<Value>| {
+        assert_eq!(reply.len(), 1, "{reply:?}");
+        assert_eq!(reply[0]["type"], "error", "{reply:?}");
+        reply[0]["message"].as_str().unwrap().to_string()
+    };
+    let transcribe = |model: &str| json!({"v": 1, "type": "transcribe", "id": "t", "model": model, "path": wav});
+    let vad = |model: &str| json!({"v": 1, "type": "vad", "id": "t", "model": model, "path": wav});
+    let diarize = |model: &str| json!({"v": 1, "type": "diarize", "id": "t", "model": model, "path": wav});
+    let stream_start = |model: &str| json!({"v": 1, "type": "stream_start", "id": "t", "session": 1, "model": model});
+    let vad_start = |model: &str| json!({"v": 1, "type": "vad_start", "id": "t", "session": 1, "model": model});
+
+    assert_eq!(message(h.call(transcribe("v"))), "model v is a VAD model, not a speech model");
+    assert_eq!(message(h.call(transcribe("d"))), "model d is a diarization model, not a speech model");
+    assert_eq!(message(h.stream(&mut worker, stream_start("v"))), "model v is a VAD model, not a speech model");
+    assert_eq!(message(h.stream(&mut worker, stream_start("d"))), "model d is a diarization model, not a speech model");
+    for speech_model in ["s", "b"] {
+        assert_eq!(message(h.call(vad(speech_model))), format!("model {speech_model} is a speech model, not a VAD model"));
+        assert_eq!(
+            message(h.stream(&mut worker, vad_start(speech_model))),
+            format!("model {speech_model} is a speech model, not a VAD model")
+        );
+        assert_eq!(
+            message(h.call(diarize(speech_model))),
+            format!("model {speech_model} is a speech model, not a diarization model")
+        );
+    }
+    assert_eq!(message(h.call(vad("d"))), "model d is a diarization model, not a VAD model");
+    assert_eq!(message(h.stream(&mut worker, vad_start("d"))), "model d is a diarization model, not a VAD model");
+    assert_eq!(message(h.call(diarize("v"))), "model v is a VAD model, not a diarization model");
+
+    // A model that is not loaded.
+    assert_eq!(message(h.call(vad("nope"))), "model nope is not loaded");
+    assert_eq!(message(h.stream(&mut worker, vad_start("nope"))), "model nope is not loaded");
+    assert_eq!(message(h.call(diarize("nope"))), "model nope is not loaded");
+    let unloaded = h.call(json!({"v": 1, "type": "unload", "id": "u", "model": "v"}));
+    assert_eq!(last(&unloaded)["type"], "ok");
+    assert_eq!(message(h.call(vad("v"))), "model v is not loaded");
+
+    // No session was opened by the errors.
+    assert_eq!(h.stream(&mut worker, json!({"v": 1, "type": "stream_end", "id": "e", "session": 1}))[0]["type"], "error");
+}
+
+#[test]
+fn diarize_numbers_the_speakers_and_joins_their_turns() {
+    let h = harness("http://unused");
+    load_model(&h, "d", &diarization_engine());
+    let wav = h.models_dir().join("talk.wav");
+    write_wav(&wav, &vec![1000; 16_000 * 4]);
+
+    let reply = h.call(json!({"v": 1, "type": "diarize", "id": "z1", "model": "d", "path": wav}));
+    assert_eq!(reply.len(), 1, "{reply:?}");
+    assert_eq!(reply[0]["id"], "z1");
+    assert_eq!(reply[0]["type"], "ok");
+    assert_eq!(reply[0]["speakers"], 2);
+    // The model's 9 spoke first and is 0. Its two overlapping turns are one.
+    assert_eq!(
+        reply[0]["turns"],
+        json!([
+            {"start_ms": 0, "end_ms": 1500, "speaker": 0},
+            {"start_ms": 2000, "end_ms": 3000, "speaker": 1},
+            {"start_ms": 2500, "end_ms": 3500, "speaker": 0},
+        ])
+    );
+
+    let reply = h.call(json!({"v": 1, "type": "diarize", "id": "z2", "model": "d", "path": wav, "speakers": 1}));
+    assert_eq!(reply[0]["speakers"], 1);
+    assert_eq!(reply[0]["turns"], json!([{"start_ms": 0, "end_ms": 4000, "speaker": 0}]));
+    let null = h.call(json!({"v": 1, "type": "diarize", "id": "z3", "model": "d", "path": wav, "speakers": null}));
+    assert_eq!(null[0]["type"], "ok");
+    assert_eq!(*h.loader.diarized.lock().unwrap(), [None, Some(1), None], "the model gets the number of speakers");
+}
+
+#[test]
+fn diarize_checks_speakers_and_handles_audio_without_speech() {
+    let h = harness("http://unused");
+    load_model(&h, "d", &diarization_engine());
+    let wav = h.models_dir().join("talk.wav");
+    write_wav(&wav, &vec![1000; 16_000]);
+    for bad in [json!(0), json!(-1), json!(1.5), json!("2"), json!(true), json!([2])] {
+        let reply = h.call(json!({"v": 1, "type": "diarize", "id": "z", "model": "d", "path": wav, "speakers": bad}));
+        assert_eq!(reply.len(), 1, "{bad}: {reply:?}");
+        assert_eq!(reply[0]["type"], "error", "{bad}");
+        assert_eq!(reply[0]["message"], "speakers must be an integer of 1 or more", "{bad}");
+    }
+    assert!(h.loader.diarized.lock().unwrap().is_empty(), "a bad number never reaches the model");
+
+    // A file without samples has no speech.
+    let empty = h.models_dir().join("empty.wav");
+    write_wav(&empty, &[]);
+    let reply = h.call(json!({"v": 1, "type": "diarize", "id": "z", "model": "d", "path": empty}));
+    assert_eq!(reply[0]["speakers"], 0);
+    assert_eq!(reply[0]["turns"], json!([]));
+    let missing = h.models_dir().join("missing.wav");
+    let reply = h.call(json!({"v": 1, "type": "diarize", "id": "z", "model": "d", "path": missing}));
+    assert_eq!(reply[0]["type"], "error");
+}
+
+#[test]
+fn serve_runs_vad_start_on_the_stream_worker() {
+    let h = harness("http://unused");
+    load_model(&h, "v", &silero());
+    let input = [
+        r#"{"v":1,"type":"vad_start","id":"a","session":3,"model":"v"}"#,
+        r#"{"v":1,"type":"vad_start","id":"b","session":4,"model":"nope"}"#,
+        r#"{"v":1,"type":"stream_end","id":"c","session":3}"#,
+    ]
+    .join("\n");
+    h.captured.clear();
+    serve(std::io::Cursor::new(input), Arc::clone(&h.engine));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while h.captured.messages().len() < 3 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let messages = h.captured.messages();
+    let ids: Vec<&str> = messages.iter().map(|m| m["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["a", "b", "c"], "in arrival order: {messages:?}");
+    assert_eq!(messages[1]["message"], "model nope is not loaded");
+    assert_eq!(messages[2], json!({"v": 1, "type": "ok", "id": "c", "session": 3}));
 }

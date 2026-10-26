@@ -39,6 +39,7 @@ pub fn attach(final_pass: Arc<dyn FinalPass>) -> Loaded {
             running,
         })),
         preview: Some(Arc::new(preview)),
+        ..Loaded::default()
     }
 }
 
