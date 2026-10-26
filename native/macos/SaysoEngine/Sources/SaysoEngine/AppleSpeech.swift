@@ -23,8 +23,11 @@ enum AppleSpeech {
         !(await SpeechTranscriber.installedLocales).isEmpty
     }
 
-    private static func transcriber(_ locale: Locale) -> SpeechTranscriber {
-        SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [], attributeOptions: [])
+    /// With `timed`, the results also give the time of each word.
+    private static func transcriber(_ locale: Locale, timed: Bool = false) -> SpeechTranscriber {
+        SpeechTranscriber(
+            locale: locale, transcriptionOptions: [], reportingOptions: [],
+            attributeOptions: timed ? [.audioTimeRange] : [])
     }
 
     /// Ask macOS to download the assets of a language. Returns at once when they are present.
@@ -42,13 +45,15 @@ enum AppleSpeech {
     }
 
     /// Final pass on an audio file. Downloads the assets of the language first when macOS
-    /// does not have them yet.
-    static func transcribe(url: URL, language: String, vocabulary: [String]) async throws -> String {
+    /// does not have them yet. With `timed`, the text comes with word times.
+    static func transcribe(
+        url: URL, language: String, vocabulary: [String], timed: Bool, audioMs: Int
+    ) async throws -> Timed {
         try await install(language: language) { _ in }
         guard let locale = await locale(for: language) else {
             throw EngineError("Apple Speech does not support the language \(language)")
         }
-        let transcriber = transcriber(locale)
+        let transcriber = transcriber(locale, timed: timed)
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         if !vocabulary.isEmpty {
             let context = AnalysisContext()
@@ -56,12 +61,35 @@ enum AppleSpeech {
             try await analyzer.setContext(context)
         }
         let file = try AVAudioFile(forReading: url)
-        async let text = transcriber.results.reduce(into: "") { $0 += String($1.text.characters) }
+        async let results = transcriber.results.reduce(into: [AttributedString]()) { $0.append($1.text) }
         if let last = try await analyzer.analyzeSequence(from: file) {
             try await analyzer.finalizeAndFinish(through: last)
         } else {
             await analyzer.cancelAndFinishNow()
         }
-        return try await text
+        let parts = try await results
+        let text = parts.reduce(into: "") { $0 += String($1.characters) }
+        guard timed else { return .untimed(text) }
+        // Each run of a result with a time is a word or a part of a word. Text without a
+        // time (the spaces) goes in front of the next word, so a space still starts a word.
+        var tokens: [String] = []
+        var starts: [Double] = []
+        var durations: [Double] = []
+        for part in parts {
+            var before = " "
+            for run in part.runs {
+                let piece = String(part[run.range].characters)
+                guard let range = run.audioTimeRange else {
+                    before += piece
+                    continue
+                }
+                tokens.append(before + piece)
+                starts.append(range.start.seconds)
+                durations.append(range.duration.seconds)
+                before = ""
+            }
+        }
+        let words = Segments.words(tokens: tokens, starts: starts, durations: durations, audioMs: audioMs)
+        return Timed(text: text, timing: words.isEmpty ? .none : .words(words))
     }
 }

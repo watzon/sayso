@@ -268,7 +268,7 @@ fn hello_and_unknown_requests() {
     assert_eq!(reply[0]["type"], "hello");
     assert_eq!(reply[0]["id"], "r1");
     assert_eq!(reply[0]["protocol"], 1);
-    assert_eq!(reply[0]["features"], json!(["keep_preview", "unload"]));
+    assert_eq!(reply[0]["features"], json!(["concurrent_streams", "keep_preview", "segments", "unload"]));
 
     let prepared = h.call(json!({"v":1,"type":"prepare","id":"p","model":"m","preview":true,"vocabulary":["Sayso"]}));
     assert_eq!(prepared[0]["type"], "ok");
@@ -787,6 +787,68 @@ fn streams_send_partials_and_end_with_the_text() {
     let reply =
         h.call(json!({"v": 1, "type": "transcribe", "id": "t1", "model": "s", "path": wav}));
     assert_eq!(reply[0]["message"], "model s has no final pass");
+}
+
+#[test]
+fn streams_on_one_model_run_at_the_same_time() {
+    let h = harness("http://unused");
+    let streaming = spec_json("zipformer_streaming", "stream", None);
+    install(&h, "s", &streaming);
+    h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "s", "engine": streaming}));
+    let mut worker = StreamWorker::new(Arc::clone(&h.engine));
+    for session in [1, 2, 3] {
+        let reply = h.stream(&mut worker, json!({"v": 1, "type": "stream_start", "id": format!("s{session}"), "session": session, "model": "s"}));
+        assert_eq!(reply[0]["type"], "ok", "{reply:?}");
+    }
+    let loud = pcm(&[1000; 320]);
+    for session in [1, 2, 3] {
+        let reply = h.stream(&mut worker, json!({"v": 1, "type": "stream_audio", "session": session, "pcm": loud}));
+        assert_eq!(reply[0]["session"], session, "each stream keeps its own text: {reply:?}");
+        assert_eq!(reply[0]["tentative"], "w0");
+    }
+    for session in [3, 1, 2] {
+        let reply = h.stream(&mut worker, json!({"v": 1, "type": "stream_end", "id": format!("e{session}"), "session": session}));
+        assert_eq!(reply.last().unwrap()["text"], "w0", "{reply:?}");
+    }
+}
+
+#[test]
+fn a_stream_past_the_limit_gets_too_many_streams() {
+    let h = harness("http://unused");
+    let streaming = spec_json("zipformer_streaming", "stream", None);
+    install(&h, "s", &streaming);
+    h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "s", "engine": streaming}));
+    let mut worker = StreamWorker::new(Arc::clone(&h.engine));
+    let start = |session: u64| json!({"v": 1, "type": "stream_start", "id": "s", "session": session, "model": "s"});
+    for session in 0..MAX_STREAMS as u64 {
+        assert_eq!(h.stream(&mut worker, start(session))[0]["type"], "ok");
+    }
+    let reply = h.stream(&mut worker, start(99));
+    assert_eq!(reply[0]["type"], "error");
+    assert_eq!(reply[0]["code"], "too_many_streams");
+    // The same session id again replaces its stream and needs no new place.
+    assert_eq!(h.stream(&mut worker, start(0))[0]["type"], "ok");
+}
+
+#[test]
+fn transcribe_with_segments_gives_one_segment_for_each_untimed_piece() {
+    let h = harness("http://unused");
+    let whisper = spec_json("whisper", "w", None);
+    install(&h, "w", &whisper);
+    h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "w", "engine": whisper}));
+    let wav = h.models_dir().join("long.wav");
+    write_wav(&wav, &vec![1000; 16_000 * 40]);
+    let reply = h.call(json!({"v": 1, "type": "transcribe", "id": "t1", "model": "w", "path": wav, "language": "en", "segments": true}));
+    let segments = reply[0]["segments"].as_array().expect("segments");
+    assert_eq!(segments.len(), 2, "{reply:?}");
+    assert_eq!(segments[0]["start_ms"], 0);
+    assert_eq!(segments[0]["end_ms"], segments[1]["start_ms"]);
+    assert_eq!(segments[1]["end_ms"], 40_000);
+    assert!(segments[0]["text"].as_str().unwrap().ends_with("samples in en"));
+    assert!(segments[0].get("words").is_none());
+
+    let reply = h.call(json!({"v": 1, "type": "transcribe", "id": "t2", "model": "w", "path": wav, "language": "en"}));
+    assert!(reply[0].get("segments").is_none(), "only when asked");
 }
 
 #[test]

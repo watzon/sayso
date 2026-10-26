@@ -5,7 +5,7 @@ import Foundation
 let protocolVersion = 1
 /// The optional parts of the protocol that this engine has, sent in `hello`
 /// (docs/engine-protocol.md, "Features").
-let engineFeatures = ["language_model", "prepare", "unload"]
+let engineFeatures = ["concurrent_streams", "language_model", "prepare", "segments", "unload"]
 let engineVersion = "0.1.0"
 
 /// A failure that is reported to the client as `{"type":"error"}`. Never crashes the process.
@@ -13,9 +13,12 @@ struct EngineError: Error, CustomStringConvertible {
     let message: String
     /// The stable code for `reason` in `model_state failed`, for example `incomplete_download`.
     let reason: String?
-    init(_ message: String, reason: String? = nil) {
+    /// The stable code for `code` in the `error` reply, for example `too_many_streams`.
+    let code: String?
+    init(_ message: String, reason: String? = nil, code: String? = nil) {
         self.message = message
         self.reason = reason
+        self.code = code
     }
     var description: String { message }
 }

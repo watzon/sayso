@@ -13,7 +13,23 @@ pub const PROTOCOL_VERSION: u64 = 1;
 /// The optional parts of the protocol that this engine has, sent in `hello`
 /// (`docs/engine-protocol.md`, "Features"). It accepts `prepare` but does
 /// nothing with it, so it does not list `prepare`.
-pub const FEATURES: &[&str] = &["keep_preview", "unload"];
+pub const FEATURES: &[&str] = &["concurrent_streams", "keep_preview", "segments", "unload"];
+
+/// An error with a stable `code` for the `error` reply, for example
+/// `too_many_streams`.
+#[derive(Debug)]
+pub struct Coded {
+    pub code: &'static str,
+    pub message: String,
+}
+
+impl std::fmt::Display for Coded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Coded {}
 
 /// Writes protocol lines. Thread safe. One write call per line, so lines from
 /// different threads never mix.
@@ -76,6 +92,15 @@ impl Output {
 
     pub fn error(&self, message: &str, id: Option<&str>) {
         self.send("error", id, json!({ "message": message }));
+    }
+
+    /// An `error` reply for `error`: with its `code` when it is a [`Coded`] error.
+    pub fn failure(&self, error: &anyhow::Error, id: Option<&str>) {
+        let mut fields = json!({ "message": format!("{error:#}") });
+        if let Some(coded) = error.downcast_ref::<Coded>() {
+            fields["code"] = json!(coded.code);
+        }
+        self.send("error", id, fields);
     }
 
     pub fn log(&self, level: &str, message: &str) {

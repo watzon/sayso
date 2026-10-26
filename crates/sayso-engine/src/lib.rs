@@ -38,6 +38,7 @@ pub mod redecode;
 pub mod sherpa;
 pub mod spec;
 pub mod store;
+pub mod timing;
 pub mod whisper_cpp;
 
 use engine::{Config, Engine};

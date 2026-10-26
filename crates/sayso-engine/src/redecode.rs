@@ -55,6 +55,13 @@ impl FinalPass for Counted {
         self.running.fetch_sub(1, Ordering::SeqCst);
         result
     }
+
+    fn transcribe_timed(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<crate::timing::Timed> {
+        self.running.fetch_add(1, Ordering::SeqCst);
+        let result = self.inner.transcribe_timed(samples, language, vocabulary);
+        self.running.fetch_sub(1, Ordering::SeqCst);
+        result
+    }
 }
 
 struct RedecodePreview {
