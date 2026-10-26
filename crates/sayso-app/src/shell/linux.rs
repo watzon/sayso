@@ -371,7 +371,7 @@ fn tray_labels() -> sayso_platform_linux::tray::TrayLabels {
 /// The colored app icon: a template image like the macOS one would vanish on
 /// a dark panel.
 fn tray_image(incognito: bool) -> Option<(Vec<u8>, u32, u32)> {
-    let bytes = sayso_ui::assets::bytes("app/icon-64.png").or_else(|| sayso_ui::assets::bytes("app/tray.png"))?;
+    let bytes = crate::app_assets::bytes("icon-64.png").or_else(|| crate::app_assets::bytes("tray.png"))?;
     let mut img = image::load_from_memory(&bytes).ok()?.into_rgba8();
     if incognito {
         super::dim_icon(&mut img);

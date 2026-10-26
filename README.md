@@ -135,6 +135,8 @@ The source code is free software under the [GNU General Public License, version 
 
 The official build is the signed and notarized app. It is free, and it needs no license key. Sayso is paid for by the people who use it: the download page at [justsayso.app](https://justsayso.app) asks what you want to pay, and $0 is a valid answer.
 
+Two crates are an exception. `crates/sayso-ink` and `crates/sayso-ui` (the colors, the paper, and the components) are MIT-licensed, so that extensions can look like Sayso. Each has its own `LICENSE` file. The fonts in `crates/sayso-ui/assets/fonts` keep their own SIL Open Font License files.
+
 The name Sayso and the app icon are not part of the license. If you publish a changed version, give it another name and another icon.
 
 ## Support Sayso

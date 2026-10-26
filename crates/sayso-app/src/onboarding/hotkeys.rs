@@ -44,7 +44,7 @@ impl OnboardingView {
             ]);
         let well = match (rec_toggle, toggle) {
             (true, _) => well.child(listening(None, window_only, &c)),
-            (false, Some(hk)) => well.child(Keycaps::hotkey(&hk).size(KeySize::Large).with_plus()),
+            (false, Some(hk)) => well.child(crate::widgets::hotkey_keycaps(&hk).size(KeySize::Large).with_plus()),
             (false, None) => well.child(text::ui(t!("onboarding.hotkeys.no_key"), 14., FontWeight::NORMAL, c.graphite)),
         };
         // One live node for the state of the key: a screen reader says it when
@@ -103,7 +103,7 @@ impl OnboardingView {
                         .h(px(88.))
                         .rounded(px(12.))
                         .debossed(&c)
-                        .child(Keycaps::hotkey(&hk).size(KeySize::Large).with_plus()),
+                        .child(crate::widgets::hotkey_keycaps(&hk).size(KeySize::Large).with_plus()),
                 )
                 .into_any_element(),
             (false, None) => dashed_box(&c)

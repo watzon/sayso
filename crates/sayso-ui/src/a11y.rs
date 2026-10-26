@@ -299,17 +299,16 @@ pub fn pressable(id: impl Into<ElementId>) -> Pressable {
 /// The keycaps of a hotkey as words for a screen reader: "Option Space",
 /// not "⌥ Space".
 pub fn spoken_keys<S: AsRef<str>>(caps: &[S]) -> String {
-    use sayso_i18n::t;
     let word = |cap: &str| -> String {
         let named = |sym: &str| -> Option<String> {
             Some(match sym {
-                "⌃" => t!("a11y.key.control"),
-                "⌥" => t!("a11y.key.option"),
-                "⇧" => t!("a11y.key.shift"),
-                "⌘" => t!("a11y.key.command"),
-                "↵" => t!("a11y.key.return"),
-                "⇥" => t!("a11y.key.tab"),
-                "⌫" => t!("a11y.key.delete"),
+                "⌃" => crate::l10n::text("a11y.key.control"),
+                "⌥" => crate::l10n::text("a11y.key.option"),
+                "⇧" => crate::l10n::text("a11y.key.shift"),
+                "⌘" => crate::l10n::text("a11y.key.command"),
+                "↵" => crate::l10n::text("a11y.key.return"),
+                "⇥" => crate::l10n::text("a11y.key.tab"),
+                "⌫" => crate::l10n::text("a11y.key.delete"),
                 _ => return None,
             })
         };

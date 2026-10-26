@@ -1,7 +1,7 @@
 //! Visual check of the design system: `cargo run -p sayso-ui --example gallery [dark]`.
 
 use gpui_kit::*;
-use sayso_core::ink::{Appearance, Ink};
+use sayso_ink::{Appearance, Ink};
 use sayso_ui::assets::Icon;
 use sayso_ui::components::*;
 use sayso_ui::paper::PaperStyled;

@@ -4,12 +4,10 @@ use gpui_kit::{AssetSource, Result, SharedString};
 use std::borrow::Cow;
 
 #[derive(rust_embed::RustEmbed)]
-#[folder = "../../assets"]
+#[folder = "assets"]
 #[include = "icons/*.svg"]
 #[include = "textures/*.png"]
 #[include = "sounds/*.wav"]
-#[include = "app/tray.png"]
-#[include = "app/icon-64.png"]
 struct SaysoAssets;
 
 /// Pass to `Application::with_assets`.
@@ -44,11 +42,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn embeds_the_tray_and_window_icons_only() {
-        assert!(bytes("app/tray.png").is_some());
-        assert!(bytes("app/icon-64.png").is_some());
-        // The iconset is for the bundle scripts. Embedding it adds over 1 MB.
-        assert!(SaysoAssets::iter().all(|name| !name.starts_with("app/AppIcon.iconset")));
+    fn embeds_icons_textures_and_sounds_only() {
+        assert!(bytes("icons/mic.svg").is_some());
+        assert!(bytes("textures/board-light.png").is_some());
+        assert!(bytes("sounds/start.wav").is_some());
+        // The Sayso name and the app icon belong to Watzon Ventures LLC. This crate is MIT.
+        assert!(bytes("app/tray.png").is_none());
+        assert!(bytes("app/icon-64.png").is_none());
+        assert!(SaysoAssets::iter().all(|name| ["icons/", "textures/", "sounds/"].iter().any(|dir| name.starts_with(dir))));
     }
 }
 

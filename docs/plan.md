@@ -228,7 +228,7 @@ Settings shows the active path for each kind.
 - Rendering limits (GPUI has no custom shaders, blur, radial gradients, or masks):
   - Ink effects: layered `paint_path` curves, linear gradients, and soft shadows.
   - Fallback: per-frame CPU images for soft edges.
-  - Paper grain: one tiled texture painted once. The board (window background, sidebar) carries the visible texture. Content sheets get a very soft texture so text sits on a nearly clean page. The textures come from `assets/textures/generate.py`.
+  - Paper grain: one tiled texture painted once. The board (window background, sidebar) carries the visible texture. Content sheets get a very soft texture so text sits on a nearly clean page. The textures come from `crates/sayso-ui/assets/textures/generate.py`.
   - If we need one true shader moment, add a native Metal layer to the overlay only, later.
 - Sound: generated effects for start, stop, cancel, and insert. On by default at low volume, with an on/off toggle and volume for each event.
 
@@ -249,7 +249,7 @@ sayso/
 │   ├── sayso-ui/              # Theme, inks, tactile paper components on gpui-kit
 │   └── sayso-app/             # Binary: wires everything, windows, tray, onboarding
 ├── native/macos/SaysoEngine/  # Swift package: WhisperKit + FluidAudio sidecar
-├── assets/                    # Fonts, textures, sounds, icons
+├── assets/                    # App icons, DMG background, web art (fonts, textures, sounds, icons: crates/sayso-ui/assets)
 ├── spikes/                    # Throwaway prototypes (deleted after M0)
 └── docs/
 ```

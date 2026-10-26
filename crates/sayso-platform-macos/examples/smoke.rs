@@ -27,7 +27,7 @@ mod mac {
 
     pub fn main() {
         env_logger::init();
-        let sounds_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/sounds");
+        let sounds_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../sayso-ui/assets/sounds");
         let p = MacPlatform::new(sounds_dir);
 
         println!("== permissions");

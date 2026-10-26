@@ -3,12 +3,14 @@ name = "sayso-ui"
 description = "Sayso's tactile paper design system on GPUI and gpui-kit."
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-publish.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
+# The bundled fonts keep their own OFL licenses (assets/fonts/licenses).
+license = "MIT AND OFL-1.1"
+publish = true
+repository = "https://github.com/watzon/sayso"
 
 [dependencies]
-sayso-core.workspace = true
-sayso-i18n.workspace = true
+sayso-ink.workspace = true
 gpui-kit.workspace = true
 anyhow.workspace = true
 log.workspace = true
