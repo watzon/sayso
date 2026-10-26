@@ -7,6 +7,7 @@
 
 use crate::partials::Segment;
 use crate::spec::ModelSpec;
+use crate::timing::Timed;
 use anyhow::{Result, anyhow};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
@@ -49,6 +50,13 @@ pub trait FinalPass: Send + Sync {
     /// cannot use them ignores them. The engine cuts long recordings into
     /// pieces first, unless the recipe cuts them itself.
     fn transcribe(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<String>;
+
+    /// The same as [`FinalPass::transcribe`], with the times that the model
+    /// gives (`docs/engine-protocol.md`, "Segments"). Times are from the start
+    /// of `samples`. A model without times keeps this default.
+    fn transcribe_timed(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<Timed> {
+        self.transcribe(samples, language, vocabulary).map(Timed::untimed)
+    }
 }
 
 /// The live preview: a streaming model.

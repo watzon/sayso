@@ -14,7 +14,8 @@ use crate::audio;
 use crate::download::{self, Progress};
 use crate::layout;
 use crate::partials::Partials;
-use crate::protocol::{FEATURES, Output, PROTOCOL_VERSION, Request};
+use crate::protocol::{Coded, FEATURES, Output, PROTOCOL_VERSION, Request};
+use crate::timing::{self, Piece};
 use crate::recognizer::{LivePreview, Loaded, Loader, ModelDirs, PreviewStream};
 use crate::spec::{ModelSpec, Source};
 use crate::store::{Legacy, ModelStore};
@@ -154,7 +155,7 @@ impl Engine {
             other => Err(anyhow!("unknown request type {other}")),
         };
         if let Err(e) = result {
-            self.out.error(&format!("{e:#}"), id);
+            self.out.failure(&e, id);
         }
     }
 
@@ -478,18 +479,30 @@ impl Engine {
         if samples.is_empty() {
             bail!("audio file has no samples");
         }
+        let with_segments = request.value("segments").ok().and_then(Value::as_bool).unwrap_or(false);
         let start = Instant::now();
         let mut parts = Vec::new();
+        let mut pieces = Vec::new();
+        let mut offset = 0;
         for piece in audio::split(&samples, spec.recipe.max_chunk_seconds()) {
-            parts.push(final_pass.transcribe(piece, language, &vocabulary)?);
+            let start_ms = (offset * 1000 / audio::SAMPLE_RATE) as u64;
+            offset += piece.len();
+            let end_ms = (offset * 1000 / audio::SAMPLE_RATE) as u64;
+            if with_segments {
+                let timed = final_pass.transcribe_timed(piece, language, &vocabulary)?;
+                parts.push(timed.text.clone());
+                pieces.push(Piece { start_ms, end_ms, timed });
+            } else {
+                parts.push(final_pass.transcribe(piece, language, &vocabulary)?);
+            }
         }
         let text = audio::join(&parts);
         let elapsed_ms = start.elapsed().as_millis() as u64;
-        self.out.send(
-            "final",
-            request.id(),
-            json!({ "text": text.trim(), "elapsed_ms": elapsed_ms }),
-        );
+        let mut fields = json!({ "text": text.trim(), "elapsed_ms": elapsed_ms });
+        if with_segments {
+            fields["segments"] = timing::to_json(&timing::segments(&pieces));
+        }
+        self.out.send("final", request.id(), fields);
         Ok(())
     }
 
@@ -554,11 +567,15 @@ fn release_free_memory() {
 // ---------------------------------------------------------------------------
 
 struct Session {
-    model: String,
     stream: Box<dyn PreviewStream>,
     partials: Partials,
     last_decode: Instant,
 }
+
+/// The most streams that are open at the same time, on all models together.
+/// The protocol asks for at least 3: a dictation, and the two sources of a
+/// live session.
+const MAX_STREAMS: usize = 8;
 
 /// Runs the streaming requests in arrival order.
 pub struct StreamWorker {
@@ -576,7 +593,7 @@ impl StreamWorker {
 
     pub fn handle(&mut self, request: &Request) {
         if let Err(e) = self.run(request) {
-            self.engine.out.error(&format!("{e:#}"), request.id());
+            self.engine.out.failure(&e, request.id());
         }
     }
 
@@ -586,11 +603,18 @@ impl StreamWorker {
             "stream_start" => {
                 let model = request.string("model")?;
                 let preview = self.engine.preview(model)?;
-                // One live stream per model. A new session replaces an older one.
-                self.sessions.retain(|_, s| s.model != model);
+                // Streams are independent (`concurrent_streams`). A session id
+                // that is open already starts again.
+                self.sessions.remove(&session);
+                if self.sessions.len() >= MAX_STREAMS {
+                    return Err(Coded {
+                        code: "too_many_streams",
+                        message: format!("{MAX_STREAMS} streams are open; end one first"),
+                    }
+                    .into());
+                }
                 let stream = preview.start()?;
                 let session_state = Session {
-                    model: model.to_string(),
                     stream,
                     partials: Partials::default(),
                     last_decode: Instant::now(),

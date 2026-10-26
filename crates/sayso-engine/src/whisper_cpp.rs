@@ -28,6 +28,7 @@ pub use imp::load;
 mod imp {
     use super::*;
     use crate::audio::SAMPLE_RATE;
+    use crate::timing::{TextSegment, Timed, Timing};
     use anyhow::{anyhow, bail};
     use std::sync::Mutex;
     use transcribe_rs::whisper_cpp::{WhisperEngine, WhisperInferenceParams, WhisperLoadParams};
@@ -63,8 +64,13 @@ mod imp {
 
     impl FinalPass for Whisper {
         fn transcribe(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<String> {
+            self.transcribe_timed(samples, language, vocabulary).map(|timed| timed.text)
+        }
+
+        /// whisper.cpp gives segments with times (timestamp level `segment`).
+        fn transcribe_timed(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<Timed> {
             if is_silence(samples) {
-                return Ok(String::new());
+                return Ok(Timed::untimed(String::new()));
             }
             let mut input = samples.to_vec();
             if input.len() < MIN_SAMPLES {
@@ -80,7 +86,22 @@ mod imp {
             let result = engine
                 .transcribe_with(&input, &params)
                 .map_err(|e| anyhow!("Whisper failed: {e}"))?;
-            Ok(clean_whisper_text(&result.text))
+            let text = clean_whisper_text(&result.text);
+            let timing = match result.segments {
+                Some(segments) if !segments.is_empty() => Timing::Segments(
+                    segments
+                        .iter()
+                        .map(|s| TextSegment {
+                            start_ms: (s.start.max(0.0) * 1000.0) as u64,
+                            end_ms: (s.end.max(0.0) * 1000.0) as u64,
+                            text: clean_whisper_text(&s.text),
+                            words: None,
+                        })
+                        .collect(),
+                ),
+                _ => Timing::None,
+            };
+            Ok(Timed { text, timing })
         }
     }
 }

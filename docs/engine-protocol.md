@@ -69,6 +69,8 @@ An engine that sends no `features` is older than this spec. A client can still s
 | `keep_preview` | The field `keep_preview` of `unload`. An engine without it unloads the whole model. | no | yes |
 | `prepare` | The request `prepare` and the event `part_state`. | yes | no |
 | `language_model` | The requests `language_model` and `generate`: the language model of the system. | yes | no |
+| `concurrent_streams` | Streams that run at the same time (see "Streams"). | yes | yes |
+| `segments` | The field `segments` of `transcribe` (see "Segments"). | yes | yes |
 
 The Rust engine replies `ok` to `prepare` and does nothing, so it does not list `prepare`.
 
@@ -85,7 +87,7 @@ The Rust engine replies `ok` to `prepare` and does nothing, so it does not list 
 | `load` | `model, engine` | `model_state optimizing`, `model_state ready {load_ms}`, then `ok` |
 | `unload` | `model, keep_preview?` | `model_state downloaded` when the model was in memory, then `ok` |
 | `prepare` | `model, preview, vocabulary` | `part_state` for each part, then `ok` |
-| `transcribe` | `model, path, language, vocabulary` | `final {text, elapsed_ms}` |
+| `transcribe` | `model, path, language, vocabulary, segments?` | `final {text, elapsed_ms, segments?}` |
 | `stream_start` | `session, model, language?` | `ok`, then `partial` events |
 | `stream_audio` | `session, pcm` (no `id`) | `partial` events, no reply |
 | `stream_end` | `session` | the last `partial` when the text changed, then `ok {session, text}` |
@@ -124,7 +126,26 @@ The engines never unload a model by themselves. The client decides when a model 
 
 The final pass on a whole recording. `path` is a WAV file: 16 kHz, mono, 16-bit PCM. The file belongs to the client, and the engine does not delete it. `language` is a code such as `en`, or `auto`. `vocabulary` is a list of words that the model should prefer. A model that cannot use them ignores them. `final` has the `text` and `elapsed_ms`, the time of the pass in milliseconds.
 
-`transcribe` with a model that is not loaded gets an `error`.
+`transcribe` with a model that is not loaded gets an `error`. A `transcribe` on a model with open streams runs. It does not end the streams.
+
+### Segments
+
+With the feature `segments`, `transcribe` takes `segments: true`. The `final` reply then also has `segments`: the text cut into parts with times, in order, without overlaps.
+
+```json
+{"v":1,"type":"final","id":"t1","text":"Hello there. How are you?","elapsed_ms":212,
+ "segments":[{"start_ms":320,"end_ms":1180,"text":"Hello there.",
+              "words":[{"start_ms":320,"end_ms":640,"text":"Hello"},{"start_ms":700,"end_ms":1180,"text":"there."}]},
+             {"start_ms":1900,"end_ms":2950,"text":"How are you?","words":[...]}]}
+```
+
+How much timing a model gives is its timestamp level: `word`, `segment`, or `none`. The model catalog of Sayso says the level of each model (`EngineKind::timestamps` in `crates/sayso-core/src/models.rs`).
+
+- `word`: each segment has `words`, each with `start_ms`, `end_ms`, and `text`. A segment ends after a word that ends a sentence (`.`, `?`, `!`, `。`, `？`, `！`), before a pause of 700 ms or more between two words, and before it would pass 20 s.
+- `segment`: the segments of the model, with no `words`.
+- `none`: one segment for each piece of audio that the engine transcribes alone, with the text of that piece. An engine cuts long audio into pieces (the Rust engine cuts at about 30 s), so a short recording is one segment from 0 to the end of the audio. Cut the audio first (for example with VAD) to get shorter segments.
+
+Times are in milliseconds from the start of the file. A segment with no text is left out.
 
 ### Streams
 
@@ -136,7 +157,9 @@ A stream gives a live preview while the user speaks.
 - `stream_end {session}` closes the stream. The engine decodes the rest of the audio, sends the last `partial` when the text changed, and replies `ok {session, text}`. No `partial` of the session comes after that reply.
 - `stream_audio` or `stream_end` for a session that is not open gets an `error`.
 
-Today each model has one stream at a time. A `stream_start` on a model with an open stream ends the older session without a reply. Its later `stream_audio` gets an `error`.
+With the feature `concurrent_streams`, streams are independent. The engine runs at least 3 streams at the same time, on one model or on different models, and a `stream_start` does not end another stream. When the engine cannot open one more stream, the reply is an `error` with `code: "too_many_streams"`. An engine can load a second copy of a model for a second stream on that model, so each stream can cost memory.
+
+An engine without the feature has one stream for each model. A `stream_start` on a model with an open stream ends the older session without a reply, and its later `stream_audio` gets an `error`.
 
 A stream is only a preview. The client keeps the audio and sends the whole recording to `transcribe` for the final text.
 
@@ -222,7 +245,7 @@ A feature is in this spec only when each engine passes its tests, or each engine
 
 ## Next
 
-These parts come in step 3 of `docs/extensions.md`, each with a feature: concurrent streams, segments with times, VAD, diarization, and public model ids.
+These parts come in step 3 of `docs/extensions.md`, each with a feature: VAD, diarization, and public model ids.
 
 ## License
 

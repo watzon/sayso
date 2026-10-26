@@ -10,7 +10,9 @@
 //!   engine does not keep that state, so only real engines run this level.
 //! - **ready** needs a models folder with the model on disk, and a 16 kHz mono
 //!   WAV file ([`Ready`]). It loads the model, transcribes, streams, and
-//!   unloads. It does not download or delete.
+//!   unloads. With the features `segments` and `concurrent_streams`, it also
+//!   checks the segments of a transcription and three streams at the same
+//!   time. It does not download or delete.
 //!
 //! Every line of every engine also gets these checks: it is a JSON object
 //! with `"v":1` and a string `type`, and no request gets two replies.
@@ -428,11 +430,32 @@ fn ready_level(suite: &Suite, ready: &Ready, features: &[String], report: &mut R
         engine.request("transcribe", fields, suite.load_timeout)?.expect_error()
     })());
 
+    let has = |name: &str| features.iter().any(|f| f == name);
+    if has("segments") {
+        report.record("transcribe with segments gives timed segments in order", (|| {
+            let fields = json!({ "model": model.id, "path": ready.audio, "language": "en", "vocabulary": [], "segments": true });
+            let reply = engine.request("transcribe", fields, suite.load_timeout)?;
+            reply.expect_type("final")?;
+            let audio_ms = samples.len() as u64 * 1000 / 16_000;
+            check_segments(&reply.reply["segments"], audio_ms)
+        })());
+    } else {
+        report.skip("transcribe with segments", "the engine does not list the feature segments");
+    }
+
     if ready.stream {
         report.record(
             "a stream sends partial events and ends with ok and text",
             stream(suite, &mut engine, &model.id, &samples),
         );
+        if has("concurrent_streams") {
+            report.record(
+                "three streams on one model run at the same time",
+                concurrent_streams(suite, &mut engine, &model.id, &samples),
+            );
+        } else {
+            report.skip("concurrent streams", "the engine does not list the feature concurrent_streams");
+        }
     } else {
         report.skip("stream", "the model has no live preview");
     }
@@ -480,6 +503,80 @@ fn stream(suite: &Suite, engine: &mut Engine, model: &str, samples: &[i16]) -> R
         Some(partial) => Err(format!("a partial came after stream_end: {partial}")),
         None => Ok(()),
     }
+}
+
+/// Three streams on one model, with their audio sent in turns. Each ends with
+/// its own reply and text.
+fn concurrent_streams(suite: &Suite, engine: &mut Engine, model: &str, samples: &[i16]) -> Result<(), String> {
+    const SESSIONS: [u64; 3] = [51, 52, 53];
+    for session in SESSIONS {
+        engine
+            .request("stream_start", json!({ "session": session, "model": model }), suite.load_timeout)?
+            .expect_type("ok")
+            .map_err(|why| format!("stream_start of session {session}: {why}"))?;
+    }
+    for chunk in samples.chunks(2560) {
+        let bytes: Vec<u8> = chunk.iter().flat_map(|s| s.to_le_bytes()).collect();
+        let pcm = STANDARD.encode(bytes);
+        for session in SESSIONS {
+            engine.send_line(&line("stream_audio", None, json!({ "session": session, "pcm": pcm })))?;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    for session in SESSIONS {
+        let reply = engine.request("stream_end", json!({ "session": session }), suite.load_timeout)?;
+        reply.expect_type("ok").map_err(|why| format!("stream_end of session {session}: {why}"))?;
+        if reply.reply["session"] != json!(session) {
+            return Err(format!("stream_end reply has session {}, not {session}", reply.reply["session"]));
+        }
+        match reply.reply["text"].as_str() {
+            Some(text) if !text.trim().is_empty() => {}
+            _ => return Err(format!("session {session} ended without text: {}", reply.reply)),
+        }
+    }
+    Ok(())
+}
+
+/// The `segments` of a `final` reply: a list in time order, without overlaps,
+/// inside the audio, with text. Words, when there, are inside their segment.
+fn check_segments(segments: &Value, audio_ms: u64) -> Result<(), String> {
+    // Times may pass the end of the audio by a little, for rounding.
+    const SLACK_MS: u64 = 100;
+    let list = segments.as_array().ok_or_else(|| format!("segments is not an array: {segments}"))?;
+    if list.is_empty() {
+        return Err("no segments for audio with speech".into());
+    }
+    let span = |item: &Value| -> Result<(u64, u64), String> {
+        let (Some(start), Some(end)) = (item["start_ms"].as_u64(), item["end_ms"].as_u64()) else {
+            return Err(format!("start_ms and end_ms must be integers: {item}"));
+        };
+        if start > end || end > audio_ms + SLACK_MS {
+            return Err(format!("times are not inside the audio of {audio_ms} ms: {item}"));
+        }
+        match item["text"].as_str() {
+            Some(text) if !text.trim().is_empty() => Ok((start, end)),
+            _ => Err(format!("no text: {item}")),
+        }
+    };
+    let mut last_end = 0;
+    for segment in list {
+        let (start, end) = span(segment)?;
+        if start < last_end {
+            return Err(format!("segment starts before the one in front of it ends ({last_end} ms): {segment}"));
+        }
+        last_end = end;
+        if segment.get("words").is_none() {
+            continue;
+        }
+        let words = segment["words"].as_array().ok_or_else(|| format!("words is not an array: {segment}"))?;
+        for word in words {
+            let (word_start, word_end) = span(word)?;
+            if word_start < start || word_end > end {
+                return Err(format!("word is not inside its segment: {word} in {segment}"));
+            }
+        }
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -852,6 +949,29 @@ mod tests {
         let path = dir.path().join("a.wav");
         write_wav(&path, &[0, 1, -1, i16::MAX, i16::MIN]).unwrap();
         assert_eq!(read_wav(&path).unwrap(), vec![0, 1, -1, i16::MAX, i16::MIN]);
+    }
+
+    #[test]
+    fn segments_must_be_in_order_inside_the_audio_with_text() {
+        let good = json!([
+            {"start_ms": 0, "end_ms": 900, "text": "Hello there.", "words": [
+                {"start_ms": 100, "end_ms": 400, "text": "Hello"},
+                {"start_ms": 450, "end_ms": 900, "text": "there."}
+            ]},
+            {"start_ms": 1200, "end_ms": 2050, "text": "Bye."}
+        ]);
+        assert_eq!(check_segments(&good, 2_000), Ok(()));
+        let bad = [
+            json!([]),
+            json!([{"start_ms": 0, "end_ms": 500, "text": " "}]),
+            json!([{"start_ms": 0, "end_ms": 900, "text": "a"}, {"start_ms": 800, "end_ms": 1000, "text": "b"}]),
+            json!([{"start_ms": 0, "end_ms": 5_000, "text": "a"}]),
+            json!([{"start_ms": 0.5, "end_ms": 900, "text": "a"}]),
+            json!([{"start_ms": 100, "end_ms": 900, "text": "a", "words": [{"start_ms": 0, "end_ms": 200, "text": "a"}]}]),
+        ];
+        for segments in bad {
+            assert!(check_segments(&segments, 2_000).is_err(), "{segments}");
+        }
     }
 
     #[test]

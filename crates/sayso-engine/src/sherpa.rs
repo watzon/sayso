@@ -7,6 +7,7 @@ use crate::recognizer::{
     FinalPass, LazyPreview, LivePreview, Loaded, Loader, ModelDirs, PreviewStream,
 };
 use crate::spec::{ModelSpec, Recipe, Source};
+use crate::timing::{self, Timed, Timing};
 use anyhow::{Context, Result, anyhow, bail};
 use sherpa_onnx::{
     OfflineModelConfig, OfflineMoonshineModelConfig, OfflineNemoEncDecCtcModelConfig,
@@ -211,7 +212,13 @@ impl<T> ByLanguage<T> {
 impl FinalPass for Offline {
     /// Dictionary words need hotwords, which work only for transducers with beam
     /// search. The catalog models cannot use them, so they are ignored.
-    fn transcribe(&self, samples: &[f32], language: &str, _vocabulary: &[String]) -> Result<String> {
+    fn transcribe(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<String> {
+        self.transcribe_timed(samples, language, vocabulary).map(|timed| timed.text)
+    }
+
+    /// Token times give word times when the model has them (Parakeet TDT,
+    /// SenseVoice). Whisper and Moonshine give none.
+    fn transcribe_timed(&self, samples: &[f32], language: &str, _vocabulary: &[String]) -> Result<Timed> {
         let recognizer = self.recognizer(language)?;
         let stream = recognizer.create_stream();
         stream.accept_waveform(SAMPLE_RATE, samples);
@@ -219,7 +226,16 @@ impl FinalPass for Offline {
         let result = stream
             .get_result()
             .ok_or_else(|| anyhow!("the model returned no result"))?;
-        Ok(result.text.trim().to_string())
+        let text = result.text.trim().to_string();
+        let audio_ms = (samples.len() as u64 * 1000) / SAMPLE_RATE as u64;
+        let timing = match &result.timestamps {
+            Some(starts) if !starts.is_empty() && starts.len() == result.tokens.len() => {
+                let words = timing::words_from_tokens(&result.tokens, starts, result.durations.as_deref(), audio_ms);
+                if words.is_empty() { Timing::None } else { Timing::Words(words) }
+            }
+            _ => Timing::None,
+        };
+        Ok(Timed { text, timing })
     }
 }
 
