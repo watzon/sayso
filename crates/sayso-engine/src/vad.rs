@@ -141,9 +141,20 @@ impl Tracker {
         }
     }
 
+    /// End the part from `start` to `end`. Speech that ends less than a wait after 30 s
+    /// (see [`Tracker::cut_long_part`]) is longer than a part can be: it becomes two parts,
+    /// cut so that the second part is not shorter than the shortest speech.
     fn end_part(&mut self, start: u64, end: u64, events: &mut Vec<Event>) {
         let end = end.min(self.given).max(start);
-        events.push(Event::End { start_ms: to_ms(start), end_ms: to_ms(end) });
+        let max = audio::ms(MAX_PART_MS) as u64;
+        if end - start > max {
+            let cut = (start + max).min(end - audio::ms(MIN_SPEECH_MS) as u64);
+            events.push(Event::End { start_ms: to_ms(start), end_ms: to_ms(cut) });
+            events.push(Event::Start { start_ms: to_ms(cut) });
+            events.push(Event::End { start_ms: to_ms(cut), end_ms: to_ms(end) });
+        } else {
+            events.push(Event::End { start_ms: to_ms(start), end_ms: to_ms(end) });
+        }
         self.last_end = end;
     }
 
@@ -341,6 +352,20 @@ mod tests {
         assert_eq!(found[1], (found[0].1, found[0].1 + 30_000), "{found:?}");
         assert_eq!(found[2].0, found[1].1, "{found:?}");
         assert!(near(found[2].1, 76_000), "{found:?}");
+    }
+
+    #[test]
+    fn speech_that_ends_just_after_30_s_is_two_parts_within_the_rules() {
+        for speech_ms in [30_100, 30_400, 30_700] {
+            let samples = audio_of(&[(1000, false), (speech_ms, true), (2000, false)]);
+            let found = parts(&run(&samples, 2560));
+            assert_eq!(found.len(), 2, "{speech_ms} ms: {found:?}");
+            for (start, end) in &found {
+                assert!(end - start <= 30_000, "{speech_ms} ms: {found:?}");
+                assert!(end - start >= 250, "{speech_ms} ms: {found:?}");
+            }
+            assert_eq!(found[0].1, found[1].0, "{speech_ms} ms: {found:?}");
+        }
     }
 
     #[test]
