@@ -309,6 +309,47 @@ fn write_wav(path: &std::path::Path, samples: &[i16]) {
 // ---------------------------------------------------------------------------
 
 #[test]
+fn list_models_without_a_list_gives_the_catalog() {
+    let h = harness("http://unused");
+    let reply = h.call(json!({"v": 1, "type": "list_models", "id": "l"}));
+    let ok = reply.last().unwrap();
+    assert_eq!(ok["type"], "ok");
+    let models = ok["models"].as_array().expect("the catalog");
+    assert!(!models.is_empty());
+    assert_eq!(ok["retired"], json!([]));
+    let states: Vec<_> = reply.iter().filter(|m| m["type"] == "model_state").collect();
+    assert_eq!(states.len(), models.len(), "one model_state for each model");
+    assert!(states.iter().all(|m| m["state"] == "not_downloaded" && m["id"] == "l"));
+    for entry in models {
+        for field in ["id", "name", "engine", "size_bytes", "languages", "roles", "timestamps", "recommended"] {
+            assert!(entry.get(field).is_some(), "{field} in {entry}");
+        }
+    }
+}
+
+#[test]
+fn a_request_without_engine_takes_it_from_the_catalog() {
+    let h = harness("http://unused");
+    let id = h.engine.catalog["models"][0]["id"].as_str().unwrap().to_string();
+    let reply = h.call(json!({"v": 1, "type": "list_models", "id": "l", "models": [{"id": id}]}));
+    assert_eq!(reply[0]["state"], "not_downloaded");
+    assert_eq!(reply.last().unwrap()["type"], "ok");
+    assert!(reply.last().unwrap().get("models").is_none(), "only the whole catalog has the list");
+
+    let reply = h.call(json!({"v": 1, "type": "load", "id": "o", "model": id}));
+    let error = reply.last().unwrap();
+    assert_eq!(error["type"], "error");
+    assert!(error.get("code").is_none(), "the engine found the model: {error}");
+
+    for kind in ["download", "load"] {
+        let reply = h.call(json!({"v": 1, "type": kind, "id": "x", "model": "no-such-model"}));
+        assert_eq!(reply.last().unwrap()["code"], "unknown_model", "{kind}: {reply:?}");
+    }
+    let reply = h.call(json!({"v": 1, "type": "list_models", "id": "l2", "models": [{"id": "no-such-model"}]}));
+    assert_eq!(reply.last().unwrap()["code"], "unknown_model");
+}
+
+#[test]
 fn hello_and_unknown_requests() {
     let h = harness("http://unused");
     let reply = h.call(json!({"v": 1, "type": "hello", "id": "r1"}));
@@ -317,7 +358,7 @@ fn hello_and_unknown_requests() {
     assert_eq!(reply[0]["protocol"], 1);
     assert_eq!(
         reply[0]["features"],
-        json!(["concurrent_streams", "diarization", "keep_preview", "segments", "unload", "vad"])
+        json!(["catalog", "concurrent_streams", "diarization", "keep_preview", "segments", "unload", "vad"])
     );
 
     let prepared = h.call(json!({"v":1,"type":"prepare","id":"p","model":"m","preview":true,"vocabulary":["Sayso"]}));
@@ -329,8 +370,11 @@ fn hello_and_unknown_requests() {
         json!({"v": 1, "type": "error", "id": "r2", "message": "unknown request type fly"})
     );
 
-    let reply = h.call(json!({"v": 1, "type": "load", "id": "r3", "model": "m"}));
-    assert_eq!(reply[0]["message"], "missing field engine");
+    let reply = h.call(json!({"v": 1, "type": "load", "id": "r3"}));
+    assert_eq!(reply[0]["message"], "missing string field model");
+    // A model without `engine` must be in the catalog.
+    let reply = h.call(json!({"v": 1, "type": "load", "id": "r4", "model": "m"}));
+    assert_eq!(reply[0]["code"], "unknown_model");
 }
 
 #[test]

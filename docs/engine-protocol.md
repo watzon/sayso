@@ -44,7 +44,14 @@ The engine runs requests at the same time, so replies can come in any order. Mat
 - A request that the engine cannot run gets an `error` with its `id` and a `message` in English. Examples: an unknown `type`, a required field that is missing or has the wrong type, a model that is not loaded.
 - A line that is not a JSON object with a string `type` is not a request. It gets an `error` without `id`.
 - `stream_audio` has no `id`, so its errors have no `id`.
-- `error` can also have `code` and `reason` (see "Reason codes").
+- `error` can also have `code` and `reason` (see "Reason codes"). `code` is a stable `snake_case` code for an error that a client can act on:
+
+| `code` | Meaning |
+|---|---|
+| `too_many_streams` | The engine cannot open one more stream (see "Streams"). |
+| `unknown_model` | The model id is not in the catalog of the engine, and the request has no `engine` object. |
+| `model_retired` | The model was in the catalog and was taken out. `message` says what to use instead. |
+| `unavailable`, `refused`, `timeout` | `generate` failed (see "`language_model` and `generate`"). |
 
 ## Version and features
 
@@ -73,6 +80,7 @@ An engine that sends no `features` is older than this spec. A client can still s
 | `segments` | The field `segments` of `transcribe` (see "Segments"). | yes | yes |
 | `vad` | The requests `vad` and `vad_start`, and the events `speech_start` and `speech_end` (see "VAD"). | yes | yes |
 | `diarization` | The request `diarize` (see "Diarization"). | yes | yes |
+| `catalog` | The built-in catalog: `list_models` without `models`, and requests without `engine` (see "Models"). | yes | yes |
 
 The Rust engine replies `ok` to `prepare` and does nothing, so it does not list `prepare`.
 
@@ -83,10 +91,10 @@ The Rust engine replies `ok` to `prepare` and does nothing, so it does not list 
 | Request | Fields | Events, then the reply |
 |---|---|---|
 | `hello` | | `hello {version, protocol, features}` |
-| `list_models` | `models: [{id, engine}]` | one `model_state` for each model, then `ok` |
-| `download` | `model, engine, size_bytes?` | `model_state downloading`, `download_progress`, `model_state downloaded`, then `ok` |
+| `list_models` | `models?: [{id, engine?}]` | one `model_state` for each model, then `ok`; without `models`, `ok {models, retired}` |
+| `download` | `model, engine?, size_bytes?` | `model_state downloading`, `download_progress`, `model_state downloaded`, then `ok` |
 | `delete` | `model, engine?` | `model_state not_downloaded`, then `ok` |
-| `load` | `model, engine` | `model_state optimizing`, `model_state ready {load_ms}`, then `ok` |
+| `load` | `model, engine?` | `model_state optimizing`, `model_state ready {load_ms}`, then `ok` |
 | `unload` | `model, keep_preview?` | `model_state downloaded` when the model was in memory, then `ok` |
 | `prepare` | `model, preview, vocabulary` | `part_state` for each part, then `ok` |
 | `transcribe` | `model, path, language, vocabulary, segments?` | `final {text, elapsed_ms, segments?}` |
@@ -103,6 +111,21 @@ The Rust engine replies `ok` to `prepare` and does nothing, so it does not list 
 ### `list_models`
 
 The engine checks the disk for each model and sends its state. It uses no network. After a `list_models`, the engine knows the `engine` object of each model, so a later `delete` can leave out `engine`. A `delete` without `engine` of a model that the engine does not know can get an `error`.
+
+With the feature `catalog`, `list_models` without `models` checks each model of the built-in catalog (see "Models"). The `ok` reply then also has the catalog:
+
+```json
+{"v":1,"type":"ok","id":"l1",
+ "models":[{"id":"parakeet-tdt-v3","name":"Parakeet TDT v3","engine":{"kind":"sherpa","recipe":"parakeet_tdt", ...},
+            "size_bytes":670000000,"languages":["en","de","fr", ...],"roles":["final","streaming"],
+            "timestamps":"word","recommended":true}, ...],
+ "retired":[]}
+```
+
+- `roles` says what the model can do: `final` (the final pass, `transcribe`), `streaming` (a stream, `stream_start`), `vad`, and `diarization`.
+- `timestamps` is the timestamp level of the model (see "Segments").
+- `recommended` marks the model that a new user should take.
+- `retired` lists the ids that were taken out of the catalog: `[{id, message}]`.
 
 ### `download`
 
@@ -252,7 +275,11 @@ A model has an id, such as `parakeet-tdt-v3`, and an `engine` object. The `engin
 
 VAD and diarization models have kinds of their own. The Rust engine runs `{"kind":"sherpa_vad","recipe":"silero","file":"silero_vad.onnx"}` (or `"recipe":"ten"`) and `{"kind":"sherpa_diarization","segmentation":"sherpa-onnx-pyannote-segmentation-3-0","embedding":"<file>.onnx"}`. The Swift engine runs the FluidAudio models: `{"kind":"fluid_vad"}` and `{"kind":"fluid_diarization"}`.
 
-Today the client sends the `engine` object of each model, from the model catalog of Sayso (`crates/sayso-core/src/models.rs` for macOS, `crates/sayso-core/src/models_onnx.rs` for Linux and Windows). The catalog is not part of this spec yet.
+With the feature `catalog`, each engine has a built-in catalog: the models that it runs on this system, by id. The catalog comes from the model catalog of Sayso (`crates/sayso-core/src/models.rs` for macOS, `crates/sayso-core/src/models_onnx.rs` for Linux and Windows), so a client gets the same models as Sayso.
+
+- `list_models`, `download`, `load`, and `delete` can leave out `engine`. The engine then takes the `engine` object of the id from its catalog. An id that is not in the catalog gets an `error` with `code: "unknown_model"`.
+- A request with `engine` uses that object, also for an id that is not in the catalog. Sayso sends `engine`, and a client can use it to run a model that the catalog does not have.
+- A model id is public. It does not change after the first release of this spec. A model that goes out of the catalog stays as `retired`: a request with its id and without `engine` gets an `error` with `code: "model_retired"` and a `message` that says what to use instead.
 
 ## Conformance tests
 
@@ -285,7 +312,7 @@ A feature is in this spec only when each engine passes its tests, or each engine
 
 ## Next
 
-These parts come in step 3 of `docs/extensions.md`: public model ids. Later changes can add progress and cancel for long `diarize` requests.
+Later changes can add progress and cancel for long `diarize` requests.
 
 ## License
 

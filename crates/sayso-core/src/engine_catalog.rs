@@ -1,0 +1,143 @@
+//! The built-in catalog of each engine (`docs/engine-protocol.md`, "Models").
+//!
+//! The engines run the models of the Sayso catalog by id, so a client that
+//! is not Sayso gets the same models. The Rust engine builds its catalog with
+//! [`json`] when it starts. The Swift engine cannot call Rust, so it gets the
+//! file `Catalog.generated.swift`, and a test checks that the file is the
+//! same as [`json`] (see [`swift_source`]).
+
+use crate::models::{self, ModelInfo};
+use crate::models_onnx::{self, System};
+use serde_json::{Value, json};
+
+/// The engine that a catalog is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Engine {
+    /// The Swift engine on macOS.
+    Swift,
+    /// The Rust engine `sayso-engine` on Linux or Windows.
+    Rust(System),
+}
+
+/// A model id that was taken out of the catalog. Its id stays public, so a
+/// request with it gets a clear error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Retired {
+    pub id: &'static str,
+    /// What to use instead, in English.
+    pub message: &'static str,
+}
+
+/// The ids that were taken out of the catalogs. Add an id here when a model
+/// goes out of a catalog, and never remove one.
+pub const RETIRED: &[Retired] = &[];
+
+/// The models of the catalog of `engine`, in display order.
+pub fn models(engine: Engine) -> Vec<ModelInfo> {
+    match engine {
+        Engine::Swift => models::apple_catalog(),
+        Engine::Rust(system) => models_onnx::catalog_for(system),
+    }
+}
+
+/// The catalog of `engine`: `{models, retired}`, as `list_models` without
+/// `models` gives it. The entries of the Swift engine also have `min_macos`,
+/// which the engine uses to leave out a model that this Mac cannot run.
+pub fn json(engine: Engine) -> Value {
+    let models: Vec<Value> = models(engine)
+        .iter()
+        .map(|m| {
+            let mut entry = entry(m);
+            if engine == Engine::Swift {
+                entry["min_macos"] = json!(m.min_macos);
+            }
+            entry
+        })
+        .collect();
+    let retired: Vec<Value> = RETIRED.iter().map(|r| json!({ "id": r.id, "message": r.message })).collect();
+    json!({ "models": models, "retired": retired })
+}
+
+/// One model of the catalog, as the protocol gives it.
+fn entry(m: &ModelInfo) -> Value {
+    let mut roles = Vec::new();
+    if m.final_pass {
+        roles.push("final");
+    }
+    if m.live_preview {
+        roles.push("streaming");
+    }
+    json!({
+        "id": m.id,
+        "name": m.name,
+        "engine": m.engine,
+        "size_bytes": m.size_bytes,
+        "languages": m.languages,
+        "roles": roles,
+        "timestamps": m.engine.timestamps(),
+        "recommended": m.recommended,
+    })
+}
+
+/// The Swift source that holds the catalog of the Swift engine.
+pub fn swift_source() -> String {
+    let json = serde_json::to_string_pretty(&json(Engine::Swift)).expect("the catalog is JSON");
+    format!(
+        "// Generated from crates/sayso-core/src/engine_catalog.rs. Do not edit.\n\
+         // Make it again with: SAYSO_WRITE_CATALOG=1 cargo test -p sayso-core engine_catalog\n\
+         \n\
+         /// The built-in catalog of the engine (`docs/engine-protocol.md`, \"Models\").\n\
+         enum BuiltInCatalog {{\n    static let json = #\"\"\"\n{json}\n\"\"\"#\n}}\n"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn the_swift_catalog_file_is_up_to_date() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../native/macos/SaysoEngine/Sources/SaysoEngine/Catalog.generated.swift");
+        let want = swift_source();
+        if std::env::var_os("SAYSO_WRITE_CATALOG").is_some() {
+            std::fs::write(&path, &want).unwrap();
+        }
+        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        assert!(
+            have == want,
+            "{} is out of date; run: SAYSO_WRITE_CATALOG=1 cargo test -p sayso-core engine_catalog",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn each_catalog_has_unique_ids_and_no_retired_id() {
+        for engine in [Engine::Swift, Engine::Rust(System::Linux), Engine::Rust(System::Windows)] {
+            let catalog = json(engine);
+            let ids: Vec<&str> = catalog["models"].as_array().unwrap().iter().map(|m| m["id"].as_str().unwrap()).collect();
+            let mut unique = ids.clone();
+            unique.sort();
+            unique.dedup();
+            assert_eq!(unique.len(), ids.len(), "{engine:?}");
+            assert!(!ids.is_empty(), "{engine:?}");
+            for retired in RETIRED {
+                assert!(!ids.contains(&retired.id), "{} is retired and in the catalog of {engine:?}", retired.id);
+            }
+        }
+    }
+
+    #[test]
+    fn an_entry_has_the_fields_of_the_protocol() {
+        let catalog = json(Engine::Rust(System::Windows));
+        let v3 = catalog["models"].as_array().unwrap().iter().find(|m| m["id"] == "parakeet-tdt-v3").unwrap();
+        assert_eq!(v3["engine"]["kind"], "sherpa");
+        assert_eq!(v3["roles"], json!(["final", "streaming"]));
+        assert_eq!(v3["timestamps"], "word");
+        assert_eq!(v3["recommended"], true);
+        assert!(v3["size_bytes"].as_u64().unwrap() > 0);
+        assert!(v3.get("min_macos").is_none());
+        assert_eq!(catalog["retired"], json!([]));
+    }
+}

@@ -460,7 +460,7 @@ fn build_catalog() -> Vec<ModelInfo> {
 }
 
 /// The models that the Swift engine (`native/macos/SaysoEngine`) runs on a Mac, in display order.
-fn apple_catalog() -> Vec<ModelInfo> {
+pub(crate) fn apple_catalog() -> Vec<ModelInfo> {
     let en = languages::english;
     vec![
         // Parakeet.
