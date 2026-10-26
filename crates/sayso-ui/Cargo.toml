@@ -5,7 +5,7 @@ version.workspace = true
 edition.workspace = true
 # The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
 # The bundled fonts keep their own OFL licenses (assets/fonts/licenses).
-license = "MIT"
+license = "MIT AND OFL-1.1"
 publish = true
 repository = "https://github.com/watzon/sayso"
 

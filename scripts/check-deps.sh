@@ -29,10 +29,12 @@ import json, sys
 m = json.load(sys.stdin)
 pk = {p['name']: p for p in m['packages']}
 bad = []
-for name in ('sayso-ink', 'sayso-ui'):
+# sayso-ui ships the fonts under their own OFL licenses.
+licenses = {'sayso-ink': 'MIT', 'sayso-ui': 'MIT AND OFL-1.1'}
+for name, license in licenses.items():
     p = pk[name]
-    if p['license'] != 'MIT' or p['publish'] == []:
-        bad.append(name + ' must have license MIT and be published')
+    if p['license'] != license or p['publish'] == []:
+        bad.append(name + ' must have license ' + license + ' and be published')
     for d in p['dependencies']:
         if d['name'] in ('sayso-ink',) and d['req'] != '^' + p['version']:
             bad.append(name + ' needs sayso-ink ' + p['version'] + ' but has ' + d['req'] + ' (change the version in Cargo.toml [workspace.dependencies])')
