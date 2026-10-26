@@ -68,13 +68,28 @@ enum LoadedModel {
     case whisper(WhisperKit)
     /// Apple Speech holds nothing in memory between dictations.
     case appleSpeech
+    /// The Silero VAD. Its sessions share it: each `VadStream` keeps its own state.
+    case vad(VadManager)
+    /// The models of the offline diarizer. Each `diarize` makes a manager with its own settings.
+    case diarization(OfflineDiarizerModels)
 
     /// The streaming managers of the model, if it has a streaming side.
     var streamers: StreamerPool<Streamer>? {
         switch self {
         case .parakeetUnified(let unified): return unified.stream
         case .parakeetEou(let pool), .nemotron(let pool), .nemotronMultilingual(let pool): return pool
-        case .parakeetTdt, .cohere, .canary, .senseVoice, .paraformer, .whisper, .appleSpeech: return nil
+        case .parakeetTdt, .cohere, .canary, .senseVoice, .paraformer, .whisper, .appleSpeech, .vad, .diarization:
+            return nil
+        }
+    }
+
+    var task: ModelTask {
+        switch self {
+        case .vad: return .vad
+        case .diarization: return .diarization
+        case .parakeetUnified, .parakeetEou, .parakeetTdt, .nemotron, .nemotronMultilingual, .cohere, .canary,
+            .senseVoice, .paraformer, .whisper, .appleSpeech:
+            return .speech
         }
     }
 }
@@ -211,6 +226,12 @@ private struct StreamSession {
     let pool: StreamerPool<Streamer>
 }
 
+/// One VAD session. It is a stream: it shares the session ids and the limit of streams.
+private struct VadSession {
+    let model: String
+    let stream: VadStream
+}
+
 /// The `PreviewTail` of one stream. The partial callback and the end of the stream
 /// run on different threads.
 final class PartialTracker: @unchecked Sendable {
@@ -298,6 +319,7 @@ actor Engine {
     private var loaded: [String: LoadedModel] = [:]
     private var busy: Set<String> = []
     private var sessions: [Int: StreamSession] = [:]
+    private var vadSessions: [Int: VadSession] = [:]
     /// Open sessions whose `stream_end` arrived and did not run yet.
     private var ending: Set<Int> = []
     /// The managers of streams that end now. They go back to their pools soon.
@@ -480,6 +502,13 @@ actor Engine {
             guard #available(macOS 26, *) else { throw EngineError("Apple Speech needs macOS 26") }
             // The assets of the language of this Mac. Other languages download on first use.
             try await AppleSpeech.install(language: "auto") { reporter.report($0) }
+        case .fluidVad:
+            try await ModelHub.download(.vad, to: store.root, progressHandler: reporter.stage(base: 0, weight: 1))
+        case .fluidDiarization:
+            // The "offline" variant: segmentation, FBank, embedding, and PLDA for the VBx clustering.
+            try await ModelHub.download(
+                .diarizer, to: store.root, variant: "offline",
+                progressHandler: reporter.stage(base: 0, weight: 1))
         }
     }
 
@@ -514,6 +543,9 @@ actor Engine {
             sessions[session] = nil
             await info.pool.give(info.part)
         }
+        for (session, info) in vadSessions where info.model == model {
+            vadSessions[session] = nil
+        }
         guard let entry = loaded.removeValue(forKey: model) else { return false }
         switch entry {
         case .parakeetUnified(let unified):
@@ -523,7 +555,7 @@ actor Engine {
         case .parakeetEou(let pool), .nemotron(let pool), .nemotronMultilingual(let pool):
             // A final pass that runs keeps its manager until it ends.
             await pool.close()
-        case .cohere, .canary, .senseVoice, .paraformer, .whisper, .appleSpeech:
+        case .cohere, .canary, .senseVoice, .paraformer, .whisper, .appleSpeech, .vad, .diarization:
             break  // Released with the last reference.
         }
         return true
@@ -637,6 +669,16 @@ actor Engine {
             return .paraformer(ParaformerManager(models: try ParaformerModels.load(from: try folder(spec))))
         case .appleSpeech:
             return .appleSpeech
+        case .fluidVad:
+            // `VadManager(modelDirectory:)` downloads into its own folder when a file is
+            // missing. The model from this folder never uses the network.
+            let configuration = MLModelConfiguration()
+            configuration.computeUnits = VadConfig.default.computeUnits
+            let url = try folder(spec).appendingPathComponent(ModelNames.VAD.sileroVadFile, isDirectory: true)
+            return .vad(VadManager(config: .default, vadModel: try MLModel(contentsOf: url, configuration: configuration)))
+        case .fluidDiarization:
+            // FluidAudio finds the files in the repo folder under the models directory.
+            return .diarization(try await OfflineDiarizerModels.load(from: store.root))
         }
     }
 
@@ -650,6 +692,15 @@ actor Engine {
         return pool
     }
 
+    /// A loaded model for a request of `task`. A model of another task gets an error.
+    private func loadedModel(_ model: String, for task: ModelTask) throws -> LoadedModel {
+        guard let entry = loaded[model] else { throw EngineError("model \(model) is not loaded") }
+        guard entry.task == task else {
+            throw EngineError("model \(model) is a \(entry.task.name) model, not a \(task.name) model")
+        }
+        return entry
+    }
+
     private func folder(_ spec: EngineSpec) throws -> URL {
         guard let folder = store.ownFolder(spec) else { throw EngineError("the model has no folder") }
         return folder
@@ -660,7 +711,7 @@ actor Engine {
     func transcribe(
         model: String, path: String, language: String, vocabulary: [String], segments: Bool, id: String?
     ) async throws {
-        guard let entry = loaded[model] else { throw EngineError("model \(model) is not loaded") }
+        let entry = try loadedModel(model, for: .speech)
         let samples = try AudioConverter().resampleAudioFile(path: path)
         guard !samples.isEmpty else { throw EngineError("audio file has no samples") }
 
@@ -714,6 +765,8 @@ actor Engine {
         case .parakeetEou(let pool):
             result = whole(try await transcribeStreaming(
                 pool: pool, samples: samples, language: language, vocabulary: nil))
+        case .vad, .diarization:
+            throw EngineError("model \(model) is a \(entry.task.name) model, not a speech model")
         }
         var fields: [String: Any] = [
             "text": result.text.trimmingCharacters(in: .whitespacesAndNewlines), "elapsed_ms": Int(nowMs() - start),
@@ -793,7 +846,7 @@ actor Engine {
 
     /// Load optional parts before a dictation. Failure leaves lazy loading available.
     func prepare(model: String, preview: Bool, vocabulary: [String], id: String?) async throws {
-        guard let entry = loaded[model] else { throw EngineError("model \(model) is not loaded") }
+        let entry = try loadedModel(model, for: .speech)
         func report(_ part: String, _ state: String) {
             out.send("part_state", id: id, ["model": model, "part": part, "state": state])
         }
@@ -868,12 +921,9 @@ actor Engine {
     /// Open a stream. Streams are independent (`concurrent_streams`): each stream has a
     /// manager of its own (see `StreamerPool`). A session id that is open already starts again.
     func streamStart(session: Int, model: String, language: String) async throws {
-        guard let entry = loaded[model] else { throw EngineError("model \(model) is not loaded") }
+        let entry = try loadedModel(model, for: .speech)
         guard let pool = entry.streamers else { throw EngineError("model \(model) has no live preview") }
-        if let old = sessions.removeValue(forKey: session) { await old.pool.give(old.part) }
-        guard sessions.count < Self.maxStreams else {
-            throw EngineError("\(Self.maxStreams) streams are open; end one first", code: "too_many_streams")
-        }
+        try await reserve(session)
         let part = try await pool.take()
         let tracker = PartialTracker()
         var phase = StreamSession.Phase.waiting(language: language, held: HeldAudio())
@@ -898,6 +948,16 @@ actor Engine {
         // app waits for this reply while the user starts to speak. So reply now, and let
         // the audio wait.
         if case .waiting = phase { warm(part, model: model) }
+    }
+
+    /// Make room for the stream `session`. A session id that is open already starts again.
+    /// The limit counts preview streams and VAD sessions together.
+    private func reserve(_ session: Int) async throws {
+        vadSessions[session] = nil
+        if let old = sessions.removeValue(forKey: session) { await old.pool.give(old.part) }
+        guard sessions.count + vadSessions.count < Self.maxStreams else {
+            throw EngineError("\(Self.maxStreams) streams are open; end one first", code: "too_many_streams")
+        }
     }
 
     /// Load a part in the background. A failure goes to the log. The next stream tries again.
@@ -938,6 +998,11 @@ actor Engine {
     }
 
     func streamAudio(session: Int, pcm: String) async throws {
+        if let vad = vadSessions[session] {
+            guard let data = Data(base64Encoded: pcm) else { throw EngineError("pcm is not base64") }
+            sendSpeech(try await vad.stream.accept(Self.samples(fromInt16LE: data)), session: session)
+            return
+        }
         guard var info = sessions[session] else {
             throw EngineError("unknown stream session \(session)")
         }
@@ -1013,6 +1078,80 @@ actor Engine {
     private func release(_ info: StreamSession) async {
         closing.removeAll { $0 === info.part }
         await info.pool.give(info.part)
+    }
+
+    // MARK: - VAD and diarization
+
+    /// `vad`: the parts of a WAV file with speech. It uses a `VadStream` as a VAD session
+    /// does, so a session that gets the same audio finds the same parts.
+    func vad(model: String, path: String, id: String?) async throws {
+        guard case .vad(let manager) = try loadedModel(model, for: .vad) else {
+            throw EngineError("model \(model) is not a VAD model")
+        }
+        let samples = try AudioConverter().resampleAudioFile(path: path)
+        let stream = await VadStream.silero(manager)
+        var events = try await stream.accept(samples)
+        events += try await stream.finish()
+        let speech = SpeechEvent.parts(events).map { ["start_ms": $0.startMs, "end_ms": $0.endMs] }
+        out.ok(id: id, ["speech": speech])
+    }
+
+    /// `vad_start`: open a VAD session. Its audio comes with `stream_audio`.
+    func vadStart(session: Int, model: String) async throws {
+        guard case .vad(let manager) = try loadedModel(model, for: .vad) else {
+            throw EngineError("model \(model) is not a VAD model")
+        }
+        try await reserve(session)
+        let stream = await VadStream.silero(manager)
+        // The model may have been unloaded while the session started.
+        guard loaded[model] != nil else { throw EngineError("model \(model) is not loaded") }
+        vadSessions[session] = VadSession(model: model, stream: stream)
+    }
+
+    /// End a VAD session: send `speech_end` for speech that has not ended. False when
+    /// `session` is not a VAD session.
+    func endVadSession(_ session: Int) async throws -> Bool {
+        guard let info = vadSessions.removeValue(forKey: session) else { return false }
+        sendSpeech(try await info.stream.finish(), session: session)
+        return true
+    }
+
+    private func sendSpeech(_ events: [SpeechEvent], session: Int) {
+        for event in events {
+            switch event {
+            case .start(let startMs):
+                out.send("speech_start", ["session": session, "start_ms": startMs])
+            case .end(let startMs, let endMs):
+                out.send("speech_end", ["session": session, "start_ms": startMs, "end_ms": endMs])
+            }
+        }
+    }
+
+    /// `diarize`: who speaks when in a WAV file. `speakers` is the number of speakers when
+    /// the client knows it. The clustering of FluidAudio then makes exactly that many
+    /// clusters, or fewer when the audio has fewer speech embeddings.
+    func diarize(model: String, path: String, speakers: Int?, id: String?) async throws {
+        guard case .diarization(let models) = try loadedModel(model, for: .diarization) else {
+            throw EngineError("model \(model) is not a diarization model")
+        }
+        let samples = try AudioConverter().resampleAudioFile(path: path)
+        let audioMs = samples.count * 1000 / AudioChunks.sampleRate
+        var config = OfflineDiarizerConfig.default
+        config.clustering.numSpeakers = speakers
+        let manager = OfflineDiarizerManager(config: config)
+        manager.initialize(models: models)
+        var raw: [Diarization.RawTurn] = []
+        if !samples.isEmpty {
+            do {
+                raw = try await manager.process(audio: samples).segments.map {
+                    Diarization.RawTurn(
+                        start: Double($0.startTimeSeconds), end: Double($0.endTimeSeconds), speaker: $0.speakerId)
+                }
+            } catch OfflineDiarizationError.noSpeechDetected {
+                raw = []
+            }
+        }
+        out.ok(id: id, Diarization.finish(raw, audioMs: audioMs).json)
     }
 
     /// 16 kHz mono little-endian Int16 bytes to float samples.
