@@ -128,6 +128,25 @@ mod tests {
         );
     }
 
+    /// The Swift engine cannot read `Cargo.toml`, so its version is a constant
+    /// in `Protocol.swift`. The engine release file has the Sayso version, and
+    /// `hello` must say the same (docs/engine-protocol.md, "hello").
+    #[test]
+    fn the_swift_engine_reports_the_sayso_version() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../native/macos/SaysoEngine/Sources/SaysoEngine/Protocol.swift");
+        let source = std::fs::read_to_string(&path).unwrap_or_else(|why| panic!("cannot read {}: {why}", path.display()));
+        let have = source
+            .lines()
+            .find_map(|line| line.strip_prefix("let engineVersion = \"")?.strip_suffix('"'))
+            .unwrap_or_else(|| panic!("{} has no line: let engineVersion = \"...\"", path.display()));
+        let want = env!("CARGO_PKG_VERSION");
+        assert!(
+            have == want,
+            "engineVersion in {} is {have}, but the Sayso version is {want}; set it to \"{want}\" (docs/releasing.md, \"Make a release\")",
+            path.display()
+        );
+    }
+
     #[test]
     fn each_catalog_has_unique_ids_and_no_retired_id() {
         for engine in [Engine::Swift, Engine::Rust(System::Linux), Engine::Rust(System::Windows)] {

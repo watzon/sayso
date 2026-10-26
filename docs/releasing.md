@@ -129,7 +129,7 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    To see the window, run `scripts/dev.sh --whats-new`. It shows the first entry of the file.
 
-2. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and commit the two files and `release-notes.toml` to `main`.
+2. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and set the same version in `engineVersion` in `native/macos/SaysoEngine/Sources/SaysoEngine/Protocol.swift`. The Swift engine cannot read `Cargo.toml`, and its `hello` reply must have the version of the release. The test `the_swift_engine_reports_the_sayso_version` in `sayso-core` (step 3) fails when the two differ. Commit the three files and `release-notes.toml` to `main`.
 3. Run the checks on your Mac. CI does not run them on a push.
 
    ```sh
@@ -156,7 +156,8 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
    - `sayso-<version>-linux-x86_64.tar.gz`, `.deb`, `.rpm`, and `.flatpak`
    - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, and `.flatpak`
    - `sayso-<version>-x86_64.AppImage` and `sayso-<version>-aarch64.AppImage`, each with its `.AppImage.zsync` file
-   - a `.sha256` file for each of the fourteen
+   - the engine release files: `sayso-engine-<version>-macos-arm64.tar.gz`, `sayso-engine-<version>-linux-x86_64.tar.gz`, `sayso-engine-<version>-linux-arm64.tar.gz`, and `sayso-engine-<version>-windows-x64.zip`
+   - a `.sha256` file for each of the eighteen
    - `latest.json`
 
    The tap `watzon/homebrew-tap` must also have a new commit, `sayso <version>`.
@@ -215,6 +216,30 @@ A build on your Mac is not an official build, so it does not look for updates. S
 
 For notarization, the script uses the keychain profile `notarytool-password`, the same profile that the Pindrop release uses. Set `SAYSO_NOTARY_PROFILE` to use another profile.
 
+## The engine release files
+
+Each release also has the speech engine as a separate file for each system, for programs that run an engine without Sayso ([extensions.md](extensions.md), "The engine as a public product"). Sayso does not use these files: the app has its own engine and never downloads one.
+
+| File | Made by | The engine comes from |
+|---|---|---|
+| `sayso-engine-<version>-macos-arm64.tar.gz` | `scripts/package-engine.sh`, in the **macOS** job after `scripts/release.sh` | `dist/Sayso.app/Contents/MacOS/SaysoEngine`, signed and notarized with the app |
+| `sayso-engine-<version>-windows-x64.zip` | `scripts/package-engine.ps1`, in the **Windows** job after `scripts\bundle-windows.ps1` | `sayso-engine.exe` of the app folder, signed when the certificate is set, with every DLL of that folder |
+| `sayso-engine-<version>-linux-x86_64.tar.gz` and `-linux-arm64.tar.gz` | `scripts/package-engine.sh`, in the `build` job of `linux.yml` after `scripts/bundle-linux.sh` | `bin/sayso-engine` of the Linux tarball |
+
+The scripts copy the engine. They never build one, so the file has the binary that was signed. Each file has the folder `sayso-engine-<version>/` with `sayso-engine` (`sayso-engine.exe` on Windows), the DLLs on Windows, `README.md` (from `packaging/engine/README.md.in`), `LICENSE`, and `licenses/`. The licenses are the ones that the app ships for the engine. On macOS, where the app ships none, the file has the licenses of the two Swift packages that the engine links (FluidAudio and WhisperKit). The Linux engine needs the Vulkan loader (`libvulkan.so.1`) from the system, and the README says so.
+
+The Linux files reach the release in the `manifest` job, like the Linux tarballs. The macOS and Windows jobs attach theirs at once. The `manifest` job stops when one of the four is missing.
+
+The job **Engine file check** (`engine-check.yml`) runs after the three build jobs and before the `manifest` job, so a release with a bad engine file does not become the latest release. It runs on `macos-latest`, `ubuntu-24.04`, `ubuntu-24.04-arm`, and `windows-latest`. Each job installs only Rust (and the Vulkan loader on Linux), unpacks the file, checks the files, checks that `hello` has the version of the release, and runs the core level of the conformance suite against the unpacked engine. It builds no engine.
+
+To test the files without a release, run `gh workflow run ci.yml`. The jobs **Engine file, macOS arm64 (manual)**, **Engine file, Windows x86_64 (manual)**, and **Engine file, Linux** build the app without a signature, pack the engine with the same scripts, and then **Engine file check** runs. The files from CI are not signed and not notarized. On a Mac, to make a file from a build that you have:
+
+```sh
+scripts/package-engine.sh --out /tmp/engine dist/Sayso.app/Contents/MacOS/SaysoEngine
+```
+
+`--require-signed` stops the script when the engine has no Developer ID signature. The release workflow uses it.
+
 ## Build the Windows files on a PC
 
 `scripts/bundle-windows.ps1 -Installer` does the same steps as the Windows job and writes the installer and its `.sha256` to `dist\`. It builds the speech engine and the cleanup runtime, so it needs CMake and libclang (`scripts\windows-env.ps1` finds them), and [Inno Setup 6](https://jrsoftware.org/isinfo.php). Set `SAYSO_SIGN_CERT` and `SAYSO_SIGN_PASSWORD` to sign.
@@ -227,8 +252,10 @@ powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
 
 The Linux jobs are in their own workflow, `linux.yml`, which the Release workflow calls. It has two jobs for each architecture:
 
-1. **Build** compiles the three binaries one time, in an Ubuntu 22.04 container, and makes the tarball (`scripts/bundle-linux.sh`). The container sets the oldest glibc that Sayso runs on: 2.35.
+1. **Build** compiles the three binaries one time, in an Ubuntu 22.04 container, and makes the tarball (`scripts/bundle-linux.sh`) and the engine release file (`scripts/package-engine.sh`, see "The engine release files"). The container sets the oldest glibc that Sayso runs on: 2.35.
 2. **Packages** makes the `.deb`, the `.rpm`, the AppImage, and the Flatpak from the tarball (`scripts/package-linux.sh`), with no compiler. The AppImage gets its copies of the fallback libraries from the packages of this container. It then installs the `.deb` on Ubuntu 22.04 and starts Sayso on a virtual display.
+
+`linux.yml` has the input `skip_packages`, which the CI workflow sets: the **Packages** jobs then do not run.
 
 `linux.yml` does not touch a release, so you can test a packaging change without one. A pull request that changes the packaging runs it. You can also start it by hand, and then download the files from the run:
 
@@ -246,7 +273,7 @@ The Flatpak is a one-file bundle, not a Flathub app: Flathub builds each app fro
 
 ## Add a platform
 
-The Release workflow has one job for each platform, and the `manifest` job that needs all of them. For a new platform, add a job that builds the files, runs `gh release upload "$TAG" <files> --clobber`, and keeps the files with `actions/upload-artifact` under a name that starts with `release-`. Name the files `Sayso-<version>-<os>-<arch>.<ext>`. Then add the job to `needs` of the `manifest` job and the file to its list of files. The `manifest` job stops when a file of its lists is missing, so a release cannot become the latest release without it.
+The Release workflow has one job for each platform, and the `manifest` job that needs all of them. For a new platform, add a job that builds the files, runs `gh release upload "$TAG" <files> --clobber`, and keeps the files with `actions/upload-artifact` under a name that starts with `release-`. Name the files `Sayso-<version>-<os>-<arch>.<ext>`. Add the engine release file too (the engine check and the `manifest` job have the list). Then add the job to `needs` of the `manifest` job and the file to its list of files. The `manifest` job stops when a file of its lists is missing, so a release cannot become the latest release without it.
 
 ## Limits
 

@@ -226,3 +226,102 @@ jobs:
             echo "::error::The cleanup runtime has a library that is missing."
             exit 1
           fi
+
+  # The engine release files, and their check on clean runners. The Release
+  # workflow makes the same files from the signed and notarized app. CI has no
+  # signing certificate and cannot notarize, so these jobs pack the engine of an
+  # unsigned build (macOS: an ad hoc signature) with the same scripts. The
+  # check is the same too (engine-check.yml). Each file is the artifact
+  # release-engine-<os>-<arch>. The files are real builds of the whole app, so
+  # the jobs are slow.
+  engine-file-macos:
+    name: Engine file, macOS arm64 (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      # The cleanup runtime (native/cleanup) is its own Cargo workspace.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            native/cleanup
+      # "-" signs ad hoc, because CI has no Developer ID certificate.
+      - name: Build the app bundle, not signed with a Developer ID
+        env:
+          SAYSO_BUNDLE_DIR: dist
+          SAYSO_SIGN_IDENTITY: "-"
+        run: scripts/bundle.sh
+      - name: Make the engine release file
+        run: scripts/package-engine.sh dist/Sayso.app/Contents/MacOS/SaysoEngine
+      - name: Keep the engine release file
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-engine-macos-arm64
+          path: dist/sayso-engine-*-macos-arm64.tar.gz
+          if-no-files-found: error
+
+  engine-file-windows:
+    name: Engine file, Windows x86_64 (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            native/cleanup
+      - name: Install CMake
+        run: |
+          choco install cmake --no-progress -y
+          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      # Same as the test jobs above: the cache can keep the folders of the
+      # sherpa-onnx library without its files.
+      - name: Get the sherpa-onnx library again when the cache does not have it
+        shell: bash
+        run: |
+          libs=$(find target/sherpa-onnx-prebuilt -type f \( -name '*.a' -o -name '*.lib' \) 2>/dev/null | head -n 1 || true)
+          if [[ -z "$libs" ]]; then
+            rm -rf target/sherpa-onnx-prebuilt
+            cargo clean -p sherpa-onnx-sys
+            cargo clean -p sherpa-onnx-sys --release
+          fi
+      # No SAYSO_SIGN_CERT, so nothing is signed. No -Installer: the folder is enough.
+      - name: Build the app folder, not signed
+        run: scripts\bundle-windows.ps1
+      - name: Make the engine release file
+        run: scripts\package-engine.ps1
+      - name: Keep the engine release file
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-engine-windows-x64
+          path: dist/sayso-engine-*-windows-x64.zip
+          if-no-files-found: error
+
+  # The Linux files come from linux.yml (the Ubuntu 22.04 build of the release),
+  # without the packages, which the check does not need.
+  engine-file-linux:
+    name: Engine file, Linux
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/linux.yml
+    with:
+      ref: ${{ github.sha }}
+      skip_packages: true
+
+  engine-check:
+    name: Engine file check
+    if: github.event_name == 'workflow_dispatch'
+    needs: [engine-file-macos, engine-file-windows, engine-file-linux]
+    uses: ./.github/workflows/engine-check.yml
+    with:
+      ref: ${{ github.sha }}

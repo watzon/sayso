@@ -49,6 +49,9 @@ How much timing a model gives with its text: `word` (segments with the time of e
 **Engine catalog**
 The models that an engine knows by id, built into the engine from the model catalog of Sayso. A client can ask for the catalog and can leave out the `engine` object of a model that is in it. An id that leaves the catalog stays as a retired id.
 
+**Engine release file**
+The file with an engine that the Release workflow attaches to a GitHub release: `sayso-engine-<version>-<os>-<arch>` (`.tar.gz`, and `.zip` on Windows). It holds the engine from the app build, the libraries it needs, its licenses, and a README. Sayso never uses it: the app has its own engine, and Sayso never downloads an engine.
+
 **Model**
 A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". A dictation uses a final model and, when the live preview is on, a preview model. A model is a local model or a cloud model.
 

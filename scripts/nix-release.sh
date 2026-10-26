@@ -13,11 +13,12 @@ if [[ ! -d "$dist" ]]; then
   tag=$dist
   dist=$(mktemp -d)
   trap 'rm -rf "$dist"' EXIT
-  gh release download "$tag" --repo watzon/sayso --dir "$dist" --pattern 'sayso-*-linux-*.tar.gz'
+  gh release download "$tag" --repo watzon/sayso --dir "$dist" --pattern 'sayso-[0-9]*-linux-*.tar.gz'
 fi
 
 shopt -s nullglob
-tarballs=("$dist"/sayso-*-linux-x86_64.tar.gz)
+# sayso-[0-9]* leaves out the engine file sayso-engine-<version>-linux-x86_64.tar.gz.
+tarballs=("$dist"/sayso-[0-9]*-linux-x86_64.tar.gz)
 [[ ${#tarballs[@]} -eq 1 ]] || { echo "$dist must have one sayso-<version>-linux-x86_64.tar.gz" >&2; exit 1; }
 version=$(basename "${tarballs[0]}" -linux-x86_64.tar.gz); version=${version#sayso-}
 # The hash as Nix wants it: sha256- and the digest in base64.
