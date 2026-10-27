@@ -10,7 +10,7 @@ The engine is `SaysoEngine` on macOS and `sayso-engine` on Linux and Windows. It
 
 Each Sayso release has the engine as its own file:
 
-- `sayso-engine-<version>-macos-arm64.tar.gz`
+- `sayso-engine-<version>-macos-arm64.tar.gz` and `sayso-engine-<version>-macos-x86_64.tar.gz` (for Intel Macs)
 - `sayso-engine-<version>-linux-x86_64.tar.gz` and `sayso-engine-<version>-linux-arm64.tar.gz`
 - `sayso-engine-<version>-windows-x64.zip`
 
@@ -63,7 +63,7 @@ fn main() -> Result<(), sayso_engine_sdk::Error> {
 - A drop of the `Engine` closes stdin, waits up to 2 seconds for the engine to exit, and then kills it. `Engine::shutdown` sends `shutdown` first.
 - The engine writes free text to stderr. By default it goes to the stderr of your app. `EngineOptions::stderr(Stderr::lines(..))` sends each line to a function, and `Stderr::Null` discards it.
 - Events wait in the channel until you read them. Read them when you use streams.
-- The macOS engine needs macOS 14 or later on Apple silicon. The Linux engine needs the Vulkan loader (`libvulkan.so.1`).
+- The macOS engine needs macOS 14 or later, on Apple silicon or on an Intel Mac. An Intel Mac has no Neural Engine, so the models run on the CPU and the GPU and are slower. The Linux engine needs the Vulkan loader (`libvulkan.so.1`).
 
 ## License
 
