@@ -81,7 +81,7 @@ fn entry(m: &ModelInfo) -> Value {
 
 /// The Swift source that holds the catalog of the Swift engine.
 pub fn swift_source() -> String {
-    let json = serde_json::to_string_pretty(&json(Engine::Swift)).expect("the catalog is JSON");
+    let json = serde_json::to_string_pretty(&sorted(json(Engine::Swift))).expect("the catalog is JSON");
     format!(
         "// Generated from crates/sayso-core/src/engine_catalog.rs. Do not edit.\n\
          // Make it again with: SAYSO_WRITE_CATALOG=1 cargo test -p sayso-core engine_catalog\n\
@@ -89,6 +89,21 @@ pub fn swift_source() -> String {
          /// The built-in catalog of the engine (`docs/engine-protocol.md`, \"Models\").\n\
          enum BuiltInCatalog {{\n    static let json = #\"\"\"\n{json}\n\"\"\"#\n}}\n"
     )
+}
+
+/// `value` with the keys of each object in order. A build of the whole workspace
+/// turns on the feature `preserve_order` of serde_json, which keeps the keys in
+/// the order of insertion. Sorted keys give the same file in each build.
+fn sorted(value: Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(entries.into_iter().map(|(key, value)| (key, sorted(value))).collect())
+        }
+        Value::Array(list) => Value::Array(list.into_iter().map(sorted).collect()),
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -104,7 +119,8 @@ mod tests {
         if std::env::var_os("SAYSO_WRITE_CATALOG").is_some() {
             std::fs::write(&path, &want).unwrap();
         }
-        let have = std::fs::read_to_string(&path).unwrap_or_default();
+        // Git on Windows can check the file out with CRLF line ends.
+        let have = std::fs::read_to_string(&path).unwrap_or_default().replace("\r\n", "\n");
         assert!(
             have == want,
             "{} is out of date; run: SAYSO_WRITE_CATALOG=1 cargo test -p sayso-core engine_catalog",
