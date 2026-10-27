@@ -73,8 +73,6 @@ impl SharedMic {
     /// Join with a queue (live sessions). The frames come in order and never
     /// wait for the receiver; dropping the lease leaves, and the receiver
     /// ends after the last frame.
-    // The live sessions of the host use it when 6d is wired.
-    #[allow(dead_code)]
     pub fn join_queued(self: &Arc<Self>, device: Option<&str>) -> Result<Queued> {
         let (tx, rx) = crossbeam_channel::unbounded();
         let id = self.join(device, Sink::Queue(tx))?;

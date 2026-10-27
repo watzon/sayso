@@ -4,7 +4,9 @@ use super::*;
 use crossbeam_channel::Sender;
 use parking_lot::Condvar;
 use sayso_core::basic_vad::BasicVad;
+use sayso_core::stt::{EngineEvent, Turn};
 use sayso_protocol::{PartialEvent, Segment, SegmentEvent};
+use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 const RATE: usize = 16_000;
@@ -12,14 +14,14 @@ const RATE: usize = 16_000;
 /// A fake engine. The preview stream sends a partial for each push. The VAD
 /// session finds speech with Basic VAD. The final pass gives one segment for
 /// the loud samples of a part, with the text `part<n>`. Diarization gives two
-/// speakers, the second one first.
+/// speakers: 1 until 3.1 s, then 0.
 #[derive(Default)]
 struct FakeEngine {
     state: Mutex<EngineState>,
     /// While true, a final pass waits.
     hold: Mutex<bool>,
     released: Condvar,
-    watchers: Mutex<Vec<Sender<LiveEvent>>>,
+    watchers: Mutex<Vec<Sender<EngineEvent>>>,
     /// The most streams and VAD sessions open at the same time.
     max_streams: Option<usize>,
     /// The VAD session does not end its open speech at `end_vad`.
@@ -40,7 +42,7 @@ struct EngineState {
 }
 
 impl FakeEngine {
-    fn emit(&self, event: LiveEvent) {
+    fn emit(&self, event: EngineEvent) {
         self.watchers.lock().retain(|w| w.send(event.clone()).is_ok());
     }
 
@@ -56,8 +58,8 @@ impl FakeEngine {
 
     fn emit_parts(&self, session: u64, parts: Vec<sayso_core::basic_vad::Part>) {
         for part in parts {
-            self.emit(LiveEvent::SpeechStart { session, start_ms: part.start_ms });
-            self.emit(LiveEvent::SpeechEnd { session, start_ms: part.start_ms, end_ms: part.end_ms });
+            self.emit(EngineEvent::SpeechStart { session, start_ms: part.start_ms });
+            self.emit(EngineEvent::SpeechEnd { session, start_ms: part.start_ms, end_ms: part.end_ms });
         }
     }
 }
@@ -101,7 +103,7 @@ impl LiveEngine for FakeEngine {
             (preview, parts, total)
         };
         if preview {
-            self.emit(LiveEvent::Partial { session, committed: String::new(), tentative: format!("{} ms", total * 1000 / RATE) });
+            self.emit(EngineEvent::Partial { session, committed: String::new(), tentative: format!("{} ms", total * 1000 / RATE) });
         }
         if let Some(parts) = parts {
             self.emit_parts(session, parts);
@@ -141,12 +143,12 @@ impl LiveEngine for FakeEngine {
         Ok(vec![Segment { start_ms: (first * 1000 / RATE) as u64, end_ms: (last * 1000 / RATE) as u64, text: format!("part{}", state.transcribed), words: None }])
     }
 
-    fn diarize(&self, _model: &ModelId, samples: &[f32]) -> Result<Vec<RawTurn>, EngineError> {
+    fn diarize(&self, _model: &ModelId, samples: &[f32]) -> Result<Vec<Turn>, EngineError> {
         self.state.lock().diarized.push(samples.len());
-        Ok(vec![RawTurn { start_ms: 2000, end_ms: 3000, speaker: 0 }, RawTurn { start_ms: 900, end_ms: 1900, speaker: 1 }])
+        Ok(vec![Turn { start_ms: 900, end_ms: 3100, speaker: 1 }, Turn { start_ms: 3900, end_ms: 5600, speaker: 0 }])
     }
 
-    fn events(&self) -> crossbeam_channel::Receiver<LiveEvent> {
+    fn events(&self) -> crossbeam_channel::Receiver<EngineEvent> {
         let (tx, rx) = unbounded();
         self.watchers.lock().push(tx);
         rx
@@ -191,11 +193,12 @@ impl FakeDictation {
 }
 
 impl Priority for FakeDictation {
-    fn wait_idle(&self) {
+    fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool {
         let mut running = self.running.lock();
-        while *running {
-            self.ended.wait(&mut running);
+        while *running && !stop() {
+            self.ended.wait_for(&mut running, Duration::from_millis(20));
         }
+        !stop()
     }
 }
 
@@ -263,6 +266,7 @@ fn fixture_with(engine: FakeEngine) -> Fixture {
         engine: engine.clone(),
         microphone: Some(Arc::new(MicHandle(mic.clone()))),
         priority: dictation.clone(),
+        models: crate::jobs::ModelUse::new(),
         temp_dir: temp.path().join("live"),
     });
     Fixture { engine, mic, dictation, sessions, temp }
@@ -370,14 +374,15 @@ fn a_client_session_gives_partials_segments_a_recording_and_speakers() {
     assert_eq!(pcm(&wav::read(&path).unwrap()), audio);
     assert_eq!(f.engine.state.lock().diarized, vec![audio.len()], "diarization ran on the whole recording");
 
-    // Speakers come after the last segment, with labels in the order of first speech.
+    // Speakers come after the last segment. Each segment has one speaker, and
+    // the turns follow the segments, with labels in the order of first speech.
     let events = sink.all();
     let speakers = events.iter().position(|e| matches!(e, Event::Speakers(_))).unwrap();
     assert!(events[speakers + 1..].iter().all(|e| !matches!(e, Event::Segment(_) | Event::Partial(_))));
     let Event::Speakers(speakers) = &events[speakers] else { unreachable!() };
     assert_eq!((speakers.session, speakers.source.clone(), speakers.job), (Some(session), Some(Source::Client), None));
     let labels: Vec<(u64, &str)> = speakers.turns.iter().map(|t| (t.start_ms, t.speaker.as_str())).collect();
-    assert_eq!(labels, vec![(900, "1"), (2000, "2")]);
+    assert_eq!(labels, vec![(segments[0].segment.start_ms, "1"), (segments[1].segment.start_ms, "2")]);
 
     // The engine sessions are closed, the slot is free, and the app heard both changes.
     assert_eq!(f.engine.open_now(), 0);
@@ -498,7 +503,7 @@ fn an_engine_vad_gives_the_parts_and_the_stop_ends_speech_that_is_open() {
     // The engine reports the start of the speech that is open, and never its end.
     let vad = *f.engine.state.lock().vads.keys().next().unwrap();
     eventually("the first part", || !sink.segments().is_empty());
-    f.engine.emit(LiveEvent::SpeechStart { session: vad, start_ms: 2500 });
+    f.engine.emit(EngineEvent::SpeechStart { session: vad, start_ms: 2500 });
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(f.sessions.stop(1, session).unwrap(), "part1 part2");
     let segments: Vec<(u64, u64)> = sink.segments().iter().map(|s| (s.segment.start_ms, s.segment.end_ms)).collect();
@@ -563,11 +568,4 @@ fn a_closed_connection_stops_its_session_without_diarization() {
     assert!(!sink.all().iter().any(|e| matches!(e, Event::Speakers(_))));
     assert!(std::fs::read_dir(f.temp.path().join("live")).unwrap().next().is_none(), "the temporary recording is deleted");
     assert_eq!(f.sessions.stop(7, session).unwrap_err().code, Some(ErrorCode::BadRequest));
-}
-
-#[test]
-fn speaker_labels_follow_the_first_speech() {
-    let raw = [RawTurn { start_ms: 0, end_ms: 10, speaker: 3 }, RawTurn { start_ms: 5, end_ms: 20, speaker: 0 }, RawTurn { start_ms: 30, end_ms: 40, speaker: 3 }];
-    let turns = label_turns(&raw);
-    assert_eq!(turns.iter().map(|t| t.speaker.as_str()).collect::<Vec<_>>(), vec!["1", "2", "1"]);
 }

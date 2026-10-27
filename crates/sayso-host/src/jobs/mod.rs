@@ -19,7 +19,7 @@ mod gate;
 mod model_use;
 pub mod plan;
 mod queue;
-mod resolve;
+pub(crate) mod resolve;
 mod runner;
 pub mod speakers;
 

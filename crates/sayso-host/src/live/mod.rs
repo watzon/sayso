@@ -14,25 +14,31 @@
 //! `speakers` events.
 //!
 //! The parts of this module do not know the connection: the events go to an
-//! [`EventSink`], the engine is a [`LiveEngine`], the microphone a
-//! [`Microphone`], and dictation first is a [`Priority`]. The wiring in
-//! `connection.rs` gives them.
+//! [`EventSink`] (the same type as for jobs), the engine is a [`LiveEngine`]
+//! ([`BackendEngine`] over the engine of the app), the microphone a
+//! [`Microphone`], and dictation first is a [`Priority`] (the
+//! [`DictationGate`] of jobs). `live_requests.rs` gives them.
 
+mod backend;
 mod engine;
+mod resolve;
 mod source;
 mod wav;
 
 #[cfg(test)]
 mod tests;
 
-pub use engine::{EngineError, LiveEngine, LiveEvent, RawTurn};
+pub use crate::jobs::EventSink;
+pub use backend::BackendEngine;
+pub use engine::{EngineError, LiveEngine};
+pub use resolve::resolve;
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use sayso_core::models::{ModelId, Vad};
-use sayso_protocol::{ErrorCode, Event, Reply, Source, SpeakersEvent, Turn};
+use crate::jobs::{DictationGate, ModelHold, ModelUse, speakers};
+use sayso_protocol::{ErrorCode, Event, Reply, Source, SpeakersEvent};
 use source::{SourcePlan, SourceResult, SourceRun, SourceVad};
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -46,25 +52,29 @@ use wav::WavWriter;
 /// under 2^53, so an engine that reads JSON numbers as doubles keeps the ids exact.
 pub const ENGINE_SESSION_BASE: u64 = 1 << 40;
 
-/// Where the events of a live session go: the connection of the extension.
-/// `event` must not block.
-pub trait EventSink: Send + Sync {
-    fn event(&self, event: Event);
-}
-
 /// Dictation first (`docs/extensions.md`, "Scheduling"). The final pass of a
 /// part and the diarization wait while a dictation runs. The preview stream
 /// and the VAD do not wait.
 pub trait Priority: Send + Sync {
-    /// Return when no dictation runs.
-    fn wait_idle(&self);
+    /// Return true when no dictation runs, or false at once when `stop` is
+    /// true (the session was cancelled).
+    fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool;
+}
+
+/// The gate of jobs holds live sessions the same way.
+impl Priority for DictationGate {
+    fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool {
+        DictationGate::wait_idle(self, stop)
+    }
 }
 
 /// No dictation to wait for.
 pub struct NoPriority;
 
 impl Priority for NoPriority {
-    fn wait_idle(&self) {}
+    fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool {
+        !stop()
+    }
 }
 
 /// The microphone that the user chose in Settings, shared with dictation.
@@ -118,6 +128,20 @@ pub struct SessionSpec {
     pub record_to: Option<PathBuf>,
 }
 
+impl SessionSpec {
+    /// The engine models of the session.
+    pub fn models(&self) -> Vec<ModelId> {
+        let mut models = vec![self.final_model.clone()];
+        models.extend(self.preview_model.clone());
+        if let Vad::Model(vad) = &self.vad {
+            models.push(vad.clone());
+        }
+        models.extend(self.diarization.clone());
+        models.dedup();
+        models
+    }
+}
+
 /// Who owns a session: the connection that started it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Owner {
@@ -131,6 +155,9 @@ pub struct LiveDeps {
     /// None when this host cannot capture the microphone.
     pub microphone: Option<Arc<dyn Microphone>>,
     pub priority: Arc<dyn Priority>,
+    /// The models that a session uses stay in memory while it runs (the
+    /// same use as jobs, for the memory policy of the app).
+    pub models: Arc<ModelUse>,
     /// The folder of the temporary recordings, for a session without `record_to`.
     pub temp_dir: PathBuf,
 }
@@ -208,6 +235,8 @@ struct Stopper {
     diarization: Option<ModelId>,
     /// The recordings to delete after the stop (no `record_to`).
     temporary: Vec<PathBuf>,
+    /// The models of the session, until it ends.
+    _models: ModelHold,
 }
 
 impl LiveSessions {
@@ -271,6 +300,8 @@ impl LiveSessions {
         let recordings = recordings(session, spec, &deps.temp_dir)?;
         opened.temporary = if spec.record_to.is_none() { recordings.clone() } else { Vec::new() };
 
+        // Hold before the load, so the app does not unload a model between the two.
+        let held = deps.models.hold(spec.models());
         let mut models: Vec<&ModelId> = vec![&spec.final_model];
         models.extend(spec.preview_model.as_ref());
         if let Vad::Model(vad) = &spec.vad {
@@ -329,7 +360,7 @@ impl LiveSessions {
             info: LiveInfo { session, extension_id: owner.extension_id.clone(), sources: spec.sources.clone(), captures_mic, stopping: false },
             owner: owner.clone(),
             client: kept.client,
-            stopper: Some(Stopper { sources: kept.sources, leases: kept.leases, cancel, sink, diarization: spec.diarization.clone(), temporary: kept.temporary }),
+            stopper: Some(Stopper { sources: kept.sources, leases: kept.leases, cancel, sink, diarization: spec.diarization.clone(), temporary: kept.temporary, _models: held }),
         })
     }
 
@@ -379,10 +410,20 @@ impl LiveSessions {
     /// forget the parts that wait. Returns at once; the session ends on a
     /// thread of its own, and the slot is free after that.
     pub fn connection_closed(&self, connection: u64) {
+        self.cancel(Some(connection));
+    }
+
+    /// Sayso quits: stop the session that runs as [`LiveSessions::connection_closed`] does.
+    pub fn close(&self) {
+        self.cancel(None);
+    }
+
+    /// Cancel the session of `connection`, or any session.
+    fn cancel(&self, connection: Option<u64>) {
         let taken = {
             let mut slot = self.inner.slot.lock();
             match &mut *slot {
-                Slot::Running(running) if running.owner.connection == connection => {
+                Slot::Running(running) if connection.is_none_or(|c| running.owner.connection == c) => {
                     running.client = None;
                     running.info.stopping = true;
                     running.stopper.take().map(|stopper| (running.info.session, stopper))
@@ -391,7 +432,7 @@ impl LiveSessions {
             }
         };
         let Some((session, stopper)) = taken else { return };
-        log::info!("host: the connection of live session {session} closed; the session stops");
+        log::info!("host: live session {session} is cancelled: its connection or Sayso closes");
         stopper.cancel.store(true, Ordering::SeqCst);
         let sessions = self.clone();
         let spawned = std::thread::Builder::new().name("sayso-host-live-stop".into()).spawn(move || {
@@ -404,7 +445,7 @@ impl LiveSessions {
     }
 
     fn finish(&self, session: u64, stopper: Stopper, cancelled: bool) -> Result<String, LiveError> {
-        let Stopper { sources, leases, cancel: _, sink, diarization, temporary } = stopper;
+        let Stopper { sources, leases, cancel: _, sink, diarization, temporary, _models } = stopper;
         // The audio of the microphone ends here, and the client sender went with the slot.
         drop(leases);
         let results: Vec<SourceResult> = sources.into_iter().filter_map(SourceRun::join).collect();
@@ -427,11 +468,15 @@ impl LiveSessions {
         if let Some(model) = diarization {
             let engine = &self.inner.deps.engine;
             for result in results {
-                self.inner.deps.priority.wait_idle();
+                self.inner.deps.priority.wait_idle(&|| false);
                 engine.load(model).map_err(|e| LiveError::engine(&format!("cannot load {model}"), e))?;
                 let samples = wav::read(&result.wav).map_err(|e| LiveError::new(None, e.to_string()))?;
-                let raw = engine.diarize(model, &samples).map_err(|e| LiveError::engine("diarization failed", e))?;
-                sink.event(Event::Speakers(SpeakersEvent { job: None, session: Some(session), source: Some(result.source.clone()), turns: label_turns(&raw) }));
+                let found = engine.diarize(model, &samples).map_err(|e| LiveError::engine("diarization failed", e))?;
+                // The rules of jobs: a session has no number of speakers, so small speakers fold.
+                let found = speakers::fold_small_speakers(&found);
+                let times: Vec<(u64, u64)> = result.segments.iter().map(|s| (s.start_ms, s.end_ms)).collect();
+                let turns = speakers::segment_turns(&times, &speakers::assign(&times, &found));
+                sink.event(Event::Speakers(SpeakersEvent { job: None, session: Some(session), source: Some(result.source.clone()), turns }));
             }
         }
         Ok(session_text(results))
@@ -561,25 +606,6 @@ impl Drop for Opened {
             let _ = std::fs::remove_file(path);
         }
     }
-}
-
-/// The turns of the `speakers` event of one source, with the labels `"1"`,
-/// `"2"`, ... in the order in which the speakers first speak.
-///
-/// TODO(6d wiring): use the rules of jobs (`jobs::speakers` of 6c: fold the
-/// small speakers, give each segment one speaker, and make the turns from the
-/// segments), so a live session and a job label speakers the same way.
-fn label_turns(raw: &[RawTurn]) -> Vec<Turn> {
-    let mut raw = raw.to_vec();
-    raw.sort_by_key(|t| (t.start_ms, t.end_ms));
-    let mut labels: HashMap<u32, String> = HashMap::new();
-    raw.iter()
-        .map(|turn| {
-            let next = labels.len() + 1;
-            let speaker = labels.entry(turn.speaker).or_insert_with(|| next.to_string()).clone();
-            Turn { start_ms: turn.start_ms, end_ms: turn.end_ms, speaker }
-        })
-        .collect()
 }
 
 /// The text of the session: the segments of all sources in the order of time.

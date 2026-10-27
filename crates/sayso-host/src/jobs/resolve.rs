@@ -38,7 +38,7 @@ pub struct EngineView<'a> {
 }
 
 impl EngineView<'_> {
-    fn has(&self, feature: &str) -> bool {
+    pub(crate) fn has(&self, feature: &str) -> bool {
         self.features.is_empty() || self.features.iter().any(|f| f == feature)
     }
 }
@@ -51,7 +51,7 @@ pub struct Refusal {
     pub message: String,
 }
 
-fn refuse(code: ErrorCode, message: impl Into<String>) -> Refusal {
+pub(crate) fn refuse(code: ErrorCode, message: impl Into<String>) -> Refusal {
     Refusal { code, message: message.into() }
 }
 
@@ -65,9 +65,28 @@ pub fn resolve(request: &TranscribeFile, user: &UserChoices, engine: &EngineView
         return Err(refuse(ErrorCode::BadRequest, "speakers must be 1 or more"));
     }
 
-    // The speech model.
-    let model = match &request.model {
-        Some(id) => checked(&ModelId::new(id.as_str()), ModelTask::Speech, "model", engine)?,
+    let model = final_model(request.model.as_deref(), user, engine)?;
+    // An engine without segments still transcribes: one segment for each chunk.
+    let timestamps = if engine.has("segments") { model.engine.timestamps() } else { Timestamps::None };
+    let vad = vad(request.vad_model.as_deref(), user, engine)?;
+    let diarization = diarization(request.diarize, request.diarization_model.as_deref(), user, engine)?;
+
+    Ok(JobSpec {
+        path: request.path.clone(),
+        model: model.id,
+        timestamps,
+        vad,
+        diarization,
+        language: request.language.clone().unwrap_or_else(|| user.language.to_string()),
+        speakers: request.speakers,
+    })
+}
+
+/// The speech model of the field `model`, else the final model of the user.
+/// It must do the final pass. Jobs and live sessions use the same rules.
+pub(crate) fn final_model(asked: Option<&str>, user: &UserChoices, engine: &EngineView) -> Result<models::ModelInfo, Refusal> {
+    let model = match asked {
+        Some(id) => checked(&ModelId::new(id), ModelTask::Speech, "model", engine)?,
         None => {
             let id = user.final_model;
             match models::find_local(id) {
@@ -89,11 +108,13 @@ pub fn resolve(request: &TranscribeFile, user: &UserChoices, engine: &EngineView
     if !model.final_pass {
         return Err(refuse(ErrorCode::WrongRole, format!("{} cannot do the final pass", model.id)));
     }
-    // An engine without segments still transcribes: one segment for each chunk.
-    let timestamps = if engine.has("segments") { model.engine.timestamps() } else { Timestamps::None };
+    Ok(model)
+}
 
-    // VAD.
-    let vad = match request.vad_model.as_deref() {
+/// The VAD of the field `vad_model`, else the choice of the user, which
+/// falls back to Basic VAD.
+pub(crate) fn vad(asked: Option<&str>, user: &UserChoices, engine: &EngineView) -> Result<VadRun, Refusal> {
+    Ok(match asked {
         Some(BASIC_VAD) => VadRun::Basic,
         Some(id) => {
             let info = checked(&ModelId::new(id), ModelTask::Vad, "vad_model", engine)?;
@@ -104,40 +125,33 @@ pub fn resolve(request: &TranscribeFile, user: &UserChoices, engine: &EngineView
             Vad::Model(id) if engine.has("vad") => VadRun::Model(id),
             _ => VadRun::Basic,
         },
-    };
+    })
+}
 
-    // Diarization.
-    let diarize = request.diarize.unwrap_or(request.diarization_model.is_some());
-    let diarization = match (&request.diarization_model, diarize) {
-        (_, false) => None,
+/// The diarization model. `diarization_model` without `diarize` asks for
+/// diarization; `diarize: false` turns it off.
+pub(crate) fn diarization(diarize: Option<bool>, asked: Option<&str>, user: &UserChoices, engine: &EngineView) -> Result<Option<ModelId>, Refusal> {
+    let diarize = diarize.unwrap_or(asked.is_some());
+    match (asked, diarize) {
+        (_, false) => Ok(None),
         (Some(id), true) => {
             let info = checked(&ModelId::new(id), ModelTask::Diarization, "diarization_model", engine)?;
             need_feature(engine, "diarization", &info.id)?;
-            Some(info.id)
+            Ok(Some(info.id))
         }
         (None, true) => {
             let id = models::diarization_for(None, user.diarization, |id| (engine.on_disk)(id)).ok_or_else(|| {
                 refuse(ErrorCode::ModelNotDownloaded, "no diarization model is downloaded; send download_model")
             })?;
             need_feature(engine, "diarization", &id)?;
-            Some(id)
+            Ok(Some(id))
         }
-    };
-
-    Ok(JobSpec {
-        path: request.path.clone(),
-        model: model.id,
-        timestamps,
-        vad,
-        diarization,
-        language: request.language.clone().unwrap_or_else(|| user.language.to_string()),
-        speakers: request.speakers,
-    })
+    }
 }
 
 /// The model `id` that the field `field` names, after the checks of the
 /// module, for `task`.
-fn checked(id: &ModelId, task: ModelTask, field: &str, engine: &EngineView) -> Result<models::ModelInfo, Refusal> {
+pub(crate) fn checked(id: &ModelId, task: ModelTask, field: &str, engine: &EngineView) -> Result<models::ModelInfo, Refusal> {
     let Some(info) = models::find_local(id) else {
         return Err(refuse(ErrorCode::UnknownModel, format!("{field}: {id} is not a model of this computer")));
     };
@@ -155,7 +169,7 @@ fn checked(id: &ModelId, task: ModelTask, field: &str, engine: &EngineView) -> R
     Ok(info)
 }
 
-fn need_feature(engine: &EngineView, feature: &str, id: &ModelId) -> Result<(), Refusal> {
+pub(crate) fn need_feature(engine: &EngineView, feature: &str, id: &ModelId) -> Result<(), Refusal> {
     if engine.has(feature) {
         Ok(())
     } else {

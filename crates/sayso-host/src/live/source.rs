@@ -14,12 +14,14 @@
 //! of the audio, closes the preview stream and the VAD session, cuts the last
 //! part, and waits for the final thread.
 
-use super::engine::{LiveEngine, LiveEvent};
+use super::engine::LiveEngine;
 use super::wav::WavWriter;
-use super::{EventSink, Priority};
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, never, select, unbounded};
+use super::Priority;
+use crate::jobs::EventSink;
+use crossbeam_channel::{Receiver, Sender, never, select, unbounded};
 use sayso_core::basic_vad::BasicVad;
 use sayso_core::models::ModelId;
+use sayso_core::stt::EngineEvent;
 use sayso_protocol::{Event, PartialEvent, Segment, SegmentEvent, Source};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -34,11 +36,6 @@ pub(crate) const PAD_MS: u64 = 200;
 /// While nobody speaks, the intake keeps this much audio, for a speech start
 /// that the engine reports late.
 const LOOKBACK_MS: u64 = 10_000;
-/// After the end of a VAD session, the intake waits for the last events of
-/// the engine until none came for this long...
-const QUIET_MS: u64 = 300;
-/// ...or at most this long.
-const LAST_EVENTS_MS: u64 = 3_000;
 
 /// How a source finds speech.
 pub(crate) enum SourceVad {
@@ -77,7 +74,7 @@ pub(crate) struct SourceRun {
 impl SourceRun {
     /// Start the threads. `events` must exist before the engine sessions
     /// opened, so no event is lost. `cancel` stops the final passes that wait.
-    pub fn start(plan: SourcePlan, audio: Receiver<Vec<f32>>, events: Receiver<LiveEvent>, engine: Arc<dyn LiveEngine>, sink: Arc<dyn EventSink>, priority: Arc<dyn Priority>, cancel: Arc<AtomicBool>) -> std::io::Result<SourceRun> {
+    pub fn start(plan: SourcePlan, audio: Receiver<Vec<f32>>, events: Receiver<EngineEvent>, engine: Arc<dyn LiveEngine>, sink: Arc<dyn EventSink>, priority: Arc<dyn Priority>, cancel: Arc<AtomicBool>) -> std::io::Result<SourceRun> {
         let (parts, waiting) = unbounded::<PartAudio>();
         let final_pass = {
             let worker = FinalPass { session: plan.session, source: plan.source.clone(), model: plan.final_model.clone(), language: plan.language.clone(), engine: engine.clone(), sink: sink.clone(), priority, cancel };
@@ -151,7 +148,7 @@ impl Intake {
         }
     }
 
-    fn run(mut self, audio: &Receiver<Vec<f32>>, events: Receiver<LiveEvent>, final_pass: JoinHandle<Vec<Segment>>) -> SourceResult {
+    fn run(mut self, audio: &Receiver<Vec<f32>>, events: Receiver<EngineEvent>, final_pass: JoinHandle<Vec<Segment>>) -> SourceResult {
         let mut events = events;
         let mut last_trim = Instant::now();
         loop {
@@ -210,19 +207,19 @@ impl Intake {
         }
     }
 
-    fn event(&mut self, event: LiveEvent) {
+    fn event(&mut self, event: EngineEvent) {
         match event {
-            LiveEvent::Partial { session, committed, tentative } if Some(session) == self.preview => {
+            EngineEvent::Partial { session, committed, tentative } if Some(session) == self.preview => {
                 self.sink.event(Event::Partial(PartialEvent { session: self.session, source: Some(self.source.clone()), committed, tentative }));
             }
-            LiveEvent::SpeechStart { session, start_ms } => {
+            EngineEvent::SpeechStart { session, start_ms } => {
                 if let VadState::Engine { session: vad, open } = &mut self.vad
                     && *vad == session
                 {
                     *open = Some(start_ms);
                 }
             }
-            LiveEvent::SpeechEnd { session, start_ms, end_ms } => {
+            EngineEvent::SpeechEnd { session, start_ms, end_ms } => {
                 if let VadState::Engine { session: vad, open } = &mut self.vad
                     && *vad == session
                 {
@@ -230,7 +227,7 @@ impl Intake {
                     self.cut(start_ms, end_ms);
                 }
             }
-            LiveEvent::Partial { .. } => {}
+            _ => {}
         }
     }
 
@@ -273,7 +270,7 @@ impl Intake {
     }
 
     /// The audio ended: close the engine sessions, cut the last part, and close the recording.
-    fn finish(&mut self, events: &Receiver<LiveEvent>) {
+    fn finish(&mut self, events: &Receiver<EngineEvent>) {
         if let Some(preview) = self.preview {
             self.engine.end_stream(preview);
         }
@@ -290,10 +287,15 @@ impl Intake {
             }
             VadState::Engine { session, open } => {
                 self.vad = VadState::Engine { session, open };
+                // The engine sends the last `speech_end` before its reply, so
+                // it waits in the channel now. A backend that cannot wait for
+                // the reply leaves the speech open: it ends at the end of the audio.
                 if let Err(e) = self.engine.end_vad(session) {
                     log::warn!("host: live session {}: the end of the VAD session failed: {e}", self.session);
                 }
-                self.last_events(events);
+                for event in events.try_iter() {
+                    self.event(event);
+                }
                 if let VadState::Engine { open: Some(start_ms), .. } = self.vad {
                     self.cut(start_ms, self.heard * 1000 / RATE);
                 }
@@ -304,21 +306,6 @@ impl Intake {
         {
             log::warn!("host: live session {}: cannot close {}: {e}", self.session, self.wav_path.display());
             self.wav_error = Some(format!("cannot write {}: {e}", self.wav_path.display()));
-        }
-    }
-
-    /// The events of the engine that came after the end of the VAD session.
-    fn last_events(&mut self, events: &Receiver<LiveEvent>) {
-        let deadline = Instant::now() + Duration::from_millis(LAST_EVENTS_MS);
-        loop {
-            let left = deadline.saturating_duration_since(Instant::now());
-            match events.recv_timeout(left.min(Duration::from_millis(QUIET_MS))) {
-                Ok(event) => self.event(event),
-                Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => return,
-            }
-            if left.is_zero() {
-                return;
-            }
         }
     }
 }
@@ -342,11 +329,8 @@ impl FinalPass {
     fn run(self, parts: &Receiver<PartAudio>) -> Vec<Segment> {
         let mut all = Vec::new();
         for part in parts.iter() {
-            if self.cancel.load(Ordering::SeqCst) {
-                continue;
-            }
-            self.priority.wait_idle();
-            if self.cancel.load(Ordering::SeqCst) {
+            let cancelled = || self.cancel.load(Ordering::SeqCst);
+            if cancelled() || !self.priority.wait_idle(&cancelled) {
                 continue;
             }
             let segments = match self.engine.transcribe_segments(&part.samples, &self.model, &self.language) {
