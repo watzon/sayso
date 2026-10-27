@@ -20,6 +20,22 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.12.0"
+title = "One speech engine for Windows and Linux"
+
+[[release.item]]
+icon = "overlay"
+title = "Live preview with Parakeet on Linux"
+text = "Parakeet TDT v3 now shows the live preview while you dictate on Linux, in each of its languages."
+systems = ["linux"]
+
+[[release.item]]
+icon = "download"
+title = "A new speech engine on Windows"
+text = "Windows now uses the speech engine of Linux. Sayso downloads your Parakeet models again one time, because the new engine reads other files. Whisper models stay as they are."
+systems = ["windows"]
+
+[[release]]
 version = "0.11.0"
 title = "Clean up text on this computer"
 
