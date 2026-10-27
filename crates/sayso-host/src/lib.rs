@@ -17,6 +17,7 @@ mod identity;
 mod models;
 mod responder;
 mod state;
+pub mod jobs;
 mod transport;
 
 pub use identity::{Identify, Peer, SystemIdentify};

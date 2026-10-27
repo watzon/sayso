@@ -8,6 +8,7 @@ publish.workspace = true
 
 [dependencies]
 sayso-platform.workspace = true
+sayso-core.workspace = true
 crossbeam-channel.workspace = true
 log.workspace = true
 

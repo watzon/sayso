@@ -189,6 +189,12 @@ FluidAudio also has streaming diarization (Sortformer, LS-EEND). It can give liv
 
 Config: `models.diarization = "auto"` (the default) or a model id. Automatic means the diarization model on disk. There is no built-in fallback. A request with `diarize: true` and no diarization model on disk gets `error {code: "model_not_downloaded"}`, and the extension can send `download_model`.
 
+In a job, the host gives each segment a speaker (`crates/sayso-host/src/jobs/speakers.rs`):
+
+1. **Small speakers are folded.** Without a number of speakers, the diarizers find extra speakers that say almost nothing: with CAM++ zh_en at the threshold 0.9, the benchmark found 7 to 10 speakers in 300 s parts of 4-speaker meetings, and many of them had only 0.4 to 9 s of speech (0.1 to 2.6 %). So, when the request has no `speakers`, a speaker with less than 2 % of all speech and less than 10 s of speech (`SMALL_SPEAKER_SHARE`, `SMALL_SPEAKER_MS`) is folded: each of its turns goes to the speaker that overlaps it most, else to the speaker of the nearest turn. The speaker with the most speech always stays. The 10 s limit keeps a real speaker of a long meeting, who has a small share but more than a few words. With these rules, the speakers of those results go from 7, 10, and 8 to 5, 7, and 5 in English (4 real), and from 12, 8, and 8 to 8, 5, and 5 in Mandarin (6 real). In two Mandarin parts that is one speaker too few: a person who says very little can be folded. When the request has `speakers`, the host keeps the speakers of the engine.
+2. **Each segment gets one speaker:** the speaker with the most time in the segment, else the speaker of the nearest turn. The host does not split a segment at a change of speaker, also for models with word times. The segments go to the extension while the job runs, and diarization runs after the last one. Segments of `word` models end at sentence ends and at pauses of 700 ms, where speakers usually change.
+3. **The turns of `speakers {job, turns}` follow the segments.** Each run of segments of one speaker is one turn, from the start of its first segment to the end of its last segment. So each segment is in exactly one turn, and the turns do not overlap. The labels are `"1"`, `"2"`, and so on, in the order in which the speakers first speak.
+
 ## Models page
 
 The Models page gets two sections under the speech models: **Voice detection** (VAD models) and **Speakers** (diarization models). They have the same rows and the same actions as the other sections. They show only when an extension is installed. A user who only dictates sees the Models page of today.
@@ -301,6 +307,14 @@ Limits:
 - One job at a time. Other jobs wait in a queue, first in, first out, and send `job_progress` with `fraction: 0` until they start.
 
 A job runs one VAD part at a time. When a dictation starts, the job finishes the current part, waits, and goes on after the insert. So a job slows dictation by at most one part. The host keeps parts under about 30 s for this reason.
+
+How a job runs (`crates/sayso-host/src/jobs/`):
+
+- **Chunks.** VAD gives the speech parts. Neighbouring parts join into chunks of at most 30 s (10 s for a model with the timestamp level `none`, which gets one segment for each chunk), when the pause between them is at most 3 s. Each chunk gets 200 ms of audio before and after its speech. A VAD model gets the file in windows of 10 minutes.
+- **Dictation first.** The app tells the host when a dictation starts its capture and when it no longer needs the engine. A job waits before each call to the engine (a load, a VAD window, a chunk, diarization) while a dictation runs. Diarization runs once on the whole file, so on a long file it is the one call that can make a dictation wait for more than one part.
+- **Progress.** `job_progress` gives the audio time done over the length of the file. With diarization, the transcription is 90 % and diarization the last 10 %. A job that waits in the queue sends `fraction: 0` when it enters the queue and each time a job ahead of it starts.
+- **Cancel.** A waiting job ends at once, and a running job ends after its current call to the engine. Each cancelled job gets `job_failed` with the message "The job was cancelled."
+- **Memory.** The host keeps the audio of a job as 16-bit samples: 2 hours of audio take 230 MB. A chunk becomes floats only when it goes to the engine. Diarization needs the whole file as floats, and the engine client writes it as a WAV file, so diarization of 2 hours needs about 1 GB more for a short time.
 
 A model that an extension uses counts in the memory policy (`crates/sayso-app/src/memory.rs`) while its job or live session runs. The host unloads it after the same idle time as other models.
 
