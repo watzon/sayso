@@ -115,12 +115,69 @@ pub struct Transcript {
     pub elapsed_ms: u64,
 }
 
+/// A final transcript with times. Times are in milliseconds from the start of the audio.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TimedTranscript {
+    pub text: String,
+    pub model: ModelId,
+    /// Time the final pass took, without loading.
+    pub elapsed_ms: u64,
+    /// The text cut into parts, in order, without overlaps. How much timing a
+    /// model gives is its timestamp level (see `EngineKind::timestamps`).
+    pub segments: Vec<Segment>,
+}
+
+/// A part of a transcript, for example one sentence.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Segment {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+    /// Empty when the model gives no word times.
+    pub words: Vec<Word>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Word {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+}
+
+/// A part of the audio with speech, found by a VAD model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SpeechPart {
+    pub start_ms: u64,
+    pub end_ms: u64,
+}
+
+/// Who speaks when, found by a diarization model.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Diarization {
+    /// The number of different speakers in `turns`.
+    pub speakers: u32,
+    /// In the order of `start_ms`. The turns of two speakers can overlap.
+    pub turns: Vec<Turn>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Turn {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    /// From 0, in the order in which the speakers first speak.
+    pub speaker: u32,
+}
+
 /// Something the engine reports without a request.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EngineEvent {
     ModelStatus { model: ModelId, status: ModelStatus },
     /// Live preview. `committed` will not change. `tentative` may still change.
     Partial { session: u64, committed: String, tentative: String },
+    /// Speech starts in a VAD session. Times are in milliseconds from the first audio of the session.
+    SpeechStart { session: u64, start_ms: u64 },
+    /// The speech that started at `start_ms` ends in a VAD session.
+    SpeechEnd { session: u64, start_ms: u64, end_ms: u64 },
     /// The engine answered for the first time, and the model statuses are known.
     Started,
     /// The engine did not answer its first hello. It is stopped and does not restart.

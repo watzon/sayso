@@ -48,6 +48,17 @@ struct State {
     ended: VecDeque<u64>,
 }
 
+impl State {
+    fn mark_ended(&mut self, session: u64) {
+        if !self.ended.contains(&session) {
+            if self.ended.len() == REMEMBERED_ENDED {
+                self.ended.pop_front();
+            }
+            self.ended.push_back(session);
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct WriterQueue {
     state: Mutex<State>,
@@ -97,12 +108,7 @@ impl WriterQueue {
     /// writer already took. Returns the number of dropped frames.
     pub(crate) fn end_stream(&self, session: u64) -> usize {
         let mut state = self.state.lock();
-        if !state.ended.contains(&session) {
-            if state.ended.len() == REMEMBERED_ENDED {
-                state.ended.pop_front();
-            }
-            state.ended.push_back(session);
-        }
+        state.mark_ended(session);
         let before = state.items.len();
         let mut dropped_samples = 0;
         state.items.retain(|item| match item {
@@ -114,6 +120,13 @@ impl WriterQueue {
         });
         state.queued_samples -= dropped_samples;
         before - state.items.len()
+    }
+
+    /// Close the stream of `session`: refuse more audio, but keep the audio that
+    /// waits. For a VAD session, where each frame counts: a missing frame moves
+    /// all later times. `stream_end` then follows the last frame.
+    pub(crate) fn finish_stream(&self, session: u64) {
+        self.state.lock().mark_ended(session);
     }
 
     /// Stop taking items. The writer sends what is queued, then `next` gives None.
@@ -237,6 +250,18 @@ mod tests {
                 "L:transcribe"
             ]
         );
+    }
+
+    #[test]
+    fn finishing_a_stream_keeps_its_audio_and_refuses_more() {
+        let queue = WriterQueue::default();
+        queue.send(line("vad_start 1")).unwrap();
+        audio(&queue, 1, 320);
+        audio(&queue, 1, 320);
+        queue.finish_stream(1);
+        queue.send(line("stream_end 1")).unwrap();
+        assert_eq!(audio(&queue, 1, 320), AudioPush::Ended);
+        assert_eq!(drain(&queue), ["L:vad_start 1", "A:1", "A:1", "L:stream_end 1"]);
     }
 
     #[test]

@@ -17,8 +17,11 @@ use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use parking_lot::Mutex;
 use sayso_core::enhance::{EnhanceError, Generated, LanguageModel, Unavailable};
 use sayso_core::models::{self, ModelId, ModelInfo};
-use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript, encode_wav, to_pcm16};
-use sayso_platform::{PartReadiness, PlatformError, Result, SttBackend};
+use sayso_core::stt::{
+    Diarization, EngineEvent, ModelStatus, SAMPLE_RATE, SessionOptions, SpeechPart, TimedTranscript, Transcript,
+    encode_wav, to_pcm16,
+};
+use sayso_platform::{PartReadiness, PlatformError, Result, SttBackend, unsupported_feature};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
@@ -54,7 +57,15 @@ pub struct Options {
     pub request_timeout: Duration,
     /// Wait for `load` (first load compiles for the Neural Engine, 60 s or more
     /// for Whisper) and for `transcribe`.
+    ///
+    /// The requests that read a whole recording and can run long (`transcribe_segments`,
+    /// `detect_speech`, and `diarize`) wait for `long_timeout` plus
+    /// `audio_timeout_factor` times the length of the audio. A long recording
+    /// then gets more time, and a short one still fails after a bounded wait.
     pub long_timeout: Duration,
+    /// How many times the length of the audio the long requests wait, on top of
+    /// `long_timeout`. 2 means: 10 minutes of audio add 20 minutes.
+    pub audio_timeout_factor: u32,
     /// First restart delay after a crash. It doubles each time.
     pub backoff_initial: Duration,
     /// Longest restart delay.
@@ -68,6 +79,7 @@ impl Default for Options {
         Options {
             request_timeout: Duration::from_secs(15),
             long_timeout: Duration::from_secs(600),
+            audio_timeout_factor: 2,
             backoff_initial: Duration::from_millis(500),
             backoff_max: Duration::from_secs(5),
             env: Vec::new(),
@@ -142,6 +154,10 @@ struct Inner {
     /// Models that are not `Ready` but whose live preview is in memory
     /// (`model_state` with `preview: true`).
     preview_ready: Mutex<HashSet<ModelId>>,
+    /// The `features` of the last `hello`.
+    features: Mutex<Vec<String>>,
+    /// Open VAD sessions. They use the stream paths, but their audio is never dropped.
+    vad_sessions: Mutex<HashSet<u64>>,
     preparation: Mutex<HashMap<ModelId, Preparation>>,
     child: Mutex<Option<Child>>,
     next_id: AtomicU64,
@@ -247,6 +263,8 @@ impl EngineClient {
             statuses: Mutex::new(HashMap::new()),
             desired_loaded: Mutex::new(Vec::new()),
             preview_ready: Mutex::new(HashSet::new()),
+            features: Mutex::new(Vec::new()),
+            vad_sessions: Mutex::new(HashSet::new()),
             preparation: Mutex::new(HashMap::new()),
             child: Mutex::new(None),
             next_id: AtomicU64::new(0),
@@ -512,6 +530,7 @@ impl SttBackend for EngineClient {
 
     fn push_audio(&self, session: u64, samples: &[f32]) -> Result<()> {
         let pcm = to_pcm16(samples);
+        let vad = self.inner.vad_sessions.lock().contains(&session);
         let core = self.inner.core.lock();
         let Some(conn) = core.conn.as_ref() else {
             return Err(failed("engine is not running"));
@@ -520,7 +539,12 @@ impl SttBackend for EngineClient {
             Ok(AudioPush::Queued | AudioPush::Ended) => Ok(()),
             Ok(AudioPush::Full) => {
                 self.inner.dropped_audio.fetch_add(1, Ordering::Relaxed);
-                Ok(())
+                // A missing frame moves every later time of a VAD session, so the caller must know.
+                if vad {
+                    Err(failed("the engine falls behind: VAD audio was dropped"))
+                } else {
+                    Ok(())
+                }
             }
             Err(_) => Err(failed("engine is not running")),
         }
@@ -529,9 +553,18 @@ impl SttBackend for EngineClient {
     /// End the live preview of `session`. The preview audio that waits in the writer
     /// queue is dropped, so the requests behind it do not wait for it. `stream_end`
     /// still follows every frame that the writer already took.
+    ///
+    /// A VAD session (see [`SttBackend::start_vad`]) keeps that audio: the engine
+    /// needs every frame to find the times.
     fn end_stream(&self, session: u64) {
+        let vad = self.inner.vad_sessions.lock().remove(&session);
         if let Some(conn) = self.inner.core.lock().conn.as_ref() {
-            let dropped = conn.tx.end_stream(session);
+            let dropped = if vad {
+                conn.tx.finish_stream(session);
+                0
+            } else {
+                conn.tx.end_stream(session)
+            };
             if dropped > 0 {
                 log::debug!(
                     "stream {session} ended with {dropped} audio frames not yet sent, dropped"
@@ -552,14 +585,8 @@ impl SttBackend for EngineClient {
     }
 
     fn transcribe(&self, samples: &[f32], options: &SessionOptions) -> Result<Transcript> {
-        let n = self.inner.next_file.fetch_add(1, Ordering::Relaxed);
-        let path = self
-            .inner
-            .cache_dir
-            .join(format!("transcribe-{}-{n}.wav", std::process::id()));
-        std::fs::write(&path, encode_wav(&to_pcm16(samples)))
-            .map_err(|e| failed(format!("cannot write {}: {e}", path.display())))?;
-        let _cleanup = RemoveOnDrop(path.clone());
+        let wav = self.inner.write_wav("transcribe", samples)?;
+        let path = &wav.0;
         let fields = json!({
             "model": options.final_model,
             "path": path.to_string_lossy(),
@@ -574,6 +601,74 @@ impl SttBackend for EngineClient {
             model: options.final_model.clone(),
             elapsed_ms: reply.u64("elapsed_ms").unwrap_or(0),
         })
+    }
+
+    fn features(&self) -> Vec<String> {
+        self.inner.features.lock().clone()
+    }
+
+    fn transcribe_segments(&self, samples: &[f32], options: &SessionOptions) -> Result<TimedTranscript> {
+        self.inner.require("segments")?;
+        let wav = self.inner.write_wav("transcribe", samples)?;
+        let fields = json!({
+            "model": options.final_model,
+            "path": wav.0.to_string_lossy(),
+            "language": language_for(&options.final_model, &options.language),
+            "vocabulary": options.vocabulary,
+            "segments": true,
+        });
+        let reply = self
+            .inner
+            .call("transcribe", fields, self.inner.long_timeout_for(samples))?;
+        // An engine without `segments` ignores the field and sends no list.
+        let segments = protocol::segments(&reply)
+            .map_err(|e| failed(format!("the engine sent no usable segments: {e}")))?;
+        Ok(TimedTranscript {
+            text: reply.str("text").unwrap_or_default().to_string(),
+            model: options.final_model.clone(),
+            elapsed_ms: reply.u64("elapsed_ms").unwrap_or(0),
+            segments,
+        })
+    }
+
+    fn detect_speech(&self, model: &ModelId, samples: &[f32]) -> Result<Vec<SpeechPart>> {
+        self.inner.require("vad")?;
+        let wav = self.inner.write_wav("vad", samples)?;
+        let fields = json!({"model": model, "path": wav.0.to_string_lossy()});
+        let reply = self
+            .inner
+            .call("vad", fields, self.inner.long_timeout_for(samples))?;
+        protocol::speech(&reply).map_err(|e| failed(format!("the engine sent no usable speech parts: {e}")))
+    }
+
+    fn start_vad(&self, session: u64, model: &ModelId) -> Result<()> {
+        self.inner.require("vad")?;
+        if let Some(conn) = self.inner.core.lock().conn.as_ref() {
+            conn.tx.begin_stream(session);
+        }
+        self.inner.vad_sessions.lock().insert(session);
+        let opened = self.inner.call(
+            "vad_start",
+            json!({"session": session, "model": model}),
+            self.inner.options.request_timeout,
+        );
+        if opened.is_err() {
+            self.inner.vad_sessions.lock().remove(&session);
+        }
+        opened.map(|_| ())
+    }
+
+    fn diarize(&self, model: &ModelId, samples: &[f32], speakers: Option<u32>) -> Result<Diarization> {
+        self.inner.require("diarization")?;
+        let wav = self.inner.write_wav("diarize", samples)?;
+        let mut fields = json!({"model": model, "path": wav.0.to_string_lossy()});
+        if let Some(speakers) = speakers {
+            fields["speakers"] = json!(speakers);
+        }
+        let reply = self
+            .inner
+            .call("diarize", fields, self.inner.long_timeout_for(samples))?;
+        protocol::diarization(&reply).map_err(|e| failed(format!("the engine sent no usable turns: {e}")))
     }
 
     fn subscribe(&self) -> Receiver<EngineEvent> {
@@ -609,6 +704,45 @@ impl Drop for RemoveOnDrop {
 // ---------------------------------------------------------------------------
 
 impl Inner {
+    /// Fail at once when the engine said in its `hello` that it lacks `feature`.
+    /// Before the first `hello`, and for an engine that lists no features, the
+    /// request goes out, and the `error` reply of the engine is the answer.
+    fn require(&self, feature: &str) -> Result<()> {
+        let features = self.features.lock();
+        if features.is_empty() || features.iter().any(|f| f == feature) {
+            Ok(())
+        } else {
+            Err(unsupported_feature(feature))
+        }
+    }
+
+    /// How long a request on `samples` waits: `long_timeout` plus the length of the
+    /// audio times `audio_timeout_factor` (see [`Options`]).
+    fn long_timeout_for(&self, samples: &[f32]) -> Duration {
+        let audio = Duration::from_secs_f64(samples.len() as f64 / f64::from(SAMPLE_RATE));
+        self.options
+            .long_timeout
+            .saturating_add(audio.saturating_mul(self.options.audio_timeout_factor))
+    }
+
+    /// Write `samples` as a WAV file in the cache folder. The file goes away when the result drops.
+    fn write_wav(&self, what: &str, samples: &[f32]) -> Result<RemoveOnDrop> {
+        let n = self.next_file.fetch_add(1, Ordering::Relaxed);
+        let path = self
+            .cache_dir
+            .join(format!("{what}-{}-{n}.wav", std::process::id()));
+        std::fs::write(&path, encode_wav(&to_pcm16(samples)))
+            .map_err(|e| failed(format!("cannot write {}: {e}", path.display())))?;
+        Ok(RemoveOnDrop(path))
+    }
+
+    /// Say hello, and keep the `features` of the engine.
+    fn hello(&self) -> Result<()> {
+        let reply = self.call("hello", json!({}), self.options.request_timeout)?;
+        *self.features.lock() = protocol::features(&reply);
+        Ok(())
+    }
+
     /// Queue a request. The reply goes to `pending`. Fails at once when the sidecar is down.
     fn send(&self, kind: &str, fields: Value, pending: Pending) -> Result<String> {
         let id = format!("r{}", self.next_id.fetch_add(1, Ordering::Relaxed) + 1);
@@ -722,6 +856,18 @@ impl Inner {
                         committed: message.str("committed").unwrap_or_default().to_string(),
                         tentative: message.str("tentative").unwrap_or_default().to_string(),
                     });
+                }
+            }
+            "speech_start" => match (message.u64("session"), message.u64("start_ms")) {
+                (Some(session), Some(start_ms)) => self.emit(EngineEvent::SpeechStart { session, start_ms }),
+                _ => log::debug!("ignoring speech_start without session or start_ms"),
+            },
+            "speech_end" => {
+                match (message.u64("session"), message.u64("start_ms"), message.u64("end_ms")) {
+                    (Some(session), Some(start_ms), Some(end_ms)) => {
+                        self.emit(EngineEvent::SpeechEnd { session, start_ms, end_ms });
+                    }
+                    _ => log::debug!("ignoring speech_end without session, start_ms, or end_ms"),
                 }
             }
             "log" => {
@@ -923,6 +1069,7 @@ impl Inner {
     /// With the process gone, nothing is loaded or downloading any more.
     fn reset_statuses_after_exit(&self) {
         self.preview_ready.lock().clear();
+        self.vad_sessions.lock().clear();
         self.preparation.lock().clear();
         let current: Vec<(ModelId, ModelStatus)> = self
             .statuses
@@ -954,9 +1101,7 @@ impl Inner {
     /// After the first launch: hello and refresh statuses, then `Started`. When
     /// either fails, stop the sidecar for good and report `StartFailed`.
     fn first_start(&self) {
-        let answered = self
-            .call("hello", json!({}), self.options.request_timeout)
-            .and_then(|_| self.refresh_statuses());
+        let answered = self.hello().and_then(|()| self.refresh_statuses());
         match answered {
             Ok(()) => {
                 self.start.store(START_DONE, Ordering::SeqCst);
@@ -975,7 +1120,7 @@ impl Inner {
     /// After a restart: hello, refresh statuses, load again what was loaded, `Restarted`.
     fn recover(&self, generation: u64) {
         let current = || self.generation.load(Ordering::SeqCst) == generation;
-        if let Err(e) = self.call("hello", json!({}), self.options.request_timeout) {
+        if let Err(e) = self.hello() {
             log::warn!("engine did not answer after restart: {e}");
             if current() {
                 self.kill_child(); // The supervisor restarts it again.

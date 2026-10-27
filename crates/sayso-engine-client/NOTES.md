@@ -15,7 +15,17 @@ The protocol is specified in `docs/engine-protocol.md`. This section has only wh
 
 ### Features
 
-`hello` lists the optional parts of the protocol in `features`. The Swift engine lists `language_model`, `prepare`, and `unload`. The Rust engine lists `concurrent_streams`, `diarization`, `keep_preview`, `segments`, `unload`, and `vad`. The client does not read `features` yet: it sends `prepare`, `unload`, and `language_model` to each engine and handles the `error` reply of an engine that does not have them.
+`hello` lists the optional parts of the protocol in `features`. The client keeps them (`SttBackend::features`, refreshed after each restart). The Swift engine lists `catalog`, `concurrent_streams`, `diarization`, `language_model`, `prepare`, `segments`, `unload`, and `vad`. The Rust engine lists `catalog`, `concurrent_streams`, `diarization`, `keep_preview`, `segments`, `unload`, and `vad`. The client sends `prepare`, `unload`, and `language_model` to each engine and handles the `error` reply of an engine that does not have them. The timing requests below check the list first: an engine that lists features but not `segments`, `vad`, or `diarization` gets no request, and the call fails with "this speech engine does not support ...". An engine that lists no features gets the request, and its `error` is the answer.
+
+### Segments, VAD, and diarization
+
+`SttBackend::transcribe_segments` sends `transcribe` with `segments: true` and maps `final.segments` (`TimedTranscript`). `detect_speech` sends `vad` and maps `ok.speech`. `diarize` sends `diarize` (with `speakers` when given) and maps `ok {speakers, turns}`. Each writes a temporary WAV file like `transcribe` and removes it.
+
+These three wait for `Options::long_timeout` plus `Options::audio_timeout_factor` times the length of the audio (default 600 s plus 2 times the audio). A long recording gets more time, and a request that hangs still fails.
+
+`start_vad` sends `vad_start`. The audio goes through `push_audio`, and the end through `end_stream`, like a stream. The `speech_start` and `speech_end` events reach subscribers as `EngineEvent::SpeechStart` and `EngineEvent::SpeechEnd`. A VAD session differs from a preview in two ways, because a lost frame moves every later time: `end_stream` keeps the audio that waits in the queue, and `push_audio` returns an error when the queue is full.
+
+`tests/real_timing.rs` (ignored) runs all of this against the real Swift engine.
 
 ### Optional part preparation
 

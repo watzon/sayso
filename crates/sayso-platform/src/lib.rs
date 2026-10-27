@@ -8,7 +8,9 @@
 use crossbeam_channel::{Receiver, RecvTimeoutError};
 use sayso_core::hotkey::Hotkey;
 use sayso_core::models::{ModelId, ModelInfo};
-use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript};
+use sayso_core::stt::{
+    Diarization, EngineEvent, ModelStatus, SessionOptions, SpeechPart, TimedTranscript, Transcript,
+};
 use std::time::{Duration, Instant};
 
 // ---------------------------------------------------------------------------
@@ -26,6 +28,12 @@ pub enum PlatformError {
 }
 
 pub type Result<T, E = PlatformError> = std::result::Result<T, E>;
+
+/// The error of a speech engine that does not have an optional part of the
+/// engine protocol, for example `vad` (see `SttBackend::features`).
+pub fn unsupported_feature(feature: &str) -> PlatformError {
+    PlatformError::Failed(format!("this speech engine does not support {feature}"))
+}
 
 // ---------------------------------------------------------------------------
 // Hotkeys
@@ -306,6 +314,37 @@ pub trait SttBackend: Send + Sync {
     fn end_stream(&self, session: u64);
     /// Final pass on complete audio. Blocks until the text is ready.
     fn transcribe(&self, samples: &[f32], options: &SessionOptions) -> Result<Transcript>;
+    /// The optional parts of the engine protocol that the engine has: the
+    /// `features` of its `hello`, for example `segments`, `vad`, or
+    /// `diarization`. Empty when the backend does not know, or has none.
+    fn features(&self) -> Vec<String> {
+        Vec::new()
+    }
+    /// Final pass on complete audio, with the text cut into timed segments.
+    /// Needs the feature `segments`. Blocks until the text is ready.
+    fn transcribe_segments(&self, _samples: &[f32], _options: &SessionOptions) -> Result<TimedTranscript> {
+        Err(unsupported_feature("segments"))
+    }
+    /// Find the parts of complete audio with speech, with a loaded VAD model.
+    /// Needs the feature `vad`. Blocks until the parts are ready.
+    fn detect_speech(&self, _model: &ModelId, _samples: &[f32]) -> Result<Vec<SpeechPart>> {
+        Err(unsupported_feature("vad"))
+    }
+    /// Open a VAD session on live audio, with a loaded VAD model. Needs the
+    /// feature `vad`. Send the audio with [`SttBackend::push_audio`] and close
+    /// the session with [`SttBackend::end_stream`]. The speech arrives as
+    /// `EngineEvent::SpeechStart` and `EngineEvent::SpeechEnd`. Unlike the audio
+    /// of a preview, VAD audio that waits in the queue is not dropped at the end.
+    fn start_vad(&self, _session: u64, _model: &ModelId) -> Result<()> {
+        Err(unsupported_feature("vad"))
+    }
+    /// Find who speaks when in complete audio, with a loaded diarization model.
+    /// Needs the feature `diarization`. `speakers` is the number of speakers,
+    /// when the caller knows it. Blocks, and it can take some time for a long
+    /// recording.
+    fn diarize(&self, _model: &ModelId, _samples: &[f32], _speakers: Option<u32>) -> Result<Diarization> {
+        Err(unsupported_feature("diarization"))
+    }
     /// A new receiver that gets every event from now on.
     fn subscribe(&self) -> Receiver<EngineEvent>;
     /// Wait until `model` is `Ready` or `Failed`, or until `deadline`, and
@@ -394,4 +433,80 @@ pub struct Platform {
     pub login_item: std::sync::Arc<dyn LoginItem>,
     pub prefs: std::sync::Arc<dyn SystemPrefs>,
     pub media: std::sync::Arc<dyn MediaControl>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sayso_core::models::ModelInfo;
+
+    /// A backend that implements only the required methods.
+    struct Basic;
+
+    impl SttBackend for Basic {
+        fn catalog(&self) -> Vec<ModelInfo> {
+            Vec::new()
+        }
+        fn status(&self, _model: &ModelId) -> ModelStatus {
+            ModelStatus::NotDownloaded
+        }
+        fn download(&self, _model: &ModelId) -> Result<()> {
+            Ok(())
+        }
+        fn delete(&self, _model: &ModelId) -> Result<()> {
+            Ok(())
+        }
+        fn load(&self, _model: &ModelId) -> Result<()> {
+            Ok(())
+        }
+        fn unload(&self, _model: &ModelId, _keep_preview: bool) -> Result<()> {
+            Ok(())
+        }
+        fn preview_ready(&self, _model: &ModelId) -> bool {
+            false
+        }
+        fn start_stream(&self, _session: u64, _options: &SessionOptions) -> Result<()> {
+            Ok(())
+        }
+        fn push_audio(&self, _session: u64, _samples: &[f32]) -> Result<()> {
+            Ok(())
+        }
+        fn end_stream(&self, _session: u64) {}
+        fn transcribe(&self, _samples: &[f32], options: &SessionOptions) -> Result<Transcript> {
+            Ok(Transcript { text: String::new(), model: options.final_model.clone(), elapsed_ms: 0 })
+        }
+        fn subscribe(&self) -> Receiver<EngineEvent> {
+            crossbeam_channel::unbounded().1
+        }
+    }
+
+    #[test]
+    fn a_backend_without_the_timing_features_says_so() {
+        let backend = Basic;
+        let model = ModelId::new("m");
+        let options = SessionOptions {
+            final_model: model.clone(),
+            preview_model: None,
+            language: "en".into(),
+            vocabulary: Vec::new(),
+        };
+        assert!(backend.features().is_empty());
+        let message = |error: PlatformError| error.to_string();
+        assert_eq!(
+            message(backend.transcribe_segments(&[0.0], &options).unwrap_err()),
+            "this speech engine does not support segments"
+        );
+        assert_eq!(
+            message(backend.detect_speech(&model, &[0.0]).unwrap_err()),
+            "this speech engine does not support vad"
+        );
+        assert_eq!(
+            message(backend.start_vad(1, &model).unwrap_err()),
+            "this speech engine does not support vad"
+        );
+        assert_eq!(
+            message(backend.diarize(&model, &[0.0], Some(2)).unwrap_err()),
+            "this speech engine does not support diarization"
+        );
+    }
 }
