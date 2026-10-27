@@ -12,6 +12,13 @@ use serde::{Deserialize, Serialize};
 
 pub type SessionId = u64;
 
+/// True when incognito was on at the start or at the end of a dictation.
+/// Such a dictation leaves no trace: no history entry, and no
+/// `dictation_done` event for extensions (`docs/extensions.md`, "Privacy").
+pub fn incognito_during(at_start: bool, at_end: bool) -> bool {
+    at_start || at_end
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Trigger {
     /// Toggle hotkey, pill click, popover button.

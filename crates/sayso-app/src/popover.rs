@@ -126,7 +126,7 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
                 TrayEvent::Click => toggle(&model, cx),
                 TrayEvent::ToggleDictation => model.update(cx, |m, cx| m.toggle_dictation(cx)),
                 TrayEvent::OpenHub => crate::app::open_hub(&model, Route::Home, cx),
-                TrayEvent::Quit => cx.quit(),
+                TrayEvent::Quit => crate::quit::request(&model, cx),
             });
         }
     })
@@ -869,7 +869,11 @@ impl Render for PopoverView {
                     hide_popover(cx);
                     this.model.update(cx, |m, cx| m.open_hub(Route::Home, cx));
                 }))))
-                .child(Button::new("quit", t!("popover.quit")).ghost().on_click(|_, _, cx| cx.quit())),
+                .child(Button::new("quit", t!("popover.quit")).ghost().on_click(cx.listener(|this, _, _, cx| {
+                    hide_popover(cx);
+                    let model = this.model.clone();
+                    crate::quit::request(&model, cx);
+                }))),
         );
 
         // The sheet takes the side of the window under the icon. The other

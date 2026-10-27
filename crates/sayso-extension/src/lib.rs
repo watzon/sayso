@@ -5,16 +5,19 @@
 //! channel, so the client needs no async runtime.
 //!
 //! ```no_run
-//! let client = sayso_extension::Client::connect()?;
+//! // Starts Sayso first when it does not run, and waits up to 10 s for it.
+//! let client = sayso_extension::Client::connect_or_start()?;
 //! println!("connected as {}", client.hello().extension_id);
 //! let reply = client.request("list_models", sayso_extension::Fields::new());
 //! # Ok::<(), sayso_extension::Error>(())
 //! ```
 
+mod start;
 mod transport;
 
 pub use sayso_protocol as protocol;
 pub use sayso_protocol::Fields;
+pub use start::{APP_ID, Launcher, launchers, start_sayso};
 
 use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
 use sayso_protocol::{Decoded, ErrorReply, HelloReply, HostMessage, Message, PROTOCOL, Reply as WireReply};
@@ -25,6 +28,10 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
+
+/// How long [`Client::connect_or_start`] waits for Sayso after it starts it.
+pub const START_WAIT: Duration = Duration::from_secs(10);
 
 /// The name and version of this SDK, in `hello`.
 pub const SDK: &str = concat!("sayso-extension ", env!("CARGO_PKG_VERSION"));
@@ -112,6 +119,34 @@ impl Client {
         Client::connect_to(protocol::socket::host_socket_path()?)
     }
 
+    /// Connect as [`Client::connect`] does. When Sayso does not run, start it
+    /// ([`start_sayso`]) and wait up to [`START_WAIT`] for its socket.
+    /// `connect` never starts Sayso.
+    pub fn connect_or_start() -> Result<Client, Error> {
+        Client::connect_or_start_with(protocol::socket::host_socket_path()?, START_WAIT, start_sayso)
+    }
+
+    /// [`Client::connect_or_start`] with the socket at `path`, a time to
+    /// wait, and a way to start Sayso.
+    pub fn connect_or_start_with(path: impl AsRef<Path>, wait: Duration, start: impl FnOnce() -> io::Result<()>) -> Result<Client, Error> {
+        let path = path.as_ref();
+        match Client::connect_to(path) {
+            Err(Error::Io(e)) if not_running(&e) => {}
+            other => return other,
+        }
+        start()?;
+        let deadline = Instant::now() + wait;
+        loop {
+            match Client::connect_to(path) {
+                Err(Error::Io(e)) if not_running(&e) && Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
+                Err(Error::Io(e)) if not_running(&e) => {
+                    return Err(Error::Io(io::Error::new(io::ErrorKind::TimedOut, format!("Sayso did not start in {} s: {e}", wait.as_secs()))));
+                }
+                other => return other,
+            }
+        }
+    }
+
     /// Connect to the socket (the pipe on Windows) at `path` and send `hello`.
     pub fn connect_to(path: impl AsRef<Path>) -> Result<Client, Error> {
         let (events_out, events) = unbounded();
@@ -160,6 +195,12 @@ impl Client {
         self.request("bye", Fields::new()).map(|_| ())
     }
 
+}
+
+/// True when the error means that no host listens: there is no socket, or
+/// the socket of a Sayso that ended.
+fn not_running(error: &io::Error) -> bool {
+    matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused)
 }
 
 fn send_hello(connection: &Connection, next_id: &AtomicU64) -> Result<HelloReply, Error> {

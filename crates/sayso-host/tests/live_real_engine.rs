@@ -38,7 +38,7 @@ impl HostServices for Services {
     fn config(&self) -> Config {
         self.config.clone()
     }
-    fn ask_download(&self, _: &DownloadQuestion) -> bool {
+    fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
     }
 }

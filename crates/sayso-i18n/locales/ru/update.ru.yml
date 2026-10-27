@@ -74,3 +74,5 @@ update:
   now_version: "Теперь Sayso %{version}"
   whats_new: "Что нового"
   dismiss: "Закрыть"
+  # "Restart to update" while an extension records or transcribes.
+  waits_for_extension: "Sayso перезапустится для обновления, когда %{extension} закончит работу."

@@ -74,3 +74,5 @@ update:
   now_version: "Sayso は %{version} になりました"
   whats_new: "新機能"
   dismiss: "閉じる"
+  # "Restart to update" while an extension records or transcribes.
+  waits_for_extension: "%{extension} の作業が終わると、Sayso は再起動してアップデートします。"

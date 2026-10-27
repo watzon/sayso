@@ -74,3 +74,44 @@ Measured on 2026-10-18 with the same 1,400 clips and harness, `SAYSO_ENGINE_PATH
 |---|---|---|---|---|---|---|---|---|---|---|
 | fluid-speech-mini (GGUF, Vulkan) | 93.4% | 6.56 | 213× | 8.98 | 10.33 | 9.49 | 1.73 | 3.71 | 4.67 | 7.04 |
 | parakeet-tdt-v2 (sherpa-onnx, CPU) | 93.3% | 6.72 | 40× | 9.85 | 11.99 | 10.24 | 1.55 | 3.99 | 2.95 | 6.48 |
+
+## Dictation while an extension works
+
+Step 6 of `docs/extensions.md` needs this check: a job or a live session of an extension must not make dictation slower. The test measures the time of the final pass of a dictation, with the real Swift engine, in three cases.
+
+### Method
+
+- **Dictations:** the first 15 LibriSpeech clean clips of 5 to 15 s from the clips above (11.6 to 14.6 s). Each dictation does what the app does: `DictationGate::begin` when the recording starts, the recording time, `SttBackend::transcribe` with `parakeet-unified-en` (the measured time), then `DictationGate::end`, and 0.5 s of pause. The model is in memory before the first measurement.
+- **Recording time:** each clip runs twice. First with a recording as long as the clip, as in real use. Then with no recording time: the final pass starts at the same moment as `begin`, so a part of a job or of a live session that is in the engine then is not done yet. That is the worst case.
+- **Nothing else:** only the dictations.
+- **A job:** an extension transcribes a file of 5 minutes (AMI meeting clips with 1 s of silence between them) with Silero VAD and diarization, again and again, over the real socket of the host. The dictations start when the first job has its first segment. 7 jobs ended in the 215 s of dictations.
+- **A live session:** an extension feeds the same 5 minutes in real time to a live session with the source `client` and diarization. The dictations start after 10 s of audio. The session gave 55 segments.
+- **Machine:** Apple M5 Pro, 48 GB, macOS 27.0, on 2026-10-26.
+
+### Results
+
+| Case | Recording | Median (ms) | p95 (ms) | Slowest (ms) |
+|---|---|---|---|---|
+| Nothing else | as long as the clip | 84 | 102 | 108 |
+| Nothing else | none (worst case) | 74 | 81 | 82 |
+| A job (VAD and diarization) | as long as the clip | 82 | 87 | 88 |
+| A job (VAD and diarization) | none (worst case) | 72 | 114 | 142 |
+| A live session (diarization) | as long as the clip | 82 | 89 | 90 |
+| A live session (diarization) | none (worst case) | 70 | 78 | 80 |
+
+With a real recording time, a job and a live session do not make dictation slower: the medians and the p95 are the same as with nothing else, within the noise of one run. The job finishes its current part during the recording and then waits, and a live session waits with its final passes.
+
+In the worst case, a job adds up to about 60 ms to some dictations (p95 114 ms against 81 ms, slowest 142 ms). The final pass then waits in the engine for the chunk of the job that started before the dictation (up to 30 s of audio). The median does not change. A real dictation always has a recording time before its final pass, so a user does not see this case, except with a very short recording that starts while a chunk is in the engine. A fix, if it becomes necessary: smaller chunks for jobs (for example 15 s), or a priority for the final pass in the engine. The live session shows no such cost, because its parts are short.
+
+The times with a recording are a little higher than the times without one, also with nothing else. The engine is idle during the recording, and the first call after an idle time is slower (the clocks of the chip go down). This is the same in each case, so it does not change the comparison.
+
+### Run it again
+
+```text
+uv run scripts/benchmark/prepare.py
+(cd native/macos/SaysoEngine && swift build -c release)
+SAYSO_CONF_MODELS=<a models folder with parakeet-unified-en, silero-vad, speaker-diarization> \
+  cargo test --release -p sayso-host --test dictation_bench -- --ignored --nocapture
+```
+
+`SAYSO_BENCH_CLIPS` sets the number of dictations (default 15). Without the clips in `~/.cache/sayso-bench`, set `SAYSO_CONF_AUDIO` to a 16 kHz mono WAV file. The run takes about 11 minutes and prints the table above.

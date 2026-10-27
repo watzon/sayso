@@ -52,19 +52,30 @@ use wav::WavWriter;
 /// under 2^53, so an engine that reads JSON numbers as doubles keeps the ids exact.
 pub const ENGINE_SESSION_BASE: u64 = 1 << 40;
 
-/// Dictation first (`docs/extensions.md`, "Scheduling"). The final pass of a
-/// part and the diarization wait while a dictation runs. The preview stream
-/// and the VAD do not wait.
+/// Dictation first, then live sessions, then jobs (`docs/extensions.md`,
+/// "Scheduling"). The final pass of a part and the diarization wait while a
+/// dictation runs. The preview stream and the VAD do not wait. While a part
+/// or a diarization is in the engine, jobs wait.
 pub trait Priority: Send + Sync {
     /// Return true when no dictation runs, or false at once when `stop` is
     /// true (the session was cancelled).
     fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool;
+
+    /// The session gives the engine a part now. Jobs wait until the value drops.
+    fn engine_call(&self) -> Box<dyn Send + '_> {
+        Box::new(())
+    }
 }
 
-/// The gate of jobs holds live sessions the same way.
+/// The gate of jobs holds live sessions the same way, and holds jobs while a
+/// live session uses the engine.
 impl Priority for DictationGate {
     fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool {
         DictationGate::wait_idle(self, stop)
+    }
+
+    fn engine_call(&self) -> Box<dyn Send + '_> {
+        Box::new(self.live_part())
     }
 }
 
@@ -471,7 +482,9 @@ impl LiveSessions {
                 self.inner.deps.priority.wait_idle(&|| false);
                 engine.load(model).map_err(|e| LiveError::engine(&format!("cannot load {model}"), e))?;
                 let samples = wav::read(&result.wav).map_err(|e| LiveError::new(None, e.to_string()))?;
+                let call = self.inner.deps.priority.engine_call();
                 let found = engine.diarize(model, &samples).map_err(|e| LiveError::engine("diarization failed", e))?;
+                drop(call);
                 // The rules of jobs: a session has no number of speakers, so small speakers fold.
                 let found = speakers::fold_small_speakers(&found);
                 let times: Vec<(u64, u64)> = result.segments.iter().map(|s| (s.start_ms, s.end_ms)).collect();

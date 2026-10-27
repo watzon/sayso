@@ -74,16 +74,21 @@ pub fn run() {
         apply_language(&loaded.config);
         let services = start_services(&paths, &loaded.config, updates);
         // Extensions connect from now on. When Sayso quits, each one gets `host_closing`.
-        let host = crate::host::start(&paths, &services).map(|started| {
-            let host = started.host;
+        // The OS can end Sayso (log out, shut down) without the quit question:
+        // `host_closing` still goes out.
+        let started = crate::host::start(&paths, &services);
+        if let Some(started) = &started {
+            let host = started.host.clone();
             cx.on_app_quit(move |_| {
                 host.close();
                 async {}
             })
             .detach();
-            (started.questions, started.jobs)
-        });
-        let (questions, host_jobs) = host.unzip();
+        }
+        let (host, questions, host_jobs) = match started {
+            Some(s) => (Some(s.host), Some(s.questions), Some(s.jobs)),
+            None => (None, None, None),
+        };
         apply_theme(&loaded.config, &services, cx);
         cx.set_global(Windows::default());
 
@@ -93,8 +98,24 @@ pub fn run() {
         let model = cx.new(|cx| {
             let mut model = AppModel::new(p, config, issues, services, cx);
             model.host_jobs = host_jobs;
+            model.host = host.clone();
             model
         });
+        // A live session or a job of an extension starts or ends: the update
+        // that waits for it, and the views of the model.
+        if let Some(host) = &host {
+            let (changed, changes) = async_channel::bounded::<()>(1);
+            host.set_holds_observer(Arc::new(move || {
+                let _ = changed.try_send(());
+            }));
+            let m = model.clone();
+            cx.spawn(async move |cx| {
+                while changes.recv().await.is_ok() {
+                    cx.update(|cx| m.update(cx, |m, cx| m.holds_changed(cx)));
+                }
+            })
+            .detach();
+        }
 
         cx.subscribe(&model, |model, event, cx| match event {
             AppEvent::OpenHub(route) => open_hub(&model, *route, cx),

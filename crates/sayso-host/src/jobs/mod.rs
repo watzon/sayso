@@ -9,7 +9,8 @@
 //! - [`JobRunner`] runs a job on a [`SttBackend`](sayso_platform::SttBackend):
 //!   [`audio`] reads the file, [`plan`] finds the speech and the chunks,
 //!   and [`speakers`] gives the speakers.
-//! - [`DictationGate`] holds a job between two engine calls while a dictation runs.
+//! - [`DictationGate`] holds a job between two engine calls while a dictation
+//!   runs or a live session transcribes a part.
 //! - [`ModelUse`] tells the memory policy of the app which models the jobs use.
 //!
 //! The events of a job go to an [`EventSink`]; the connection gives one.
@@ -26,7 +27,7 @@ pub mod speakers;
 #[cfg(test)]
 mod tests;
 
-pub use gate::{DictationGate, STALE_AFTER};
+pub use gate::{DictationGate, LivePart, STALE_AFTER};
 pub use model_use::{ModelHold, ModelUse};
 pub use plan::VadRun;
 pub use queue::{CANCELLED, JobQueue, JobRun, RunJob};

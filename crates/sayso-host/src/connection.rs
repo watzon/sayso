@@ -12,7 +12,7 @@ use crate::transport::Conn;
 use crate::{Peer, Shared};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
-use sayso_protocol::{Capability, DecodeError, Decoded, ErrorCode, ErrorReply, Event, HelloReply, Kind, PROTOCOL, Reply, Request, decode, encode};
+use sayso_protocol::{Capability, DecodeError, Decoded, ErrorCode, ErrorReply, Event, HelloReply, Kind, PROTOCOL, Reply, Request, Subscribe, SubscribeReply, decode, encode};
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::Arc;
@@ -25,6 +25,13 @@ const FEATURES: [&str; 0] = [];
 /// A longer line is not a request. Audio comes in small parts.
 const MAX_LINE: u64 = 16 * 1024 * 1024;
 
+/// The event after each insert of a dictation.
+pub(crate) const DICTATION_DONE: &str = "dictation_done";
+
+/// The events that an extension can subscribe to, and the capability that
+/// each one needs.
+const EVENTS: [(&str, Capability); 1] = [(DICTATION_DONE, Capability::DictationObserve)];
+
 /// A connection in the registry of the host.
 pub(crate) struct Entry {
     /// None until the host knows the extension, and for a client that is not
@@ -32,9 +39,15 @@ pub(crate) struct Entry {
     pub extension_id: Option<String>,
     outgoing: Sender<Outgoing>,
     writer: Option<JoinHandle<()>>,
+    /// The events of `subscribe`.
+    events: Vec<&'static str>,
 }
 
 impl Entry {
+    fn new(outgoing: Sender<Outgoing>, writer: JoinHandle<()>) -> Entry {
+        Entry { extension_id: None, outgoing, writer: Some(writer), events: Vec::new() }
+    }
+
     /// Send `host_closing`, then close. Gives the writer thread, to wait for it.
     pub fn close_with_host_closing(&mut self) -> Option<JoinHandle<()>> {
         let _ = self.outgoing.send(Outgoing::Line(encode(None, &Event::HostClosing)));
@@ -65,13 +78,13 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
         let mut connections = shared.connections.lock();
         if shared.closing.load(Ordering::SeqCst) {
             drop(connections);
-            let mut entry = Entry { extension_id: None, outgoing, writer: Some(writer) };
+            let mut entry = Entry::new(outgoing, writer);
             if let Some(writer) = entry.close_with_host_closing() {
                 let _ = writer.join();
             }
             return;
         }
-        connections.insert(number, Entry { extension_id: None, outgoing: outgoing.clone(), writer: Some(writer) });
+        connections.insert(number, Entry::new(outgoing.clone(), writer));
     }
 
     let extension = identify(shared, &peer);
@@ -247,9 +260,25 @@ impl Connection<'_> {
                 let number = self.number;
                 self.spawn("live-stop", responder, move |shared, _, responder| crate::live_requests::session_stop(shared, number, &request, responder));
             }
+            Request::Enhance(request) => self.spawn("enhance", responder, move |shared, extension_id, responder| crate::enhance::enhance(shared, extension_id, &request, responder)),
+            Request::Subscribe(request) => self.subscribe(&request, responder),
             request => responder.reply(Reply::error(Some(ErrorCode::Unsupported), format!("this version of Sayso cannot run {} yet", request.kind()))),
         }
         false
+    }
+
+    /// `subscribe`: the events of this connection from now on are the known
+    /// names in the request. Unknown names are left out, and an empty list
+    /// stops all events. The reply lists the events.
+    fn subscribe(&self, request: &Subscribe, responder: Responder) {
+        let events: Vec<&'static str> = EVENTS.iter().map(|(name, _)| *name).filter(|name| request.events.iter().any(|wanted| wanted == name)).collect();
+        // The reply goes out under the lock, so no event of the
+        // subscription comes before it.
+        let mut connections = self.shared.connections.lock();
+        if let Some(entry) = connections.get_mut(&self.number) {
+            entry.events = events.clone();
+        }
+        responder.reply(Reply::ok_with(&SubscribeReply { events: events.iter().map(|name| name.to_string()).collect() }));
     }
 
     /// Run `work` on a thread of its own. `work` gets the host, the id of the
@@ -262,6 +291,29 @@ impl Connection<'_> {
         let spawned = std::thread::Builder::new().name(format!("sayso-host-{what}")).spawn(move || work(&shared, &extension_id, responder));
         if let Err(e) = spawned {
             log::warn!("host: cannot start a thread for {what}: {e}");
+        }
+    }
+}
+
+/// Send `event` (the event `name`) to each connection that subscribed to it,
+/// when its extension still has the capability of the event. The grant is
+/// read for each event, so a grant that the user takes back stops the next one.
+pub(crate) fn send_to_subscribers(shared: &Shared, name: &str, event: &Event) {
+    if shared.is_closing() {
+        return;
+    }
+    let Some((_, capability)) = EVENTS.iter().find(|(known, _)| *known == name) else { return };
+    // Without a subscriber, the app (a dictation) does not read `state.toml`.
+    if !shared.connections.lock().values().any(|entry| entry.events.contains(&name)) {
+        return;
+    }
+    let state = shared.state.current();
+    let line = encode(None, event);
+    let connections = shared.connections.lock();
+    for entry in connections.values().filter(|entry| entry.events.contains(&name)) {
+        let granted = entry.extension_id.as_deref().and_then(|id| state.record(id)).is_some_and(|record| record.capabilities().contains(capability));
+        if granted {
+            let _ = entry.outgoing.send(Outgoing::Line(line.clone()));
         }
     }
 }

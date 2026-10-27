@@ -74,3 +74,5 @@ update:
   now_version: "Sayso ora è alla versione %{version}"
   whats_new: "Novità"
   dismiss: "Chiudi"
+  # "Restart to update" while an extension records or transcribes.
+  waits_for_extension: "Sayso si riavvierà per l’aggiornamento quando %{extension} avrà finito."

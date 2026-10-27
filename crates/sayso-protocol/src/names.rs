@@ -101,11 +101,11 @@ names! {
         UnknownModel = "unknown_model",
         /// The model was taken out of the catalog.
         ModelRetired = "model_retired",
-        /// The language model is not available.
+        /// The language model, or for `enhance` the AI provider, is not available.
         Unavailable = "unavailable",
-        /// The language model refused the text.
+        /// The language model, or for `enhance` the AI provider, refused the text.
         Refused = "refused",
-        /// The language model gave no reply in time.
+        /// The language model, or for `enhance` the AI provider, gave no reply in time.
         Timeout = "timeout",
     }
 }

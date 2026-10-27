@@ -151,7 +151,7 @@ impl HostServices for Services {
     fn config(&self) -> Config {
         self.config.clone()
     }
-    fn ask_download(&self, _: &DownloadQuestion) -> bool {
+    fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
     }
 }
@@ -439,4 +439,67 @@ fn closing_the_host_fails_the_jobs_before_host_closing() {
             Err(_) => panic!("no host_closing"),
         }
     }
+}
+
+#[test]
+fn a_part_of_a_live_session_holds_a_job_between_its_parts() {
+    let world = world(ALL, JobEngine::new());
+    let gate = world.host.dictation_gate();
+    let (release, released) = crossbeam_channel::bounded::<()>(0);
+    let (holding, held) = crossbeam_channel::bounded::<()>(0);
+    {
+        let gate = gate.clone();
+        // A live session gives the engine a part while the first part of the job runs.
+        *world.engine.after_transcribe.lock() = Some(Box::new(move |n| {
+            if n == 1 {
+                let (gate, released, holding) = (gate.clone(), released.clone(), holding.clone());
+                std::thread::spawn(move || {
+                    let _part = gate.live_part();
+                    holding.send(()).unwrap();
+                    let _ = released.recv();
+                });
+                let _ = held.recv();
+            }
+        }));
+    }
+    let (client, events) = world.client();
+    let path = world.wav("a.wav", 20_000, &THREE);
+    let job = start_job(&client, &path, json!({}));
+    eventually("the first part", || world.engine.transcribed() == 1);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(world.engine.transcribed(), 1, "the job waits for the part of the live session");
+    release.send(()).unwrap();
+    assert!(matches!(until_end(&events, job).last(), Some(HostEvent::JobDone { .. })));
+    assert_eq!(world.engine.transcribed(), 3);
+}
+
+#[test]
+fn jobs_hold_sayso_open_until_they_end() {
+    let world = world(ALL, JobEngine::new());
+    // The name of the record is what Sayso shows.
+    let state = std::fs::read_to_string(&world.setup.state).unwrap();
+    std::fs::write(&world.setup.state, format!("{state}name = \"Media\"\n")).unwrap();
+    let changes = Arc::new(AtomicUsize::new(0));
+    {
+        let changes = changes.clone();
+        world.host.set_holds_observer(Arc::new(move || {
+            changes.fetch_add(1, Ordering::SeqCst);
+        }));
+    }
+    assert!(world.host.holds().is_empty());
+    let (client, events) = world.client();
+    let path = world.wav("a.wav", 20_000, &THREE);
+    world.host.dictation_gate().begin();
+    let first = start_job(&client, &path, json!({}));
+    let second = start_job(&client, &path, json!({}));
+    let hold = sayso_host::Hold { extension_id: ID.into(), name: "Media".into(), work: sayso_host::Work::Job };
+    assert_eq!(world.host.holds(), vec![hold], "one entry for the jobs of one extension");
+    assert!(changes.load(Ordering::SeqCst) >= 2, "the observer hears each new job");
+
+    client.request("cancel_job", fields(json!({"job": second}))).unwrap();
+    let before_end = changes.load(Ordering::SeqCst);
+    world.host.dictation_gate().end();
+    assert!(matches!(until_end(&events, first).last(), Some(HostEvent::JobDone { .. })));
+    eventually("the jobs no longer hold Sayso", || world.host.holds().is_empty());
+    eventually("the observer hears the end", || changes.load(Ordering::SeqCst) > before_end);
 }

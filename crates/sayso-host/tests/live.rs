@@ -259,7 +259,7 @@ impl HostServices for Services {
     fn config(&self) -> Config {
         self.config.clone()
     }
-    fn ask_download(&self, _: &DownloadQuestion) -> bool {
+    fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
     }
     fn microphone(&self) -> Option<Arc<dyn Microphone>> {
@@ -587,4 +587,35 @@ fn a_session_that_cannot_run_is_refused_with_a_code() {
     assert_eq!(code(json!({"sources": ["client"], "record_to": "relative"})), Some(ErrorCode::BadRequest));
     assert_eq!(code(json!({"sources": []})), Some(ErrorCode::BadRequest));
     assert_eq!(world.host.live_session(), None);
+}
+
+#[test]
+fn a_live_session_holds_sayso_open_until_it_ends() {
+    let world = world(&["session.live", "audio.mic"], LiveEngine::new());
+    // A record without a name: Sayso shows the id.
+    let changes = Arc::new(AtomicUsize::new(0));
+    {
+        let changes = changes.clone();
+        world.host.set_holds_observer(Arc::new(move || {
+            changes.fetch_add(1, Ordering::SeqCst);
+        }));
+    }
+    // The observer of the menu bar still hears the session too.
+    let observer = Arc::new(Observer::default());
+    world.host.set_live_observer(observer.clone());
+    let (client, _events) = world.client();
+    let session = session_of(start(&client, json!({"sources": ["mic"]})));
+    let hold = sayso_host::Hold { extension_id: ID.into(), name: ID.into(), work: sayso_host::Work::LiveSession };
+    assert_eq!(world.host.holds(), vec![hold]);
+    assert_eq!(changes.load(Ordering::SeqCst), 1);
+    stop(&client, session);
+    assert!(world.host.holds().is_empty());
+    assert!(changes.load(Ordering::SeqCst) >= 2, "the stop and the end");
+    assert_eq!(observer.0.lock().last(), Some(&None));
+
+    // A connection that closes ends the hold too.
+    session_of(start(&client, json!({"sources": ["client"]})));
+    assert_eq!(world.host.holds().len(), 1);
+    drop(client);
+    eventually("the session of a closed connection ends", || world.host.holds().is_empty());
 }

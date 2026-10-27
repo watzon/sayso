@@ -333,7 +333,10 @@ impl FinalPass {
             if cancelled() || !self.priority.wait_idle(&cancelled) {
                 continue;
             }
-            let segments = match self.engine.transcribe_segments(&part.samples, &self.model, &self.language) {
+            let call = self.priority.engine_call();
+            let transcribed = self.engine.transcribe_segments(&part.samples, &self.model, &self.language);
+            drop(call);
+            let segments = match transcribed {
                 Ok(segments) => segments,
                 Err(e) => {
                     log::warn!("host: live session {}: the final pass of a part failed: {e}", self.session);

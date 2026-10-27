@@ -220,6 +220,7 @@ fn the_typed_ok_bodies_read_from_ok_fields() {
         (Reply::ok_with(&SessionReply { session: 3 }), json!({"session": 3})),
         (Reply::ok_with(&TextReply { text: "Hi.".into() }), json!({"text": "Hi."})),
         (Reply::ok_with(&EnhanceReply { text: "Hi.".into(), provider: "openai".into(), model: "gpt".into() }), json!({"text": "Hi.", "provider": "openai", "model": "gpt"})),
+        (Reply::ok_with(&SubscribeReply { events: vec!["dictation_done".into()] }), json!({"events": ["dictation_done"]})),
     ] {
         assert_eq!(Value::Object(body.ok_fields()), expected);
     }
