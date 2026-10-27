@@ -32,16 +32,20 @@ pub enum Timing {
     Segments(Vec<TextSegment>),
 }
 
-/// The text of a final pass and its timing.
+/// The text of a final pass, its timing, and the language that the model found.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Timed {
     pub text: String,
     pub timing: Timing,
+    /// The language code that the model found in the speech, such as `de`
+    /// (`docs/engine-protocol.md`, "Detected language"). None when the model
+    /// does not find the language.
+    pub language: Option<String>,
 }
 
 impl Timed {
     pub fn untimed(text: String) -> Self {
-        Timed { text, timing: Timing::None }
+        Timed { text, timing: Timing::None, language: None }
     }
 }
 
@@ -301,13 +305,13 @@ mod tests {
     #[test]
     fn pieces_move_to_the_time_of_the_recording() {
         let pieces = [
-            Piece { start_ms: 0, end_ms: 10_000, timed: Timed { text: "a b.".into(), timing: Timing::Words(vec![word(100, 200, "a"), word(300, 400, "b.")]) } },
+            Piece { start_ms: 0, end_ms: 10_000, timed: Timed { text: "a b.".into(), timing: Timing::Words(vec![word(100, 200, "a"), word(300, 400, "b.")]), language: None } },
             Piece { start_ms: 10_000, end_ms: 20_000, timed: Timed::untimed("rest".into()) },
             Piece { start_ms: 20_000, end_ms: 25_000, timed: Timed::untimed("  ".into()) },
             Piece {
                 start_ms: 25_000,
                 end_ms: 30_000,
-                timed: Timed { text: "x".into(), timing: Timing::Segments(vec![TextSegment { start_ms: 1_000, end_ms: 9_000, text: " x ".into(), words: None }]) },
+                timed: Timed { text: "x".into(), timing: Timing::Segments(vec![TextSegment { start_ms: 1_000, end_ms: 9_000, text: " x ".into(), words: None }]), language: None },
             },
         ];
         let all = segments(&pieces);
@@ -331,6 +335,7 @@ mod tests {
                     TextSegment { start_ms: 0, end_ms: 2_000, text: "a.".into(), words: None },
                     TextSegment { start_ms: 1_500, end_ms: 1_800, text: "b.".into(), words: None },
                 ]),
+                language: None,
             },
         }];
         let all = segments(&pieces);

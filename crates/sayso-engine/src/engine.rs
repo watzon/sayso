@@ -14,6 +14,7 @@
 use crate::audio;
 use crate::diarization;
 use crate::download::{self, Progress};
+use crate::language;
 use crate::layout;
 use crate::partials::Partials;
 use crate::protocol::{Coded, FEATURES, Output, PROTOCOL_VERSION, Request};
@@ -544,17 +545,17 @@ impl Engine {
         let start = Instant::now();
         let mut parts = Vec::new();
         let mut pieces = Vec::new();
+        let mut languages = language::Tally::default();
         let mut offset = 0;
         for piece in audio::split(&samples, spec.recipe.max_chunk_seconds()) {
             let start_ms = (offset * 1000 / audio::SAMPLE_RATE) as u64;
             offset += piece.len();
             let end_ms = (offset * 1000 / audio::SAMPLE_RATE) as u64;
+            let timed = final_pass.transcribe_detailed(piece, language, &vocabulary, with_segments)?;
+            languages.add(piece.len(), &timed.text, timed.language.as_deref());
+            parts.push(timed.text.clone());
             if with_segments {
-                let timed = final_pass.transcribe_timed(piece, language, &vocabulary)?;
-                parts.push(timed.text.clone());
                 pieces.push(Piece { start_ms, end_ms, timed });
-            } else {
-                parts.push(final_pass.transcribe(piece, language, &vocabulary)?);
             }
         }
         let text = audio::join(&parts);
@@ -563,8 +564,31 @@ impl Engine {
         if with_segments {
             fields["segments"] = timing::to_json(&timing::segments(&pieces));
         }
+        // Only for `auto`: with a named language, a model gives that language back.
+        if language::is_auto(language)
+            && !text.trim().is_empty()
+            && let Some(found) = languages.most_audio().filter(|code| self.reports_language(model, code))
+        {
+            fields["language"] = json!(found);
+        }
         self.out.send("final", request.id(), fields);
         Ok(())
+    }
+
+    /// True when `final.language` can be `code` for `model`: the catalog says
+    /// that the model finds the language, and `code` is one of its languages. A
+    /// model that is not in the catalog reports what its final pass finds.
+    fn reports_language(&self, model: &str, code: &str) -> bool {
+        let entry = self.catalog["models"]
+            .as_array()
+            .and_then(|models| models.iter().find(|m| m["id"] == model));
+        match entry {
+            Some(entry) => {
+                entry["detects_language"] == true
+                    && entry["languages"].as_array().is_some_and(|codes| codes.iter().any(|c| c == code))
+            }
+            None => true,
+        }
     }
 
     // -----------------------------------------------------------------------
