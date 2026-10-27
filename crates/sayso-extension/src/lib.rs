@@ -222,7 +222,10 @@ impl Connection {
         };
         if let Err(e) = written {
             lock(&self.pending).waiters.remove(id);
-            return Err(Error::Io(e));
+            // The host closed the connection before the reader saw it. A
+            // Windows pipe fails the write; a Unix socket takes it.
+            let closed = matches!(e.kind(), io::ErrorKind::BrokenPipe | io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted | io::ErrorKind::NotConnected);
+            return Err(if closed { Error::Gone } else { Error::Io(e) });
         }
         reply.recv().unwrap_or(Err(Error::Gone))
     }

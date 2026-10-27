@@ -116,7 +116,12 @@ mod pipe {
             }
             let len = buf.len().min(u32::MAX as usize) as u32;
             // SAFETY: `buf` lives until `io` has the result of the write.
-            self.io(|overlapped| unsafe { WriteFile(self.handle, buf.as_ptr(), len, std::ptr::null_mut(), overlapped) }).map(|written| written as usize)
+            match self.io(|overlapped| unsafe { WriteFile(self.handle, buf.as_ptr(), len, std::ptr::null_mut(), overlapped) }) {
+                Ok(written) => Ok(written as usize),
+                // The host closed its end of the pipe.
+                Err(e) if matches!(e.raw_os_error().map(|code| code as u32), Some(ERROR_BROKEN_PIPE | ERROR_PIPE_NOT_CONNECTED | ERROR_NO_DATA)) => Err(io::ErrorKind::BrokenPipe.into()),
+                Err(e) => Err(e),
+            }
         }
 
         /// Start an overlapped call and wait for its result.
