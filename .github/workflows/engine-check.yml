@@ -29,6 +29,11 @@ jobs:
         include:
           - platform: macos-arm64
             runner: macos-latest
+          # The last Intel runner image of GitHub Actions. GitHub ends Intel
+          # macOS runners after the macOS 15 image, in 2027. The check runs on
+          # a real Intel Mac, with no Rosetta.
+          - platform: macos-x86_64
+            runner: macos-15-intel
           - platform: linux-x86_64
             runner: ubuntu-24.04
           - platform: linux-arm64
@@ -93,6 +98,23 @@ jobs:
         run: |
           New-Item -ItemType Directory engine-unpacked | Out-Null
           Expand-Archive -Path $env:FILE -DestinationPath engine-unpacked
+
+      # The architecture of the binary must be the one in the name of the file.
+      - name: Check the architecture of the engine (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          expected="${{ matrix.platform }}"
+          expected="${expected#macos-}"
+          found=$(lipo -archs "engine-unpacked/sayso-engine-$VERSION/sayso-engine")
+          echo "expected: $expected, found: $found"
+          if [[ "$found" != "$expected" ]]; then
+            echo "::error::The engine has the architecture $found, and the file name says $expected."
+            exit 1
+          fi
+          if [[ "$(uname -m)" != "$expected" ]]; then
+            echo "::error::This runner is $(uname -m), so it does not run an $expected engine as the machine of a user does."
+            exit 1
+          fi
 
       - name: Check the files and the libraries
         run: |
