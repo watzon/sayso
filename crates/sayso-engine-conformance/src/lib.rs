@@ -252,6 +252,37 @@ fn core(suite: &Suite, features: &[String], report: &mut Report) {
             }
         }),
     );
+    if has("catalog") {
+        report.record(
+            "list_models without models gives the catalog and a model_state for each model",
+            with_engine(suite, None, |engine| {
+                let reply = engine.request("list_models", json!({}), suite.timeout)?;
+                reply.expect_type("ok")?;
+                let ids = check_catalog(&reply.reply)?;
+                for id in &ids {
+                    if !reply.events.iter().any(|e| e["type"] == "model_state" && e["model"] == json!(id)) {
+                        return Err(format!("no model_state for {id}"));
+                    }
+                }
+                Ok(())
+            }),
+        );
+        report.record(
+            "a request without engine for an unknown id gets code unknown_model",
+            with_engine(suite, None, |engine| {
+                for kind in ["download", "load"] {
+                    let reply = engine.request(kind, json!({"model": "conformance-no-such-model"}), suite.timeout)?;
+                    reply.expect_error()?;
+                    if reply.reply["code"] != "unknown_model" {
+                        return Err(format!("{kind}: {}", reply.reply));
+                    }
+                }
+                Ok(())
+            }),
+        );
+    } else {
+        report.skip("the built-in catalog", "the engine does not list the feature catalog");
+    }
     report.record(
         "requests that overlap get one reply each",
         with_engine(suite, None, |engine| {
@@ -550,6 +581,48 @@ fn concurrent_streams(suite: &Suite, engine: &mut Engine, model: &str, samples: 
         }
     }
     Ok(())
+}
+
+/// The catalog of a `list_models` reply without `models`: `models` with the
+/// fields of the spec and unique ids, and `retired` with `id` and `message`.
+/// Gives the ids.
+fn check_catalog(reply: &Value) -> Result<Vec<String>, String> {
+    const ROLES: [&str; 4] = ["final", "streaming", "vad", "diarization"];
+    const LEVELS: [&str; 3] = ["word", "segment", "none"];
+    let models = reply["models"].as_array().ok_or_else(|| format!("models is not an array: {reply}"))?;
+    if models.is_empty() {
+        return Err("the catalog has no models".into());
+    }
+    let mut ids = Vec::new();
+    for model in models {
+        let id = model["id"].as_str().filter(|id| !id.is_empty()).ok_or_else(|| format!("no id: {model}"))?;
+        let strings = |key: &str| model[key].as_array().is_some_and(|list| list.iter().all(Value::is_string));
+        let fine = model["name"].is_string()
+            && model["engine"]["kind"].is_string()
+            && model["size_bytes"].is_u64()
+            && strings("languages")
+            && strings("roles")
+            && model["roles"].as_array().is_some_and(|roles| roles.iter().all(|r| ROLES.contains(&r.as_str().unwrap_or_default())))
+            && LEVELS.contains(&model["timestamps"].as_str().unwrap_or_default())
+            && model["recommended"].is_boolean();
+        if !fine {
+            return Err(format!("a catalog entry without the fields of the spec: {model}"));
+        }
+        if ids.iter().any(|known| known == id) {
+            return Err(format!("{id} is in the catalog twice"));
+        }
+        ids.push(id.to_string());
+    }
+    let retired = reply["retired"].as_array().ok_or_else(|| format!("retired is not an array: {reply}"))?;
+    for entry in retired {
+        let (Some(id), Some(_)) = (entry["id"].as_str(), entry["message"].as_str()) else {
+            return Err(format!("a retired entry without id and message: {entry}"));
+        };
+        if ids.iter().any(|known| known == id) {
+            return Err(format!("{id} is in the catalog and retired"));
+        }
+    }
+    Ok(ids)
 }
 
 /// The `segments` of a `final` reply: a list in time order, without overlaps,
@@ -1368,6 +1441,28 @@ mod tests {
         ];
         for reply in bad {
             assert!(check_turns(&reply, 2_000, None).is_err(), "{reply}");
+        }
+    }
+
+    #[test]
+    fn a_catalog_needs_the_fields_of_the_spec() {
+        let entry = json!({"id": "m", "name": "M", "engine": {"kind": "k"}, "size_bytes": 1, "languages": ["en"],
+                           "roles": ["final"], "timestamps": "none", "recommended": false});
+        let good = json!({"models": [entry], "retired": [{"id": "old", "message": "Use m."}]});
+        assert_eq!(check_catalog(&good), Ok(vec!["m".to_string()]));
+        let mut bad_role = entry.clone();
+        bad_role["roles"] = json!(["fly"]);
+        let mut no_name = entry.clone();
+        no_name.as_object_mut().unwrap().remove("name");
+        for bad in [
+            json!({"models": [], "retired": []}),
+            json!({"models": [entry], "retired": [{"id": "m", "message": "x"}]}),
+            json!({"models": [entry, entry], "retired": []}),
+            json!({"models": [bad_role], "retired": []}),
+            json!({"models": [no_name], "retired": []}),
+            json!({"models": [entry]}),
+        ] {
+            assert!(check_catalog(&bad).is_err(), "{bad}");
         }
     }
 

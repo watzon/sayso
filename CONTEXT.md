@@ -46,6 +46,9 @@ A part of a transcript with its start and end time in the audio. `transcribe` gi
 **Timestamp level**
 How much timing a model gives with its text: `word` (segments with the time of each word), `segment` (the model's own segments), or `none`. The model catalog says the level of each model.
 
+**Engine catalog**
+The models that an engine knows by id, built into the engine from the model catalog of Sayso. A client can ask for the catalog and can leave out the `engine` object of a model that is in it. An id that leaves the catalog stays as a retired id.
+
 **Model**
 A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". A dictation uses a final model and, when the live preview is on, a preview model. A model is a local model or a cloud model.
 

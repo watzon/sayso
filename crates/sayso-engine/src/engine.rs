@@ -22,6 +22,8 @@ use crate::recognizer::{Diarizer, LivePreview, Loaded, Loader, ModelDirs, Previe
 use crate::spec::{ModelSpec, Source, Task};
 use crate::store::{Legacy, ModelStore};
 use crate::vad::{self, Tracker};
+use sayso_core::engine_catalog;
+use sayso_core::models_onnx::System;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
@@ -73,6 +75,8 @@ struct State {
 
 pub struct Engine {
     config: Config,
+    /// The built-in catalog: `{models, retired}` (`sayso_core::engine_catalog`).
+    catalog: Value,
     store: ModelStore,
     out: Arc<Output>,
     loader: Arc<dyn Loader>,
@@ -95,6 +99,7 @@ impl Drop for Busy<'_> {
 impl Engine {
     pub fn new(config: Config, out: Arc<Output>, loader: Arc<dyn Loader>) -> Self {
         Engine {
+            catalog: engine_catalog::json(engine_catalog::Engine::Rust(System::current())),
             store: ModelStore::new(config.models_dir.clone()),
             config,
             out,
@@ -207,27 +212,55 @@ impl Engine {
         }
     }
 
-    /// `list_models`: one `model_state` per model, from the disk only.
+    /// The engine of a model: the `engine` object of the request, else the one of
+    /// the built-in catalog.
+    fn spec_of(&self, model: &str, engine: Option<&Value>) -> Result<ModelSpec> {
+        if let Some(engine) = engine {
+            return ModelSpec::from_json(engine).with_context(|| format!("model {model}"));
+        }
+        let by_id = |list: &str| {
+            self.catalog[list]
+                .as_array()
+                .and_then(|entries| entries.iter().find(|entry| entry["id"] == model))
+        };
+        if let Some(entry) = by_id("models") {
+            return ModelSpec::from_json(&entry["engine"]).with_context(|| format!("model {model}"));
+        }
+        if let Some(retired) = by_id("retired") {
+            return Err(Coded {
+                code: "model_retired",
+                message: format!("model {model} was taken out of the catalog. {}", retired["message"].as_str().unwrap_or_default()),
+            }
+            .into());
+        }
+        Err(Coded { code: "unknown_model", message: format!("model {model} is not in the catalog; send its engine object") }.into())
+    }
+
+    /// `list_models`: one `model_state` per model, from the disk only. Without
+    /// `models`, the models of the catalog, and the reply has the catalog.
     fn list_models(&self, request: &Request) -> Result<()> {
-        let list = request
-            .value("models")?
-            .as_array()
-            .context("models is not an array")?;
+        let (list, whole_catalog) = match request.optional_value("models") {
+            Some(list) => (list.as_array().context("models is not an array")?, false),
+            None => (self.catalog["models"].as_array().context("the catalog has no models")?, true),
+        };
         let mut models = Vec::with_capacity(list.len());
         for entry in list {
             let id = entry
                 .get("id")
                 .and_then(Value::as_str)
                 .context("models[].id is missing")?;
-            let engine = entry.get("engine").context("models[].engine is missing")?;
-            let spec = ModelSpec::from_json(engine).with_context(|| format!("model {id}"))?;
-            models.push((id.to_string(), spec));
+            let engine = entry.get("engine").filter(|v| !v.is_null());
+            models.push((id.to_string(), self.spec_of(id, engine)?));
         }
         for (model, spec) in models {
             let (status, extra) = self.status(&model, &spec);
             self.model_state(request.id(), &model, status, extra);
         }
-        self.out.ok(request.id(), json!({}));
+        let reply = match whole_catalog {
+            true => self.catalog.clone(),
+            false => json!({}),
+        };
+        self.out.ok(request.id(), reply);
         Ok(())
     }
 
@@ -238,7 +271,7 @@ impl Engine {
     fn download(&self, request: &Request) -> Result<()> {
         let id = request.id();
         let model = request.string("model")?;
-        let spec = ModelSpec::from_json(request.value("engine")?)?;
+        let spec = self.spec_of(model, request.optional_value("engine"))?;
         self.store.folder(model)?;
         if self.adopt_legacy(model, &spec) != Legacy::FormatChanged && self.store.is_downloaded(model, &spec) {
             self.model_state(id, model, "downloaded", json!({}));
@@ -355,7 +388,7 @@ impl Engine {
     fn load(&self, request: &Request) -> Result<()> {
         let id = request.id();
         let model = request.string("model")?;
-        let spec = ModelSpec::from_json(request.value("engine")?)?;
+        let spec = self.spec_of(model, request.optional_value("engine"))?;
         // The live preview that an `unload` with `keep_preview` left in memory.
         let kept_preview = match self.state().loaded.get(model) {
             Some((s, loaded)) if *s == spec && final_pass_is_out(s, loaded) => {

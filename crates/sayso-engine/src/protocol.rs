@@ -13,7 +13,7 @@ pub const PROTOCOL_VERSION: u64 = 1;
 /// The optional parts of the protocol that this engine has, sent in `hello`
 /// (`docs/engine-protocol.md`, "Features"). It accepts `prepare` but does
 /// nothing with it, so it does not list `prepare`.
-pub const FEATURES: &[&str] = &["concurrent_streams", "diarization", "keep_preview", "segments", "unload", "vad"];
+pub const FEATURES: &[&str] = &["catalog", "concurrent_streams", "diarization", "keep_preview", "segments", "unload", "vad"];
 
 /// An error with a stable `code` for the `error` reply, for example
 /// `too_many_streams`.
@@ -195,6 +195,11 @@ impl Request {
 
     pub fn optional_u64(&self, key: &str) -> Option<u64> {
         self.fields.get(key).and_then(Value::as_u64)
+    }
+
+    /// A JSON value by key that can be missing. `null` counts as missing.
+    pub fn optional_value(&self, key: &str) -> Option<&Value> {
+        self.fields.get(key).filter(|v| !v.is_null())
     }
 
     /// A JSON value by key, for the `engine` object and the `models` array.
