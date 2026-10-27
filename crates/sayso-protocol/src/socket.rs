@@ -219,48 +219,50 @@ mod tests {
         }
     }
 
-    fn path(system: System, env: &FakeEnv) -> String {
-        host_socket_path_for(system, env).unwrap().display().to_string()
+    /// Paths compare by their parts, so `/` in the expected text also
+    /// matches the backslash that `join` makes on Windows.
+    fn path(system: System, env: &FakeEnv) -> PathBuf {
+        host_socket_path_for(system, env).unwrap()
     }
 
     #[test]
     fn the_environment_variable_wins_on_each_system() {
         let env = FakeEnv { vars: HashMap::from([(SOCKET_ENV, "/x/host.sock"), ("XDG_RUNTIME_DIR", "/run/user/1000")]), uid: Some(1000), ..Default::default() };
         for system in [System::Linux, System::MacOs, System::Windows, System::OtherUnix] {
-            assert_eq!(path(system, &env), "/x/host.sock");
+            assert_eq!(path(system, &env), PathBuf::from("/x/host.sock"));
         }
     }
 
     #[test]
     fn linux_uses_the_runtime_folder_and_the_folder_that_flatpak_sandboxes_share() {
         let mut env = FakeEnv { vars: HashMap::from([("XDG_RUNTIME_DIR", "/run/user/1000")]), uid: Some(1000), ..Default::default() };
-        assert_eq!(path(System::Linux, &env), "/run/user/1000/sayso/host.sock");
+        assert_eq!(path(System::Linux, &env), PathBuf::from("/run/user/1000/sayso/host.sock"));
         env.vars.insert("FLATPAK_ID", "dev.sayso.Sayso");
-        assert_eq!(path(System::Linux, &env), "/run/user/1000/app/dev.sayso.Sayso/host.sock");
+        assert_eq!(path(System::Linux, &env), PathBuf::from("/run/user/1000/app/dev.sayso.Sayso/host.sock"));
         env.vars.insert("XDG_RUNTIME_DIR", "");
-        assert_eq!(path(System::Linux, &env), "/tmp/sayso-1000/host.sock", "an empty variable is not set");
+        assert_eq!(path(System::Linux, &env), PathBuf::from("/tmp/sayso-1000/host.sock"), "an empty variable is not set");
     }
 
     #[test]
     fn macos_uses_the_temporary_folder_of_the_user() {
         let env = FakeEnv { temp: Some("/var/folders/ab/xyz/T/"), uid: Some(501), ..Default::default() };
-        assert_eq!(path(System::MacOs, &env), "/var/folders/ab/xyz/T/sayso/host.sock");
+        assert_eq!(path(System::MacOs, &env), PathBuf::from("/var/folders/ab/xyz/T/sayso/host.sock"));
         // XDG_RUNTIME_DIR is a Linux rule.
         let env = FakeEnv { vars: HashMap::from([("XDG_RUNTIME_DIR", "/run/user/501")]), uid: Some(501), ..Default::default() };
-        assert_eq!(path(System::MacOs, &env), "/tmp/sayso-501/host.sock");
+        assert_eq!(path(System::MacOs, &env), PathBuf::from("/tmp/sayso-501/host.sock"));
     }
 
     #[test]
     fn other_systems_use_a_folder_of_the_user_in_tmp() {
         let env = FakeEnv { uid: Some(42), ..Default::default() };
-        assert_eq!(path(System::OtherUnix, &env), "/tmp/sayso-42/host.sock");
+        assert_eq!(path(System::OtherUnix, &env), PathBuf::from("/tmp/sayso-42/host.sock"));
         assert!(host_socket_path_for(System::OtherUnix, &FakeEnv::default()).is_err());
     }
 
     #[test]
     fn windows_uses_a_pipe_with_the_sid_of_the_user() {
         let env = FakeEnv { sid: Some("S-1-5-21-1-2-3-1001"), ..Default::default() };
-        assert_eq!(path(System::Windows, &env), r"\\.\pipe\sayso-host-S-1-5-21-1-2-3-1001");
+        assert_eq!(path(System::Windows, &env), PathBuf::from(r"\\.\pipe\sayso-host-S-1-5-21-1-2-3-1001"));
         assert!(host_socket_path_for(System::Windows, &FakeEnv::default()).is_err());
     }
 
