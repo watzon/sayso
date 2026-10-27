@@ -1,0 +1,27 @@
+[package]
+name = "sayso-protocol"
+description = "The messages of the Sayso Host API and the engine protocol: serde types, error codes, capabilities, PCM helpers, and the socket path rules."
+version.workspace = true
+edition.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
+license = "MIT"
+publish = true
+repository = "https://github.com/watzon/sayso"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+workspace-hack.workspace = true
+
+# The socket path rules ask the system for the user (uid, temp folder, SID).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Threading",
+] }

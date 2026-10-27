@@ -10,9 +10,12 @@ publish = false
 
 [workspace.dependencies]
 sayso-core = { path = "crates/sayso-core" }
-# The two MIT crates carry a version, because cargo publish needs one for a path
+# The MIT crates carry a version, because cargo publish needs one for a path
 # dependency. Change it with the workspace version (scripts/check-deps.sh checks).
 sayso-ink = { path = "crates/sayso-ink", version = "0.11.0" }
+sayso-protocol = { path = "crates/sayso-protocol", version = "0.11.0" }
+sayso-extension = { path = "crates/sayso-extension", version = "0.11.0" }
+sayso-host = { path = "crates/sayso-host" }
 sayso-platform = { path = "crates/sayso-platform" }
 sayso-platform-common = { path = "crates/sayso-platform-common" }
 sayso-platform-macos = { path = "crates/sayso-platform-macos" }

@@ -21,8 +21,11 @@ done
 check sayso-ui '^sayso-(store|enhance|engine-client)' "UI gets data through the app"
 check sayso-ink '^(sayso-|gpui)' "sayso-ink is MIT and published: it needs no Sayso crate and no GPUI"
 check sayso-ui '^sayso-([^i]|i[^n])' "sayso-ui is MIT and published: its only Sayso crate is sayso-ink"
+check sayso-protocol '^(sayso-|gpui)' "sayso-protocol is MIT and published: it needs no Sayso crate and no GPUI"
+check sayso-extension '^(sayso-([^p]|p[^r])|gpui)' "sayso-extension is MIT and published: its only Sayso crate is sayso-protocol"
+check sayso-host '^(sayso-(platform-|app|ui)|gpui)' "the host has no GPUI and no UI, and gets the platform through traits"
 # The MIT crates (docs/adr/0002-mit-sdk-gpl-app.md) are published. They must say
-# so, and a dependency on the other one needs the workspace version, because
+# so, and a dependency on another one needs the workspace version, because
 # cargo publish needs a version for a path dependency.
 if ! echo "$meta" | python3 -c "
 import json, sys
@@ -30,14 +33,14 @@ m = json.load(sys.stdin)
 pk = {p['name']: p for p in m['packages']}
 bad = []
 # sayso-ui ships the fonts under their own OFL licenses.
-licenses = {'sayso-ink': 'MIT', 'sayso-ui': 'MIT AND OFL-1.1'}
+licenses = {'sayso-ink': 'MIT', 'sayso-ui': 'MIT AND OFL-1.1', 'sayso-protocol': 'MIT', 'sayso-extension': 'MIT'}
 for name, license in licenses.items():
     p = pk[name]
     if p['license'] != license or p['publish'] == []:
         bad.append(name + ' must have license ' + license + ' and be published')
     for d in p['dependencies']:
-        if d['name'] in ('sayso-ink',) and d['req'] != '^' + p['version']:
-            bad.append(name + ' needs sayso-ink ' + p['version'] + ' but has ' + d['req'] + ' (change the version in Cargo.toml [workspace.dependencies])')
+        if d['name'] in licenses and d['req'] != '^' + p['version']:
+            bad.append(name + ' needs ' + d['name'] + ' ' + p['version'] + ' but has ' + d['req'] + ' (change the version in Cargo.toml [workspace.dependencies])')
 print('\\n'.join(bad))
 sys.exit(1 if bad else 0)
 " > /tmp/check-deps-mit.$$; then
