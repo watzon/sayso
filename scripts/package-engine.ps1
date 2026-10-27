@@ -51,10 +51,13 @@ try {
         if (-not (Test-Path (Join-Path $dir $dll))) { throw "$dll is not in $Folder. The engine does not start without it." }
     }
     Copy-Item LICENSE (Join-Path $dir 'LICENSE')
-    # The license that the app folder ships for the engine (whisper.cpp is ggml's code).
-    $ggml = Join-Path $Folder 'licenses\ggml.txt'
-    if (-not (Test-Path $ggml)) { throw "$ggml does not exist" }
-    Copy-Item $ggml (Join-Path $dir 'licenses')
+    # The licenses that the app folder ships for the engine: ggml (whisper.cpp is its
+    # code), and sherpa-onnx and ONNX Runtime (the DLLs).
+    foreach ($name in 'ggml.txt', 'sherpa-onnx.txt', 'onnxruntime.txt') {
+        $license = Join-Path $Folder "licenses\$name"
+        if (-not (Test-Path $license)) { throw "$license does not exist" }
+        Copy-Item $license (Join-Path $dir 'licenses')
+    }
 
     # The README: the same text for each system, with the command for this one.
     $run = @'

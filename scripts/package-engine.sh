@@ -99,7 +99,8 @@ case "$system" in
       exit 1
     fi
     # The same files as bin/ and share/licenses/sayso in the app tarball
-    # (scripts/bundle-linux.sh): the MIT licenses of parakeet.cpp and ggml.
+    # (scripts/bundle-linux.sh): the licenses of parakeet.cpp, ggml, sherpa-onnx,
+    # and ONNX Runtime.
     install -m 644 -t "$dir/licenses" crates/sayso-engine/licenses/*.txt
     ;;
 esac
