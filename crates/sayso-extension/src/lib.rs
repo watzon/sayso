@@ -35,6 +35,9 @@ pub enum Event {
     /// An event of the Host API. `id` is the id of the request that caused
     /// it, when a request caused it.
     Host { id: Option<String>, event: protocol::Event },
+    /// An `error` without an `id`: a `session_audio` sent with
+    /// [`Client::send`] failed, or the host could not read a line.
+    Error(ErrorReply),
     /// Sayso quit or restarted (`host_closing`), or the connection broke.
     /// Requests fail until [`Client::reconnect`] connects again.
     HostGone,
@@ -136,6 +139,13 @@ impl Client {
         self.connection.request(&self.next_id, kind, fields)
     }
 
+    /// Send the request `kind` with `fields` and no `id`, and do not wait.
+    /// The host sends no `ok` for it; an `error` comes as [`Event::Error`].
+    /// For `session_audio`, which goes many times each second.
+    pub fn send(&self, kind: &str, fields: Fields) -> Result<(), Error> {
+        self.connection.send(kind, fields)
+    }
+
     /// Connect again after [`Event::HostGone`], and send `hello` again.
     /// Jobs and live sessions do not survive a restart of Sayso.
     pub fn reconnect(&mut self) -> Result<&HelloReply, Error> {
@@ -211,16 +221,8 @@ impl Connection {
                 pending.said_bye = true;
             }
         }
-        fields.insert("v".into(), PROTOCOL.into());
-        fields.insert("type".into(), kind.into());
         fields.insert("id".into(), id.into());
-        let mut line = Value::Object(fields).to_string();
-        line.push('\n');
-        let written = {
-            let mut writer = lock(&self.writer);
-            writer.write_all(line.as_bytes()).and_then(|()| writer.flush())
-        };
-        if let Err(e) = written {
+        if let Err(e) = self.write(kind, fields) {
             lock(&self.pending).waiters.remove(id);
             // The host closed the connection before the reader saw it. A
             // Windows pipe fails the write; a Unix socket takes it.
@@ -228,6 +230,22 @@ impl Connection {
             return Err(if closed { Error::Gone } else { Error::Io(e) });
         }
         reply.recv().unwrap_or(Err(Error::Gone))
+    }
+
+    fn send(&self, kind: &str, fields: Fields) -> Result<(), Error> {
+        if lock(&self.pending).gone {
+            return Err(Error::Gone);
+        }
+        self.write(kind, fields).map_err(Error::Io)
+    }
+
+    fn write(&self, kind: &str, mut fields: Fields) -> io::Result<()> {
+        fields.insert("v".into(), PROTOCOL.into());
+        fields.insert("type".into(), kind.into());
+        let mut line = Value::Object(fields).to_string();
+        line.push('\n');
+        let mut writer = lock(&self.writer);
+        writer.write_all(line.as_bytes()).and_then(|()| writer.flush())
     }
 
     fn close(&self) {
@@ -251,14 +269,19 @@ fn read_loop(reader: Box<dyn io::Read + Send>, pending: &Mutex<Pending>, events:
         }
         match protocol::decode::<HostMessage>(line.trim_end()) {
             Ok(Decoded::Known(Message { id, body: HostMessage::Reply(reply) })) => {
-                // A reply without the id of a request (for a line that the
-                // host could not read) has nobody to go to.
                 let waiter = id.and_then(|id| lock(pending).waiters.remove(&id));
-                if let Some(waiter) = waiter {
-                    let _ = waiter.send(match reply {
-                        WireReply::Ok(fields) => Ok(Reply { fields }),
-                        WireReply::Error(error) => Err(Error::Host(error)),
-                    });
+                match (waiter, reply) {
+                    (Some(waiter), reply) => {
+                        let _ = waiter.send(match reply {
+                            WireReply::Ok(fields) => Ok(Reply { fields }),
+                            WireReply::Error(error) => Err(Error::Host(error)),
+                        });
+                    }
+                    // An error without the id of a request goes to the events.
+                    (None, WireReply::Error(error)) => {
+                        let _ = events.send(Event::Error(error));
+                    }
+                    (None, WireReply::Ok(_)) => {}
                 }
             }
             Ok(Decoded::Known(Message { body: HostMessage::Event(protocol::Event::HostClosing), .. })) => break,
