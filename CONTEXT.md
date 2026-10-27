@@ -94,6 +94,15 @@ A local model that finds who speaks when in a recording. It can have more than o
 **Extension**
 A separate app that uses the speech features of Sayso through the Host API (`docs/extensions.md`). Sayso installs it in `<data dir>/extensions/<id>/<version>/`. While at least one is installed, the Models page also shows the VAD and diarization models.
 
+**Host**
+Sayso, when it serves extensions (`sayso-host`). It knows an extension by its executable and the record of the extension in `<data dir>/extensions/state.toml`.
+
+**Host API**
+The protocol between the host and an extension, over a local socket (a named pipe on Windows). It uses the message shapes of the engine protocol. The types are in `sayso-protocol`, and the client is `sayso-extension` (both MIT).
+
+**Capability**
+A permission that an extension declares in its manifest and the user grants at install, for example `audio.mic`. The host refuses a request whose capability the user did not grant. `models.read` is always granted.
+
 **Dictation language**
 The language the user speaks: a language code, or "auto" to let the model detect it. Each model gets the nearest value that it supports.
 
