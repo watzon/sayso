@@ -7314,6 +7314,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-engine-sdk"
+version = "0.11.0"
+dependencies = [
+ "crossbeam-channel",
+ "sayso-protocol",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sayso-enhance"
 version = "0.11.0"
 dependencies = [

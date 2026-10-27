@@ -8,10 +8,13 @@
 //! message type that it does not know comes back as [`Decoded::Unknown`], so
 //! an old reader does not fail on a newer peer.
 //!
+//! The messages of the engine protocol are in [`engine`].
+//!
 //! This crate does no I/O. The socket path rules in [`socket`] ask the system
 //! only for the user (uid, temporary folder, SID).
 
 mod codec;
+pub mod engine;
 mod event;
 mod names;
 pub mod pcm;

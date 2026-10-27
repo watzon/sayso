@@ -23,6 +23,7 @@ check sayso-ink '^(sayso-|gpui)' "sayso-ink is MIT and published: it needs no Sa
 check sayso-ui '^sayso-([^i]|i[^n])' "sayso-ui is MIT and published: its only Sayso crate is sayso-ink"
 check sayso-protocol '^(sayso-|gpui)' "sayso-protocol is MIT and published: it needs no Sayso crate and no GPUI"
 check sayso-extension '^(sayso-([^p]|p[^r])|gpui)' "sayso-extension is MIT and published: its only Sayso crate is sayso-protocol"
+check sayso-engine-sdk '^(sayso-([^p]|p[^r])|gpui)' "sayso-engine-sdk is MIT and published: its only Sayso crate is sayso-protocol"
 check sayso-host '^(sayso-(platform-|app|ui)|gpui)' "the host has no GPUI and no UI, and gets the platform through traits"
 # The MIT crates (docs/adr/0002-mit-sdk-gpl-app.md) are published. They must say
 # so, and a dependency on another one needs the workspace version, because
@@ -33,7 +34,7 @@ m = json.load(sys.stdin)
 pk = {p['name']: p for p in m['packages']}
 bad = []
 # sayso-ui ships the fonts under their own OFL licenses.
-licenses = {'sayso-ink': 'MIT', 'sayso-ui': 'MIT AND OFL-1.1', 'sayso-protocol': 'MIT', 'sayso-extension': 'MIT'}
+licenses = {'sayso-ink': 'MIT', 'sayso-ui': 'MIT AND OFL-1.1', 'sayso-protocol': 'MIT', 'sayso-extension': 'MIT', 'sayso-engine-sdk': 'MIT'}
 for name, license in licenses.items():
     p = pk[name]
     if p['license'] != license or p['publish'] == []:
