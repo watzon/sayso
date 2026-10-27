@@ -239,11 +239,8 @@ impl AppModel {
             buf.lock().extend_from_slice(&frame.samples);
         });
         let device = self.config.audio.input_device.clone();
-        let started = match crate::dev::fake_mic() {
-            Some(path) => crate::dev::start_fake_capture(&path, on_frame)
-                .ok_or_else(|| sayso_platform::PlatformError::Failed("could not read SAYSO_FAKE_MIC".into())),
-            None => self.services.platform.audio.start(device.as_deref(), on_frame),
-        };
+        // The shared microphone: a live session that captures gives frames at once.
+        let started = self.services.mic.start(device.as_deref(), on_frame);
         let capture = match started {
             Ok(c) => Some(c),
             Err(e) => {

@@ -177,6 +177,10 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
         }
     }
     let platform = crate::shell::platform(sounds_dir);
+    let mic = crate::mic::SharedMic::new(match crate::dev::fake_mic() {
+        Some(path) => Arc::new(crate::dev::FakeMic(path)),
+        None => platform.audio.clone(),
+    });
 
     let engine_path = config
         .advanced
@@ -219,7 +223,7 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
     );
     let cleaner = Arc::new(sayso_cleanup_client::cleaner::RuntimeCleaner::new(cleanup_runtime.clone(), paths.models_dir()));
 
-    Services { platform, engine, engine_events, language_model, cleaner, cleanup_runtime, store, secrets: Arc::new(sayso_enhance::KeychainStore), updates }
+    Services { platform, mic, engine, engine_events, language_model, cleaner, cleanup_runtime, store, secrets: Arc::new(sayso_enhance::KeychainStore), updates }
 }
 
 /// Set the interface language from config and the languages of the system.

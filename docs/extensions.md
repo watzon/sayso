@@ -291,7 +291,7 @@ When a request names no model, the host uses the choice of the user for that rol
 
 A speaker in `turns` is a label such as `"1"` or `"2"`, unique in one source of one job or live session. Names are the business of the extension.
 
-`record_to` is a directory. The host writes one 16 kHz mono WAV for each source in it (`mic.wav`, `system.wav`), so the extension can keep the audio. Without `record_to`, the host keeps the audio in a temporary file for diarization and deletes it after `session_stop`.
+`record_to` is an absolute path of a directory. The host makes it when it does not exist, and writes one 16 kHz mono WAV for each source in it (`mic.wav`, `system.wav`, `client.wav`), so the extension can keep the audio. A file with that name is replaced. Without `record_to`, the host keeps the audio in a temporary file for diarization and deletes it after `session_stop`.
 
 `transcribe_file` reads WAV, FLAC, MP3, AAC, and M4A (with `symphonia`). For other formats (Opus in WebM from a video site, for example) the extension converts the file first, or sends the audio as a live session with the source `client`.
 
@@ -325,6 +325,20 @@ A model that an extension uses counts in the memory policy (`crates/sayso-app/sr
 The host captures the audio and gives it to the dictation and to live sessions. One microphone stream can feed a dictation and a live session at the same time. The live session uses the microphone that the user chose in Settings.
 
 Each source of a live session is its own stream in the engine, and every `partial` and `segment` names its source. Diarization runs on each source alone. In a call, the microphone is usually one person and the system audio is everyone else, so the extension can name the speakers of the system audio and call the microphone "You".
+
+The microphone is one capture in Sayso (`crates/sayso-app/src/mic.rs`). It starts when the first user (a dictation or a live session) needs it, and stops when the last one leaves. Each user gets every frame from the moment it joined. Dictation does not get slower:
+
+- A dictation gets its frames on the thread of the capture, as before. When a live session already captures, a dictation gets frames at once, without the time to open the device.
+- A live session gets its frames through a queue of its own. The capture never waits for that queue, so a slow live session does not delay or drop a frame of a dictation.
+- When the user chooses another microphone in Settings while a live session runs, the capture stays on the old microphone until the next user joins (the next dictation, or the next live session). Then the capture moves to the new microphone for all its users: the new microphone starts first, and the old one stops after that. The live session loses only the frames between the two, and never gets the frames of both.
+
+How a live session runs (`crates/sayso-host/src/live/`):
+
+- **One pipeline for each source.** The audio goes to the recording, to a preview stream of the engine when the session has a streaming model (`partial` events), and to the VAD: a VAD session of the engine, or Basic VAD in the host. Each speech that ends is a part, with 200 ms of audio before and after it. The final model transcribes the parts one at a time, and each segment of a part becomes a `segment` event with times from the start of the session.
+- **Dictation first.** The final pass of a part and the diarization wait while a dictation runs. The preview stream and the VAD do not wait, so the session hears all the audio.
+- **Engine session ids.** A dictation numbers its engine sessions from 1. The host numbers the preview streams and VAD sessions of live sessions from 2^40, so the two never meet. A source uses at most two streams of the engine (a preview stream and a VAD session). When the engine has no free stream, `session_start` gets `error {code: "too_many_streams"}`, and the host closes the streams that it opened.
+- **Stop.** `session_stop` ends the audio, closes the streams, waits for the part that the engine transcribes now, transcribes the last part, and runs diarization on the recording of each source. The `segment` and `speakers` events of a session have no `id`; they come before the `ok {text}` reply. `text` is the text of all segments in the order of time. When the extension closes its connection, the host stops its session without diarization, and does not transcribe the parts that wait.
+- **Sources.** This version captures `mic` and `client`. `system` gets `error {code: "unsupported"}`.
 
 There is no echo cancellation in the first version. When the user has no headphones, the microphone hears the call too. The host then drops a microphone segment when a system segment overlaps it in time and has most of the same words. Set the limit for "most" with test recordings at the build, and write it in this file.
 

@@ -15,6 +15,7 @@ mod connection;
 mod download;
 mod identity;
 mod job_requests;
+pub mod live;
 mod models;
 mod responder;
 mod state;

@@ -9,6 +9,9 @@ use std::sync::Arc;
 
 pub struct Services {
     pub platform: Platform,
+    /// The microphone, shared by dictation and live sessions
+    /// (`SAYSO_FAKE_MIC` plays a file instead).
+    pub mic: Arc<crate::mic::SharedMic>,
     /// None when the engine binary is missing, or when the engine did not
     /// answer at the start. The UI shows "Engine stopped".
     pub engine: Option<Arc<dyn SttBackend>>,
