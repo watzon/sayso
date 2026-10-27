@@ -186,3 +186,40 @@ fn a_line_that_is_not_a_request_gets_an_error_without_id() {
     let reply = next();
     assert_eq!((reply["type"].clone(), reply["id"].clone(), reply["extension_id"].clone()), (json!("ok"), json!("h1"), json!(ID)), "an empty line gets no reply");
 }
+
+#[test]
+fn connect_or_start_starts_sayso_only_when_it_does_not_run() {
+    let setup = setup();
+    write_state(&setup.state, &here(), &[], None);
+    let starting = std::sync::Mutex::new(None);
+
+    // Sayso does not run: the SDK starts it and waits for its socket.
+    let client = Client::connect_or_start_with(&setup.socket, Duration::from_secs(10), || {
+        let socket = setup.socket.clone();
+        let state = setup.state.clone();
+        // Sayso takes a moment to listen.
+        *starting.lock().unwrap() = Some(std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(300));
+            Host::start(HostConfig::new(socket, state), FakeServices::new(None)).unwrap()
+        }));
+        Ok(())
+    })
+    .unwrap();
+    let _host = starting.lock().unwrap().take().unwrap().join().unwrap();
+    assert_eq!(client.hello().extension_id, ID);
+
+    // Sayso runs: no start.
+    let again = Client::connect_or_start_with(&setup.socket, Duration::from_secs(10), || panic!("Sayso runs; nothing starts")).unwrap();
+    assert_eq!(again.hello().extension_id, ID);
+}
+
+#[test]
+fn connect_or_start_reports_a_start_that_fails_or_takes_too_long() {
+    let setup = setup();
+    let failed = Client::connect_or_start_with(&setup.socket, Duration::from_secs(10), || Err(std::io::Error::other("not installed")));
+    assert!(matches!(failed, Err(Error::Io(e)) if e.to_string().contains("not installed")));
+    let started = std::time::Instant::now();
+    let late = Client::connect_or_start_with(&setup.socket, Duration::from_millis(300), || Ok(()));
+    assert!(matches!(late, Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut));
+    assert!(started.elapsed() < Duration::from_secs(5));
+}
