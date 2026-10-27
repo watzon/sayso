@@ -29,9 +29,8 @@ pub const PREVIEW_ARCHIVE: &str = "sherpa-onnx-streaming-zipformer-en-kroko-2025
 
 /// The speaker embedding model of the diarization model: an ONNX file of the
 /// sherpa-onnx `speaker-recongition-models` release, and its size in bytes.
-/// A benchmark on meeting recordings chooses it (`docs/extensions.md`,
-/// "Diarization models"). Until it runs, this is the 3D-Speaker CAM++ model
-/// for Chinese and English.
+/// A benchmark on meeting recordings chose the 3D-Speaker CAM++ model for
+/// Chinese and English (`docs/extensions.md`, "Diarization models").
 pub const SPEAKER_EMBEDDING: (&str, u64) = ("3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx", 28_281_164);
 
 /// The pyannote segmentation archive of the diarization model, without
