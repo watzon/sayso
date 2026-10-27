@@ -1,0 +1,11 @@
+_version: 1
+
+# The question that an extension asks before it downloads a model.
+extensions:
+  download_ask:
+    window_title: "Скачать модель"
+    title: "%{extension} хочет скачать модель"
+    body: "Если вы согласны, Sayso скачает %{model} (%{size}) на этот компьютер."
+    reason_label: "Причина от %{extension}"
+    download: "Скачать"
+    cancel: "Отмена"

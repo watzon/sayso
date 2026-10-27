@@ -1,0 +1,11 @@
+_version: 1
+
+# The question that an extension asks before it downloads a model.
+extensions:
+  download_ask:
+    window_title: "Descargar un modelo"
+    title: "%{extension} quiere descargar un modelo"
+    body: "Si aceptas, Sayso descarga %{model} (%{size}) en este ordenador."
+    reason_label: "Motivo de %{extension}"
+    download: "Descargar"
+    cancel: "Cancelar"

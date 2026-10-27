@@ -280,7 +280,23 @@ pub enum PartReadiness {
     Failed,
 }
 
+/// How far the engine has come since Sayso started it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EngineStart {
+    /// The engine has not answered yet. Model statuses are not known.
+    Starting,
+    /// The engine answered, and the model statuses are known.
+    Started,
+    /// The engine did not answer and does not restart.
+    Failed,
+}
+
 pub trait SttBackend: Send + Sync {
+    /// Where the engine is at start. A backend that has no start phase is
+    /// `Started`.
+    fn start_state(&self) -> EngineStart {
+        EngineStart::Started
+    }
     /// Prepare optional parts. Older backends can leave them lazy.
     fn prepare(&self, _model: &ModelId, _preview: bool, _vocabulary: &[String]) -> Result<()> {
         Ok(())

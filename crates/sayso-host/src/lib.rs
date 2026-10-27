@@ -10,8 +10,12 @@
 //! to the user from `sayso-app` through [`HostServices`], so it runs and is
 //! tested without a window.
 
+mod bus;
 mod connection;
+mod download;
 mod identity;
+mod models;
+mod responder;
 mod state;
 mod transport;
 
@@ -19,17 +23,51 @@ pub use identity::{Identify, Peer, SystemIdentify};
 pub use state::{Record, State, StateFile};
 
 use parking_lot::Mutex;
+use sayso_core::config::Config;
+use sayso_core::models::ModelId;
 use sayso_core::paths::Paths;
-use std::collections::HashMap;
+use sayso_platform::SttBackend;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 
-/// What the host gets from the app. Later sub-steps of step 6 add the model
-/// list, the download question, jobs, live sessions, and `enhance`.
-pub trait HostServices: Send + Sync {}
+/// What the host gets from the app. Later sub-steps of step 6 add jobs, live
+/// sessions, and `enhance`.
+///
+/// The host calls these methods from its own threads, never from the thread
+/// of a window.
+pub trait HostServices: Send + Sync {
+    /// The speech engine, or `None` when it does not run. The host reads it
+    /// once, when it starts. An engine that restarts keeps its handle.
+    fn engine(&self) -> Option<Arc<dyn SttBackend>>;
+
+    /// The settings of the user now (the final model, the preview model, and
+    /// the VAD and diarization models). The host reads them again for each
+    /// request, so a change counts at once.
+    fn config(&self) -> Config;
+
+    /// Ask the user whether an extension may download a model. Blocks until
+    /// the user answers. True means download. A user who closes the question
+    /// without an answer says no.
+    fn ask_download(&self, question: &DownloadQuestion) -> bool;
+}
+
+/// The question to the user before the download of a model for an extension.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadQuestion {
+    pub extension_id: String,
+    /// The name to show. The id until `state.toml` has names (step 8).
+    pub extension_name: String,
+    pub model_id: String,
+    pub model_name: String,
+    pub size_bytes: u64,
+    /// Why the extension needs the model. It is text from the extension, and
+    /// the host cuts it to 300 characters.
+    pub reason: String,
+}
 
 /// Where the host listens and what it reads.
 pub struct HostConfig {
@@ -66,12 +104,31 @@ pub(crate) struct Shared {
     pub host_version: String,
     pub identify: Arc<dyn Identify>,
     pub state: StateFile,
-    // Later sub-steps call it.
-    pub _services: Arc<dyn HostServices>,
+    pub services: Arc<dyn HostServices>,
+    /// `services.engine()` at the start.
+    pub engine: Option<Arc<dyn SttBackend>>,
+    /// The one subscription to the events of the engine.
+    pub bus: bus::Bus,
+    /// The models that the host asked the engine to download, until the
+    /// request that asked ends (see `download`).
+    pub downloads: Mutex<HashSet<ModelId>>,
+    /// One lock for each extension: the one question at a time.
+    questions: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     pub closing: AtomicBool,
     /// The open connections by a number of the host.
     pub connections: Mutex<HashMap<u64, connection::Entry>>,
     next_connection: AtomicU64,
+}
+
+impl Shared {
+    pub fn is_closing(&self) -> bool {
+        self.closing.load(Ordering::SeqCst)
+    }
+
+    /// The lock that an extension holds while a question to the user is open.
+    pub fn question_gate(&self, extension_id: &str) -> Arc<Mutex<()>> {
+        self.questions.lock().entry(extension_id.to_string()).or_default().clone()
+    }
 }
 
 impl Host {
@@ -79,11 +136,16 @@ impl Host {
     /// for example when another Sayso serves extensions.
     pub fn start(config: HostConfig, services: Arc<dyn HostServices>) -> io::Result<Host> {
         let listener = Arc::new(transport::Listener::bind(&config.socket)?);
+        let engine = services.engine();
         let shared = Arc::new(Shared {
             host_version: config.host_version,
             identify: config.identify,
             state: StateFile::new(config.state_file),
-            _services: services,
+            bus: bus::Bus::start(engine.as_ref()),
+            engine,
+            services,
+            downloads: Mutex::new(HashSet::new()),
+            questions: Mutex::new(HashMap::new()),
             closing: AtomicBool::new(false),
             connections: Mutex::new(HashMap::new()),
             next_connection: AtomicU64::new(1),
@@ -124,6 +186,7 @@ impl Host {
             let _ = writer.join();
         }
         self.listener.remove();
+        self.shared.bus.stop();
         log::info!("host: closed");
     }
 

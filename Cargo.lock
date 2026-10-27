@@ -7356,6 +7356,7 @@ dependencies = [
  "parking_lot",
  "sayso-core",
  "sayso-extension",
+ "sayso-platform",
  "sayso-protocol",
  "security-framework",
  "serde",

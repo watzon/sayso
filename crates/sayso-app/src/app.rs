@@ -74,13 +74,15 @@ pub fn run() {
         apply_language(&loaded.config);
         let services = start_services(&paths, &loaded.config, updates);
         // Extensions connect from now on. When Sayso quits, each one gets `host_closing`.
-        if let Some(host) = crate::host::start(&paths) {
+        let questions = crate::host::start(&paths, &services).map(|started| {
+            let host = started.host;
             cx.on_app_quit(move |_| {
                 host.close();
                 async {}
             })
             .detach();
-        }
+            started.questions
+        });
         apply_theme(&loaded.config, &services, cx);
         cx.set_global(Windows::default());
 
@@ -99,6 +101,13 @@ pub fn run() {
         })
         .detach();
 
+        // The questions of extensions come from threads of the host, and show as windows.
+        if let Some(questions) = questions {
+            crate::download_ask::listen(&model, questions, cx);
+        }
+        if crate::dev::flag("ask-download") {
+            crate::download_ask::open_sample(&model, cx);
+        }
         crate::overlay::open(&model, cx);
         crate::popover::install(&model, cx);
         crate::a11y::start(cx);

@@ -1,0 +1,11 @@
+_version: 1
+
+# The question that an extension asks before it downloads a model.
+extensions:
+  download_ask:
+    window_title: "下载模型"
+    title: "%{extension} 想要下载一个模型"
+    body: "如果你同意，Sayso 会把 %{model}（%{size}）下载到这台电脑。"
+    reason_label: "来自 %{extension} 的理由"
+    download: "下载"
+    cancel: "取消"
