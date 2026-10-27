@@ -723,13 +723,17 @@ actor Engine {
             (timed.text, [AudioPiece(startMs: 0, endMs: audioMs, timed: timed)])
         }
         let result: (text: String, pieces: [AudioPiece])
+        // The language of the speech, for the models that find it (`detects_language`).
+        var detected: String?
         switch entry {
         case .parakeetUnified(let unified):
             result = whole(try await transcribeParakeet(
                 unified, samples: samples, vocabulary: vocabulary, timed: segments))
         case .whisper(let kit):
-            result = whole(try await transcribeWhisper(
-                kit, samples: samples, language: language, vocabulary: vocabulary, timed: segments))
+            let whisper = try await transcribeWhisper(
+                kit, samples: samples, language: language, vocabulary: vocabulary, timed: segments)
+            result = whole(whisper.timed)
+            detected = whisper.language
         case .parakeetTdt(let manager):
             var state = TdtDecoderState.make(decoderLayers: await manager.decoderLayerCount)
             // The language is a hint for the v3 family. The other versions ignore it.
@@ -751,9 +755,17 @@ actor Engine {
         case .canary(let manager):
             result = whole(.untimed(try await manager.transcribe(audio: samples)))
         case .senseVoice(let models):
+            // The pieces can have different languages: the language of the most audio wins.
+            var votes: [LanguageVote] = []
             result = try await AudioChunks.transcribe(samples, maxSeconds: SenseVoice.maxSeconds) { chunk in
-                try SenseVoice.transcribe(models: models, audio: chunk, language: SenseVoice.language(language))
+                let piece = try SenseVoice.transcribe(
+                    models: models, audio: chunk, language: SenseVoice.language(language))
+                if let code = piece.language, !piece.text.isEmpty {
+                    votes.append(LanguageVote(code: code, samples: chunk.count))
+                }
+                return piece.text
             }
+            detected = LanguageVote.winner(votes)
         case .paraformer(let manager):
             result = try await AudioChunks.transcribe(samples, maxSeconds: 25) { chunk in
                 try await manager.transcribe(audio: chunk)
@@ -769,12 +781,16 @@ actor Engine {
         case .vad, .diarization:
             throw EngineError("model \(model) is a \(entry.task.name) model, not a speech model")
         }
-        var fields: [String: Any] = [
-            "text": result.text.trimmingCharacters(in: .whitespacesAndNewlines), "elapsed_ms": Int(nowMs() - start),
-        ]
+        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var fields: [String: Any] = ["text": text, "elapsed_ms": Int(nowMs() - start)]
         if segments { fields["segments"] = Segments.json(Segments.of(result.pieces)) }
+        // Only a request for detection gets the language, and only with text.
+        if Self.detects(language), let detected, !text.isEmpty { fields["language"] = detected }
         out.send("final", id: id, fields)
     }
+
+    /// True when a request asks the model to find the language.
+    static func detects(_ language: String) -> Bool { language.isEmpty || language == "auto" }
 
     /// One second of silence before and after the audio of a streaming final pass. The
     /// cache-aware decoders gave no text for many short dictations ("yes", "okay")
@@ -883,11 +899,12 @@ actor Engine {
         out.ok(id: id)
     }
 
-    /// Final pass with Whisper. With `timed`, WhisperKit also gives word times.
+    /// Final pass with Whisper. With `timed`, WhisperKit also gives word times. With
+    /// `language` "auto", the result has the language that WhisperKit found.
     private func transcribeWhisper(
         _ kit: WhisperKit, samples: [Float], language: String, vocabulary: [String], timed: Bool
-    ) async throws -> Timed {
-        let detect = language.isEmpty || language == "auto"
+    ) async throws -> (timed: Timed, language: String?) {
+        let detect = Self.detects(language)
         var options = DecodingOptions(
             language: detect ? nil : language, detectLanguage: detect)
         // WhisperKit skips the last `windowClipTime` seconds (1 s) to stop "Thank you."
@@ -914,7 +931,16 @@ actor Engine {
         let timedWords = Segments.words(
             tokens: words.map(\.word), starts: words.map { Double($0.start) },
             durations: words.map { Double($0.end - $0.start) }, audioMs: samples.count * 1000 / WhisperKit.sampleRate)
-        return Timed(text: text, timing: timedWords.isEmpty ? .none : .words(timedWords))
+        // The results can have different languages: the language of the most audio wins.
+        // A result counts by the time of its segments, or by one sample when it has none.
+        let votes = results.map { result -> LanguageVote in
+            let seconds = result.segments.reduce(Float(0)) { $0 + max(0, $1.end - $1.start) }
+            return LanguageVote(code: result.language, samples: max(1, Int(seconds * Float(WhisperKit.sampleRate))))
+        }
+        return (
+            Timed(text: text, timing: timedWords.isEmpty ? .none : .words(timedWords)),
+            detect ? LanguageVote.winner(votes) : nil
+        )
     }
 
     // MARK: - Streaming
