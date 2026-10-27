@@ -81,6 +81,16 @@ impl Responder {
         let _ = self.notifier.outgoing.send(Outgoing::Line(encode(self.id.as_deref(), &reply)));
     }
 
+    /// True when the request had an `id`.
+    pub fn has_id(&self) -> bool {
+        self.id.is_some()
+    }
+
+    /// End a request without an `id` that needs no reply (`session_audio`).
+    pub fn no_reply(mut self) {
+        self.replied = true;
+    }
+
     /// A handle for events without an id, for work that goes on after the reply.
     pub fn notifier(&self) -> Notifier {
         self.notifier.clone()

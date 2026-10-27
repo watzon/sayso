@@ -110,9 +110,12 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
     }
 
     open.store(false, Ordering::SeqCst);
-    // The jobs of an extension end with its connection.
+    // The jobs and the live session of an extension end with its connection.
     if let Some(jobs) = &shared.jobs {
         jobs.cancel_connection(number);
+    }
+    if let Some(live) = &shared.live {
+        live.connection_closed(number);
     }
     let _ = outgoing.send(Outgoing::Close);
     let entry = shared.connections.lock().remove(&number);
@@ -235,6 +238,15 @@ impl Connection<'_> {
             }
             Request::TranscribeFile(request) => crate::job_requests::transcribe_file(self.shared, self.number, &self.jobs, &request, responder),
             Request::CancelJob(request) => crate::job_requests::cancel_job(self.shared, self.number, &self.jobs, &request, responder),
+            Request::SessionStart(request) => {
+                let number = self.number;
+                self.spawn("live-start", responder, move |shared, extension_id, responder| crate::live_requests::session_start(shared, number, extension_id, &request, responder));
+            }
+            Request::SessionAudio(request) => crate::live_requests::session_audio(self.shared, self.number, &request, responder),
+            Request::SessionStop(request) => {
+                let number = self.number;
+                self.spawn("live-stop", responder, move |shared, _, responder| crate::live_requests::session_stop(shared, number, &request, responder));
+            }
             request => responder.reply(Reply::error(Some(ErrorCode::Unsupported), format!("this version of Sayso cannot run {} yet", request.kind()))),
         }
         false

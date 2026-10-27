@@ -22,6 +22,7 @@ mod layout;
 mod live;
 mod media;
 mod memory;
+mod mic;
 mod model;
 mod model_picker;
 mod onboarding;

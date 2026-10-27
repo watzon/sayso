@@ -25,6 +25,20 @@ pub enum PlatformError {
     Failed(String),
     #[error("not supported on this platform")]
     Unsupported,
+    /// An `error` reply of the speech engine with a stable `code`
+    /// (`docs/engine-protocol.md`, "Errors"), for example `too_many_streams`.
+    #[error("{message}")]
+    Engine { code: String, message: String },
+}
+
+impl PlatformError {
+    /// The `code` of an error of the speech engine, when it has one.
+    pub fn code(&self) -> Option<&str> {
+        match self {
+            PlatformError::Engine { code, .. } => Some(code),
+            _ => None,
+        }
+    }
 }
 
 pub type Result<T, E = PlatformError> = std::result::Result<T, E>;
@@ -348,11 +362,20 @@ pub trait SttBackend: Send + Sync {
     }
     /// Open a VAD session on live audio, with a loaded VAD model. Needs the
     /// feature `vad`. Send the audio with [`SttBackend::push_audio`] and close
-    /// the session with [`SttBackend::end_stream`]. The speech arrives as
-    /// `EngineEvent::SpeechStart` and `EngineEvent::SpeechEnd`. Unlike the audio
-    /// of a preview, VAD audio that waits in the queue is not dropped at the end.
+    /// the session with [`SttBackend::end_vad`] (or [`SttBackend::end_stream`],
+    /// which does not wait). The speech arrives as `EngineEvent::SpeechStart`
+    /// and `EngineEvent::SpeechEnd`. Unlike the audio of a preview, VAD audio
+    /// that waits in the queue is not dropped at the end.
     fn start_vad(&self, _session: u64, _model: &ModelId) -> Result<()> {
         Err(unsupported_feature("vad"))
+    }
+    /// Close a VAD session and wait for the reply of the engine. The engine
+    /// sends the last `speech_end` of the session before that reply, so the
+    /// receivers of [`SttBackend::subscribe`] have it when this returns. A
+    /// backend that cannot wait closes the session as `end_stream` does.
+    fn end_vad(&self, session: u64) -> Result<()> {
+        self.end_stream(session);
+        Ok(())
     }
     /// Find who speaks when in complete audio, with a loaded diarization model.
     /// Needs the feature `diarization`. `speakers` is the number of speakers,

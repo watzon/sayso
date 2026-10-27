@@ -161,7 +161,25 @@ fn read_wav(path: &std::path::Path) -> Option<Vec<f32>> {
     None
 }
 
-pub fn start_fake_capture(
+/// The microphone of `SAYSO_FAKE_MIC`: each capture plays the file from its
+/// start in real time, in frames of 20 ms, and then silence until it stops.
+pub struct FakeMic(pub std::path::PathBuf);
+
+impl sayso_platform::AudioCapture for FakeMic {
+    fn devices(&self) -> Vec<sayso_platform::AudioDevice> {
+        Vec::new()
+    }
+
+    fn start(
+        &self,
+        _device_id: Option<&str>,
+        on_frame: Box<dyn FnMut(sayso_platform::AudioFrame) + Send>,
+    ) -> sayso_platform::Result<Box<dyn sayso_platform::CaptureHandle>> {
+        start_fake_capture(&self.0, on_frame).ok_or_else(|| sayso_platform::PlatformError::Failed("could not read SAYSO_FAKE_MIC".into()))
+    }
+}
+
+fn start_fake_capture(
     path: &std::path::Path,
     mut on_frame: Box<dyn FnMut(sayso_platform::AudioFrame) + Send>,
 ) -> Option<Box<dyn sayso_platform::CaptureHandle>> {

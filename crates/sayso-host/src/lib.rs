@@ -15,6 +15,8 @@ mod connection;
 mod download;
 mod identity;
 mod job_requests;
+pub mod live;
+mod live_requests;
 mod models;
 mod responder;
 mod state;
@@ -36,8 +38,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 
-/// What the host gets from the app. Later sub-steps of step 6 add live
-/// sessions and `enhance`.
+/// What the host gets from the app. A later sub-step of step 6 adds `enhance`.
 ///
 /// The host calls these methods from its own threads, never from the thread
 /// of a window.
@@ -55,6 +56,19 @@ pub trait HostServices: Send + Sync {
     /// the user answers. True means download. A user who closes the question
     /// without an answer says no.
     fn ask_download(&self, question: &DownloadQuestion) -> bool;
+
+    /// The microphone that the user chose, shared with dictation, for live
+    /// sessions with the source `mic`. None: this host cannot capture it, and
+    /// `session_start` with `mic` gets `unsupported`.
+    fn microphone(&self) -> Option<Arc<dyn live::Microphone>> {
+        None
+    }
+
+    /// The folder for the recordings of live sessions without `record_to`.
+    /// The host deletes each recording after its session.
+    fn live_temp_dir(&self) -> PathBuf {
+        std::env::temp_dir().join("sayso-live")
+    }
 }
 
 /// The question to the user before the download of a model for an extension.
@@ -110,7 +124,7 @@ pub(crate) struct Shared {
     /// `services.engine()` at the start.
     pub engine: Option<Arc<dyn SttBackend>>,
     /// The one subscription to the events of the engine.
-    pub bus: bus::Bus,
+    pub bus: Arc<bus::Bus>,
     /// The models that the host asked the engine to download, until the
     /// request that asked ends (see `download`).
     pub downloads: Mutex<HashSet<ModelId>>,
@@ -122,6 +136,8 @@ pub(crate) struct Shared {
     pub model_use: Arc<jobs::ModelUse>,
     /// The queue of jobs. None without an engine.
     pub jobs: Option<jobs::JobQueue>,
+    /// The live sessions. None without an engine.
+    pub live: Option<live::LiveSessions>,
     pub closing: AtomicBool,
     /// The open connections by a number of the host.
     pub connections: Mutex<HashMap<u64, connection::Entry>>,
@@ -151,11 +167,21 @@ impl Host {
             Some(engine) => Some(jobs::JobQueue::start(Arc::new(jobs::JobRunner::new(engine.clone(), model_use.clone())), gate.clone())?),
             None => None,
         };
+        let bus = Arc::new(bus::Bus::start(engine.as_ref()));
+        let live = engine.as_ref().map(|engine| {
+            live::LiveSessions::new(live::LiveDeps {
+                engine: Arc::new(live::BackendEngine::new(engine.clone(), bus.clone())),
+                microphone: services.microphone(),
+                priority: gate.clone(),
+                models: model_use.clone(),
+                temp_dir: services.live_temp_dir(),
+            })
+        });
         let shared = Arc::new(Shared {
             host_version: config.host_version,
             identify: config.identify,
             state: StateFile::new(config.state_file),
-            bus: bus::Bus::start(engine.as_ref()),
+            bus,
             engine,
             services,
             downloads: Mutex::new(HashSet::new()),
@@ -163,6 +189,7 @@ impl Host {
             gate,
             model_use,
             jobs: queue,
+            live,
             closing: AtomicBool::new(false),
             connections: Mutex::new(HashMap::new()),
             next_connection: AtomicU64::new(1),
@@ -191,9 +218,13 @@ impl Host {
             if self.shared.closing.swap(true, Ordering::SeqCst) {
                 return;
             }
-            // Each job ends with `job_failed` before `host_closing`.
+            // Each job ends with `job_failed` before `host_closing`. The live
+            // session is cancelled: no more parts and no diarization.
             if let Some(jobs) = &self.shared.jobs {
                 jobs.close();
+            }
+            if let Some(live) = &self.shared.live {
+                live.close();
             }
             connections.values_mut().filter_map(connection::Entry::close_with_host_closing).collect::<Vec<_>>()
         };
@@ -221,6 +252,19 @@ impl Host {
     /// unload them (see [`jobs::ModelUse::wanted`]).
     pub fn model_use(&self) -> Arc<jobs::ModelUse> {
         self.shared.model_use.clone()
+    }
+
+    /// The live session that runs now: its extension and whether it captures
+    /// the microphone, for the menu bar (step 8).
+    pub fn live_session(&self) -> Option<live::LiveInfo> {
+        self.shared.live.as_ref().and_then(live::LiveSessions::current)
+    }
+
+    /// Tell `observer` each time a live session starts, stops, or ends.
+    pub fn set_live_observer(&self, observer: Arc<dyn live::LiveObserver>) {
+        if let Some(live) = &self.shared.live {
+            live.set_observer(observer);
+        }
     }
 
     /// The socket, or the name of the pipe on Windows.

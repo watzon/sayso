@@ -28,6 +28,9 @@
 //! The file `slow-audio` makes it read each `stream_audio` line slowly: it waits that many
 //! milliseconds (the text of the file) after each one, like an engine that falls behind.
 //!
+//! The file `max-streams` makes `stream_start` and `vad_start` fail with the code
+//! `too_many_streams` when that many streams and VAD sessions (the text of the file) are open.
+//!
 //! `download` reports 50 % at once, waits 300 ms, then reports `downloaded`.
 //!
 //! The file `hello-delay-ms` makes `hello` wait that many milliseconds. The file
@@ -85,6 +88,9 @@ fn main() {
         };
         match kind.as_str() {
             // The stream requests run in order, like the real engines.
+            "stream_start" | "vad_start" if streams_full(&dir, sessions.len() + vad_sessions.len()) => {
+                reply(&out, &request, "error", json!({"message": "the streams are full; end one first", "code": "too_many_streams"}));
+            }
             "stream_start" => match request["session"].as_u64() {
                 Some(session) => {
                     sessions.insert(session, String::new());
@@ -180,6 +186,11 @@ struct Vad {
     at_ms: u64,
     /// The start of the speech that is open.
     open: Option<u64>,
+}
+
+/// True when `open` streams fill the limit of the file `max-streams`.
+fn streams_full(dir: &std::path::Path, open: usize) -> bool {
+    fs::read_to_string(dir.join("max-streams")).ok().and_then(|t| t.trim().parse::<usize>().ok()).is_some_and(|max| open >= max)
 }
 
 /// The markers `no-timing` and `no-features` turn off `segments`, `vad`, and `diarization`.

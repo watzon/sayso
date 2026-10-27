@@ -435,6 +435,7 @@ fn closing_the_host_fails_the_jobs_before_host_closing() {
         match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
             Ok(Event::HostGone) => break,
             Ok(Event::Host { event, .. }) => assert!(job_of(&event) != Some(job), "an event of the job after its end: {event:?}"),
+            Ok(Event::Error(error)) => panic!("an error without an id: {error:?}"),
             Err(_) => panic!("no host_closing"),
         }
     }
