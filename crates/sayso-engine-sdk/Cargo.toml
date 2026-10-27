@@ -1,0 +1,19 @@
+[package]
+name = "sayso-engine-sdk"
+description = "Start a Sayso speech engine from your own app and talk to it over stdio with the engine protocol. Blocking calls, no async runtime."
+version.workspace = true
+edition.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
+# It starts the engine as a separate program and never links it.
+license = "MIT"
+publish = true
+repository = "https://github.com/watzon/sayso"
+readme = "README.md"
+
+[dependencies]
+sayso-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+crossbeam-channel.workspace = true
+tempfile.workspace = true
+workspace-hack.workspace = true
