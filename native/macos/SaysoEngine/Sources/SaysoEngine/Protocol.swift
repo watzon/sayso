@@ -8,7 +8,9 @@ let protocolVersion = 1
 let engineFeatures = [
     "catalog", "concurrent_streams", "diarization", "language_model", "prepare", "segments", "unload", "vad",
 ]
-let engineVersion = "0.1.0"
+/// The Sayso version, as in `Cargo.toml`. A test in `sayso-core` fails when they differ.
+/// Keep this on one line: that test reads it.
+let engineVersion = "0.11.0"
 
 /// A failure that is reported to the client as `{"type":"error"}`. Never crashes the process.
 struct EngineError: Error, CustomStringConvertible {

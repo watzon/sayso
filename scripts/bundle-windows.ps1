@@ -67,9 +67,12 @@ foreach ($dll in 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvc
     Copy-Item (Join-Path $crt.FullName $dll) $app
 }
 Copy-Item LICENSE (Join-Path $app 'LICENSE.txt')
-Copy-Item assets\fonts\licenses -Recurse (Join-Path $app 'licenses')
-# whisper.cpp in the engine is ggml's code, under ggml's MIT License.
-Copy-Item crates\sayso-engine\licenses\ggml.txt (Join-Path $app 'licenses')
+Copy-Item crates\sayso-ui\assets\fonts\licenses -Recurse (Join-Path $app 'licenses')
+# whisper.cpp in the engine is ggml's code, under ggml's MIT License. sherpa-onnx
+# (Apache-2.0) and ONNX Runtime (MIT) come as the DLLs above.
+foreach ($name in 'ggml.txt', 'sherpa-onnx.txt', 'onnxruntime.txt') {
+    Copy-Item (Join-Path crates\sayso-engine\licenses $name) (Join-Path $app 'licenses')
+}
 
 function Sign-File([string]$path) {
     if (-not $env:SAYSO_SIGN_CERT) { return }

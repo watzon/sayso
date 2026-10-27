@@ -117,7 +117,7 @@ The engine is not a shared service, for these reasons:
 
 ### Release
 
-The Release workflow attaches the engine as separate files for each system: `sayso-engine-<version>-macos-arm64.tar.gz`, and the same for Windows and Linux. The engine has the version of the Sayso release that it comes with. Its protocol version and its features are in `hello`. On macOS the binary is signed and notarized, as it is in the app bundle today. Sayso still ships its own engine in the bundle and never downloads one.
+The Release workflow attaches the engine as separate files for each system: `sayso-engine-<version>-macos-arm64.tar.gz`, `sayso-engine-<version>-linux-x86_64.tar.gz`, `sayso-engine-<version>-linux-arm64.tar.gz`, and `sayso-engine-<version>-windows-x64.zip` (a zip, because Windows opens it without another program). Each file has the engine, the libraries that it needs, `LICENSE`, the third-party licenses, and a short `README.md`, in the folder `sayso-engine-<version>/`. The engine has the version of the Sayso release that it comes with, and a test in `sayso-core` fails when the Swift engine says another version. Its protocol version and its features are in `hello`. On macOS the binary is signed and notarized, as it is in the app bundle today. Sayso still ships its own engine in the bundle and never downloads one.
 
 The engine stays GPL-3.0-only. An app that starts it as a separate program and talks NDJSON to it is not a derived work of the engine. The spec of the protocol is MIT, so anyone can write a client.
 

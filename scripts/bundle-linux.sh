@@ -38,7 +38,8 @@ cp packaging/linux/dev.sayso.Sayso.metainfo.xml "$out/share/metainfo/"
 cp packaging/linux/70-sayso-uinput.rules "$out/lib/udev/rules.d/"
 install -m 755 packaging/linux/install.sh "$out/install.sh"
 cp LICENSE "$out/"
-# The MIT licenses of parakeet.cpp and ggml, which the engine links statically.
+# The licenses of the libraries in the engine: parakeet.cpp and ggml (MIT), which
+# it links statically, and sherpa-onnx (Apache-2.0) and ONNX Runtime (MIT).
 # The cleanup runtime links llama.cpp statically, and its LICENSE has the same
 # text as ggml.txt.
 install -D -m 644 -t "$out/share/licenses/sayso" crates/sayso-engine/licenses/*.txt

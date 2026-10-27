@@ -1,0 +1,143 @@
+name: Engine file check
+
+# Check the engine release files on runners that have no build tools. Each job
+# gets one file as an artifact (release-engine-<os>-<arch>), unpacks it, and
+# runs the core level of the conformance suite against the unpacked engine. The
+# suite is a Rust crate, so each job installs Rust and builds only that crate.
+# No job builds an engine.
+#
+# The Release workflow calls this workflow after it makes the files. The CI
+# workflow calls it too (start it with: gh workflow run ci.yml), so the check
+# runs without a release.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Commit or tag that made the files (it has the conformance suite and the version)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-latest
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: windows-x64
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # The Linux engine needs the Vulkan loader, also for a model that runs on
+      # the CPU (build.rs, and the README of the file). The loader is the only
+      # package that the file needs from the system, and the packages of Sayso
+      # depend on it too.
+      - name: Install the Vulkan loader (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libvulkan1
+
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Get the engine file
+        uses: actions/download-artifact@v4
+        with:
+          name: release-engine-${{ matrix.platform }}
+          path: engine-file
+
+      # The name of the file must be what the Release workflow attaches.
+      - name: Find the file
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          if [[ "$RUNNER_OS" == Windows ]]; then ext=zip; else ext=tar.gz; fi
+          file="engine-file/sayso-engine-$version-${{ matrix.platform }}.$ext"
+          ls -l engine-file
+          if [[ ! -f "$file" ]]; then
+            echo "::error::The artifact does not have $file."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "FILE=$file" >> "$GITHUB_ENV"
+
+      - name: Unpack the file
+        if: runner.os != 'Windows'
+        run: |
+          mkdir engine-unpacked
+          tar -xzf "$FILE" -C engine-unpacked
+
+      - name: Unpack the file (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory engine-unpacked | Out-Null
+          Expand-Archive -Path $env:FILE -DestinationPath engine-unpacked
+
+      - name: Check the files and the libraries
+        run: |
+          dir="engine-unpacked/sayso-engine-$VERSION"
+          exe=sayso-engine
+          if [[ "$RUNNER_OS" == Windows ]]; then exe=sayso-engine.exe; fi
+          find "$dir" -type f | sort
+          for name in "$exe" README.md LICENSE licenses; do
+            if [[ ! -e "$dir/$name" ]]; then
+              echo "::error::The file does not have $name."
+              exit 1
+            fi
+          done
+          case "$RUNNER_OS" in
+            macOS) deps=$(otool -L "$dir/$exe") ;;
+            Linux) deps=$(ldd "$dir/$exe") ;;
+            Windows)
+              # The DLLs must be in the folder of the exe: this runner has the
+              # sherpa-onnx library nowhere else.
+              ls "$dir"/*.dll
+              deps= ;;
+          esac
+          echo "$deps"
+          if grep -q 'not found' <<< "$deps"; then
+            echo "::error::The engine has a library that is missing."
+            exit 1
+          fi
+
+      # The engine stops when stdin closes and can do so before it answers, so
+      # stdin stays open for a few seconds.
+      - name: Check that hello has the version of the release
+        run: |
+          engine="engine-unpacked/sayso-engine-$VERSION/sayso-engine"
+          if [[ "$RUNNER_OS" == Windows ]]; then engine="$(cygpath -m "$PWD")/$engine.exe"; fi
+          export SAYSO_MODELS_DIR="$RUNNER_TEMP/engine-models"
+          reply=$( (printf '{"v":1,"id":"1","type":"hello"}\n'; sleep 5) | "$engine" 2>/dev/null )
+          echo "$reply"
+          hello=$(grep '"type":"hello"' <<< "$reply" || true)
+          if ! grep -qF "\"version\":\"$VERSION\"" <<< "$hello"; then
+            echo "::error::The engine gave no hello reply with the version $VERSION."
+            exit 1
+          fi
+
+      - name: Run the conformance suite, core level
+        run: |
+          engine="engine-unpacked/sayso-engine-$VERSION/sayso-engine"
+          if [[ "$RUNNER_OS" == Windows ]]; then engine="$(cygpath -m "$PWD")/$engine.exe"; else engine="$PWD/$engine"; fi
+          cargo run -q -p sayso-engine-conformance -- "$engine"

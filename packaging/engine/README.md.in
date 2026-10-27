@@ -1,0 +1,39 @@
+# Sayso engine @VERSION@
+
+This is the speech engine of Sayso for @SYSTEM@. It turns audio into text. Sayso starts it as a separate program and talks to it with a protocol. Your own program can do the same.
+
+The engine has the version of the Sayso release that it comes with.
+
+## Requirements
+
+@REQUIREMENTS@
+
+## Run the engine
+
+Set `SAYSO_MODELS_DIR` to a folder for the model files. The engine makes the folder when it is not there. Do not let two engines use the same folder at the same time.
+
+```
+@RUN@
+```
+
+The engine reads requests from stdin and writes replies and events to stdout. Each message is one line of JSON (NDJSON). The engine stops when stdin closes.
+
+To check that the engine works, send a `hello` request. The reply has the version of the engine, the version of the protocol, and the features of the engine. The engine stops when stdin closes, so keep stdin open for a moment, as this command does.
+
+```
+@HELLO@
+```
+
+## Protocol and conformance suite
+
+The protocol is described in [docs/engine-protocol.md](https://github.com/watzon/sayso/blob/v@VERSION@/docs/engine-protocol.md). The text of the protocol has the MIT license.
+
+The conformance suite checks that an engine follows the protocol. It is the crate `sayso-engine-conformance` in the [Sayso repository](https://github.com/watzon/sayso/tree/v@VERSION@/crates/sayso-engine-conformance). To run the checks that need no model, use Rust and run this command in a copy of the repository:
+
+```
+cargo run -p sayso-engine-conformance -- <path to the engine>
+```
+
+## Licenses
+
+The engine has the GPL-3.0-only license. The text is in `LICENSE`. The licenses of the third-party code in the engine are in the folder `licenses`.
