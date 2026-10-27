@@ -3,7 +3,7 @@
 use crossbeam_channel::Receiver;
 use sayso_core::enhance::{EnhanceError, LanguageModel};
 use sayso_core::models::{ModelId, default_model};
-use sayso_core::stt::{EngineEvent, EngineReason, ModelStatus, SessionOptions};
+use sayso_core::stt::{Diarization, EngineEvent, EngineReason, ModelStatus, SessionOptions, Turn};
 use sayso_engine_client::{EngineClient, Options};
 use sayso_platform::SttBackend;
 use std::path::PathBuf;
@@ -887,4 +887,229 @@ fn newer_preparation_ignores_older_events_and_reuses_identical_requests() {
         .filter(|v: &serde_json::Value| v["type"] == "prepare").collect();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[1]["vocabulary"], serde_json::json!(["new"]));
+}
+
+/// Start the fake engine with marker files, and wait until it answers its hello.
+fn started_with_markers(markers: &[(&str, &str)], options: Options) -> (TempDir, TempDir, EngineClient, Receiver<EngineEvent>) {
+    let (models, cache, client, events) = start_with_markers(markers, options);
+    wait_for(&events, "Started", |e| matches!(e, EngineEvent::Started).then_some(()));
+    (models, cache, client, events)
+}
+
+/// The requests of one type, parsed.
+fn requests_of(models: &TempDir, kind: &str) -> Vec<serde_json::Value> {
+    requests(models)
+        .iter()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .filter(|v| v["type"] == kind)
+        .collect()
+}
+
+#[test]
+fn the_features_of_the_engine_come_from_its_hello() {
+    let f = fixture();
+    let features = f.client.features();
+    for feature in ["segments", "vad", "diarization"] {
+        assert!(features.iter().any(|f| f == feature), "{feature} is missing in {features:?}");
+    }
+    let (_models, _cache, client, _events) = started_with_markers(&[("no-features", "")], fast_options());
+    assert!(client.features().is_empty());
+}
+
+#[test]
+fn transcribe_segments_returns_the_segments_and_the_words() {
+    let f = fixture();
+    // 1 s of audio.
+    let transcript = f.client.transcribe_segments(&[0.1; 16_000], &options_for("seg-model")).unwrap();
+    assert_eq!(transcript.text, format!("model=seg-model bytes={}", 44 + 32_000));
+    assert_eq!(transcript.model, ModelId::new("seg-model"));
+    assert_eq!(transcript.elapsed_ms, 5);
+    let spans: Vec<_> = transcript.segments.iter().map(|s| (s.start_ms, s.end_ms, s.text.as_str(), s.words.len())).collect();
+    assert_eq!(spans, [(0, 500, "Hello there.", 2), (500, 750, "Bye.", 0), (750, 1000, "Later", 0)]);
+    let words: Vec<_> = transcript.segments[0].words.iter().map(|w| (w.start_ms, w.end_ms, w.text.as_str())).collect();
+    assert_eq!(words, [(0, 250, "Hello"), (250, 500, "there.")]);
+    let request = &requests_of(&f.models, "transcribe")[0];
+    assert_eq!(request["segments"], true);
+    assert_eq!(request["language"], "en");
+    assert_eq!(wav_files(&f.cache), 0, "temporary WAV files are deleted");
+    // The plain call does not ask for segments.
+    f.client.transcribe(&[0.1; 160], &options_for("seg-model")).unwrap();
+    assert!(requests_of(&f.models, "transcribe")[1].get("segments").is_none());
+}
+
+#[test]
+fn detect_speech_returns_the_speech_parts() {
+    let f = fixture();
+    let model = ModelId::new("silero-vad");
+    let parts = f.client.detect_speech(&model, &[0.1; 16_000]).unwrap();
+    let parts: Vec<_> = parts.iter().map(|p| (p.start_ms, p.end_ms)).collect();
+    assert_eq!(parts, [(0, 500), (750, 1000)]);
+    let request = &requests_of(&f.models, "vad")[0];
+    assert_eq!(request["model"], "silero-vad");
+    assert!(request["path"].as_str().unwrap().ends_with(".wav"));
+    assert_eq!(wav_files(&f.cache), 0, "temporary WAV files are deleted");
+}
+
+#[test]
+fn diarize_returns_the_turns_and_sends_the_number_of_speakers_when_given() {
+    let f = fixture();
+    let model = ModelId::new("speaker-diarization");
+    let found = f.client.diarize(&model, &[0.1; 16_000], None).unwrap();
+    assert_eq!(found, Diarization {
+        speakers: 2,
+        turns: vec![Turn { start_ms: 0, end_ms: 500, speaker: 0 }, Turn { start_ms: 500, end_ms: 1000, speaker: 1 }],
+    });
+    let three = f.client.diarize(&model, &[0.1; 16_000], Some(3)).unwrap();
+    assert_eq!(three.speakers, 3);
+    assert_eq!(three.turns.len(), 3);
+    let sent = requests_of(&f.models, "diarize");
+    assert!(sent[0].get("speakers").is_none());
+    assert_eq!(sent[1]["speakers"], 3);
+    assert_eq!(wav_files(&f.cache), 0, "temporary WAV files are deleted");
+}
+
+/// The VAD events of one session, in order, as `(kind, start_ms, end_ms)`. `end_ms` is 0 for a start.
+fn speech_events(events: &Receiver<EngineEvent>, session: u64, until_end_ms: u64) -> Vec<(&'static str, u64, u64)> {
+    let mut seen = Vec::new();
+    wait_for(events, "the last speech_end", |event| {
+        match event {
+            EngineEvent::SpeechStart { session: s, start_ms } if *s == session => seen.push(("start", *start_ms, 0)),
+            EngineEvent::SpeechEnd { session: s, start_ms, end_ms } if *s == session => {
+                seen.push(("end", *start_ms, *end_ms));
+                if *end_ms == until_end_ms {
+                    return Some(());
+                }
+            }
+            _ => {}
+        }
+        None
+    });
+    seen
+}
+
+#[test]
+fn a_vad_session_sends_speech_events_to_subscribers() {
+    let f = fixture();
+    let events = f.client.subscribe();
+    f.client.start_vad(7, &ModelId::new("silero-vad")).unwrap();
+    // Three frames of 20 ms. The engine ends the speech of the third at the end of the session.
+    for _ in 0..3 {
+        f.client.push_audio(7, &[0.1; 320]).unwrap();
+    }
+    f.client.end_stream(7);
+    assert_eq!(
+        speech_events(&events, 7, 60),
+        [("start", 0, 0), ("end", 0, 40), ("start", 40, 0), ("end", 40, 60)]
+    );
+    let log = requests(&f.models);
+    assert!(position_of(&log, "vad_start").unwrap() < position_of(&log, "stream_audio").unwrap());
+    assert_eq!(requests_of(&f.models, "vad_start")[0]["model"], "silero-vad");
+}
+
+#[test]
+fn ending_a_vad_session_sends_all_its_audio_first() {
+    const FRAMES: usize = 100;
+    let f = fixture();
+    let events = f.client.subscribe();
+    // An engine that falls behind: 20 ms for each frame. A preview would lose most of this audio.
+    std::fs::write(f.models.path().join("slow-audio"), "20").unwrap();
+    f.client.start_vad(3, &ModelId::new("silero-vad")).unwrap();
+    for _ in 0..FRAMES {
+        f.client.push_audio(3, &[0.1; 320]).unwrap();
+    }
+    f.client.end_stream(3);
+    // A frame after the end is not sent.
+    f.client.push_audio(3, &[0.1; 320]).unwrap();
+
+    let seen = speech_events(&events, 3, FRAMES as u64 * 20);
+    assert_eq!(seen.len(), FRAMES, "one start and one end for each pair of frames");
+    assert_eq!(seen.last(), Some(&("end", (FRAMES as u64 - 2) * 20, FRAMES as u64 * 20)));
+    let log = requests(&f.models);
+    let end = position_of(&log, "stream_end").expect("the engine got stream_end");
+    let audio = |range: &[String]| range.iter().filter(|line| line.contains("\"type\":\"stream_audio\"")).count();
+    assert_eq!(audio(&log[..end]), FRAMES);
+    assert_eq!(audio(&log[end..]), 0);
+}
+
+#[test]
+fn a_vad_session_can_start_again_with_the_same_id() {
+    let f = fixture();
+    let events = f.client.subscribe();
+    let model = ModelId::new("silero-vad");
+    f.client.start_vad(1, &model).unwrap();
+    f.client.push_audio(1, &[0.1; 320]).unwrap();
+    f.client.end_stream(1);
+    assert_eq!(speech_events(&events, 1, 20), [("start", 0, 0), ("end", 0, 20)]);
+    f.client.start_vad(1, &model).unwrap();
+    f.client.push_audio(1, &[0.1; 640]).unwrap();
+    f.client.end_stream(1);
+    assert_eq!(speech_events(&events, 1, 40), [("start", 0, 0), ("end", 0, 40)]);
+}
+
+#[test]
+fn the_long_requests_wait_for_the_long_timeout_plus_the_audio_times_the_factor() {
+    // 4000 samples are 250 ms. The fake engine never answers a `never-*` model.
+    let options = Options {
+        long_timeout: Duration::from_millis(100),
+        audio_timeout_factor: 1,
+        ..fast_options()
+    };
+    let (_models, _cache, client, _events) = started_with_markers(&[], options);
+    let never = ModelId::new("never-answers");
+    let audio = [0.1f32; 4000];
+    let expect = |error: sayso_platform::PlatformError, kind: &str, wait: &str| {
+        let text = error.to_string();
+        assert!(text.contains(&format!("did not answer {kind} within {wait}")), "{text}");
+    };
+    expect(client.transcribe_segments(&audio, &options_for("never-answers")).unwrap_err(), "transcribe", "350ms");
+    expect(client.detect_speech(&never, &audio).unwrap_err(), "vad", "350ms");
+    expect(client.diarize(&never, &audio, None).unwrap_err(), "diarize", "350ms");
+    // The wait grows with the audio: 1 s of audio adds 1 s.
+    let started = Instant::now();
+    expect(client.detect_speech(&never, &[0.1; 16_000]).unwrap_err(), "vad", "1.1s");
+    assert!(started.elapsed() >= Duration::from_millis(1100));
+
+    // With a factor of 0, only the long timeout counts.
+    let options = Options { long_timeout: Duration::from_millis(100), audio_timeout_factor: 0, ..fast_options() };
+    let (_models, _cache, client, _events) = started_with_markers(&[], options);
+    expect(client.detect_speech(&never, &audio).unwrap_err(), "vad", "100ms");
+}
+
+#[test]
+fn an_engine_that_lists_features_without_the_timing_ones_gets_no_request() {
+    let (models, _cache, client, _events) = started_with_markers(&[("no-timing", "")], fast_options());
+    assert!(!client.features().iter().any(|f| f == "vad"));
+    let model = ModelId::new("m");
+    let text = |error: sayso_platform::PlatformError| error.to_string();
+    assert_eq!(
+        text(client.transcribe_segments(&[0.0; 160], &options_for("m")).unwrap_err()),
+        "this speech engine does not support segments"
+    );
+    assert_eq!(text(client.detect_speech(&model, &[0.0; 160]).unwrap_err()), "this speech engine does not support vad");
+    assert_eq!(text(client.start_vad(1, &model).unwrap_err()), "this speech engine does not support vad");
+    assert_eq!(
+        text(client.diarize(&model, &[0.0; 160], None).unwrap_err()),
+        "this speech engine does not support diarization"
+    );
+    for kind in ["transcribe", "vad", "vad_start", "diarize"] {
+        assert!(requests_of(&models, kind).is_empty(), "the client sent {kind}");
+    }
+}
+
+#[test]
+fn an_engine_without_a_feature_list_is_asked_and_its_error_comes_back() {
+    let (_models, cache, client, _events) = started_with_markers(&[("no-features", "")], fast_options());
+    let model = ModelId::new("m");
+    // The engine ignores `segments: true` and sends no list.
+    let error = client.transcribe_segments(&[0.0; 160], &options_for("m")).unwrap_err().to_string();
+    assert!(error.contains("no usable segments"), "{error}");
+    let error = client.detect_speech(&model, &[0.0; 160]).unwrap_err().to_string();
+    assert!(error.contains("unknown request type vad"), "{error}");
+    let error = client.start_vad(1, &model).unwrap_err().to_string();
+    assert!(error.contains("unknown request type vad_start"), "{error}");
+    // A failed start leaves the session closed: audio for it is plain preview audio.
+    client.push_audio(1, &[0.0; 320]).unwrap();
+    let error = client.diarize(&model, &[0.0; 160], None).unwrap_err().to_string();
+    assert!(error.contains("unknown request type diarize"), "{error}");
+    assert_eq!(wav_files(&cache), 0, "temporary WAV files are deleted");
 }

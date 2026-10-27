@@ -5,6 +5,16 @@
 //! - `slow-*`: `transcribe` answers after 300 ms (other requests may overtake it).
 //! - `crash-once`: `transcribe` kills the process the first time (marker file `crashed`).
 //!
+//! `transcribe` with `segments: true` answers with three fixed segments, spread over the length of
+//! the audio (the first has two words). `vad` answers with two speech parts: the first half and
+//! the last quarter of the audio. `vad_start` opens a VAD session that takes `stream_audio`
+//! like a stream: the first frame of each pair starts speech and the second ends it, and
+//! `stream_end` ends speech that is still open. `diarize` answers with `speakers` turns (2 when
+//! the request has no `speakers`), each of the same length. `never-*` models never answer
+//! `transcribe`, `vad`, or `diarize`. The files `no-timing` (no `segments`, `vad`, and
+//! `diarization` features; the requests get an `error`) and `no-features` (like `no-timing`,
+//! and `hello` lists no features at all) turn the new requests off.
+//!
 //! `generate` answers with its prompt in upper case. The prompt steers it: `refuse` and
 //! `unavailable` give an error with that code, and `slow` never answers. `language_model`
 //! reports the model `Fake LM`, or "not available" when the file `no-language-model` exists. The
@@ -46,6 +56,8 @@ fn main() {
     );
 
     let mut chunks = 0u64;
+    // The open VAD sessions.
+    let mut vad_sessions: HashMap<u64, Vad> = HashMap::new();
     // The text of each open stream session, for the reply of `stream_end`.
     let mut sessions: HashMap<u64, String> = HashMap::new();
     let loaded = Arc::new(Mutex::new(HashSet::new()));
@@ -80,6 +92,43 @@ fn main() {
                 }
                 None => reply(&out, &request, "error", json!({"message": "missing integer field session"})),
             },
+            "vad_start" => match request["session"].as_u64() {
+                Some(_) if timing_off(&dir) => {
+                    reply(&out, &request, "error", json!({"message": "unknown request type vad_start"}));
+                }
+                Some(session) => {
+                    vad_sessions.insert(session, Vad::default());
+                    reply(&out, &request, "ok", json!({}));
+                }
+                None => reply(&out, &request, "error", json!({"message": "missing integer field session"})),
+            },
+            "stream_audio" if request["session"].as_u64().is_some_and(|s| vad_sessions.contains_key(&s)) => {
+                let session = request["session"].as_u64().unwrap_or_default();
+                if let Some(ms) = fs::read_to_string(dir.join("slow-audio")).ok().and_then(|t| t.trim().parse().ok()) {
+                    thread::sleep(Duration::from_millis(ms));
+                }
+                let vad = vad_sessions.get_mut(&session).expect("the session is open");
+                // Base64 holds 3 bytes in 4 characters, and a sample has 2 bytes.
+                let frame_ms = request["pcm"].as_str().map_or(0, str::len) as u64 * 3 / 4 / 2 / 16;
+                vad.frames += 1;
+                if vad.frames % 2 == 1 {
+                    vad.open = Some(vad.at_ms);
+                    send(&out, json!({"type": "speech_start", "session": session, "start_ms": vad.at_ms}));
+                } else if let Some(start_ms) = vad.open.take() {
+                    send(&out, json!({
+                        "type": "speech_end", "session": session, "start_ms": start_ms, "end_ms": vad.at_ms + frame_ms,
+                    }));
+                }
+                vad.at_ms += frame_ms;
+            }
+            "stream_end" if request["session"].as_u64().is_some_and(|s| vad_sessions.contains_key(&s)) => {
+                let session = request["session"].as_u64().unwrap_or_default();
+                let vad = vad_sessions.remove(&session).expect("the session is open");
+                if let Some(start_ms) = vad.open {
+                    send(&out, json!({"type": "speech_end", "session": session, "start_ms": start_ms, "end_ms": vad.at_ms}));
+                }
+                reply(&out, &request, "ok", json!({"session": session}));
+            }
             "stream_audio" => {
                 let session = request["session"].as_u64().unwrap_or_default();
                 let Some(text) = sessions.get_mut(&session) else {
@@ -123,6 +172,21 @@ fn main() {
     }
 }
 
+/// A VAD session of the fake engine.
+#[derive(Default)]
+struct Vad {
+    frames: u64,
+    /// Milliseconds of audio received before the next frame.
+    at_ms: u64,
+    /// The start of the speech that is open.
+    open: Option<u64>,
+}
+
+/// The markers `no-timing` and `no-features` turn off `segments`, `vad`, and `diarization`.
+fn timing_off(dir: &std::path::Path) -> bool {
+    dir.join("no-timing").exists() || dir.join("no-features").exists()
+}
+
 fn handle(
     out: &Arc<Mutex<std::io::Stdout>>,
     dir: &std::path::Path,
@@ -131,7 +195,10 @@ fn handle(
     kind: &str,
 ) {
     let model = request["model"].as_str().unwrap_or_default().to_string();
-    let needs_model = matches!(kind, "download" | "delete" | "load" | "unload" | "prepare" | "transcribe");
+    let needs_model = matches!(
+        kind,
+        "download" | "delete" | "load" | "unload" | "prepare" | "transcribe" | "vad" | "diarize"
+    );
     if needs_model && request["model"].as_str().is_none() {
         reply(out, request, "error", json!({"message": "missing string field model"}));
         return;
@@ -162,16 +229,14 @@ fn handle(
             if let Some(ms) = delay {
                 thread::sleep(Duration::from_millis(ms));
             }
-            reply(
-                out,
-                request,
-                "hello",
-                json!({
-                    "version": "fake",
-                    "protocol": 1,
-                    "features": ["keep_preview", "language_model", "prepare", "unload"],
-                }),
-            )
+            let features = if dir.join("no-features").exists() {
+                json!([])
+            } else if timing_off(dir) {
+                json!(["keep_preview", "language_model", "prepare", "unload"])
+            } else {
+                json!(["diarization", "keep_preview", "language_model", "prepare", "segments", "unload", "vad"])
+            };
+            reply(out, request, "hello", json!({"version": "fake", "protocol": 1, "features": features}))
         }
         "list_models" => {
             for entry in request["models"].as_array().into_iter().flatten() {
@@ -263,22 +328,60 @@ fn handle(
             if model.starts_with("slow-") {
                 thread::sleep(Duration::from_millis(300));
             }
-            let path = request["path"].as_str().unwrap_or_default();
-            match fs::read(path) {
-                Ok(bytes) if bytes.starts_with(b"RIFF") => reply(
-                    out,
-                    request,
-                    "final",
-                    json!({"text": format!("model={model} bytes={}", bytes.len()), "elapsed_ms": 5}),
-                ),
-                Ok(_) => reply(out, request, "error", json!({"message": "not a WAV file"})),
-                Err(e) => reply(
-                    out,
-                    request,
-                    "error",
-                    json!({"message": format!("cannot read {path}: {e}")}),
-                ),
+            if model.starts_with("never-") {
+                return;
             }
+            let Some(bytes) = read_wav(out, request) else {
+                return;
+            };
+            let mut body = json!({"text": format!("model={model} bytes={}", bytes.len()), "elapsed_ms": 5});
+            if request["segments"] == true && !timing_off(dir) {
+                let d = audio_ms(&bytes);
+                body["segments"] = json!([
+                    {"start_ms": 0, "end_ms": d / 2, "text": "Hello there.", "words": [
+                        {"start_ms": 0, "end_ms": d / 4, "text": "Hello"},
+                        {"start_ms": d / 4, "end_ms": d / 2, "text": "there."},
+                    ]},
+                    {"start_ms": d / 2, "end_ms": d * 3 / 4, "text": "Bye.", "words": []},
+                    {"start_ms": d * 3 / 4, "end_ms": d, "text": "Later"},
+                ]);
+            }
+            reply(out, request, "final", body);
+        }
+        "vad" | "diarize" if timing_off(dir) => reply(
+            out,
+            request,
+            "error",
+            json!({"message": format!("unknown request type {kind}")}),
+        ),
+        "vad" => {
+            if model.starts_with("never-") {
+                return;
+            }
+            let Some(bytes) = read_wav(out, request) else {
+                return;
+            };
+            let d = audio_ms(&bytes);
+            reply(
+                out,
+                request,
+                "ok",
+                json!({"speech": [{"start_ms": 0, "end_ms": d / 2}, {"start_ms": d * 3 / 4, "end_ms": d}]}),
+            );
+        }
+        "diarize" => {
+            if model.starts_with("never-") {
+                return;
+            }
+            let Some(bytes) = read_wav(out, request) else {
+                return;
+            };
+            let d = audio_ms(&bytes);
+            let speakers = request["speakers"].as_u64().unwrap_or(2).max(1);
+            let turns: Vec<Value> = (0..speakers)
+                .map(|k| json!({"start_ms": d * k / speakers, "end_ms": d * (k + 1) / speakers, "speaker": k}))
+                .collect();
+            reply(out, request, "ok", json!({"speakers": speakers, "turns": turns}));
         }
         "language_model" => {
             let body = if dir.join("no-language-model").exists() {
@@ -321,6 +424,27 @@ fn handle(
             json!({"message": format!("unknown request type {other}")}),
         ),
     }
+}
+
+/// The bytes of the WAV file of a request. Sends the `error` reply and gives None when it cannot.
+fn read_wav(out: &Arc<Mutex<std::io::Stdout>>, request: &Value) -> Option<Vec<u8>> {
+    let path = request["path"].as_str().unwrap_or_default();
+    match fs::read(path) {
+        Ok(bytes) if bytes.starts_with(b"RIFF") => Some(bytes),
+        Ok(_) => {
+            reply(out, request, "error", json!({"message": "not a WAV file"}));
+            None
+        }
+        Err(e) => {
+            reply(out, request, "error", json!({"message": format!("cannot read {path}: {e}")}));
+            None
+        }
+    }
+}
+
+/// The length of a 16 kHz mono 16-bit WAV file in milliseconds.
+fn audio_ms(wav: &[u8]) -> u64 {
+    (wav.len() as u64).saturating_sub(44) / 2 / 16
 }
 
 fn with_state(value: &Value, state: &str) -> Value {

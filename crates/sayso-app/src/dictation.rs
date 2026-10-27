@@ -903,6 +903,8 @@ impl AppModel {
                     self.preview = (committed, tentative);
                 }
             }
+            // Only the Host API uses VAD sessions. Dictation has none.
+            EngineEvent::SpeechStart { .. } | EngineEvent::SpeechEnd { .. } => {}
             EngineEvent::Started => {
                 self.engine_starting = false;
                 self.load_active_models(cx);
