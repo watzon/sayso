@@ -9,3 +9,12 @@ extensions:
     reason_label: "Причина от %{extension}"
     download: "Скачать"
     cancel: "Отмена"
+  # The question before Sayso quits while an extension records or transcribes.
+  quit_ask:
+    window_title: "Выйти из Sayso"
+    recording: "%{extension} ведёт запись. Всё равно выйти?"
+    transcribing: "%{extension} расшифровывает файл. Всё равно выйти?"
+    body: "Если выйти, эта работа остановится, и расширение не сможет её завершить."
+    others_label: "Другие расширения, которые сейчас работают"
+    cancel: "Отмена"
+    quit: "Выйти"

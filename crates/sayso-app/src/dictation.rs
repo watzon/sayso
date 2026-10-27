@@ -4,6 +4,7 @@
 //! engine, pipeline, insertion, history, sounds.
 
 use crate::model::{AppEvent, AppModel, NoticeIcon, OverlayNotice};
+use crate::style_step::{CleanupContext, StyleStep, style_timeout};
 use gpui_kit::*;
 use sayso_i18n::t;
 use parking_lot::Mutex;
@@ -14,7 +15,7 @@ use sayso_core::history::{
     Diagnostics, EnhanceOutcome, HistoryEntry, InsertOutcome, InsertTimings, TargetApp, TranscribeTimings, waveform_summary,
 };
 use sayso_core::models::ModelInfo;
-use sayso_core::pipeline::{CleanerRun, CleanupNotice, TextPipeline};
+use sayso_core::pipeline::CleanupNotice;
 use sayso_core::config::{Provider, ProviderKind};
 use sayso_core::style::RunPlan;
 use sayso_core::speech::{SpeechProvider, SpeechRequest, split_model_id};
@@ -79,6 +80,7 @@ impl AppModel {
             return;
         }
         let was_recording = self.machine.is_recording();
+        let was_idle = matches!(self.machine.state, State::Idle);
         let now = self.now_ms();
         let effects = self.machine.handle(event, now);
         for fx in effects {
@@ -93,6 +95,15 @@ impl AppModel {
             } else {
                 jobs.gate.end();
             }
+        }
+        // An update that waits for extensions also waits for the dictation.
+        // The delay lets the history entry of the dictation reach the disk.
+        if self.update_waits && !was_idle && matches!(self.machine.state, State::Idle) {
+            cx.spawn(async move |this, cx| {
+                cx.background_executor().timer(Duration::from_secs(2)).await;
+                let _ = this.update(cx, |m, cx| m.holds_changed(cx));
+            })
+            .detach();
         }
         let recording = self.machine.is_recording();
         if recording != was_recording {
@@ -485,20 +496,8 @@ impl AppModel {
             return;
         }
         self.dispatch(Event::EnhanceStarted { session }, cx);
-        let ai = self.config.ai.clone();
-        let secrets = self.services.secrets.clone();
-        let engine = self.services.language_model.clone();
-        let vocabulary = self.vocabulary();
-        let base_prompt = self.styles.base_prompt().to_string();
-        let replacements = self.session(session).replacements.clone();
-        let timeout = Duration::from_millis(match provider.kind {
-            // The language model of the engine and a cleanup model answer as fast as a server.
-            sayso_core::config::ProviderKind::OpenAiCompatible { .. }
-            | sayso_core::config::ProviderKind::AppleIntelligence
-            | sayso_core::config::ProviderKind::CleanupModel { .. } => ai.http_timeout_ms,
-            _ => ai.cli_timeout_ms,
-        });
         let style_name = style.display_name();
+        let replacements = self.session(session).replacements.clone();
         let s = self.session(session);
         // The model that did the final pass: a cloud model, or the local model
         // that took over after it failed.
@@ -507,37 +506,17 @@ impl AppModel {
         // The language of this dictation, as the final pass had it.
         let language = Some(s.diagnostics.transcribe.language.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| self.config.dictation.language.clone());
         let speech_model = final_model.unwrap_or_else(|| self.config.dictation.model.clone());
-        let cleanup = self.cleanup_context(&provider, app, site, language, &speech_model);
+        let step = StyleStep {
+            ai: self.config.ai.clone(),
+            secrets: self.services.secrets.clone(),
+            engine: self.services.language_model.clone(),
+            vocabulary: self.vocabulary(),
+            base_prompt: self.styles.base_prompt().to_string(),
+            cleanup: self.cleanup_context(&provider, app, site, language, &speech_model),
+            timeout: style_timeout(&self.config.ai, &provider),
+        };
         cx.spawn(async move |this, cx| {
-            let out = cx
-                .background_spawn(async move {
-                    let started = Instant::now();
-                    let replacer = sayso_core::dictionary::Replacer::new(&[]);
-                    let mut out = match &cleanup {
-                        Some(c) => {
-                            let run = c.run(&style, &provider);
-                            let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: None, cleaner: Some(run), timeout };
-                            p.run_style(text, replacements)
-                        }
-                        None => {
-                            let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
-                            let setup_ms = started.elapsed().as_millis() as u64;
-                            let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), cleaner: None, timeout };
-                            let mut out = p.run_style(text, replacements);
-                            if let Some(timings) = &mut out.timings {
-                                timings.setup_ms = setup_ms;
-                            }
-                            out
-                        }
-                    };
-                    if let Some(timings) = &mut out.timings {
-                        timings.step_ms = started.elapsed().as_millis() as u64;
-                        timings.provider_kind = provider.kind.name().into();
-                        timings.thinking = provider.thinking_sent().map(str::to_string);
-                    }
-                    out
-                })
-                .await;
+            let out = cx.background_spawn(async move { step.run(&style, &provider, text, replacements) }).await;
             let _ = this.update(cx, |m, cx| {
                 let applied = matches!(out.enhance, EnhanceOutcome::Applied { .. });
                 m.session(session).enhance = Some(out.enhance.clone());
@@ -586,18 +565,7 @@ impl AppModel {
         language: String,
         speech_model: &sayso_core::models::ModelId,
     ) -> Option<CleanupContext> {
-        let ProviderKind::CleanupModel { model } = &provider.kind else { return None };
-        let model = sayso_core::cleanup::find(model)?;
-        let final_model_languages =
-            sayso_core::models::find_with(&self.config.speech, speech_model).map(|info| info.languages.to_vec()).unwrap_or_default();
-        Some(CleanupContext {
-            cleaner: self.services.cleaner.clone(),
-            model,
-            language_setting: language,
-            final_model_languages,
-            app,
-            site,
-        })
+        CleanupContext::for_provider(&self.services.cleaner, &self.config.speech, provider, app, site, language, speech_model)
     }
 
     fn insert(&mut self, session: SessionId, text: String, cx: &mut Context<Self>) {
@@ -650,6 +618,7 @@ impl AppModel {
                     });
                     s.diagnostics.insert = Some(timings);
                     s.diagnostics.stop_to_insert_ms = s.stopped.map(|t| t.elapsed().as_millis() as u64);
+                    m.tell_extensions(session);
                     m.dispatch(Event::Inserted { session }, cx);
                 }
                 Err(e) => {
@@ -666,6 +635,24 @@ impl AppModel {
             });
         })
         .detach();
+    }
+
+    /// `dictation_done` to the extensions that observe dictation
+    /// (`docs/extensions.md`, "Events"). The host sends nothing when
+    /// incognito was on at the start or now: the rule of history.
+    fn tell_extensions(&mut self, session: SessionId) {
+        let Some(host) = self.host.clone() else { return };
+        let incognito_now = self.incognito;
+        let s = self.session(session);
+        let done = sayso_host::DictationDone {
+            text: s.final_text.clone().unwrap_or_default(),
+            transcript: s.transcript.clone().unwrap_or_default(),
+            app: s.app.as_ref().map(|a| a.name.clone()),
+            site: s.site.clone(),
+            style: Some(s.style_id.clone()).filter(|id| !id.is_empty()),
+            time: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        };
+        host.dictation_done(done, s.incognito, incognito_now);
     }
 
     /// Paste the last text into the focused app.
@@ -811,33 +798,24 @@ impl AppModel {
             return;
         }
         let Some(store) = self.services.store.clone() else { return };
-        let ai = self.config.ai.clone();
-        let secrets = self.services.secrets.clone();
-        let engine = self.services.language_model.clone();
-        let vocabulary = self.vocabulary();
-        let base_prompt = self.styles.base_prompt().to_string();
-        let timeout = Duration::from_millis(ai.http_timeout_ms.max(ai.cli_timeout_ms));
         let target = entry.app.clone();
         // The language and the model of that dictation, not of today. An entry
         // from before diagnostics has no language: "auto" then runs only on a
         // language that the detector is sure of.
         let language = entry.diagnostics.as_ref().map(|d| d.transcribe.language.clone()).filter(|l| !l.is_empty()).unwrap_or_else(|| "auto".into());
-        let cleanup = self.cleanup_context(&provider, target.as_ref().map(|a| a.name.clone()), target.and_then(|a| a.site), language, &entry.model);
+        let step = StyleStep {
+            ai: self.config.ai.clone(),
+            secrets: self.services.secrets.clone(),
+            engine: self.services.language_model.clone(),
+            vocabulary: self.vocabulary(),
+            base_prompt: self.styles.base_prompt().to_string(),
+            cleanup: self.cleanup_context(&provider, target.as_ref().map(|a| a.name.clone()), target.and_then(|a| a.site), language, &entry.model),
+            timeout: Duration::from_millis(self.config.ai.http_timeout_ms.max(self.config.ai.cli_timeout_ms)),
+        };
         cx.spawn(async move |this, cx| {
             let ok = cx
                 .background_spawn(async move {
-                    let replacer = sayso_core::dictionary::Replacer::new(&[]);
-                    let out = match &cleanup {
-                        Some(c) => {
-                            let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: None, cleaner: Some(c.run(&style, &provider)), timeout };
-                            p.run_style(entry.final_text.clone(), entry.replacements.clone())
-                        }
-                        None => {
-                            let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
-                            let p = TextPipeline { replacer: &replacer, style: &style, base_prompt: &base_prompt, vocabulary: &vocabulary, enhancer: Some(enhancer.as_ref()), cleaner: None, timeout };
-                            p.run_style(entry.final_text.clone(), entry.replacements.clone())
-                        }
-                    };
+                    let out = step.run(&style, &provider, entry.final_text.clone(), entry.replacements.clone());
                     let ok = out.enhance_error.is_none();
                     let mut e = entry;
                     e.final_text = out.text;
@@ -1003,7 +981,7 @@ impl AppModel {
 /// True when a dictation becomes a history entry: history is on, and
 /// incognito was off both when the dictation started and when it ended.
 fn saves_history(history_enabled: bool, incognito_at_start: bool, incognito_at_end: bool) -> bool {
-    history_enabled && !incognito_at_start && !incognito_at_end
+    history_enabled && !sayso_core::dictation::incognito_during(incognito_at_start, incognito_at_end)
 }
 
 /// The backend for one final pass, with everything a background thread needs.
@@ -1086,33 +1064,6 @@ impl FinalPass {
     }
 }
 
-/// Why a style failed, for the overlay: "OpenRouter timed out after 4 s".
-/// The data of a dictation that a cleanup model reads. Built on the UI thread,
-/// used on a background thread.
-pub(crate) struct CleanupContext {
-    cleaner: Arc<sayso_cleanup_client::cleaner::RuntimeCleaner>,
-    model: &'static sayso_core::cleanup::CleanupModelInfo,
-    language_setting: String,
-    final_model_languages: Vec<&'static str>,
-    app: Option<String>,
-    site: Option<String>,
-}
-
-impl CleanupContext {
-    pub(crate) fn run<'a>(&'a self, style: &sayso_core::style::Style, provider: &'a Provider) -> CleanerRun<'a> {
-        CleanerRun {
-            cleaner: self.cleaner.as_ref(),
-            provider_id: &provider.id,
-            model: self.model,
-            plan: style.run_plan(provider),
-            language_setting: &self.language_setting,
-            final_model_languages: &self.final_model_languages,
-            app: self.app.as_deref(),
-            site: self.site.as_deref(),
-        }
-    }
-}
-
 /// What the overlay says when a cleanup model did less than the style.
 fn cleanup_notice_text(notice: &CleanupNotice, style_name: &str) -> String {
     let model_name = |id: &str| sayso_core::cleanup::find(id).map_or(id.to_string(), |m| m.name.to_string());
@@ -1125,6 +1076,7 @@ fn cleanup_notice_text(notice: &CleanupNotice, style_name: &str) -> String {
     }
 }
 
+/// Why a style failed, for the overlay: "OpenRouter timed out after 4 s".
 fn style_error_text(provider: &str, error: &EnhanceError) -> String {
     match error {
         EnhanceError::Timeout(ms) => t!("overlay.style_error.timeout", provider = provider, seconds = (*ms as f64 / 1000.0).round() as u64),

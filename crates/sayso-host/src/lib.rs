@@ -29,6 +29,8 @@ pub use enhance::StyleRequest;
 pub use holds::{Hold, Work};
 pub use identity::{Identify, Peer, SystemIdentify};
 pub use state::{Record, State, StateFile};
+/// The event of [`Host::dictation_done`], for the app.
+pub use sayso_protocol::DictationDone;
 
 use parking_lot::Mutex;
 use sayso_core::config::Config;
@@ -39,7 +41,7 @@ use sayso_core::paths::Paths;
 use sayso_core::pipeline::PipelineOutput;
 use sayso_core::style::StyleLibrary;
 use sayso_platform::SttBackend;
-use sayso_protocol::{DictationDone, Event};
+use sayso_protocol::Event;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};

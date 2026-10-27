@@ -9,3 +9,12 @@ extensions:
     reason_label: "%{extension} からの理由"
     download: "ダウンロード"
     cancel: "キャンセル"
+  # The question before Sayso quits while an extension records or transcribes.
+  quit_ask:
+    window_title: "Sayso を終了"
+    recording: "%{extension} が録音中です。終了しますか？"
+    transcribing: "%{extension} がファイルを文字起こし中です。終了しますか？"
+    body: "終了すると、この作業は止まり、拡張機能は完了できません。"
+    others_label: "ほかに作業中の拡張機能"
+    cancel: "キャンセル"
+    quit: "終了"

@@ -4,6 +4,7 @@
 //! insertion) runs on the background executor; results come back through
 //! `this.update(...)`.
 
+use crate::host::{UpdateRestart, update_restart};
 use crate::hub::Route;
 use crate::live::LiveAudio;
 use crate::services::Services;
@@ -113,6 +114,11 @@ pub struct AppModel {
     pub(crate) last_dictation: Instant,
     /// The links to the jobs of extensions, when the host runs.
     pub(crate) host_jobs: Option<crate::host::HostJobs>,
+    /// The host of extensions, when it runs.
+    pub(crate) host: Option<Arc<sayso_host::Host>>,
+    /// The user chose "Restart to update" while an extension had a live
+    /// session or a job. Sayso installs the update when the work ends.
+    pub(crate) update_waits: bool,
     pub permissions: HashMap<Permission, PermissionState>,
     /// A permission check runs on the background executor.
     permissions_checking: bool,
@@ -262,6 +268,8 @@ impl AppModel {
             model_idle: false,
             last_dictation: Instant::now(),
             host_jobs: None,
+            host: None,
+            update_waits: false,
             permissions: HashMap::new(),
             permissions_checking: false,
             detected: Detected::default(),
@@ -442,10 +450,23 @@ impl AppModel {
     }
 
     /// "Restart to update": put the new version in place and start it. Does
-    /// nothing during a dictation. The button is off then.
+    /// nothing during a dictation. The button is off then. While an extension
+    /// has a live session or a job, Sayso waits, and restarts when the work
+    /// ends (`docs/extensions.md`, "Lifecycle").
     pub fn restart_to_update(&mut self, cx: &mut Context<Self>) {
         if !self.can_restart_to_update() {
             return;
+        }
+        let holds = self.extension_holds();
+        match update_restart(true, &holds) {
+            UpdateRestart::Now => {}
+            UpdateRestart::WaitFor(name) => {
+                self.update_waits = true;
+                self.blocked_notice = Some(OverlayNotice::new(NoticeIcon::Info, t!("update.waits_for_extension", extension = name)));
+                cx.notify();
+                return;
+            }
+            UpdateRestart::NotNow => return,
         }
         let Some(updater) = &self.updater else { return };
         match updater.swap() {
@@ -459,9 +480,29 @@ impl AppModel {
         cx.notify();
     }
 
-    /// False during a dictation: a restart would lose it.
+    /// False during a dictation: a restart would lose it. False also while
+    /// an update waits for the work of an extension.
     pub fn can_restart_to_update(&self) -> bool {
-        matches!(self.machine.state, State::Idle)
+        matches!(self.machine.state, State::Idle) && !self.update_waits
+    }
+
+    /// The extensions that have a live session or a job now: Sayso asks
+    /// before it quits, and does not install an update.
+    pub fn extension_holds(&self) -> Vec<sayso_host::Hold> {
+        self.host.as_ref().map(|host| host.holds()).unwrap_or_default()
+    }
+
+    /// A live session or a job of an extension started or ended, or a
+    /// dictation ended while an update waits.
+    pub(crate) fn holds_changed(&mut self, cx: &mut Context<Self>) {
+        if self.update_waits {
+            let idle = matches!(self.machine.state, State::Idle);
+            if update_restart(idle, &self.extension_holds()) == UpdateRestart::Now {
+                self.update_waits = false;
+                self.restart_to_update(cx);
+            }
+        }
+        cx.notify();
     }
 
     /// The user saw "Sayso is now X".

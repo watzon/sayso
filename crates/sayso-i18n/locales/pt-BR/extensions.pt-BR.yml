@@ -9,3 +9,12 @@ extensions:
     reason_label: "Motivo informado por %{extension}"
     download: "Baixar"
     cancel: "Cancelar"
+  # The question before Sayso quits while an extension records or transcribes.
+  quit_ask:
+    window_title: "Sair do Sayso"
+    recording: "%{extension} está gravando. Sair mesmo assim?"
+    transcribing: "%{extension} está transcrevendo um arquivo. Sair mesmo assim?"
+    body: "Se você sair, este trabalho para e a extensão não consegue terminá-lo."
+    others_label: "Outras extensões trabalhando agora"
+    cancel: "Cancelar"
+    quit: "Sair"

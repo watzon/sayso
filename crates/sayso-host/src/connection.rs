@@ -303,6 +303,10 @@ pub(crate) fn send_to_subscribers(shared: &Shared, name: &str, event: &Event) {
         return;
     }
     let Some((_, capability)) = EVENTS.iter().find(|(known, _)| *known == name) else { return };
+    // Without a subscriber, the app (a dictation) does not read `state.toml`.
+    if !shared.connections.lock().values().any(|entry| entry.events.contains(&name)) {
+        return;
+    }
     let state = shared.state.current();
     let line = encode(None, event);
     let connections = shared.connections.lock();
