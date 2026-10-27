@@ -319,6 +319,58 @@ Sayso asks for the system audio permission the first time a live session asks fo
 - Jobs and live sessions make no history entries in Sayso. The text belongs to the extension.
 - While a live session captures the microphone or the system audio, the menu bar icon (the tray icon on Windows and Linux) shows that Sayso records. The popover names the extension and has a **Stop** button, which stops the live session.
 
+### Code
+
+Step 6 builds the Host API in these crates:
+
+| Crate | License | What it has |
+|---|---|---|
+| `sayso-protocol` | MIT | The messages of the engine protocol and the Host API, with serde. The error codes and the capabilities. The PCM helpers (base64 of 16-bit PCM). No I/O. |
+| `sayso-extension` | MIT | The client of the Host API. Blocking calls and a channel of events, with no async runtime, like the rest of Sayso. |
+| `sayso-engine-sdk` | MIT | Start an engine and talk to it over stdio. |
+| `sayso-host` | GPL | The server: the socket, the identity check, `state.toml`, the capabilities, the scheduler, jobs, and live sessions. No GPUI. |
+
+`sayso-host` gets the engine, the capture, and the user interface of Sayso through traits that `sayso-app` gives it (`HostServices`). For example, `sayso-app` shows the download question, and `sayso-host` waits for the answer. So the host runs and is tested without a window.
+
+The socket:
+
+- `SAYSO_HOST_SOCKET`, when it is set, is the path. Sayso sets it for the extensions that it starts.
+- Else on Linux: `$XDG_RUNTIME_DIR/sayso/host.sock`, or `$XDG_RUNTIME_DIR/app/<app id>/host.sock` in a Flatpak.
+- Else on macOS: `sayso/host.sock` in the temporary folder of the user (`confstr(_CS_DARWIN_USER_TEMP_DIR)`). Each process of the user gets the same folder, also when Finder starts it.
+- Else: `/tmp/sayso-<uid>/host.sock`.
+- Windows: `\\.\pipe\sayso-host-<user SID>`.
+
+The folder of the socket has mode `0700`. The SDK has the same rules, because an MIT crate cannot use the paths code of `sayso-core`.
+
+`state.toml` has one record for each installed extension. Step 8 writes it. Until then, tests and developers write it by hand:
+
+```toml
+[[extensions]]
+id = "dev.example.notetaker"
+version = "1.2.0"
+# The folder that the executable of the extension must be in.
+path = "/Users/me/Library/Application Support/sayso/extensions/dev.example.notetaker/1.2.0"
+sideloaded = false
+granted = ["models.read", "session.live", "audio.mic"]
+# macOS, for an extension from the registry: the code signature that install checked.
+team_id = "ABCDE12345"
+bundle_id = "dev.example.notetaker"
+```
+
+The host reads the file again when it changes, so a grant that the user takes back stops the next request. `models.read` is always granted.
+
+Errors of the Host API have these codes, in addition to the codes of the engine protocol: `not_an_extension`, `capability`, `busy`, `declined`, `model_not_downloaded`, `wrong_role` (a model that cannot do the role of the request, for example a speech model as `vad_model`), `unsupported` (the engine of this computer cannot do it), and `bad_request`.
+
+Sub-steps, each with its own pull request:
+
+- **6a.** `sayso-protocol`, the transport, the identity check, `state.toml`, `hello`, `bye`, `host_closing`, and the connection of `sayso-extension`.
+- **6b.** `list_models` and `download_model` with the question to the user.
+- **6c.** Segments, VAD, and diarization in the engine client. Jobs, the queue, and the scheduler that puts dictation first.
+- **6d.** Live sessions from the microphone and from the client, and `record_to`.
+- **6e.** `enhance`, `subscribe` and `dictation_done`, the privacy rules, the lifecycle rules, `sayso-engine-sdk`, the test extension, and the dictation benchmark.
+
+The recording state of the menu bar icon is in step 8, with the other UI.
+
 ## Capabilities
 
 The user grants the capabilities of an extension at install. An update that adds a capability asks again before it runs. The user can take back a capability with **Permissions** on the Installed tab of the Marketplace. Then the host refuses its requests, and the extension must handle that.
