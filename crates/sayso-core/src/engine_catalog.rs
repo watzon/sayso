@@ -6,7 +6,7 @@
 //! file `Catalog.generated.swift`, and a test checks that the file is the
 //! same as [`json`] (see [`swift_source`]).
 
-use crate::models::{self, ModelInfo};
+use crate::models::{self, ModelInfo, ModelTask};
 use crate::models_onnx::{self, System};
 use serde_json::{Value, json};
 
@@ -66,6 +66,11 @@ fn entry(m: &ModelInfo) -> Value {
     }
     if m.live_preview {
         roles.push("streaming");
+    }
+    match m.task() {
+        ModelTask::Speech => {}
+        ModelTask::Vad => roles.push("vad"),
+        ModelTask::Diarization => roles.push("diarization"),
     }
     json!({
         "id": m.id,
@@ -174,5 +179,38 @@ mod tests {
         assert!(v3["size_bytes"].as_u64().unwrap() > 0);
         assert!(v3.get("min_macos").is_none());
         assert_eq!(catalog["retired"], json!([]));
+    }
+
+    /// Each engine gets the VAD model and the diarization model with the engine
+    /// object that it runs, and with the role of the model only.
+    #[test]
+    fn vad_and_diarization_entries_have_their_role_and_engine() {
+        let find = |engine: Engine, id: &str| {
+            json(engine)["models"].as_array().unwrap().iter().find(|m| m["id"] == id).cloned().unwrap_or_else(|| panic!("{id} in {engine:?}"))
+        };
+        let swift_vad = find(Engine::Swift, "silero-vad");
+        assert_eq!(swift_vad["engine"], json!({"kind": "fluid_vad"}));
+        assert_eq!(swift_vad["roles"], json!(["vad"]));
+        assert_eq!(swift_vad["size_bytes"], 1_063_427);
+        let swift_diarization = find(Engine::Swift, "speaker-diarization");
+        assert_eq!(swift_diarization["engine"], json!({"kind": "fluid_diarization"}));
+        assert_eq!(swift_diarization["roles"], json!(["diarization"]));
+        assert_eq!(swift_diarization["size_bytes"], 21_787_007);
+        for system in [System::Linux, System::Windows] {
+            let vad = find(Engine::Rust(system), "silero-vad");
+            assert_eq!(vad["engine"], json!({"kind": "sherpa_vad", "recipe": "silero", "file": "silero_vad.onnx"}));
+            assert_eq!(vad["roles"], json!(["vad"]));
+            assert_eq!(vad["size_bytes"], 643_854);
+            assert_eq!(vad["timestamps"], "none");
+            let diarization = find(Engine::Rust(system), "speaker-diarization");
+            assert_eq!(
+                diarization["engine"],
+                json!({"kind": "sherpa_diarization", "segmentation": "sherpa-onnx-pyannote-segmentation-3-0",
+                       "embedding": models_onnx::SPEAKER_EMBEDDING.0})
+            );
+            assert_eq!(diarization["roles"], json!(["diarization"]));
+            assert_eq!(diarization["size_bytes"], 6_958_444 + models_onnx::SPEAKER_EMBEDDING.1);
+            assert!(find(Engine::Rust(system), "silero-vad")["languages"].as_array().unwrap().len() > 50, "all languages");
+        }
     }
 }

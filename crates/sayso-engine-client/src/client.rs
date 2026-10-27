@@ -583,8 +583,10 @@ impl SttBackend for EngineClient {
     }
 }
 
+/// A local model of any task: a speech model, or a VAD or diarization model
+/// that the app downloads and deletes.
 fn find_model(model: &ModelId) -> Result<ModelInfo> {
-    models::find(model).ok_or_else(|| failed(format!("unknown model {model}")))
+    models::find_local(model).ok_or_else(|| failed(format!("unknown model {model}")))
 }
 
 /// The language to send for a model: the setting, or the nearest value the model
@@ -665,9 +667,10 @@ impl Inner {
         Ok(())
     }
 
-    /// Ask the sidecar for the disk state of every catalog model. No network.
+    /// Ask the sidecar for the disk state of every local model: the speech,
+    /// VAD, and diarization models. No network.
     fn refresh_statuses(&self) -> Result<()> {
-        let list: Vec<Value> = models::catalog()
+        let list: Vec<Value> = models::local_models()
             .iter()
             .map(|m| json!({"id": m.id, "engine": m.engine}))
             .collect();

@@ -461,6 +461,8 @@ fn issue_text(problem: &ConfigProblem) -> String {
         ConfigProblem::UnknownProvider(id) => t!("settings.general.issue.unknown_provider", id = id),
         ConfigProblem::UnknownModel(id) => t!("settings.general.issue.unknown_model", id = id),
         ConfigProblem::NotAStreamingModel(id) => t!("settings.general.issue.not_a_streaming_model", id = id),
+        ConfigProblem::NotAVadModel(id) => t!("settings.general.issue.not_a_vad_model", id = id),
+        ConfigProblem::NotADiarizationModel(id) => t!("settings.general.issue.not_a_diarization_model", id = id),
         ConfigProblem::UnknownInterfaceLanguage(code) => t!("settings.general.issue.unknown_interface_language", code = code),
         ConfigProblem::UnknownDictationLanguage(code) => t!("settings.general.issue.unknown_dictation_language", code = code),
         ConfigProblem::SpeechTimeoutTooShort => t!("settings.general.issue.speech_timeout_too_short"),

@@ -80,6 +80,27 @@ mod tests {
         assert!(preparation(&preview, None, Some(&preview), &words).1.is_empty());
     }
 
+    /// Dictation does not use VAD (decision 11 of `docs/extensions.md`): with
+    /// every local model on disk, no final model and no preview choice loads a
+    /// VAD or diarization model.
+    #[test]
+    fn no_vad_or_diarization_model_is_loaded_for_dictation() {
+        use sayso_core::config::PreviewChoice;
+        use sayso_core::models::{ModelTask, catalog, local_models, preview_for};
+        let roles: Vec<ModelId> = local_models().iter().filter(|m| m.task() != ModelTask::Speech).map(|m| m.id.clone()).collect();
+        assert!(!roles.is_empty());
+        let choices = [vec![PreviewChoice::Auto], roles.iter().cloned().map(PreviewChoice::Model).collect()].concat();
+        for active in catalog() {
+            for choice in &choices {
+                let preview = preview_for(active, choice, "en", |_| true);
+                for idle in [false, true] {
+                    let ids = wanted(Some(&active.id), preview.as_ref(), idle);
+                    assert!(ids.iter().all(|id| !roles.contains(id)), "{} {choice:?}: {ids:?}", active.id);
+                }
+            }
+        }
+    }
+
     #[test]
     fn the_active_model_and_the_preview_model_are_wanted() {
         let (final_pass, preview) = (id("whisper"), id("kroko"));

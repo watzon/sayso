@@ -10,8 +10,8 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use sayso_core::config::is_local_url;
-use sayso_core::config::PreviewChoice;
-use sayso_core::models::{EngineKind, Family, ModelId, ModelInfo, format_size};
+use sayso_core::config::{PreviewChoice, RoleChoice};
+use sayso_core::models::{BASIC_VAD, EngineKind, Family, ModelId, ModelInfo, ModelTask, Vad, format_size};
 use sayso_core::speech::{SpeechProvider, SpeechProviderKind};
 use sayso_core::stt::ModelStatus;
 use sayso_i18n::t;
@@ -245,6 +245,20 @@ enum OpenMenu {
     Sort,
     /// The "Use" menu in the row of a streaming model.
     Use(ModelId),
+}
+
+/// A row of the Voice detection or Speakers section.
+struct RoleRow {
+    /// Unique on the page: the model id, "basic", or the section for Automatic.
+    key: String,
+    name: String,
+    meta: String,
+    size: String,
+    action: AnyElement,
+    /// What a screen reader hears when the state of the model changes.
+    heard: String,
+    /// The model that a click on the row shows in Model details.
+    open: Option<ModelId>,
 }
 
 /// The state of the live preview slot.
@@ -720,7 +734,6 @@ impl ModelsPage {
         let c = cx.paper().colors;
         let m = self.model.read(cx);
         let status = m.status_of(&info.id);
-        let engine = m.services.engine.is_some() && !m.engine_starting;
         let remote = info.is_remote();
         // A custom endpoint on this Mac is not cloud.
         let place_label = match sayso_core::speech::split_model_id(&info.id).and_then(|(p, _)| m.config.speech.provider(p)) {
@@ -737,34 +750,7 @@ impl ModelsPage {
         let name = info.name.clone();
 
         let action: AnyElement = match &status {
-            ModelStatus::Downloading { fraction, .. } => div()
-                .flex()
-                .flex_col()
-                .gap(px(6.))
-                .w_full()
-                .child(div().flex().justify_between().child(ui(t!("models.row.downloading"), 12., 16., FontWeight::SEMIBOLD, c.ink)).child(kit::plain_mono(format!("{:.0}%", fraction * 100.), 11., c.graphite)))
-                .child(Progress::new(*fraction).label(t!("models.a11y.downloading", name = name)))
-                .into_any_element(),
-            ModelStatus::NotDownloaded if !remote => Button::new(SharedString::from(format!("dl-{key}")), t!("models.download"))
-                .a11y_label(t!("models.a11y.download", name = name))
-                .small()
-                .disabled(!engine)
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    let id = id.clone();
-                    this.model.update(cx, |m, cx| m.download_model(id, cx));
-                }))
-                .into_any_element(),
-            ModelStatus::Failed { message, reason } => div()
-                .flex()
-                .flex_col()
-                .items_end()
-                .gap(px(4.))
-                .child(Button::new(SharedString::from(format!("retry-{key}")), t!("models.try_again")).a11y_label(t!("models.a11y.try_again", name = name)).small().on_click(cx.listener(move |this, _, _, cx| {
-                    let id = id.clone();
-                    this.model.update(cx, |m, cx| m.download_model(id, cx));
-                })))
-                .child(ui(crate::engine_text::describe(*reason, message), 11., 14., FontWeight::NORMAL, c.danger).truncate().max_w(px(150.)))
-                .into_any_element(),
+            _ if let Some(action) = self.download_action(info, &status, cx) => action,
             ModelStatus::Optimizing => ui(t!("models.row.optimizing"), 12., 16., FontWeight::SEMIBOLD, c.graphite).into_any_element(),
             _ if tag.is_some() => role_pill(tag.clone().unwrap_or_default(), &c).into_any_element(),
             _ if info.live_preview => {
@@ -858,6 +844,51 @@ impl ModelsPage {
             .child(LiveStatus::new("state", heard).flex().flex_none().justify_end().w(px(ACTION_W)).child(action))
     }
 
+    /// The action of a model that is not ready on disk: the download progress,
+    /// a Download button, or Try again with the reason. None for a model that
+    /// is on disk, and for a cloud model.
+    fn download_action(&self, info: &ModelInfo, status: &ModelStatus, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let c = cx.paper().colors;
+        let engine = {
+            let m = self.model.read(cx);
+            m.services.engine.is_some() && !m.engine_starting
+        };
+        let id = info.id.clone();
+        let key = info.id.as_str().to_string();
+        let name = info.name.clone();
+        Some(match status {
+            ModelStatus::Downloading { fraction, .. } => div()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .w_full()
+                .child(div().flex().justify_between().child(ui(t!("models.row.downloading"), 12., 16., FontWeight::SEMIBOLD, c.ink)).child(kit::plain_mono(format!("{:.0}%", fraction * 100.), 11., c.graphite)))
+                .child(Progress::new(*fraction).label(t!("models.a11y.downloading", name = name)))
+                .into_any_element(),
+            ModelStatus::NotDownloaded if !info.is_remote() => Button::new(SharedString::from(format!("dl-{key}")), t!("models.download"))
+                .a11y_label(t!("models.a11y.download", name = name))
+                .small()
+                .disabled(!engine)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    let id = id.clone();
+                    this.model.update(cx, |m, cx| m.download_model(id, cx));
+                }))
+                .into_any_element(),
+            ModelStatus::Failed { message, reason } => div()
+                .flex()
+                .flex_col()
+                .items_end()
+                .gap(px(4.))
+                .child(Button::new(SharedString::from(format!("retry-{key}")), t!("models.try_again")).a11y_label(t!("models.a11y.try_again", name = name)).small().on_click(cx.listener(move |this, _, _, cx| {
+                    let id = id.clone();
+                    this.model.update(cx, |m, cx| m.download_model(id, cx));
+                })))
+                .child(ui(crate::engine_text::describe(*reason, message), 11., 14., FontWeight::NORMAL, c.danger).truncate().max_w(px(150.)))
+                .into_any_element(),
+            _ => return None,
+        })
+    }
+
     /// The "Use" menu of a streaming model: for the final text or for the preview.
     fn use_menu(&self, id: ModelId, cx: &mut Context<Self>) -> impl IntoElement {
         let items = vec![MenuItem::new(t!("models.row.for_final")), MenuItem::new(t!("models.row.for_preview"))];
@@ -901,13 +932,186 @@ impl ModelsPage {
     }
 
     // -----------------------------------------------------------------------
+    // VAD and diarization models
+    // -----------------------------------------------------------------------
+
+    /// Voice detection (VAD) or Speakers (diarization): Automatic, Basic VAD,
+    /// and the models of the role. Each row has the choice of `models.vad` or
+    /// `models.diarization`. With a search, only the rows that match show.
+    fn role_section(&self, task: ModelTask, query: &str, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+        let c = cx.paper().colors;
+        // Read the model first: the buttons below need `cx`.
+        let (title, note, models, setting, used) = {
+            let m = self.model.read(cx);
+            let (title, note, models, setting) = match task {
+                ModelTask::Vad => (t!("models.roles.vad_title"), t!("models.roles.vad_note"), m.vad_models(), m.config.models.vad.clone()),
+                ModelTask::Diarization => {
+                    (t!("models.roles.speakers_title"), t!("models.roles.speakers_note"), m.diarization_models(), m.config.models.diarization.clone())
+                }
+                ModelTask::Speech => return None,
+            };
+            // What a job gets now: "basic", a model id, or None (no diarization).
+            let used: Option<ModelId> = match task {
+                ModelTask::Vad => Some(match m.vad_in_use() {
+                    Vad::Basic => ModelId::new(BASIC_VAD),
+                    Vad::Model(id) => id,
+                }),
+                _ => m.diarization_in_use(),
+            };
+            let models: Vec<(ModelInfo, ModelStatus)> = models.into_iter().map(|i| {
+                let status = m.status_of(&i.id);
+                (i, status)
+            }).collect();
+            (title, note, models, setting, used)
+        };
+        // An id that is not a model of the role counts as "auto" (`Config::validate` warns).
+        let chosen = match &setting {
+            RoleChoice::Model(id) if models.iter().any(|(i, _)| &i.id == id) || (task == ModelTask::Vad && id.as_str() == BASIC_VAD) => Some(id.clone()),
+            _ => None,
+        };
+        let name_of = |id: &ModelId| if id.as_str() == BASIC_VAD { t!("models.roles.basic") } else { models.iter().find(|(i, _)| &i.id == id).map_or_else(|| id.to_string(), |(i, _)| i.name.clone()) };
+        let automatic_meta = match &used {
+            Some(id) => t!("models.roles.automatic_uses", name = name_of(id)),
+            None => t!("models.roles.automatic_none"),
+        };
+        // The tag goes on the choice: Automatic, or the chosen row when it is what a job gets.
+        let in_use = |id: &ModelId| chosen.as_ref() == Some(id) && used.as_ref() == Some(id);
+        let set = move |choice: RoleChoice| {
+            move |this: &mut Self, _: &ClickEvent, _: &mut Window, cx: &mut Context<Self>| {
+                let choice = choice.clone();
+                this.model.update(cx, |m, cx| if task == ModelTask::Vad { m.set_vad(choice, cx) } else { m.set_diarization(choice, cx) });
+            }
+        };
+        let use_button = |key: &str, name: &str, choice: RoleChoice, cx: &mut Context<Self>| {
+            Button::new(SharedString::from(format!("use-{key}")), t!("models.row.use"))
+                .a11y_label(t!("models.a11y.use", name = name))
+                .small()
+                .on_click(cx.listener(set(choice)))
+                .into_any_element()
+        };
+        let pill = || role_pill(t!("models.row.in_use"), &c).into_any_element();
+
+        let mut rows: Vec<RoleRow> = Vec::new();
+        let automatic = t!("models.setup.automatic");
+        if query.is_empty() {
+            let key = format!("{task:?}-auto").to_lowercase();
+            let action = if chosen.is_none() { pill() } else { use_button(&key, &automatic, RoleChoice::Auto, cx) };
+            rows.push(RoleRow { key, name: automatic, meta: automatic_meta, size: String::new(), action, heard: String::new(), open: None });
+        }
+        if task == ModelTask::Vad {
+            let (name, meta) = (t!("models.roles.basic"), t!("models.roles.basic_meta"));
+            if query.is_empty() || [&name, &meta].iter().any(|s| s.to_lowercase().contains(query)) {
+                let basic = ModelId::new(BASIC_VAD);
+                let action = if in_use(&basic) { pill() } else { use_button(BASIC_VAD, &name, RoleChoice::Model(basic), cx) };
+                rows.push(RoleRow { key: BASIC_VAD.into(), name, meta, size: t!("models.roles.built_in"), action, heard: String::new(), open: None });
+            }
+        }
+        for (info, status) in models.iter().filter(|(i, _)| matches(i, query)) {
+            let key = info.id.as_str().to_string();
+            let action = match self.download_action(info, status, cx) {
+                Some(action) => action,
+                None if in_use(&info.id) => pill(),
+                None => use_button(&key, &info.name, RoleChoice::Model(info.id.clone()), cx),
+            };
+            let meta = format!("{} · {}", info.vendor, t!("models.roles.all_languages"));
+            rows.push(RoleRow { key, name: info.name.clone(), meta, size: size_label(info), action, heard: status_text(&info.name, status), open: Some(info.id.clone()) });
+        }
+        if rows.is_empty() {
+            return None;
+        }
+
+        let head = div()
+            .flex()
+            .flex_col()
+            .flex_none()
+            .gap(px(3.))
+            .pb(px(10.))
+            .border_b_1()
+            .border_color(c.rule)
+            .child(text::title(title.clone(), 20., &c).line_height(px(26.)))
+            .child(ui(note, 13., 18., FontWeight::NORMAL, c.graphite));
+        let count = rows.len();
+        let mut list = div().id(SharedString::from(format!("rows-{title}"))).role(Role::List).aria_label(title.clone()).flex().flex_col();
+        for (i, row) in rows.into_iter().enumerate() {
+            list = list.child(self.role_row(row, (i, count), cx));
+        }
+        Some(div().id(SharedString::from(format!("group-{title}"))).flex().flex_col().child(head).child(list))
+    }
+
+    /// One row of a VAD or diarization section. It has the lanes of the speech
+    /// lists, so the size and the action line up with them.
+    fn role_row(&self, row: RoleRow, place: (usize, usize), cx: &mut Context<Self>) -> impl IntoElement {
+        let c = cx.paper().colors;
+        let text = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .gap(px(3.))
+            .child(plain_title(row.name.clone(), 17., &c).line_height(px(22.)))
+            .child(kit::plain(row.meta.clone(), 13., 16., FontWeight::NORMAL, c.graphite).truncate());
+        let lanes = |d: Div| {
+            d.flex()
+                .flex_1()
+                .min_w_0()
+                .h_full()
+                .items_center()
+                .gap(px(16.))
+                .child(text)
+                // No accuracy and speed for these models: empty lanes keep the size column in line.
+                .when(!self.narrow, |d| d.child(div().w(px(ACCURACY_W + 16. + SPEED_W)).flex_none()))
+                .child(kit::plain_mono(row.size.clone(), 12., c.graphite).w(px(SIZE_W)).flex_none())
+        };
+        let body: AnyElement = match row.open {
+            Some(id) => {
+                let said = [row.name.clone(), row.meta.clone(), row.size.clone(), t!("models.a11y.show_details")].join(", ");
+                lanes(div())
+                    .id(SharedString::from(format!("open-{}", row.key)))
+                    .child(
+                        Pressable::new(SharedString::from(format!("open-press-{}", row.key)))
+                            .label(said)
+                            .absolute()
+                            .inset_0()
+                            .cursor_pointer()
+                            .on_click(cx.listener(move |this, _, window, cx| this.open_details(id.clone(), window, cx))),
+                    )
+                    .relative()
+                    .into_any_element()
+            }
+            None => lanes(div()).into_any_element(),
+        };
+        div()
+            .id(SharedString::from(format!("model-{}", row.key)))
+            .role(Role::ListItem)
+            .aria_label(row.name.clone())
+            .aria_position_in_set(place.0 + 1)
+            .aria_size_of_set(place.1)
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(16.))
+            .h(px(66.))
+            .border_b_1()
+            .border_color(c.rule)
+            .child(body)
+            .child(LiveStatus::new("state", row.heard).flex().flex_none().justify_end().w(px(ACTION_W)).child(row.action))
+    }
+
+    // -----------------------------------------------------------------------
     // Details
     // -----------------------------------------------------------------------
 
     fn details_modal(&self, id: &ModelId, cx: &mut Context<Self>) -> Option<AnyElement> {
         let c = cx.paper().colors;
         let m = self.model.read(cx);
-        let info = m.catalog().into_iter().find(|i| &i.id == id)?;
+        let info = m.catalog().into_iter().find(|i| &i.id == id).or_else(|| sayso_core::models::find_local(id))?;
+        let task = info.task();
+        // A VAD or diarization model is in use when the user chose it and a job gets it.
+        let role_in_use = match (task, &m.config.models) {
+            (ModelTask::Vad, c) => c.vad == RoleChoice::Model(info.id.clone()) && m.vad_in_use() == Vad::Model(info.id.clone()),
+            (ModelTask::Diarization, c) => c.diarization == RoleChoice::Model(info.id.clone()) && m.diarization_in_use().as_ref() == Some(&info.id),
+            (ModelTask::Speech, _) => false,
+        };
         let status = m.status_of(&info.id);
         let engine = m.services.engine.is_some() && !m.engine_starting;
         let active = m.active_model();
@@ -916,7 +1120,13 @@ impl ModelsPage {
         let remote = info.is_remote();
         let key = info.id.as_str().to_string();
 
-        let kind = if remote { t!("models.hero.cloud") } else if info.live_preview { t!("models.details.streaming") } else { t!("models.details.non_streaming") };
+        let kind = match task {
+            ModelTask::Vad => t!("models.roles.kind_vad"),
+            ModelTask::Diarization => t!("models.roles.kind_diarization"),
+            ModelTask::Speech if remote => t!("models.hero.cloud"),
+            ModelTask::Speech if info.live_preview => t!("models.details.streaming"),
+            ModelTask::Speech => t!("models.details.non_streaming"),
+        };
         let close = kit::icon_button("close-details", Icon::Close, 10., cx).label(t!("models.a11y.close_details")).on_click(cx.listener(|this, _, _, cx| {
             this.details = None;
             cx.notify();
@@ -1014,7 +1224,15 @@ impl ModelsPage {
             .child(fact(t!("models.details.punctuation"), yes_no(info.punctuation), !info.punctuation))
             .child(fact(t!("models.details.dictionary"), if info.vocabulary { t!("models.details.used") } else { t!("models.details.not_used") }, !info.vocabulary))
             .child(fact(t!("models.details.size"), if remote { t!("models.hero.cloud") } else { size_label(&info) }, false).border_b_1());
-        let facts = div().flex().gap(px(28.)).pt(px(4.)).pb(px(16.)).px(px(30.)).child(left).child(right);
+        let facts = div().flex().gap(px(28.)).pt(px(4.)).pb(px(16.)).px(px(30.));
+        // A VAD or diarization model gives no text: only its languages and its size.
+        let facts = if task == ModelTask::Speech {
+            facts.child(left).child(right)
+        } else {
+            facts
+                .child(div().flex().flex_col().flex_1().child(fact(t!("models.details.languages"), t!("models.roles.all_languages"), false).border_b_1()))
+                .child(div().flex().flex_col().flex_1().child(fact(t!("models.details.size"), size_label(&info), false).border_b_1()))
+        };
         let source = info.wer_percent.map(|wer| ui(t!("models.details.source", wer = sayso_i18n::numbers::decimal(wer as f64, 2)), 12., 17., FontWeight::NORMAL, c.graphite).px(px(30.)).pb(px(18.)));
 
         // The action bar.
@@ -1053,6 +1271,21 @@ impl ModelsPage {
                 })));
             }
             ModelStatus::Downloading { fraction, .. } => bar = bar.child(div().w(px(200.)).child(Progress::new(*fraction).label(t!("models.a11y.downloading", name = info.name)))),
+            _ if task != ModelTask::Speech => {
+                bar = bar.child(if role_in_use {
+                    role_pill(t!("models.row.in_use"), &c).into_any_element()
+                } else {
+                    let id = info.id.clone();
+                    Button::new("details-use-role", t!("models.row.use"))
+                        .a11y_label(t!("models.a11y.use", name = info.name))
+                        .primary()
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            let choice = RoleChoice::Model(id.clone());
+                            this.model.update(cx, |m, cx| if task == ModelTask::Vad { m.set_vad(choice, cx) } else { m.set_diarization(choice, cx) });
+                        }))
+                        .into_any_element()
+                });
+            }
             _ => {
                 if info.live_preview {
                     bar = bar.child(if is_preview {
@@ -1457,9 +1690,9 @@ impl Render for ModelsPage {
         }
         let pad = crate::layout::page_pad(window, &self.model.read(cx).config);
         self.narrow = crate::layout::page_narrow(window, &self.model.read(cx).config);
-        let (catalog, roles, used, dir, engine_down) = {
+        let (catalog, roles, used, dir, engine_down, extensions) = {
             let m = self.model.read(cx);
-            (m.catalog(), Roles::of(m), m.models_disk_bytes(), m.models_dir_display(), m.services.engine.is_none())
+            (m.catalog(), Roles::of(m), m.models_disk_bytes(), m.models_dir_display(), m.services.engine.is_none(), m.extensions_installed)
         };
         let model = self.model.clone();
         let used_label = if used == 0 { t!("models.page.nothing_downloaded") } else { t!("models.page.used", size = format_size(used)) };
@@ -1488,8 +1721,13 @@ impl Render for ModelsPage {
             list
         };
         let (non_streaming, streaming) = (list(false), list(true));
+        // The VAD and diarization models matter only to extensions. A user who only dictates does not see them.
+        let (vad, speakers) = match extensions {
+            true => (self.role_section(ModelTask::Vad, &query, cx), self.role_section(ModelTask::Diarization, &query, cx)),
+            false => (None, None),
+        };
         let mut tables = div().flex().flex_col().gap(px(36.)).child(self.toolbar(cx));
-        if non_streaming.is_empty() && streaming.is_empty() {
+        if non_streaming.is_empty() && streaming.is_empty() && vad.is_none() && speakers.is_none() {
             tables = tables.child(ui(t!("models.search.empty", query = self.search.read(cx).value().trim().to_string()), 14., 20., FontWeight::NORMAL, c.graphite));
         }
         if !non_streaming.is_empty() {
@@ -1498,6 +1736,7 @@ impl Render for ModelsPage {
         if !streaming.is_empty() {
             tables = tables.child(self.group(t!("models.group.streaming"), t!("models.group.streaming_note"), &streaming, &roles, cx));
         }
+        tables = tables.children(vad).children(speakers);
         let cloud = self.cloud(&roles, cx);
         let setup = self.setup(cx);
         let details = self.details.clone().and_then(|id| self.details_modal(&id, cx));

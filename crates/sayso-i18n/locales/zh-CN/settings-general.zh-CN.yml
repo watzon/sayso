@@ -39,6 +39,8 @@ settings:
       unknown_provider: "没有 ID 为“%{id}”的服务商"
       unknown_model: "“%{id}”不是已知的模型"
       not_a_streaming_model: "“%{id}”无法显示实时预览。请使用“auto”或流式模型"
+      not_a_vad_model: "“%{id}”不是 VAD 模型。Sayso 使用“auto”"
+      not_a_diarization_model: "“%{id}”不是说话人分离模型。Sayso 使用“auto”"
       unknown_interface_language: "Sayso 没有“%{code}”这种界面语言。Sayso 会使用系统语言"
       unknown_dictation_language: "“%{code}”不是 Sayso 认识的语言代码。请使用“auto”或“en”这样的代码"
       speech_timeout_too_short: "必须至少为 1000 毫秒"
