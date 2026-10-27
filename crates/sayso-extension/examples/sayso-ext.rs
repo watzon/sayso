@@ -233,7 +233,10 @@ fn call(client: &Client, kind: &str, body: Fields) -> Result<Reply, Error> {
         while !request.is_finished() {
             print_waiting(&events, Duration::from_millis(20));
         }
-        // The client puts the events of a request on the channel before its reply.
+        // The client puts the events of a request on the channel before its
+        // reply. The reply comes on another channel, so an event without an
+        // `id` that the host sent just after the reply (the first
+        // `job_progress` of a job) can print before the reply line.
         for event in events.try_iter() {
             print_any(&event);
         }
