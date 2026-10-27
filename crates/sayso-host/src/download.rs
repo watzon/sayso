@@ -109,16 +109,19 @@ fn ask_and_start<'a>(
     if !responder.is_open() {
         return Err(Reply::error(None, "the connection is closed"));
     }
+    let extension_name = shared.state.current().record(extension_id).map_or_else(|| extension_id.to_string(), |record| record.display_name().to_string());
     let question = DownloadQuestion {
         extension_id: extension_id.to_string(),
-        extension_name: extension_id.to_string(),
+        extension_name,
         model_id: info.id.to_string(),
         model_name: info.name.clone(),
         size_bytes: info.size_bytes,
         reason: short(&request.reason),
     };
     log::info!("host: {extension_id} asks to download {}", info.id);
-    let accepted = shared.services.ask_download(&question);
+    // The question closes when the extension disconnects or Sayso closes.
+    let withdrawn = || !responder.is_open() || shared.is_closing();
+    let accepted = shared.services.ask_download(&question, &withdrawn);
     log::info!("host: the user said {} to {extension_id} for {}", if accepted { "yes" } else { "no" }, info.id);
     if !accepted {
         return Err(Reply::error(Some(ErrorCode::Declined), "the user said no to the download"));

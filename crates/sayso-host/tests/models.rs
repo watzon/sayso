@@ -357,11 +357,12 @@ fn another_request_answers_while_a_download_waits_for_the_user() {
     });
 }
 
-/// The extension goes away while the question is open. The user answers yes
-/// later, and the host starts nothing for a program that is not there.
+/// The extension goes away while the question is open. The host withdraws
+/// the question (the app closes its window, as a Cancel) and starts nothing
+/// for a program that is not there.
 #[cfg(unix)]
 #[test]
-fn a_closed_connection_starts_no_download() {
+fn a_closed_connection_closes_the_question_and_starts_no_download() {
     use std::io::Write;
     let world = world(&["models.download"]);
     let model = speech();
@@ -369,9 +370,24 @@ fn a_closed_connection_starts_no_download() {
     let request = format!("{{\"v\":1,\"type\":\"download_model\",\"id\":\"d1\",\"model\":\"{model}\",\"reason\":\"x\"}}\n");
     stream.write_all(request.as_bytes()).unwrap();
     world.services.wait_for_questions(1);
+    assert_eq!(world.services.withdrawn.load(std::sync::atomic::Ordering::SeqCst), 0);
     drop(stream);
+    eventually("the host withdraws the question", || world.services.withdrawn.load(std::sync::atomic::Ordering::SeqCst) == 1);
     eventually("the host sees the closed connection", || world._host.connected_extensions().len() == 1);
-    world.services.answer(true);
-    std::thread::sleep(Duration::from_millis(500));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(world.engine.downloads.lock().is_empty());
+}
+
+#[test]
+fn closing_the_host_closes_an_open_question() {
+    let world = world(&["models.download"]);
+    let model = speech();
+    std::thread::scope(|scope| {
+        let download = scope.spawn(|| world.client.request("download_model", download_request(&model)));
+        world.services.wait_for_questions(1);
+        world._host.close();
+        eventually("the host withdraws the question", || world.services.withdrawn.load(std::sync::atomic::Ordering::SeqCst) == 1);
+        assert!(download.join().unwrap().is_err());
+    });
     assert!(world.engine.downloads.lock().is_empty());
 }

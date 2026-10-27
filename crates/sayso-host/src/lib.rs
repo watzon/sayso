@@ -13,6 +13,8 @@
 mod bus;
 mod connection;
 mod download;
+pub mod enhance;
+mod holds;
 mod identity;
 mod job_requests;
 pub mod live;
@@ -23,14 +25,21 @@ mod state;
 pub mod jobs;
 mod transport;
 
+pub use enhance::StyleRequest;
+pub use holds::{Hold, Work};
 pub use identity::{Identify, Peer, SystemIdentify};
 pub use state::{Record, State, StateFile};
 
 use parking_lot::Mutex;
 use sayso_core::config::Config;
+use sayso_core::enhance::EnhanceError;
+use sayso_core::history::EnhanceOutcome;
 use sayso_core::models::ModelId;
 use sayso_core::paths::Paths;
+use sayso_core::pipeline::PipelineOutput;
+use sayso_core::style::StyleLibrary;
 use sayso_platform::SttBackend;
+use sayso_protocol::{DictationDone, Event};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -38,7 +47,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 
-/// What the host gets from the app. A later sub-step of step 6 adds `enhance`.
+/// What the host gets from the app.
 ///
 /// The host calls these methods from its own threads, never from the thread
 /// of a window.
@@ -55,7 +64,32 @@ pub trait HostServices: Send + Sync {
     /// Ask the user whether an extension may download a model. Blocks until
     /// the user answers. True means download. A user who closes the question
     /// without an answer says no.
-    fn ask_download(&self, question: &DownloadQuestion) -> bool;
+    ///
+    /// `withdrawn` becomes true when the extension disconnects or Sayso
+    /// closes. Then close the question, as a Cancel, and return false. Look
+    /// at it a few times each second.
+    fn ask_download(&self, question: &DownloadQuestion, withdrawn: &dyn Fn() -> bool) -> bool;
+
+    /// The styles of the user and the base prompt, for `enhance`. Read again
+    /// for each request. None: this host has no AI, and `enhance` gets
+    /// `unavailable`.
+    fn styles(&self) -> Option<StyleLibrary> {
+        None
+    }
+
+    /// Run a style on text, with the code of the style step of a dictation,
+    /// for `enhance`. Blocks until the provider answers or its time ends.
+    fn run_style(&self, request: &StyleRequest<'_>) -> PipelineOutput {
+        let error = EnhanceError::NotConfigured("this host cannot run styles".into());
+        PipelineOutput {
+            text: request.text.to_string(),
+            replacements: Vec::new(),
+            enhance: EnhanceOutcome::Failed { provider_id: request.provider.id.clone(), reason: error.to_string() },
+            enhance_error: Some((request.provider.id.clone(), error)),
+            timings: None,
+            notice: None,
+        }
+    }
 
     /// The microphone that the user chose, shared with dictation, for live
     /// sessions with the source `mic`. None: this host cannot capture it, and
@@ -75,7 +109,7 @@ pub trait HostServices: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadQuestion {
     pub extension_id: String,
-    /// The name to show. The id until `state.toml` has names (step 8).
+    /// The name to show: the name in `state.toml`, else the id.
     pub extension_name: String,
     pub model_id: String,
     pub model_name: String,
@@ -142,6 +176,9 @@ pub(crate) struct Shared {
     /// The open connections by a number of the host.
     pub connections: Mutex<HashMap<u64, connection::Entry>>,
     next_connection: AtomicU64,
+    /// The observers of the app: the live session (the menu bar) and the
+    /// work that holds Sayso open (the quit question and the update).
+    pub observers: holds::Observers,
 }
 
 impl Shared {
@@ -177,6 +214,14 @@ impl Host {
                 temp_dir: services.live_temp_dir(),
             })
         });
+        let observers = holds::Observers::default();
+        if let Some(live) = &live {
+            live.set_observer(Arc::new(observers.clone()));
+        }
+        if let Some(jobs) = &queue {
+            let observers = observers.clone();
+            jobs.set_on_change(Arc::new(move || observers.holds_changed()));
+        }
         let shared = Arc::new(Shared {
             host_version: config.host_version,
             identify: config.identify,
@@ -193,6 +238,7 @@ impl Host {
             closing: AtomicBool::new(false),
             connections: Mutex::new(HashMap::new()),
             next_connection: AtomicU64::new(1),
+            observers,
         });
         let accept = {
             let shared = shared.clone();
@@ -262,9 +308,34 @@ impl Host {
 
     /// Tell `observer` each time a live session starts, stops, or ends.
     pub fn set_live_observer(&self, observer: Arc<dyn live::LiveObserver>) {
-        if let Some(live) = &self.shared.live {
-            live.set_observer(observer);
+        self.shared.observers.set_live(observer);
+    }
+
+    /// The extensions that hold Sayso open now: the live session first, then
+    /// the jobs that run or wait, one entry for each extension and kind of
+    /// work. Sayso asks before it quits, and does not install an update,
+    /// while this is not empty (`docs/extensions.md`, "Lifecycle").
+    pub fn holds(&self) -> Vec<Hold> {
+        holds::holds(&self.shared)
+    }
+
+    /// Call `observer` each time [`Host::holds`] can have changed: a live
+    /// session or a job starts or ends. It runs on a thread of the host and
+    /// must not block.
+    pub fn set_holds_observer(&self, observer: Arc<dyn Fn() + Send + Sync>) {
+        self.shared.observers.set_holds(observer);
+    }
+
+    /// A dictation was inserted. Each connection that subscribed to
+    /// `dictation_done` gets the event, when its extension still has the
+    /// capability `dictation.observe`. Nothing goes out when incognito was on
+    /// at the start or at the end of the dictation: the rule of history
+    /// (`sayso_core::dictation::incognito_during`, `docs/extensions.md`, "Privacy").
+    pub fn dictation_done(&self, done: DictationDone, incognito_at_start: bool, incognito_at_end: bool) {
+        if sayso_core::dictation::incognito_during(incognito_at_start, incognito_at_end) {
+            return;
         }
+        connection::send_to_subscribers(&self.shared, connection::DICTATION_DONE, &Event::DictationDone(done));
     }
 
     /// The socket, or the name of the pipe on Windows.

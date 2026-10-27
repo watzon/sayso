@@ -26,9 +26,30 @@
 //!   at a time, so there is nothing to nest.
 //! - A dictation that began more than [`STALE_AFTER`] ago no longer holds
 //!   jobs, in case an `end` is lost on a path that this list does not know.
+//!
+//! Live sessions come before jobs too. A live session waits only for
+//! dictation ([`DictationGate::wait_idle`]). While it transcribes a part, it
+//! holds a [`LivePart`], and a job waits for that part before its next
+//! engine call ([`DictationGate::wait_for_job`]). The part ends when the
+//! guard drops, also when the engine call fails or panics.
 
 use parking_lot::{Condvar, Mutex};
 use std::time::{Duration, Instant};
+
+/// A part of a live session that the engine transcribes now. Jobs wait
+/// until it drops.
+pub struct LivePart<'a> {
+    gate: &'a DictationGate,
+}
+
+impl Drop for LivePart<'_> {
+    fn drop(&mut self) {
+        let mut state = self.gate.state.lock();
+        state.live_parts = state.live_parts.saturating_sub(1);
+        drop(state);
+        self.gate.changed.notify_all();
+    }
+}
 
 /// The longest that a dictation holds the jobs: the longest recording (10
 /// minutes, `Timing::max_duration_ms`), its final pass, and its style.
@@ -38,10 +59,17 @@ pub const STALE_AFTER: Duration = Duration::from_secs(20 * 60);
 const LOOK_AGAIN: Duration = Duration::from_millis(250);
 
 pub struct DictationGate {
-    /// When the dictation that runs began.
-    began: Mutex<Option<Instant>>,
+    state: Mutex<GateState>,
     changed: Condvar,
     stale_after: Duration,
+}
+
+#[derive(Default)]
+struct GateState {
+    /// When the dictation that runs began.
+    began: Option<Instant>,
+    /// The parts that live sessions transcribe now.
+    live_parts: usize,
 }
 
 impl Default for DictationGate {
@@ -57,41 +85,59 @@ impl DictationGate {
 
     /// A gate whose dictation holds jobs for at most `stale_after`.
     pub fn with_stale_after(stale_after: Duration) -> DictationGate {
-        DictationGate { began: Mutex::new(None), changed: Condvar::new(), stale_after }
+        DictationGate { state: Mutex::new(GateState::default()), changed: Condvar::new(), stale_after }
     }
 
     /// A dictation starts its capture. A dictation that already runs keeps
     /// its start time.
     pub fn begin(&self) {
-        let mut began = self.began.lock();
-        if !self.holds(&mut began) {
-            *began = Some(Instant::now());
+        let mut state = self.state.lock();
+        if !self.holds(&mut state.began) {
+            state.began = Some(Instant::now());
         }
     }
 
     /// The dictation no longer needs the engine. Without a dictation, nothing happens.
     pub fn end(&self) {
-        *self.began.lock() = None;
+        self.state.lock().began = None;
         self.changed.notify_all();
     }
 
     /// True while a dictation holds the jobs.
     pub fn dictating(&self) -> bool {
-        self.holds(&mut self.began.lock())
+        self.holds(&mut self.state.lock().began)
     }
 
-    /// Wait until no dictation runs. Returns false, at once, when `stop`
-    /// becomes true (the job was cancelled); see [`DictationGate::wake`].
+    /// A live session starts to transcribe a part. Jobs wait until the guard drops.
+    pub fn live_part(&self) -> LivePart<'_> {
+        self.state.lock().live_parts += 1;
+        LivePart { gate: self }
+    }
+
+    /// Wait until no dictation runs: for live sessions. Returns false, at
+    /// once, when `stop` becomes true (the work was cancelled); see
+    /// [`DictationGate::wake`].
     pub fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool {
-        let mut began = self.began.lock();
+        self.wait(stop, false)
+    }
+
+    /// Wait until no dictation runs and no live session transcribes a part:
+    /// for jobs. Returns false, at once, when `stop` becomes true.
+    pub fn wait_for_job(&self, stop: &dyn Fn() -> bool) -> bool {
+        self.wait(stop, true)
+    }
+
+    fn wait(&self, stop: &dyn Fn() -> bool, for_job: bool) -> bool {
+        let mut state = self.state.lock();
         loop {
             if stop() {
                 return false;
             }
-            if !self.holds(&mut began) {
+            let held = self.holds(&mut state.began) || (for_job && state.live_parts > 0);
+            if !held {
                 return true;
             }
-            self.changed.wait_for(&mut began, LOOK_AGAIN);
+            self.changed.wait_for(&mut state, LOOK_AGAIN);
         }
     }
 
@@ -166,6 +212,40 @@ mod tests {
         stop.store(true, Ordering::SeqCst);
         gate.wake();
         assert!(!waiter.join().unwrap());
+    }
+
+    #[test]
+    fn a_job_waits_for_a_part_of_a_live_session_but_a_live_session_does_not() {
+        let gate = Arc::new(DictationGate::new());
+        let part = gate.live_part();
+        assert!(gate.wait_idle(&|| false), "a live session waits only for dictation");
+        let passed = Arc::new(AtomicBool::new(false));
+        let waiter = {
+            let (gate, passed) = (gate.clone(), passed.clone());
+            std::thread::spawn(move || {
+                let idle = gate.wait_for_job(&|| false);
+                passed.store(true, Ordering::SeqCst);
+                idle
+            })
+        };
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(!passed.load(Ordering::SeqCst), "the job waits for the part");
+        let second = gate.live_part();
+        drop(part);
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(!passed.load(Ordering::SeqCst), "and for each part");
+        drop(second);
+        assert!(waiter.join().unwrap());
+        // A dictation still holds the job without a part.
+        gate.begin();
+        let stop = AtomicBool::new(false);
+        let gate2 = gate.clone();
+        let check = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            gate2.end();
+        });
+        assert!(gate.wait_for_job(&|| stop.load(Ordering::SeqCst)));
+        check.join().unwrap();
     }
 
     #[test]

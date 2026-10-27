@@ -115,6 +115,13 @@ pub struct EnhanceReply {
     pub model: String,
 }
 
+/// `ok` to `subscribe`: the events that the host sends to this connection
+/// from now on. A name that the host does not know is not in the list.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SubscribeReply {
+    pub events: Vec<String>,
+}
+
 /// Any message from the host: a reply or an event.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]

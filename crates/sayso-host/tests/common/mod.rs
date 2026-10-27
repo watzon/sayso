@@ -6,17 +6,21 @@
 // Each test file uses some of these helpers.
 #![allow(dead_code)]
 
-use crossbeam_channel::{Receiver, Sender, unbounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use parking_lot::Mutex;
 use sayso_core::config::Config;
 use sayso_core::models::{ModelId, ModelInfo};
+use sayso_core::enhance::EnhanceError;
+use sayso_core::history::EnhanceOutcome;
+use sayso_core::pipeline::PipelineOutput;
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript};
+use sayso_core::style::StyleLibrary;
 use sayso_extension::{Error, Fields};
-use sayso_host::{DownloadQuestion, Host, HostConfig, HostServices};
+use sayso_host::{DownloadQuestion, Host, HostConfig, HostServices, StyleRequest};
 use sayso_platform::{EngineStart, PlatformError, Result, SttBackend};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 pub const ID: &str = "dev.example.test";
@@ -187,19 +191,38 @@ impl SttBackend for FakeEngine {
 }
 
 /// The services of the app, with an engine and a user that the test drives.
-/// `ask_download` records the question and waits for `answer`.
+/// `ask_download` records the question and waits for `answer`, or until the
+/// host withdraws the question. `run_style` records the style step and gives
+/// `[<style>] <text>`, or fails with `style_error`.
 pub struct FakeServices {
     pub engine: Option<Arc<FakeEngine>>,
     pub config: Mutex<Config>,
     pub asked: Mutex<Vec<DownloadQuestion>>,
+    /// The questions that the host withdrew before an answer.
+    pub withdrawn: AtomicUsize,
     answers: Receiver<bool>,
     answer_in: Sender<bool>,
+    /// The styles of the user. None: no AI.
+    pub styles: Mutex<Option<StyleLibrary>>,
+    /// Each style step: (style id, style prompt, provider id, text).
+    pub style_runs: Mutex<Vec<(String, String, String, String)>>,
+    pub style_error: Mutex<Option<EnhanceError>>,
 }
 
 impl FakeServices {
     pub fn new(engine: Option<Arc<FakeEngine>>) -> Arc<FakeServices> {
         let (answer_in, answers) = unbounded();
-        Arc::new(FakeServices { engine, config: Mutex::new(Config::default()), asked: Mutex::new(Vec::new()), answers, answer_in })
+        Arc::new(FakeServices {
+            engine,
+            config: Mutex::new(Config::default()),
+            asked: Mutex::new(Vec::new()),
+            withdrawn: AtomicUsize::new(0),
+            answers,
+            answer_in,
+            styles: Mutex::new(None),
+            style_runs: Mutex::new(Vec::new()),
+            style_error: Mutex::new(None),
+        })
     }
 
     /// The answer of the user to the next question, now or later.
@@ -219,8 +242,31 @@ impl HostServices for FakeServices {
     fn config(&self) -> Config {
         self.config.lock().clone()
     }
-    fn ask_download(&self, question: &DownloadQuestion) -> bool {
+    fn ask_download(&self, question: &DownloadQuestion, withdrawn: &dyn Fn() -> bool) -> bool {
         self.asked.lock().push(question.clone());
-        self.answers.recv_timeout(Duration::from_secs(10)).unwrap_or(false)
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match self.answers.recv_timeout(Duration::from_millis(20)) {
+                Ok(answer) => return answer,
+                Err(RecvTimeoutError::Timeout) if withdrawn() => {
+                    self.withdrawn.fetch_add(1, Ordering::SeqCst);
+                    return false;
+                }
+                Err(RecvTimeoutError::Timeout) if Instant::now() < deadline => {}
+                Err(_) => return false,
+            }
+        }
+    }
+    fn styles(&self) -> Option<StyleLibrary> {
+        self.styles.lock().clone()
+    }
+    fn run_style(&self, request: &StyleRequest<'_>) -> PipelineOutput {
+        let provider_id = request.provider.id.clone();
+        self.style_runs.lock().push((request.style.id.clone(), request.style.prompt.clone(), provider_id.clone(), request.text.to_string()));
+        let (text, enhance, enhance_error) = match self.style_error.lock().clone() {
+            Some(error) => (request.text.to_string(), EnhanceOutcome::Failed { provider_id: provider_id.clone(), reason: error.to_string() }, Some((provider_id, error))),
+            None => (format!("[{}] {}", request.style.id, request.text), EnhanceOutcome::Applied { provider_id, model: "fake-model".into(), elapsed_ms: 1 }, None),
+        };
+        PipelineOutput { text, replacements: Vec::new(), enhance, enhance_error, timings: None, notice: None }
     }
 }

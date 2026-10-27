@@ -50,7 +50,7 @@ impl sayso_host::HostServices for AppHostServices {
         Some(Arc::new(HostMic { mic: self.mic.clone(), config_file: self.config_file.clone() }))
     }
 
-    fn ask_download(&self, question: &DownloadQuestion) -> bool {
+    fn ask_download(&self, question: &DownloadQuestion, _withdrawn: &dyn Fn() -> bool) -> bool {
         let (answer, answered) = crossbeam_channel::bounded(1);
         if self.questions.send_blocking(Ask { question: question.clone(), answer }).is_err() {
             return false;

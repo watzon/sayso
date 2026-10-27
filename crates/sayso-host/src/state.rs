@@ -19,6 +19,10 @@ pub struct State {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Record {
     pub id: String,
+    /// The name of the extension, from its manifest. Step 8 writes it. Sayso
+    /// shows the id when it is missing.
+    #[serde(default)]
+    pub name: Option<String>,
     pub version: String,
     /// The folder that the executable of the extension must be in.
     pub path: PathBuf,
@@ -36,6 +40,11 @@ pub struct Record {
 }
 
 impl Record {
+    /// The name to show to the user: the name, else the id.
+    pub fn display_name(&self) -> &str {
+        self.name.as_deref().map(str::trim).filter(|name| !name.is_empty()).unwrap_or(&self.id)
+    }
+
     /// The granted capabilities that this version knows. `models.read` is
     /// always granted.
     pub fn capabilities(&self) -> Vec<Capability> {
@@ -132,8 +141,17 @@ bundle_id = "dev.example.notetaker"
 
     #[test]
     fn models_read_is_always_granted_and_unknown_names_are_left_out() {
-        let record = Record { id: "x".into(), version: "1".into(), path: "/x".into(), sideloaded: true, granted: vec!["camera.read".into(), "ai.enhance".into()], team_id: None, bundle_id: None };
+        let record = Record { id: "x".into(), name: None, version: "1".into(), path: "/x".into(), sideloaded: true, granted: vec!["camera.read".into(), "ai.enhance".into()], team_id: None, bundle_id: None };
         assert_eq!(record.capabilities(), vec![Capability::ModelsRead, Capability::AiEnhance]);
+    }
+
+    #[test]
+    fn the_name_to_show_is_the_name_else_the_id() {
+        let state = State::parse(EXAMPLE).unwrap();
+        assert_eq!(state.extensions[0].name, None);
+        assert_eq!(state.extensions[0].display_name(), "dev.example.notetaker");
+        let state = State::parse(&EXAMPLE.replace("version = \"1.2.0\"", "name = \"Notetaker\"\nversion = \"1.2.0\"")).unwrap();
+        assert_eq!(state.extensions[0].display_name(), "Notetaker");
     }
 
     #[test]

@@ -178,11 +178,13 @@ impl Events {
     }
 }
 
-/// A dictation that holds the final passes while it runs.
+/// A dictation that holds the final passes while it runs. It counts the
+/// engine calls of the session, for which jobs wait.
 #[derive(Default)]
 struct FakeDictation {
     running: Mutex<bool>,
     ended: Condvar,
+    engine_calls: AtomicU64,
 }
 
 impl FakeDictation {
@@ -199,6 +201,11 @@ impl Priority for FakeDictation {
             self.ended.wait_for(&mut running, Duration::from_millis(20));
         }
         !stop()
+    }
+
+    fn engine_call(&self) -> Box<dyn Send + '_> {
+        self.engine_calls.fetch_add(1, Ordering::SeqCst);
+        Box::new(())
     }
 }
 
@@ -392,6 +399,8 @@ fn a_client_session_gives_partials_segments_a_recording_and_speakers() {
     assert_eq!(observed.last(), Some(&None));
     let loads = f.engine.state.lock().loads.clone();
     assert_eq!(loads, vec![ModelId::new("final"), ModelId::new("streaming"), ModelId::new("speaker-diarization")]);
+    // Jobs waited during the two final passes and the diarization.
+    assert_eq!(f.dictation.engine_calls.load(Ordering::SeqCst), 3);
 }
 
 #[test]

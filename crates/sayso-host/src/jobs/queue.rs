@@ -78,10 +78,10 @@ impl JobRun<'_> {
         self.events.cancel.load(Ordering::SeqCst)
     }
 
-    /// Call before each call to the engine: waits while a dictation runs, and
-    /// stops a cancelled job.
+    /// Call before each call to the engine: waits while a dictation runs or
+    /// a live session transcribes a part, and stops a cancelled job.
     pub fn before_engine_call(&self) -> Result<(), Stopped> {
-        if self.gate.wait_idle(&|| self.cancelled()) { Ok(()) } else { Err(Stopped::Cancelled) }
+        if self.gate.wait_for_job(&|| self.cancelled()) { Ok(()) } else { Err(Stopped::Cancelled) }
     }
 
     /// The end event of a job that `stopped`.
@@ -105,6 +105,17 @@ struct Shared {
     wake: Condvar,
     gate: Arc<DictationGate>,
     runner: Arc<dyn RunJob>,
+    /// Told after each change of the jobs that run or wait.
+    on_change: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+}
+
+impl Shared {
+    fn changed(&self) {
+        let on_change = self.on_change.lock().clone();
+        if let Some(on_change) = on_change {
+            on_change();
+        }
+    }
 }
 
 #[derive(Default)]
@@ -132,7 +143,7 @@ impl JobQueue {
     /// Start the thread of the queue. `runner` runs each job, and `gate` is
     /// the dictation gate of the app.
     pub fn start(runner: Arc<dyn RunJob>, gate: Arc<DictationGate>) -> io::Result<JobQueue> {
-        let shared = Arc::new(Shared { state: Mutex::new(State::default()), wake: Condvar::new(), gate, runner });
+        let shared = Arc::new(Shared { state: Mutex::new(State::default()), wake: Condvar::new(), gate, runner, on_change: Mutex::new(None) });
         let worker = {
             let shared = shared.clone();
             std::thread::Builder::new().name("sayso-host-jobs".into()).spawn(move || work(&shared))?
@@ -145,17 +156,34 @@ impl JobQueue {
     /// `ok {job}` reply there. The events go to `sink`, which must not block.
     /// None, without a call to `accepted`, after [`JobQueue::close`].
     pub fn submit(&self, connection: u64, job: JobSpec, sink: Arc<dyn EventSink>, accepted: impl FnOnce(u64)) -> Option<u64> {
-        let mut state = self.shared.state.lock();
-        if state.closed {
-            return None;
-        }
-        state.next_id += 1;
-        let id = state.next_id;
-        accepted(id);
-        sink.event(Event::JobProgress { job: id, fraction: 0.0 });
-        state.waiting.push_back(Queued { id, connection, job, sink });
-        self.shared.wake.notify_all();
+        let id = {
+            let mut state = self.shared.state.lock();
+            if state.closed {
+                return None;
+            }
+            state.next_id += 1;
+            let id = state.next_id;
+            accepted(id);
+            sink.event(Event::JobProgress { job: id, fraction: 0.0 });
+            state.waiting.push_back(Queued { id, connection, job, sink });
+            self.shared.wake.notify_all();
+            id
+        };
+        self.shared.changed();
         Some(id)
+    }
+
+    /// Call `on_change` after each change of the jobs that run or wait. It
+    /// runs on the thread of the change and must not block.
+    pub fn set_on_change(&self, on_change: Arc<dyn Fn() + Send + Sync>) {
+        *self.shared.on_change.lock() = Some(on_change);
+    }
+
+    /// The connections that have a job that runs or waits: the running job
+    /// first, then the queue in order. A connection can be in the list more than once.
+    pub fn connections(&self) -> Vec<u64> {
+        let state = self.shared.state.lock();
+        state.running.iter().map(|r| r.connection).chain(state.waiting.iter().map(|q| q.connection)).collect()
     }
 
     /// Cancel the job `job` of `connection`. It gets `job_failed` at once;
@@ -210,6 +238,9 @@ impl JobQueue {
         for queued in &removed {
             queued.sink.event(Event::JobFailed { job: queued.id, message: CANCELLED.into(), code: None });
         }
+        if !removed.is_empty() {
+            self.shared.changed();
+        }
         removed.len() + usize::from(running)
     }
 }
@@ -241,8 +272,10 @@ fn work(shared: &Shared) {
         for (id, sink) in moved {
             sink.event(Event::JobProgress { job: id, fraction: 0.0 });
         }
+        shared.changed();
         let run = JobRun { id: queued.id, events: &cancel, gate: &shared.gate };
         shared.runner.run(&queued.job, &run);
         shared.state.lock().running = None;
+        shared.changed();
     }
 }

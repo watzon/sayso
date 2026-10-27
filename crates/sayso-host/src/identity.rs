@@ -209,7 +209,7 @@ mod tests {
     use super::*;
 
     fn record(id: &str, path: &Path, team_id: Option<&str>) -> Record {
-        Record { id: id.into(), version: "1.0.0".into(), path: path.into(), sideloaded: false, granted: vec![], team_id: team_id.map(Into::into), bundle_id: None }
+        Record { id: id.into(), name: None, version: "1.0.0".into(), path: path.into(), sideloaded: false, granted: vec![], team_id: team_id.map(Into::into), bundle_id: None }
     }
 
     #[test]
