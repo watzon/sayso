@@ -1052,6 +1052,41 @@ fn a_vad_session_can_start_again_with_the_same_id() {
 }
 
 #[test]
+fn end_vad_returns_after_the_last_speech_end() {
+    let f = fixture();
+    let events = f.client.subscribe();
+    // An engine that falls behind, so the last event comes late.
+    std::fs::write(f.models.path().join("slow-audio"), "20").unwrap();
+    f.client.start_vad(4, &ModelId::new("silero-vad")).unwrap();
+    for _ in 0..11 {
+        f.client.push_audio(4, &[0.1; 320]).unwrap();
+    }
+    f.client.end_vad(4).unwrap();
+    // No wait: the speech that the end closed is already with the subscriber.
+    let seen: Vec<EngineEvent> = events.try_iter().collect();
+    assert!(
+        seen.iter().any(|e| matches!(e, EngineEvent::SpeechEnd { session: 4, start_ms: 200, end_ms: 220 })),
+        "{seen:?}"
+    );
+    assert!(f.client.end_vad(4).is_err(), "the session is closed");
+    assert!(f.client.push_audio(4, &[0.1; 320]).is_ok(), "audio after the end is not sent");
+}
+
+#[test]
+fn too_many_streams_keeps_its_code() {
+    let f = fixture();
+    std::fs::write(f.models.path().join("max-streams"), "1").unwrap();
+    f.client.start_stream(1, &options_for("m")).unwrap();
+    let full = f.client.start_stream(2, &options_for("m")).unwrap_err();
+    assert_eq!(full.code(), Some("too_many_streams"));
+    assert_eq!(full.to_string(), "the streams are full; end one first");
+    let full = f.client.start_vad(3, &ModelId::new("silero-vad")).unwrap_err();
+    assert_eq!(full.code(), Some("too_many_streams"));
+    // An error without a code has none.
+    assert_eq!(f.client.end_vad(3).unwrap_err().code(), None);
+}
+
+#[test]
 fn the_long_requests_wait_for_the_long_timeout_plus_the_audio_times_the_factor() {
     // 4000 samples are 250 ms. The fake engine never answers a `never-*` model.
     let options = Options {

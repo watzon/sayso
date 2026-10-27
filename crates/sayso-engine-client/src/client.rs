@@ -592,6 +592,21 @@ impl SttBackend for EngineClient {
         }
     }
 
+    /// End a VAD session and wait for the reply to `stream_end`. The reader
+    /// sends the events of a line before it finishes the next reply, so the
+    /// last `SpeechEnd` is with the subscribers when this returns.
+    fn end_vad(&self, session: u64) -> Result<()> {
+        if !self.inner.vad_sessions.lock().remove(&session) {
+            return Err(failed(format!("no VAD session {session} is open")));
+        }
+        if let Some(conn) = self.inner.core.lock().conn.as_ref() {
+            conn.tx.finish_stream(session);
+        }
+        self.inner
+            .call("stream_end", json!({"session": session}), self.inner.options.long_timeout)?;
+        Ok(())
+    }
+
     fn transcribe(&self, samples: &[f32], options: &SessionOptions) -> Result<Transcript> {
         let wav = self.inner.write_wav("transcribe", samples)?;
         let path = &wav.0;
@@ -769,9 +784,13 @@ impl Inner {
     }
 
     /// Send a request and wait for its reply.
+    /// The `code` of the engine stays in [`PlatformError::Engine`], for
+    /// example `too_many_streams` from `stream_start` and `vad_start`.
     fn call(&self, kind: &str, fields: Value, timeout: Duration) -> Result<Message> {
-        self.request(kind, fields, timeout)
-            .map_err(|failure| failed(failure.message))
+        self.request(kind, fields, timeout).map_err(|failure| match failure.code {
+            Some(code) => PlatformError::Engine { code, message: failure.message },
+            None => failed(failure.message),
+        })
     }
 
     /// Like [`Inner::call`], but a failure keeps its code.
