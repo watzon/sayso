@@ -73,6 +73,14 @@ pub fn run() {
 
         apply_language(&loaded.config);
         let services = start_services(&paths, &loaded.config, updates);
+        // Extensions connect from now on. When Sayso quits, each one gets `host_closing`.
+        if let Some(host) = crate::host::start(&paths) {
+            cx.on_app_quit(move |_| {
+                host.close();
+                async {}
+            })
+            .detach();
+        }
         apply_theme(&loaded.config, &services, cx);
         cx.set_global(Windows::default());
 

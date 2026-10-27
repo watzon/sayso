@@ -180,7 +180,7 @@ percent-encoding = { version = "2" }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 windows = { version = "0.62", features = ["Foundation_Collections", "Media_Control", "Win32_Devices_Properties", "Win32_Graphics_Dwm", "Win32_Graphics_Gdi", "Win32_Media_Audio", "Win32_Media_KernelStreaming", "Win32_Media_Multimedia", "Win32_Security_Authentication_Identity", "Win32_Storage_FileSystem", "Win32_System_Com_StructuredStorage", "Win32_System_DataExchange", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Environment", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Ole", "Win32_System_Performance", "Win32_System_Registry", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_System_Variant", "Win32_UI_Accessibility", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell_PropertiesSystem", "Win32_UI_WindowsAndMessaging"] }
 windows-core = { version = "0.62" }
-windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security_Credentials", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_LibraryLoader", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security_Authorization", "Win32_Security_Credentials", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 
 [target.x86_64-pc-windows-msvc.build-dependencies]
@@ -197,7 +197,7 @@ simd-adler32 = { version = "0.3" }
 subtle = { version = "2", default-features = false, features = ["const-generics"] }
 syn-f595c2ba2a3f28df = { package = "syn", version = "2", default-features = false, features = ["visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
-windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security_Credentials", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_LibraryLoader", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security_Authorization", "Win32_Security_Credentials", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
 
 ### END HAKARI SECTION

@@ -7204,6 +7204,7 @@ dependencies = [
  "sayso-core",
  "sayso-engine-client",
  "sayso-enhance",
+ "sayso-host",
  "sayso-i18n",
  "sayso-platform",
  "sayso-platform-common",
@@ -7333,6 +7334,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-extension"
+version = "0.11.0"
+dependencies = [
+ "crossbeam-channel",
+ "sayso-protocol",
+ "serde",
+ "serde_json",
+ "windows-sys 0.61.2",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sayso-host"
+version = "0.11.0"
+dependencies = [
+ "core-foundation 0.10.1",
+ "crossbeam-channel",
+ "libc",
+ "log",
+ "parking_lot",
+ "sayso-core",
+ "sayso-extension",
+ "sayso-protocol",
+ "security-framework",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 0.9.12+spec-1.1.0",
+ "windows-sys 0.61.2",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sayso-i18n"
 version = "0.11.0"
 dependencies = [
@@ -7447,6 +7481,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "windows 0.62.2",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sayso-protocol"
+version = "0.11.0"
+dependencies = [
+ "base64 0.22.1",
+ "libc",
+ "serde",
+ "serde_json",
+ "windows-sys 0.61.2",
  "workspace-hack",
 ]
 

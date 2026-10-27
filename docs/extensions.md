@@ -319,6 +319,65 @@ Sayso asks for the system audio permission the first time a live session asks fo
 - Jobs and live sessions make no history entries in Sayso. The text belongs to the extension.
 - While a live session captures the microphone or the system audio, the menu bar icon (the tray icon on Windows and Linux) shows that Sayso records. The popover names the extension and has a **Stop** button, which stops the live session.
 
+### Code
+
+Step 6 builds the Host API in these crates:
+
+| Crate | License | What it has |
+|---|---|---|
+| `sayso-protocol` | MIT | The messages of the engine protocol and the Host API, with serde. The error codes and the capabilities. The PCM helpers (base64 of 16-bit PCM). No I/O. |
+| `sayso-extension` | MIT | The client of the Host API. Blocking calls and a channel of events, with no async runtime, like the rest of Sayso. |
+| `sayso-engine-sdk` | MIT | Start an engine and talk to it over stdio. |
+| `sayso-host` | GPL | The server: the socket, the identity check, `state.toml`, the capabilities, the scheduler, jobs, and live sessions. No GPUI. |
+
+`sayso-host` gets the engine, the capture, and the user interface of Sayso through traits that `sayso-app` gives it (`HostServices`). For example, `sayso-app` shows the download question, and `sayso-host` waits for the answer. So the host runs and is tested without a window.
+
+The socket:
+
+- `SAYSO_HOST_SOCKET`, when it is set, is the path. Sayso sets it for the extensions that it starts.
+- Else on Linux: `$XDG_RUNTIME_DIR/sayso/host.sock`, or `$XDG_RUNTIME_DIR/app/<app id>/host.sock` in a Flatpak.
+- Else on macOS: `sayso/host.sock` in the temporary folder of the user (`confstr(_CS_DARWIN_USER_TEMP_DIR)`). Each process of the user gets the same folder, also when Finder starts it.
+- Else: `/tmp/sayso-<uid>/host.sock`.
+- Windows: `\\.\pipe\sayso-host-<user SID>`.
+
+The folder of the socket has mode `0700`. The SDK has the same rules, because an MIT crate cannot use the paths code of `sayso-core`.
+
+`state.toml` has one record for each installed extension. Step 8 writes it. Until then, tests and developers write it by hand:
+
+```toml
+[[extensions]]
+id = "dev.example.notetaker"
+version = "1.2.0"
+# The folder that the executable of the extension must be in.
+path = "/Users/me/Library/Application Support/sayso/extensions/dev.example.notetaker/1.2.0"
+sideloaded = false
+granted = ["models.read", "session.live", "audio.mic"]
+# macOS, for an extension from the registry: the code signature that install checked.
+team_id = "ABCDE12345"
+bundle_id = "dev.example.notetaker"
+```
+
+The host reads the file again when it changes, so a grant that the user takes back stops the next request. `models.read` is always granted.
+
+Errors of the Host API have these codes, in addition to the codes of the engine protocol: `not_an_extension`, `capability`, `busy`, `declined`, `model_not_downloaded`, `wrong_role` (a model that cannot do the role of the request, for example a speech model as `vad_model`), `unsupported` (the engine of this computer cannot do it), and `bad_request`.
+
+These rules of the wire format are fixed in `sayso-protocol`:
+
+- A job id and a live session id are integers that the host chooses.
+- `choice` in `list_models` is a list of roles: the roles for which the user chose the model.
+- A line that is not a JSON object with a string `type` gets `error` without `id` and with `code: "bad_request"`. A known request with a missing field or a field of the wrong type gets `bad_request` with its `id`. An unknown request type gets `error` with its `id` and no `code`, as in the engine protocol.
+- A reader keeps a capability or an error code that it does not know, and ignores a message type that it does not know.
+
+Sub-steps, each with its own pull request:
+
+- **6a.** `sayso-protocol`, the transport, the identity check, `state.toml`, `hello`, `bye`, `host_closing`, and the connection of `sayso-extension`.
+- **6b.** `list_models` and `download_model` with the question to the user.
+- **6c.** Segments, VAD, and diarization in the engine client. Jobs, the queue, and the scheduler that puts dictation first.
+- **6d.** Live sessions from the microphone and from the client, and `record_to`.
+- **6e.** `enhance`, `subscribe` and `dictation_done`, the privacy rules, the lifecycle rules, `sayso-engine-sdk`, the test extension, and the dictation benchmark.
+
+The recording state of the menu bar icon is in step 8, with the other UI.
+
 ## Capabilities
 
 The user grants the capabilities of an extension at install. An update that adds a capability asks again before it runs. The user can take back a capability with **Permissions** on the Installed tab of the Marketplace. Then the host refuses its requests, and the extension must handle that.
@@ -574,7 +633,8 @@ Each step ends with a check that proves it.
 | 2. Windows on `sayso-engine` | Done, packaged app check open | Done: the Windows catalog (`models_onnx.rs`, `System`), `whisper_cpp` and `redecode` in `sayso-engine`, the Windows stdout redirect, the shared sherpa-onnx DLLs, the legacy files (`format_changed` and Whisper adoption), the app side of `format_changed`, the scripts, the installer, CI, and the deletion of `native/portable`. Tested on macOS and in Linux Docker, with real Parakeet TDT v3 on Linux. On the Windows reference machine (2026-10-23): the release build, the size and speed checks of "Check first", Parakeet TDT v3 and Whisper through the engine protocol, the preview, and the legacy files with a copy of real 0.11 files. Open: a dictation in the packaged Windows app, and an update from 0.11 through the installer. `crates/sayso-engine/NOTES.md` lists what is not tested. |
 | 3. Engine protocol | Done | Done (3a): the spec in `docs/engine-protocol.md` (MIT), `features` in `hello` (Swift, Rust, and the fake engine), and the conformance suite `sayso-engine-conformance` (MIT) with its core, model, and ready levels. The Swift engine passes all three levels with Parakeet Unified, the Rust engine passes the core and model levels in `cargo test`, and the fake engine passes the core and ready levels. Done (3b): concurrent streams (at least 3, `too_many_streams`; a pool of streaming managers in the Swift engine) and segments (`transcribe` with `segments: true`, the timestamp level in the catalog, `EngineKind::timestamps`). Both engines pass the new ready checks: Swift with Parakeet Unified and Nemotron, Rust with Parakeet TDT v3 on Windows. Done (3c): VAD (`vad`, `vad_start`, `speech_start`, `speech_end`) and diarization (`diarize`). Rust: Silero and TEN VAD and sherpa-onnx diarization (pyannote segmentation 3.0 and a speaker embedding model); passes on Linux Docker and on Windows. Swift: FluidAudio Silero VAD and the FluidAudio offline diarizer. Each engine applies the VAD rules itself, because neither library cuts speech at 30 s. Done (3d): public model ids. Each engine has a built-in catalog from `sayso-core` (`engine_catalog`): the Rust engine reads it at start, and the Swift engine gets `Catalog.generated.swift`, which a test keeps up to date. `list_models` without `models` gives the catalog, requests can leave out `engine`, and an id that leaves the catalog stays as `retired`. |
 | 4. VAD and diarization roles | Done, full check after step 8 | Done: `ModelTask` (speech, VAD, diarization, from the engine kind) and the kinds `SherpaVad`, `SherpaDiarization`, `FluidVad`, and `FluidDiarization`. The catalog entries `silero-vad` and `speaker-diarization` on each system (TEN VAD is out, see "VAD models"), with the roles `vad` and `diarization` in the engine catalogs. `models::catalog()` and `find` have speech models only, so the final model, the preview model, the popover, onboarding, and `memory::wanted` cannot get one (tests in `models.rs`, `config.rs`, `memory.rs`, and `model_step.rs`). `local_models()` and `find_local` have all of them, for the engine client. `[models] vad` and `diarization` in `config.toml` ("auto" by default, a model of another role warns and counts as "auto"). Basic VAD (`basic_vad.rs`): an energy detector over the noise floor with the rules of the engines, offline and streaming. `vad_for` and `diarization_for` choose the model of a job. The Models page has **Voice detection** (Automatic, Basic, Silero VAD) and **Speakers** (Automatic, Speaker Diarization) with Download, Use, In use, and Model details, when `<data dir>/extensions/` has a folder (`extensions::any_installed`). The benchmark chose the sherpa-onnx embedding model and the clustering threshold ("Diarization models"). Open: "used in a job" needs the Host API (step 6) and extensions (step 8). |
-| 5 to 6 | Not started | |
+| 5. Engine release files | Done | `scripts/package-engine.sh` and `scripts/package-engine.ps1` pack the engine of each bundle into `sayso-engine-<version>-<os>-<arch>` with a README (`packaging/engine/README.md.in`), its licenses, and a checksum. The Release workflow attaches them. `engine-check.yml` unpacks each file on a clean runner and runs the core level of the conformance suite: it passed on `macos-arm64`, `linux-x86_64`, `linux-arm64`, and `windows-x64` (#41). The Swift engine reports the Sayso version. The Windows and Linux builds now ship the licenses of sherpa-onnx and ONNX Runtime. |
+| 6. Host API and SDK | 6a done, 6b to 6e open | Done (6a): `sayso-protocol` (MIT): the messages of the Host API with serde, the error codes, the capabilities, the PCM helpers, and the socket path rules. `sayso-host`: the socket (a Unix socket in a folder with mode `0700`; on Windows a named pipe with an ACL for the user), the identity check (`SO_PEERCRED` on Linux, `LOCAL_PEERTOKEN` and the code signature on macOS, `GetNamedPipeClientProcessId` on Windows), `state.toml`, `hello`, `bye`, the capability check, and `host_closing`. The other requests get `unsupported`. `sayso-extension` (MIT): connect, `hello`, requests, events, `HostGone`, and `reconnect`. Sayso starts the host after its services and closes it when it quits. The integration tests pass on macOS and in Linux Docker. On Windows the code compiles, and only the Windows job of CI runs the tests. The check of a Developer ID signature is tested only with a program that does not have one. Open: 6b to 6e. |
 | 7. `sayso-ui` as MIT | Done, not published | `sayso-ink` is new (MIT, serde only). `sayso_core::ink` re-exports it, and `NamedInk::label` is now `sayso_core::ink::NamedInkLabel`. `sayso-ui` depends only on `sayso-ink` and gpui-kit (no GPL crate in `cargo tree`). Keycaps take labels (`sayso-app` builds them in `widgets::hotkey_keycaps`). Texts and the locale come from hooks (`sayso_ui::l10n`). The tray and window icons moved to `sayso-app`. The fonts, icons, textures, and sounds moved to `crates/sayso-ui/assets`. `sayso-ink` is `license = "MIT"` and `sayso-ui` is `license = "MIT AND OFL-1.1"` (the fonts are OFL), each with a `LICENSE` file and `publish = true`. `cargo package -p sayso-ink -p sayso-ui` passes with `workspace-hack` removed. An empty GPUI app outside the repository draws a `sayso-ui` button. Open: the first `cargo hakari publish`, which waits for the SDK crates of step 6. |
 | 8 to 12 | Not started | |
 

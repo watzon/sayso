@@ -21,6 +21,7 @@ sayso-cleanup-client.workspace = true
 sayso-transcribe.workspace = true
 sayso-ui.workspace = true
 sayso-update.workspace = true
+sayso-host.workspace = true
 gpui-kit.workspace = true
 anyhow.workspace = true
 log.workspace = true

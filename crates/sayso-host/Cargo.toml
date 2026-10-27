@@ -1,0 +1,41 @@
+[package]
+name = "sayso-host"
+description = "The host of Sayso extensions: the Host API socket, the identity check, state.toml, and the capabilities. No GPUI."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+sayso-protocol.workspace = true
+sayso-core.workspace = true
+serde.workspace = true
+toml.workspace = true
+log.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+workspace-hack.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# The code signature of the peer (the identity check on macOS).
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+core-foundation = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+sayso-extension.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true

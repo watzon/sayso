@@ -14,6 +14,7 @@ mod devices;
 mod diagnostics;
 mod dictation;
 mod engine_text;
+mod host;
 mod hub;
 mod icons;
 mod layout;
