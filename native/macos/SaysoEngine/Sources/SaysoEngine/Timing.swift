@@ -44,6 +44,26 @@ struct AudioPiece {
     var timed: Timed
 }
 
+/// The language that a model found in one piece of the audio, and the length of the piece.
+struct LanguageVote: Equatable {
+    var code: String
+    var samples: Int
+
+    /// The language of the most audio, or nil without votes. When two languages have the
+    /// same audio, the one that came first wins.
+    static func winner(_ votes: [LanguageVote]) -> String? {
+        var total: [String: Int] = [:]
+        var order: [String] = []
+        for vote in votes where !vote.code.isEmpty {
+            if total[vote.code] == nil { order.append(vote.code) }
+            total[vote.code, default: 0] += vote.samples
+        }
+        var best: String?
+        for code in order where best == nil || total[code]! > total[best!]! { best = code }
+        return best
+    }
+}
+
 enum Segments {
     /// A segment ends before a pause of this length between two words.
     static let pauseMs = 700

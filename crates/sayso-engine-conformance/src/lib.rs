@@ -258,7 +258,7 @@ fn core(suite: &Suite, features: &[String], report: &mut Report) {
             with_engine(suite, None, |engine| {
                 let reply = engine.request("list_models", json!({}), suite.timeout)?;
                 reply.expect_type("ok")?;
-                let ids = check_catalog(&reply.reply)?;
+                let ids = check_catalog(&reply.reply, has("detected_language"))?;
                 for id in &ids {
                     if !reply.events.iter().any(|e| e["type"] == "model_state" && e["model"] == json!(id)) {
                         return Err(format!("no model_state for {id}"));
@@ -470,6 +470,14 @@ fn ready_level(suite: &Suite, ready: &Ready, features: &[String], report: &mut R
     } else {
         report.skip("transcribe with segments", "the engine does not list the feature segments");
     }
+    if has("detected_language") && has("catalog") {
+        report.record(
+            "transcribe with language auto reports the language when the catalog says so",
+            detected_language(suite, &mut engine, model, &ready.audio),
+        );
+    } else {
+        report.skip("the detected language", "the engine does not list the features detected_language and catalog");
+    }
 
     if ready.stream {
         report.record(
@@ -586,7 +594,7 @@ fn concurrent_streams(suite: &Suite, engine: &mut Engine, model: &str, samples: 
 /// The catalog of a `list_models` reply without `models`: `models` with the
 /// fields of the spec and unique ids, and `retired` with `id` and `message`.
 /// Gives the ids.
-fn check_catalog(reply: &Value) -> Result<Vec<String>, String> {
+fn check_catalog(reply: &Value, detected_language: bool) -> Result<Vec<String>, String> {
     const ROLES: [&str; 4] = ["final", "streaming", "vad", "diarization"];
     const LEVELS: [&str; 3] = ["word", "segment", "none"];
     let models = reply["models"].as_array().ok_or_else(|| format!("models is not an array: {reply}"))?;
@@ -604,7 +612,8 @@ fn check_catalog(reply: &Value) -> Result<Vec<String>, String> {
             && strings("roles")
             && model["roles"].as_array().is_some_and(|roles| roles.iter().all(|r| ROLES.contains(&r.as_str().unwrap_or_default())))
             && LEVELS.contains(&model["timestamps"].as_str().unwrap_or_default())
-            && model["recommended"].is_boolean();
+            && model["recommended"].is_boolean()
+            && (!detected_language || model["detects_language"].is_boolean());
         if !fine {
             return Err(format!("a catalog entry without the fields of the spec: {model}"));
         }
@@ -623,6 +632,44 @@ fn check_catalog(reply: &Value) -> Result<Vec<String>, String> {
         }
     }
     Ok(ids)
+}
+
+/// The detected language (feature `detected_language`): with `language`
+/// `auto`, `final` has `language` from the `languages` of the model when the
+/// catalog says that the model finds it, and no `language` when it does not.
+/// With a named language, `final` has no `language`.
+fn detected_language(suite: &Suite, engine: &mut Engine, model: &Model, audio: &Path) -> Result<(), String> {
+    let catalog = engine.request("list_models", json!({}), suite.timeout)?;
+    catalog.expect_type("ok")?;
+    let entry = catalog.reply["models"]
+        .as_array()
+        .and_then(|models| models.iter().find(|m| m["id"] == json!(model.id)))
+        .ok_or_else(|| format!("{} is not in the catalog", model.id))?;
+    let detects = entry["detects_language"]
+        .as_bool()
+        .ok_or_else(|| format!("detects_language is not a boolean: {entry}"))?;
+    let languages: Vec<&str> = entry["languages"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
+
+    let fields = json!({ "model": model.id, "path": audio, "language": "auto", "vocabulary": [] });
+    let reply = engine.request("transcribe", fields, suite.load_timeout)?;
+    reply.expect_type("final")?;
+    let found = reply.reply.get("language");
+    let has_text = reply.reply["text"].as_str().is_some_and(|text| !text.trim().is_empty());
+    match (detects && has_text, found) {
+        (true, Some(Value::String(code))) if languages.contains(&code.as_str()) => {}
+        (true, _) => return Err(format!("expected language from {languages:?} with language auto: {}", reply.reply)),
+        (false, None) => {}
+        (false, Some(_)) => return Err(format!("language for a model that does not find it: {}", reply.reply)),
+    }
+
+    let named = languages.first().copied().unwrap_or("en");
+    let fields = json!({ "model": model.id, "path": audio, "language": named, "vocabulary": [] });
+    let reply = engine.request("transcribe", fields, suite.load_timeout)?;
+    reply.expect_type("final")?;
+    match reply.reply.get("language") {
+        None => Ok(()),
+        Some(_) => Err(format!("language with the named language {named}: {}", reply.reply)),
+    }
 }
 
 /// The `segments` of a `final` reply: a list in time order, without overlaps,
@@ -1449,7 +1496,11 @@ mod tests {
         let entry = json!({"id": "m", "name": "M", "engine": {"kind": "k"}, "size_bytes": 1, "languages": ["en"],
                            "roles": ["final"], "timestamps": "none", "recommended": false});
         let good = json!({"models": [entry], "retired": [{"id": "old", "message": "Use m."}]});
-        assert_eq!(check_catalog(&good), Ok(vec!["m".to_string()]));
+        assert_eq!(check_catalog(&good, false), Ok(vec!["m".to_string()]));
+        assert!(check_catalog(&good, true).is_err(), "detected_language needs detects_language on each entry");
+        let mut detects = good.clone();
+        detects["models"][0]["detects_language"] = json!(false);
+        assert_eq!(check_catalog(&detects, true), Ok(vec!["m".to_string()]));
         let mut bad_role = entry.clone();
         bad_role["roles"] = json!(["fly"]);
         let mut no_name = entry.clone();
@@ -1462,7 +1513,7 @@ mod tests {
             json!({"models": [no_name], "retired": []}),
             json!({"models": [entry]}),
         ] {
-            assert!(check_catalog(&bad).is_err(), "{bad}");
+            assert!(check_catalog(&bad, false).is_err(), "{bad}");
         }
     }
 

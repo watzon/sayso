@@ -26,15 +26,31 @@ enum SenseVoice {
         FileManager.default.fileExists(atPath: folder.appendingPathComponent("SenseVoiceSmall_fp32.mlmodelc").path)
     }
 
-    /// The text of one piece of audio (at most `maxSeconds`), without the model's tags.
-    static func transcribe(models: SenseVoiceModels, audio: [Float], language: Int32) throws -> String {
+    /// The text of one piece of audio (at most `maxSeconds`), without the model's tags, and
+    /// the language code from the first tag of the model (`<|en|>`), when it has one.
+    static func transcribe(
+        models: SenseVoiceModels, audio: [Float], language: Int32
+    ) throws -> (text: String, language: String?) {
         let features = try preprocess(models: models, audio: audio)
         let count = min(features.shape[1].intValue, frames)
         let logits = try encode(models: models, features: features, count: count, language: language)
         let ids = ctc(logits: logits, frames: count + SenseVoiceConfig.numQueryTokens)
-        return decodeCtcTokenIds(ids, vocabulary: models.vocabulary)
+        let tagged = decodeCtcTokenIds(ids, vocabulary: models.vocabulary)
+        let text = tagged
             .replacingOccurrences(of: "<\\|[^|]*\\|>", with: "", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
+        return (text, languageTag(in: tagged))
+    }
+
+    /// The language codes of the model. The model writes one of them first (`<|zh|>`).
+    private static let languageCodes: Set<String> = ["zh", "en", "yue", "ja", "ko"]
+
+    /// The language code of the first tag of `tagged`, or nil. `<|nospeech|>` and other
+    /// tags give nil.
+    static func languageTag(in tagged: String) -> String? {
+        guard let match = tagged.range(of: "<\\|[a-z]+\\|>", options: .regularExpression) else { return nil }
+        let code = String(tagged[match].dropFirst(2).dropLast(2))
+        return languageCodes.contains(code) ? code : nil
     }
 
     /// waveform [1, N] in the int16 range -> features [1, T, 560].

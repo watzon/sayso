@@ -175,9 +175,13 @@ impl EngineKind {
             | EngineKind::NemotronMultilingual { .. } => Timestamps::Word,
             EngineKind::Whisper { .. } | EngineKind::AppleSpeech => Timestamps::Word,
             EngineKind::WhisperCpp { .. } => Timestamps::Segment,
-            // sherpa-onnx gives token times for these recipes only.
+            // sherpa-onnx gives token times for these recipes only. Whisper
+            // gives segment times (`enable_segment_timestamps`): the Linux
+            // engine uses them for a request with segments only, because they
+            // can change the text. The Whisper exports have no token times.
             EngineKind::Sherpa { recipe, .. } => match recipe.as_str() {
                 "parakeet_tdt" | "parakeet_tdt_ctc" | "sense_voice" => Timestamps::Word,
+                "whisper" => Timestamps::Segment,
                 _ => Timestamps::None,
             },
             // parakeet.cpp gives only the text. A cloud model's text comes
@@ -193,6 +197,24 @@ impl EngineKind {
             | EngineKind::SherpaDiarization { .. }
             | EngineKind::FluidVad
             | EngineKind::FluidDiarization => Timestamps::None,
+        }
+    }
+
+    /// The engine reports the language that the model finds in the speech
+    /// (`final.language`, the feature `detected_language`). Whisper and
+    /// SenseVoice find it. [`ModelInfo::detects_language`] also needs more
+    /// than one language.
+    ///
+    /// SenseVoice on sherpa-onnx (Linux and Windows) is not in the list. With
+    /// sherpa-onnx 1.13.8 and the SenseVoice export of the catalog
+    /// (2025-09-09), the language of the result is always `yue`: also for
+    /// English, German, and Mandarin speech (2026-10-27). The Rust engine reads
+    /// the language, so when a release corrects it, add `sense_voice` here.
+    pub fn detects_language(&self) -> bool {
+        match self {
+            EngineKind::Whisper { .. } | EngineKind::WhisperCpp { .. } | EngineKind::SenseVoice => true,
+            EngineKind::Sherpa { recipe, .. } => recipe == "whisper",
+            _ => false,
         }
     }
 
@@ -258,6 +280,12 @@ impl ModelInfo {
     /// What the model does.
     pub fn task(&self) -> ModelTask {
         self.engine.task()
+    }
+
+    /// The engine reports the language of the speech for this model. A model
+    /// with one language does not find it.
+    pub fn detects_language(&self) -> bool {
+        self.engine.detects_language() && self.languages.len() > 1
     }
 
     /// True when the user can choose a language for this model.
@@ -1055,7 +1083,7 @@ mod tests {
         let tdt = EngineKind::Sherpa { recipe: "parakeet_tdt".into(), archive: "a".into(), preview_archive: None, redecode_preview: false };
         let whisper = EngineKind::Sherpa { recipe: "whisper".into(), archive: "a".into(), preview_archive: None, redecode_preview: false };
         assert_eq!(tdt.timestamps(), Timestamps::Word);
-        assert_eq!(whisper.timestamps(), Timestamps::None);
+        assert_eq!(whisper.timestamps(), Timestamps::Segment);
         assert_eq!(EngineKind::WhisperCpp { file: "f".into() }.timestamps(), Timestamps::Segment);
         assert_eq!(EngineKind::Cohere.timestamps(), Timestamps::None);
         assert_eq!(serde_json::to_value(Timestamps::Word).unwrap(), "word");

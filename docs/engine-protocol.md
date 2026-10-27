@@ -81,6 +81,7 @@ An engine that sends no `features` is older than this spec. A client can still s
 | `vad` | The requests `vad` and `vad_start`, and the events `speech_start` and `speech_end` (see "VAD"). | yes | yes |
 | `diarization` | The request `diarize` (see "Diarization"). | yes | yes |
 | `catalog` | The built-in catalog: `list_models` without `models`, and requests without `engine` (see "Models"). | yes | yes |
+| `detected_language` | The field `language` of `final`, and `detects_language` in the catalog (see "Detected language"). | yes | yes |
 
 The Rust engine replies `ok` to `prepare` and does nothing, so it does not list `prepare`.
 
@@ -97,7 +98,7 @@ The Rust engine replies `ok` to `prepare` and does nothing, so it does not list 
 | `load` | `model, engine?` | `model_state optimizing`, `model_state ready {load_ms}`, then `ok` |
 | `unload` | `model, keep_preview?` | `model_state downloaded` when the model was in memory, then `ok` |
 | `prepare` | `model, preview, vocabulary` | `part_state` for each part, then `ok` |
-| `transcribe` | `model, path, language, vocabulary, segments?` | `final {text, elapsed_ms, segments?}` |
+| `transcribe` | `model, path, language, vocabulary, segments?` | `final {text, elapsed_ms, segments?, language?}` |
 | `stream_start` | `session, model, language?` | `ok`, then `partial` events |
 | `stream_audio` | `session, pcm` (no `id`) | `partial` or `speech_start` and `speech_end` events, no reply |
 | `stream_end` | `session` | the last `partial` when the text changed, then `ok {session, text}`; for a VAD session, the last `speech_end`, then `ok {session}` |
@@ -118,12 +119,13 @@ With the feature `catalog`, `list_models` without `models` checks each model of 
 {"v":1,"type":"ok","id":"l1",
  "models":[{"id":"parakeet-tdt-v3","name":"Parakeet TDT v3","engine":{"kind":"sherpa","recipe":"parakeet_tdt", ...},
             "size_bytes":670000000,"languages":["en","de","fr", ...],"roles":["final","streaming"],
-            "timestamps":"word","recommended":true}, ...],
+            "timestamps":"word","detects_language":false,"recommended":true}, ...],
  "retired":[]}
 ```
 
 - `roles` says what the model can do: `final` (the final pass, `transcribe`), `streaming` (a stream, `stream_start`), `vad`, and `diarization`.
 - `timestamps` is the timestamp level of the model (see "Segments").
+- `detects_language` is `true` when the model finds the language of the speech (see "Detected language"). An engine without the feature `detected_language` does not send it.
 - `recommended` marks the model that a new user should take.
 - `retired` lists the ids that were taken out of the catalog: `[{id, message}]`.
 
@@ -174,6 +176,19 @@ How much timing a model gives is its timestamp level: `word`, `segment`, or `non
 - `none`: one segment for each piece of audio that the engine transcribes alone, with the text of that piece. An engine cuts long audio into pieces (the Rust engine cuts at about 30 s), so a short recording is one segment from 0 to the end of the audio. Cut the audio first (for example with VAD) to get shorter segments.
 
 Times are in milliseconds from the start of the file. A segment with no text is left out.
+
+### Detected language
+
+With the feature `detected_language`, a `transcribe` with `language` `auto` (or an empty `language`) gets the language of the speech in `final`, when the model can find it:
+
+```json
+{"v":1,"type":"final","id":"t1","text":"Guten Tag, wie geht es Ihnen?","elapsed_ms":198,"language":"de"}
+```
+
+- `language` is a code of the `languages` of the model in the catalog, such as `de` or `yue`.
+- The catalog says which models find the language: `detects_language` is `true` for them (see `list_models`). A model with one language does not find it.
+- When the engine cuts the audio into pieces and the pieces have different languages, `language` is the language of the most audio.
+- `final` has no `language` when the request names a language, when the model cannot find the language, or when `text` is empty.
 
 ### Streams
 
@@ -289,7 +304,7 @@ With the feature `catalog`, each engine has a built-in catalog: the models that 
 |---|---|---|
 | core | nothing | `hello` and `features`, `"v":1` and `type` on every line, one reply for each request, the errors of this spec, unknown stream sessions, `unload` and `language_model` when listed, `shutdown`, and the exit when stdin closes |
 | model | a model id and its `engine` object | `list_models`, `delete`, and the errors for a model that is not downloaded or not loaded |
-| ready | a models folder with the model on disk, and a WAV file with speech | `list_models`, `load`, `transcribe`, a stream (with `--stream`), and `unload`; with the features, segments, three streams at the same time, VAD (with `--vad`), and diarization (with `--diarization`) |
+| ready | a models folder with the model on disk, and a WAV file with speech | `list_models`, `load`, `transcribe`, a stream (with `--stream`), and `unload`; with the features, segments, the detected language, three streams at the same time, VAD (with `--vad`), and diarization (with `--diarization`) |
 
 ```text
 cargo run -p sayso-engine-conformance -- <engine> \
