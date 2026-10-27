@@ -412,13 +412,14 @@ mod tests {
         let (mut reader, writer) = std::io::pipe().unwrap();
         let mut writer = std::fs::File::from(OwnedFd::from(writer));
         writer.write_all(b"dictated text").unwrap();
+        // The clock starts before the reader: its 50 ms count from its own start.
+        let started = Instant::now();
         let taking = std::thread::spawn(move || {
             std::thread::sleep(Duration::from_millis(50));
             let mut got = [0u8; 13];
             reader.read_exact(&mut got).unwrap();
             got
         });
-        let started = Instant::now();
         assert!(wait_until_drained(&writer));
         assert!(started.elapsed() >= Duration::from_millis(50), "not drained before the reader read");
         assert_eq!(&taking.join().unwrap(), b"dictated text");

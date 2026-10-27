@@ -13,6 +13,7 @@ mod dev;
 mod devices;
 mod diagnostics;
 mod dictation;
+mod download_ask;
 mod engine_text;
 mod host;
 mod hub;

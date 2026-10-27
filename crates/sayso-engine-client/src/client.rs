@@ -21,7 +21,7 @@ use sayso_core::stt::{
     Diarization, EngineEvent, ModelStatus, SAMPLE_RATE, SessionOptions, SpeechPart, TimedTranscript, Transcript,
     encode_wav, to_pcm16,
 };
-use sayso_platform::{PartReadiness, PlatformError, Result, SttBackend, unsupported_feature};
+use sayso_platform::{EngineStart, PartReadiness, PlatformError, Result, SttBackend, unsupported_feature};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
@@ -406,6 +406,14 @@ impl LanguageModel for EngineClient {
 }
 
 impl SttBackend for EngineClient {
+    fn start_state(&self) -> EngineStart {
+        match self.inner.start.load(Ordering::SeqCst) {
+            START_DONE => EngineStart::Started,
+            START_FAILED => EngineStart::Failed,
+            _ => EngineStart::Starting,
+        }
+    }
+
     fn prepare(&self, model: &ModelId, preview: bool, vocabulary: &[String]) -> Result<()> {
         let mut preparations = self.inner.preparation.lock();
         if preparations.get(model).is_some_and(|p| {

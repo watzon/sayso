@@ -3,73 +3,18 @@
 //! of this test program, so the test process is the extension.
 
 use sayso_extension::{Client, Error, Event, Fields};
-use sayso_host::{Host, HostConfig, HostServices, Identify, Peer};
+use sayso_host::{Host, HostConfig, Identify, Peer};
 use sayso_protocol::{Capability, ErrorCode};
 use serde_json::json;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-struct NoServices;
-impl HostServices for NoServices {}
-
-const ID: &str = "dev.example.test";
-
-struct Setup {
-    dir: tempfile::TempDir,
-    socket: PathBuf,
-    state: PathBuf,
-}
-
-fn setup() -> Setup {
-    static NEXT: AtomicU32 = AtomicU32::new(0);
-    let dir = tempfile::tempdir().unwrap();
-    let socket = if cfg!(windows) {
-        PathBuf::from(format!(r"\\.\pipe\sayso-host-test-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::SeqCst)))
-    } else {
-        // The host makes this folder with mode 0700.
-        dir.path().join("sayso").join("host.sock")
-    };
-    let state = dir.path().join("state.toml");
-    Setup { dir, socket, state }
-}
-
-/// The folder of this test program.
-fn here() -> PathBuf {
-    std::env::current_exe().unwrap().parent().unwrap().to_path_buf()
-}
-
-fn write_state(path: &Path, folder: &Path, granted: &[&str], team_id: Option<&str>) {
-    let granted: Vec<String> = granted.iter().map(|g| format!("\"{g}\"")).collect();
-    let team = team_id.map(|t| format!("team_id = \"{t}\"\n")).unwrap_or_default();
-    // A literal string: Windows paths have backslashes.
-    let text = format!("[[extensions]]\nid = \"{ID}\"\nversion = \"0.1.0\"\npath = '{}'\nsideloaded = true\ngranted = [{}]\n{team}", folder.display(), granted.join(", "));
-    std::fs::write(path, text).unwrap();
-}
+mod common;
+use common::*;
 
 fn start(setup: &Setup) -> Host {
-    Host::start(HostConfig::new(setup.socket.clone(), setup.state.clone()), Arc::new(NoServices)).unwrap()
-}
-
-fn fields(value: serde_json::Value) -> Fields {
-    value.as_object().unwrap().clone()
-}
-
-/// The error of a request that the host refused.
-fn refused(result: Result<sayso_extension::Reply, Error>) -> sayso_protocol::ErrorReply {
-    match result {
-        Err(Error::Host(error)) => error,
-        other => panic!("expected an error reply, got {other:?}"),
-    }
-}
-
-fn eventually(what: &str, check: impl Fn() -> bool) {
-    let start = Instant::now();
-    while !check() {
-        assert!(start.elapsed() < Duration::from_secs(5), "{what}");
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    start_with(setup, FakeServices::new(None))
 }
 
 #[test]
@@ -94,7 +39,7 @@ fn an_extension_says_hello_and_gets_its_capabilities() {
     assert_eq!(error.capability, Some(Capability::AudioSystem));
 
     // Granted, but later sub-steps build it.
-    for (kind, body) in [("list_models", json!({})), ("session_start", json!({"sources": ["mic"]})), ("session_stop", json!({"session": 1}))] {
+    for (kind, body) in [("session_start", json!({"sources": ["mic"]})), ("session_stop", json!({"session": 1}))] {
         let error = refused(client.request(kind, fields(body)));
         assert_eq!(error.code, Some(ErrorCode::Unsupported), "{kind}");
     }
@@ -208,7 +153,7 @@ fn the_identity_check_can_be_replaced() {
     write_state(&setup.state, &folder, &[], Some("ABCDE12345"));
     let mut config = HostConfig::new(setup.socket.clone(), setup.state.clone());
     config.identify = Arc::new(FakeIdentity { executable, team_id: "ABCDE12345" });
-    let _host = Host::start(config, Arc::new(NoServices)).unwrap();
+    let _host = Host::start(config, FakeServices::new(None)).unwrap();
     assert_eq!(Client::connect_to(&setup.socket).unwrap().hello().extension_id, ID);
 }
 
@@ -216,7 +161,7 @@ fn the_identity_check_can_be_replaced() {
 fn a_second_host_on_the_same_socket_fails() {
     let setup = setup();
     let _host = start(&setup);
-    let error = Host::start(HostConfig::new(setup.socket.clone(), setup.state.clone()), Arc::new(NoServices)).err().unwrap();
+    let error = Host::start(HostConfig::new(setup.socket.clone(), setup.state.clone()), FakeServices::new(None)).err().unwrap();
     assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
 }
 

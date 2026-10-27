@@ -58,8 +58,9 @@ pub fn json(engine: Engine) -> Value {
     json!({ "models": models, "retired": retired })
 }
 
-/// One model of the catalog, as the protocol gives it.
-fn entry(m: &ModelInfo) -> Value {
+/// The roles of a model in the protocol: `final`, `streaming`, `vad`,
+/// `diarization`. The Host API gives the same names in `list_models`.
+pub fn roles(m: &ModelInfo) -> Vec<&'static str> {
     let mut roles = Vec::new();
     if m.final_pass {
         roles.push("final");
@@ -72,13 +73,18 @@ fn entry(m: &ModelInfo) -> Value {
         ModelTask::Vad => roles.push("vad"),
         ModelTask::Diarization => roles.push("diarization"),
     }
+    roles
+}
+
+/// One model of the catalog, as the protocol gives it.
+fn entry(m: &ModelInfo) -> Value {
     json!({
         "id": m.id,
         "name": m.name,
         "engine": m.engine,
         "size_bytes": m.size_bytes,
         "languages": m.languages,
-        "roles": roles,
+        "roles": roles(m),
         "timestamps": m.engine.timestamps(),
         "recommended": m.recommended,
     })

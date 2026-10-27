@@ -61,7 +61,8 @@ fn wait_for<T>(
     what: &str,
     mut pick: impl FnMut(&EngineEvent) -> Option<T>,
 ) -> T {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    // Long, because a CI runner can be slow. A test that passes does not wait for it.
+    let deadline = Instant::now() + Duration::from_secs(30);
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         match events.recv_timeout(left) {
@@ -1011,8 +1012,10 @@ fn ending_a_vad_session_sends_all_its_audio_first() {
     const FRAMES: usize = 100;
     let f = fixture();
     let events = f.client.subscribe();
-    // An engine that falls behind: 20 ms for each frame. A preview would lose most of this audio.
-    std::fs::write(f.models.path().join("slow-audio"), "20").unwrap();
+    // An engine that falls behind: 5 ms for each frame, while the frames go out at once. A
+    // preview would lose the audio that waits. A longer wait made the test slow on a loaded
+    // macOS runner, which stretches the sleeps of a background process.
+    std::fs::write(f.models.path().join("slow-audio"), "5").unwrap();
     f.client.start_vad(3, &ModelId::new("silero-vad")).unwrap();
     for _ in 0..FRAMES {
         f.client.push_audio(3, &[0.1; 320]).unwrap();
@@ -1024,6 +1027,8 @@ fn ending_a_vad_session_sends_all_its_audio_first() {
     let seen = speech_events(&events, 3, FRAMES as u64 * 20);
     assert_eq!(seen.len(), FRAMES, "one start and one end for each pair of frames");
     assert_eq!(seen.last(), Some(&("end", (FRAMES as u64 - 2) * 20, FRAMES as u64 * 20)));
+    // The last speech_end comes with the last frame, before the engine reads stream_end.
+    wait_for_requests(&f.models, "stream_end", 1);
     let log = requests(&f.models);
     let end = position_of(&log, "stream_end").expect("the engine got stream_end");
     let audio = |range: &[String]| range.iter().filter(|line| line.contains("\"type\":\"stream_audio\"")).count();
