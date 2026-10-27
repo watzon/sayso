@@ -84,9 +84,14 @@ fn replies() -> Vec<(&'static str, Reply)> {
                     text: "Hello there.".into(),
                     words: Some(vec![Word { start_ms: 320, end_ms: 640, text: "Hello".into() }, Word { start_ms: 700, end_ms: 1180, text: "there.".into() }]),
                 }]),
+                language: None,
             }),
         ),
-        (r#"{"v":1,"type":"final","id":"t2","text":"Hi","elapsed_ms":5}"#, Reply::Final(Final { text: "Hi".into(), elapsed_ms: 5, segments: None })),
+        (r#"{"v":1,"type":"final","id":"t2","text":"Hi","elapsed_ms":5}"#, Reply::Final(Final { text: "Hi".into(), elapsed_ms: 5, segments: None, language: None })),
+        (
+            r#"{"v":1,"type":"final","id":"t3","text":"Guten Tag","elapsed_ms":9,"language":"de"}"#,
+            Reply::Final(Final { text: "Guten Tag".into(), elapsed_ms: 9, segments: None, language: Some("de".into()) }),
+        ),
         (
             r#"{"v":1,"type":"error","id":"l1","code":"unknown_model","message":"model nope is not in the catalog"}"#,
             Reply::Error(ErrorReply { code: Some(ErrorCode::UnknownModel), message: "model nope is not in the catalog".into(), capability: None, reason: None }),
@@ -153,13 +158,15 @@ fn ok_fields(line: &str) -> serde_json::Map<String, Value> {
 #[test]
 fn the_typed_ok_bodies_read_from_ok_fields() {
     let catalog: ListModelsReply = parse_ok(&ok_fields(
-        r#"{"v":1,"type":"ok","id":"l1","models":[{"id":"parakeet-tdt-v3","name":"Parakeet TDT v3","engine":{"kind":"sherpa","recipe":"parakeet_tdt"},"size_bytes":670000000,"languages":["en","de"],"roles":["final","streaming"],"timestamps":"word","recommended":true}],"retired":[{"id":"old","message":"use parakeet-tdt-v3"}]}"#,
+        r#"{"v":1,"type":"ok","id":"l1","models":[{"id":"parakeet-tdt-v3","name":"Parakeet TDT v3","engine":{"kind":"sherpa","recipe":"parakeet_tdt"},"size_bytes":670000000,"languages":["en","de"],"roles":["final","streaming"],"timestamps":"word","detects_language":true,"recommended":true},{"id":"kroko-en","languages":["en"]}],"retired":[{"id":"old","message":"use parakeet-tdt-v3"}]}"#,
     ))
     .unwrap();
     assert_eq!(catalog.models[0].roles, vec![Role::Final, Role::Streaming]);
     assert_eq!(catalog.models[0].timestamps, TimestampLevel::Word);
     assert_eq!(catalog.models[0].engine["kind"], "sherpa");
     assert!(catalog.models[0].recommended);
+    assert!(catalog.models[0].detects_language);
+    assert!(!catalog.models[1].detects_language, "an engine without detected_language sends no field");
     assert_eq!(catalog.retired[0].id, "old");
 
     let empty: ListModelsReply = parse_ok(&ok_fields(r#"{"v":1,"type":"ok","id":"l2"}"#)).unwrap();

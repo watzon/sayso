@@ -86,6 +86,7 @@ fn entry(m: &ModelInfo) -> Value {
         "languages": m.languages,
         "roles": roles(m),
         "timestamps": m.engine.timestamps(),
+        "detects_language": m.detects_language(),
         "recommended": m.recommended,
     })
 }
@@ -185,6 +186,26 @@ mod tests {
         assert!(v3["size_bytes"].as_u64().unwrap() > 0);
         assert!(v3.get("min_macos").is_none());
         assert_eq!(catalog["retired"], json!([]));
+    }
+
+    /// `detects_language` is true for Whisper and SenseVoice with more than one
+    /// language, on each engine (docs/engine-protocol.md, "Detected language").
+    #[test]
+    fn whisper_and_sense_voice_detect_the_language() {
+        for engine in [Engine::Swift, Engine::Rust(System::Linux), Engine::Rust(System::Windows)] {
+            let catalog = json(engine);
+            let models = catalog["models"].as_array().unwrap();
+            let detects = |id: &str| models.iter().find(|m| m["id"] == id).unwrap_or_else(|| panic!("{id} in {engine:?}"))["detects_language"].clone();
+            assert_eq!(detects("whisper-small"), true, "{engine:?}");
+            assert_eq!(detects("silero-vad"), false, "{engine:?}");
+            for m in models {
+                let multilingual = m["languages"].as_array().unwrap().len() > 1;
+                assert!(m["detects_language"] == false || multilingual, "{} has one language, in {engine:?}", m["id"]);
+            }
+        }
+        let windows = json(Engine::Rust(System::Windows));
+        let v3 = windows["models"].as_array().unwrap().iter().find(|m| m["id"] == "parakeet-tdt-v3").unwrap();
+        assert_eq!(v3["detects_language"], false, "Parakeet does not report the language");
     }
 
     /// Each engine gets the VAD model and the diarization model with the engine

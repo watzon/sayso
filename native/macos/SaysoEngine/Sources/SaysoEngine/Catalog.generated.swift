@@ -7,6 +7,7 @@ enum BuiltInCatalog {
 {
   "models": [
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_unified",
         "streaming_tier": "70_2_2"
@@ -26,6 +27,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_tdt",
         "version": "ultra"
@@ -68,6 +70,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_tdt",
         "version": "fluid_mini"
@@ -86,6 +89,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_tdt",
         "version": "v3"
@@ -128,6 +132,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_tdt",
         "version": "redux"
@@ -170,6 +175,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_tdt",
         "version": "v2"
@@ -188,6 +194,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_tdt",
         "version": "phonon2"
@@ -206,6 +213,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_tdt",
         "version": "tdt_ctc_110m"
@@ -224,6 +232,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_tdt",
         "version": "ja"
@@ -242,6 +251,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "parakeet_eou"
       },
@@ -260,6 +270,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": true,
       "engine": {
         "kind": "whisper",
         "variant": "openai_whisper-large-v3-v20240930_turbo_632MB"
@@ -376,6 +387,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": true,
       "engine": {
         "kind": "whisper",
         "variant": "openai_whisper-large-v3_947MB"
@@ -492,6 +504,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": true,
       "engine": {
         "kind": "whisper",
         "variant": "openai_whisper-large-v2_949MB"
@@ -608,6 +621,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "whisper",
         "variant": "distil-whisper_distil-large-v3_594MB"
@@ -626,6 +640,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": true,
       "engine": {
         "kind": "whisper",
         "variant": "openai_whisper-medium"
@@ -742,6 +757,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": true,
       "engine": {
         "kind": "whisper",
         "variant": "openai_whisper-small_216MB"
@@ -858,6 +874,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": true,
       "engine": {
         "kind": "whisper",
         "variant": "openai_whisper-base"
@@ -974,6 +991,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": true,
       "engine": {
         "kind": "whisper",
         "variant": "openai_whisper-tiny"
@@ -1090,6 +1108,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "apple_speech"
       },
@@ -1130,6 +1149,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "chunk_ms": 1120,
         "kind": "nemotron_multilingual"
@@ -1217,6 +1237,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "chunk_ms": 1120,
         "kind": "nemotron"
@@ -1236,6 +1257,7 @@ enum BuiltInCatalog {
       "timestamps": "word"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "cohere"
       },
@@ -1266,6 +1288,7 @@ enum BuiltInCatalog {
       "timestamps": "none"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "canary"
       },
@@ -1283,6 +1306,7 @@ enum BuiltInCatalog {
       "timestamps": "none"
     },
     {
+      "detects_language": true,
       "engine": {
         "kind": "sense_voice"
       },
@@ -1304,6 +1328,7 @@ enum BuiltInCatalog {
       "timestamps": "none"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "paraformer"
       },
@@ -1321,6 +1346,7 @@ enum BuiltInCatalog {
       "timestamps": "none"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "fluid_vad"
       },
@@ -1445,6 +1471,7 @@ enum BuiltInCatalog {
       "timestamps": "none"
     },
     {
+      "detects_language": false,
       "engine": {
         "kind": "fluid_diarization"
       },

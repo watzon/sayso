@@ -344,7 +344,7 @@ mod tests {
         let reply = engine::Reply::Ok(serde_json::from_value(json!({"speech": [{"start_ms": 1, "end_ms": 2}]})).unwrap());
         let body: VadReply = ok_body(reply, "vad").unwrap();
         assert_eq!(body.speech, vec![SpeechPart { start_ms: 1, end_ms: 2 }]);
-        let wrong = engine::Reply::Final(engine::Final { text: String::new(), elapsed_ms: 0, segments: None });
+        let wrong = engine::Reply::Final(engine::Final { text: String::new(), elapsed_ms: 0, segments: None, language: None });
         assert!(matches!(ok_body::<VadReply>(wrong, "vad"), Err(Error::Protocol(_))));
         let bad = engine::Reply::Ok(serde_json::from_value(json!({"speech": "none"})).unwrap());
         assert!(matches!(ok_body::<VadReply>(bad, "vad"), Err(Error::Protocol(_))));

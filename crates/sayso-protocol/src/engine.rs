@@ -234,6 +234,10 @@ pub struct Final {
     /// With `segments: true` and the feature `segments`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub segments: Option<Vec<Segment>>,
+    /// The language that the model found, such as `de` (feature
+    /// `detected_language`). Only when the request had `language` `auto`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
 }
 
 /// A model of the built-in catalog, in the reply to `list_models` without `models`.
@@ -253,6 +257,9 @@ pub struct CatalogModel {
     pub roles: Vec<Role>,
     #[serde(default = "no_timestamps")]
     pub timestamps: TimestampLevel,
+    /// The model finds the language of the speech (feature `detected_language`).
+    #[serde(default)]
+    pub detects_language: bool,
     #[serde(default)]
     pub recommended: bool,
 }

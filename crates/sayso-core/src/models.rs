@@ -196,6 +196,18 @@ impl EngineKind {
         }
     }
 
+    /// The engine reports the language that the model finds in the speech
+    /// (`final.language`, the feature `detected_language`). Whisper and
+    /// SenseVoice find it. [`ModelInfo::detects_language`] also needs more
+    /// than one language.
+    pub fn detects_language(&self) -> bool {
+        match self {
+            EngineKind::Whisper { .. } | EngineKind::WhisperCpp { .. } | EngineKind::SenseVoice => true,
+            EngineKind::Sherpa { recipe, .. } => matches!(recipe.as_str(), "whisper" | "sense_voice"),
+            _ => false,
+        }
+    }
+
     /// What the model does.
     pub fn task(&self) -> ModelTask {
         match self {
@@ -258,6 +270,12 @@ impl ModelInfo {
     /// What the model does.
     pub fn task(&self) -> ModelTask {
         self.engine.task()
+    }
+
+    /// The engine reports the language of the speech for this model. A model
+    /// with one language does not find it.
+    pub fn detects_language(&self) -> bool {
+        self.engine.detects_language() && self.languages.len() > 1
     }
 
     /// True when the user can choose a language for this model.
