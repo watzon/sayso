@@ -46,6 +46,11 @@ pub fn keeps_preview(id: &ModelId, preview: Option<&ModelId>) -> bool {
     preview == Some(id)
 }
 
+/// The idle time of the setting `keep_minutes`: None keeps a model always.
+pub fn idle_time(keep_minutes: Option<u32>) -> Option<Duration> {
+    keep_minutes.map(|minutes| Duration::from_secs(u64::from(minutes) * 60))
+}
+
 /// True when the idle time of the active model ended. `keep_minutes` is the
 /// setting: None keeps the model in memory always.
 pub fn idle_time_ended(keep_minutes: Option<u32>, idle: Duration) -> bool {
@@ -173,5 +178,22 @@ mod tests {
         assert!(idle_time_ended(Some(5), minutes(5)));
         assert!(!idle_time_ended(Some(60), minutes(59)));
         assert!(idle_time_ended(Some(60), minutes(61)));
+        assert_eq!(idle_time(None), None);
+        assert_eq!(idle_time(Some(5)), Some(minutes(5)));
+    }
+
+    /// A model that a job of an extension uses is not unloaded, and leaves
+    /// after the idle time (`docs/extensions.md`, "Scheduling").
+    #[test]
+    fn a_model_of_a_job_stays_until_its_idle_time_ends() {
+        use sayso_host::jobs::ModelUse;
+        let statuses: HashMap<ModelId, ModelStatus> = [(id("whisper"), ModelStatus::Ready), (id("silero-vad"), ModelStatus::Ready)].into();
+        let jobs = ModelUse::new();
+        let held = jobs.hold(vec![id("silero-vad")]);
+        let keep = |idle: Option<Duration>| [wanted(Some(&id("whisper")), None, false), jobs.wanted(idle)].concat();
+        assert!(unwanted(&statuses, &keep(Some(Duration::ZERO))).is_empty(), "the job runs");
+        drop(held);
+        assert!(unwanted(&statuses, &keep(Some(Duration::from_secs(60)))).is_empty(), "the idle time runs");
+        assert_eq!(unwanted(&statuses, &keep(Some(Duration::ZERO))), [id("silero-vad")]);
     }
 }

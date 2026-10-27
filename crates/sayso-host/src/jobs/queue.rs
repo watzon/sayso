@@ -6,8 +6,8 @@
 //! so the extension sees that it is alive and waits.
 //!
 //! A job ends with one event: `job_done` or `job_failed`. A cancelled job
-//! gets `job_failed` with the message [`CANCELLED`]: at once when it waits,
-//! and after the engine call that runs when it runs.
+//! gets `job_failed` with the message [`CANCELLED`] at once, and no event
+//! after it. A running job stops its work after the engine call that runs.
 
 use super::gate::DictationGate;
 use super::plan::Stopped;
@@ -31,18 +31,51 @@ pub trait RunJob: Send + Sync {
 /// A job while it runs: its id, its events, and its cancel.
 pub struct JobRun<'a> {
     pub id: u64,
-    sink: &'a dyn EventSink,
-    cancel: &'a AtomicBool,
+    events: &'a Events,
     gate: &'a DictationGate,
 }
 
-impl JobRun<'_> {
-    pub fn event(&self, event: Event) {
+/// The events of one job. After its end event, the job sends nothing more.
+struct Events {
+    sink: Arc<dyn EventSink>,
+    cancel: AtomicBool,
+    /// True after `job_done` or `job_failed`. The lock also keeps an event of
+    /// the runner from passing the `job_failed` of a cancel.
+    ended: Mutex<bool>,
+}
+
+impl Events {
+    fn new(sink: Arc<dyn EventSink>) -> Events {
+        Events { sink, cancel: AtomicBool::new(false), ended: Mutex::new(false) }
+    }
+
+    fn send(&self, event: Event) {
+        let mut ended = self.ended.lock();
+        if *ended {
+            return;
+        }
+        *ended = matches!(event, Event::JobDone { .. } | Event::JobFailed { .. });
         self.sink.event(event);
     }
 
+    /// Cancel: `job_failed` now. False when the job was already cancelled.
+    fn cancel(&self, job: u64) -> bool {
+        if self.cancel.swap(true, Ordering::SeqCst) {
+            return false;
+        }
+        self.send(Event::JobFailed { job, message: CANCELLED.into(), code: None });
+        true
+    }
+}
+
+impl JobRun<'_> {
+    /// Send an event of the job. After a cancel, nothing goes out.
+    pub fn event(&self, event: Event) {
+        self.events.send(event);
+    }
+
     pub fn cancelled(&self) -> bool {
-        self.cancel.load(Ordering::SeqCst)
+        self.events.cancel.load(Ordering::SeqCst)
     }
 
     /// Call before each call to the engine: waits while a dictation runs, and
@@ -92,7 +125,7 @@ struct Queued {
 struct Running {
     id: u64,
     connection: u64,
-    cancel: Arc<AtomicBool>,
+    events: Arc<Events>,
 }
 
 impl JobQueue {
@@ -125,8 +158,8 @@ impl JobQueue {
         Some(id)
     }
 
-    /// Cancel the job `job` of `connection`. A waiting job ends at once; a
-    /// running job stops after its engine call. False when `connection` has
+    /// Cancel the job `job` of `connection`. It gets `job_failed` at once;
+    /// a running job stops its work after its engine call. False when `connection` has
     /// no such job (it ended, it is not its job, or it is already cancelled).
     pub fn cancel(&self, connection: u64, job: u64) -> bool {
         self.cancel_where(|id, c| c == connection && id == job) > 0
@@ -143,7 +176,11 @@ impl JobQueue {
         state.running.as_ref().is_some_and(|r| r.connection == connection) || state.waiting.iter().any(|q| q.connection == connection)
     }
 
-    /// Cancel every job and stop the thread. A second call does nothing.
+    /// Cancel every job, and take no more. A second call does nothing.
+    ///
+    /// It does not wait for the thread: a job that runs ends after its
+    /// engine call (diarization of a long file can take minutes), sends
+    /// `job_failed`, and the thread then stops.
     pub fn close(&self) {
         {
             let mut state = self.shared.state.lock();
@@ -151,9 +188,7 @@ impl JobQueue {
         }
         self.cancel_where(|_, _| true);
         self.shared.wake.notify_all();
-        if let Some(worker) = self.worker.lock().take() {
-            let _ = worker.join();
-        }
+        drop(self.worker.lock().take());
     }
 
     /// Cancel the jobs for which `matches(job, connection)` is true. Gives how
@@ -164,9 +199,10 @@ impl JobQueue {
             let (removed, kept): (Vec<Queued>, Vec<Queued>) =
                 std::mem::take(&mut state.waiting).into_iter().partition(|q| matches(q.id, q.connection));
             state.waiting = kept.into();
-            let running = state.running.as_ref().is_some_and(|r| matches(r.id, r.connection) && !r.cancel.swap(true, Ordering::SeqCst));
+            let running = state.running.as_ref().filter(|r| matches(r.id, r.connection)).map(|r| (r.id, r.events.clone()));
             (removed, running)
         };
+        let running = running.is_some_and(|(id, events)| events.cancel(id));
         if running {
             // A job that waits for a dictation stops at once.
             self.shared.gate.wake();
@@ -197,15 +233,15 @@ fn work(shared: &Shared) {
                 }
                 shared.wake.wait(&mut state);
             };
-            let cancel = Arc::new(AtomicBool::new(false));
-            state.running = Some(Running { id: queued.id, connection: queued.connection, cancel: cancel.clone() });
+            let events = Arc::new(Events::new(queued.sink.clone()));
+            state.running = Some(Running { id: queued.id, connection: queued.connection, events: events.clone() });
             let moved: Vec<(u64, Arc<dyn EventSink>)> = state.waiting.iter().map(|q| (q.id, q.sink.clone())).collect();
-            (queued, cancel, moved)
+            (queued, events, moved)
         };
         for (id, sink) in moved {
             sink.event(Event::JobProgress { job: id, fraction: 0.0 });
         }
-        let run = JobRun { id: queued.id, sink: &*queued.sink, cancel: &cancel, gate: &shared.gate };
+        let run = JobRun { id: queued.id, events: &cancel, gate: &shared.gate };
         shared.runner.run(&queued.job, &run);
         shared.state.lock().running = None;
     }

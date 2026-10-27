@@ -84,6 +84,16 @@ impl AppModel {
         for fx in effects {
             self.run_effect(fx, cx);
         }
+        // Jobs of extensions wait between their parts while a dictation
+        // records or is processed (`docs/extensions.md`, "Scheduling"). Every
+        // way out of a dictation goes through here, so a lost end is not possible.
+        if let Some(jobs) = &self.host_jobs {
+            if matches!(self.machine.state, State::Recording { .. } | State::Processing { .. }) {
+                jobs.gate.begin();
+            } else {
+                jobs.gate.end();
+            }
+        }
         let recording = self.machine.is_recording();
         if recording != was_recording {
             self.services.platform.hotkeys.set_recording(recording);

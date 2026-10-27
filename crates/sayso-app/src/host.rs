@@ -52,6 +52,16 @@ impl sayso_host::HostServices for AppHostServices {
 pub struct Started {
     pub host: sayso_host::Host,
     pub questions: async_channel::Receiver<Ask>,
+    pub jobs: HostJobs,
+}
+
+/// What the dictation and the memory policy tell the jobs of extensions.
+#[derive(Clone)]
+pub struct HostJobs {
+    /// `begin` while a dictation records or is processed, `end` after.
+    pub gate: Arc<sayso_host::jobs::DictationGate>,
+    /// The models that jobs use: the app does not unload them.
+    pub model_use: Arc<sayso_host::jobs::ModelUse>,
 }
 
 /// Start the host. When that fails, Sayso runs without extensions.
@@ -62,5 +72,9 @@ pub fn start(paths: &Paths, services: &Services) -> Option<Started> {
         config.host_version = env!("CARGO_PKG_VERSION").into();
         sayso_host::Host::start(config, Arc::new(host_services))
     });
-    started.map(|host| Started { host, questions: asked }).map_err(|e| log::warn!("extensions cannot connect: {e}")).ok()
+    started
+        .map(|host| {
+            let jobs = HostJobs { gate: host.dictation_gate(), model_use: host.model_use() };
+            Started { host, questions: asked, jobs }
+        }).map_err(|e| log::warn!("extensions cannot connect: {e}")).ok()
 }

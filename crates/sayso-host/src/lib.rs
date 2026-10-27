@@ -14,6 +14,7 @@ mod bus;
 mod connection;
 mod download;
 mod identity;
+mod job_requests;
 mod models;
 mod responder;
 mod state;
@@ -35,8 +36,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::thread::JoinHandle;
 
-/// What the host gets from the app. Later sub-steps of step 6 add jobs, live
-/// sessions, and `enhance`.
+/// What the host gets from the app. Later sub-steps of step 6 add live
+/// sessions and `enhance`.
 ///
 /// The host calls these methods from its own threads, never from the thread
 /// of a window.
@@ -115,6 +116,12 @@ pub(crate) struct Shared {
     pub downloads: Mutex<HashSet<ModelId>>,
     /// One lock for each extension: the one question at a time.
     questions: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// Holds jobs between two engine calls while a dictation runs.
+    pub gate: Arc<jobs::DictationGate>,
+    /// The models that jobs use, for the memory policy of the app.
+    pub model_use: Arc<jobs::ModelUse>,
+    /// The queue of jobs. None without an engine.
+    pub jobs: Option<jobs::JobQueue>,
     pub closing: AtomicBool,
     /// The open connections by a number of the host.
     pub connections: Mutex<HashMap<u64, connection::Entry>>,
@@ -138,6 +145,12 @@ impl Host {
     pub fn start(config: HostConfig, services: Arc<dyn HostServices>) -> io::Result<Host> {
         let listener = Arc::new(transport::Listener::bind(&config.socket)?);
         let engine = services.engine();
+        let gate = Arc::new(jobs::DictationGate::new());
+        let model_use = jobs::ModelUse::new();
+        let queue = match &engine {
+            Some(engine) => Some(jobs::JobQueue::start(Arc::new(jobs::JobRunner::new(engine.clone(), model_use.clone())), gate.clone())?),
+            None => None,
+        };
         let shared = Arc::new(Shared {
             host_version: config.host_version,
             identify: config.identify,
@@ -147,6 +160,9 @@ impl Host {
             services,
             downloads: Mutex::new(HashSet::new()),
             questions: Mutex::new(HashMap::new()),
+            gate,
+            model_use,
+            jobs: queue,
             closing: AtomicBool::new(false),
             connections: Mutex::new(HashMap::new()),
             next_connection: AtomicU64::new(1),
@@ -175,6 +191,10 @@ impl Host {
             if self.shared.closing.swap(true, Ordering::SeqCst) {
                 return;
             }
+            // Each job ends with `job_failed` before `host_closing`.
+            if let Some(jobs) = &self.shared.jobs {
+                jobs.close();
+            }
             connections.values_mut().filter_map(connection::Entry::close_with_host_closing).collect::<Vec<_>>()
         };
         if self.listener.wake()
@@ -189,6 +209,18 @@ impl Host {
         self.listener.remove();
         self.shared.bus.stop();
         log::info!("host: closed");
+    }
+
+    /// The gate of the jobs. The app calls `begin` when a dictation starts
+    /// and `end` when it no longer needs the engine (see [`jobs::DictationGate`]).
+    pub fn dictation_gate(&self) -> Arc<jobs::DictationGate> {
+        self.shared.gate.clone()
+    }
+
+    /// The models that jobs use. The memory policy of the app does not
+    /// unload them (see [`jobs::ModelUse::wanted`]).
+    pub fn model_use(&self) -> Arc<jobs::ModelUse> {
+        self.shared.model_use.clone()
     }
 
     /// The socket, or the name of the pipe on Windows.
