@@ -313,6 +313,25 @@ fn events_reach_every_subscriber() {
     f.client.end_stream(9);
 }
 
+/// The app downloads and deletes the VAD and diarization models through the
+/// client, and the client checks their disk state with the speech models.
+#[test]
+fn vad_and_diarization_models_download_with_their_engine_object() {
+    let f = fixture();
+    let list = requests(&f.models).into_iter().find(|r| r.contains(r#""type":"list_models""#)).unwrap();
+    for (n, model) in ["silero-vad", "speaker-diarization"].into_iter().enumerate() {
+        assert!(list.contains(&format!(r#""id":"{model}""#)), "{model} is not in {list}");
+        let model = ModelId::new(model);
+        assert_eq!(f.client.status(&model), ModelStatus::NotDownloaded);
+        f.client.download(&model).unwrap();
+        wait_for_requests(&f.models, "download", n + 1);
+        let info = sayso_core::models::find_local(&model).unwrap();
+        let sent = requests(&f.models).into_iter().rfind(|r| r.contains(r#""type":"download""#)).unwrap();
+        let engine = serde_json::to_string(&info.engine).unwrap();
+        assert!(sent.contains(&engine) && sent.contains(&format!(r#""size_bytes":{}"#, info.size_bytes)), "{sent}");
+    }
+}
+
 #[test]
 fn download_progress_fills_the_status_cache() {
     let f = fixture();

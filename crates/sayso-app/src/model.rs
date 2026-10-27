@@ -9,13 +9,13 @@ use crate::live::LiveAudio;
 use crate::services::Services;
 use gpui_kit::*;
 use sayso_i18n::t;
-use sayso_core::config::{Config, ConfigIssue, PreviewChoice, Provider, ProviderKind};
+use sayso_core::config::{Config, ConfigIssue, PreviewChoice, Provider, ProviderKind, RoleChoice};
 use sayso_core::enhance::ModelChoice;
 use sayso_core::dictation::{Event, Machine, State, Timing};
 use sayso_core::dictionary::{Replacement, Replacer, Word};
 use sayso_core::history::HistoryEntry;
 use sayso_core::hotkey::Hotkey;
-use sayso_core::models::{ModelId, ModelInfo};
+use sayso_core::models::{ModelId, ModelInfo, ModelTask, Vad};
 use sayso_core::speech::{SpeechProvider, split_model_id};
 use sayso_core::paths::Paths;
 use sayso_core::stats::{self, Stats};
@@ -170,6 +170,9 @@ pub struct AppModel {
     pub update_notice: Option<sayso_update::manifest::Version>,
     /// The input devices, scanned off the UI thread. See `devices.rs`.
     pub(crate) devices: crate::devices::InputDevices,
+    /// An extension is installed, so the Models page shows the VAD and
+    /// diarization models. The slow checks read the folder again.
+    pub extensions_installed: bool,
 }
 
 impl EventEmitter<AppEvent> for AppModel {}
@@ -288,16 +291,19 @@ impl AppModel {
             updater: None,
             update_notice: None,
             devices: Default::default(),
+            extensions_installed: false,
         };
         model.system_dark = model.services.platform.prefs.dark_mode();
+        model.extensions_installed = sayso_core::extensions::any_installed(&model.paths.extensions_dir());
         model.reload_dictionary();
         model.reload_history(cx);
         model.refresh_permissions(cx);
         model.refresh_input_devices(cx);
         let engine_events = model.services.engine_events.take();
         model.engine_starting = engine_events.is_some();
-        // Local models only. The status of a cloud model comes from its provider.
-        for m in sayso_core::models::catalog() {
+        // Local models only: speech, VAD, and diarization models. The status
+        // of a cloud model comes from its provider.
+        for m in sayso_core::models::local_models() {
             let status = model.services.engine.as_ref().map(|e| e.status(&m.id)).unwrap_or(ModelStatus::NotDownloaded);
             model.model_status.insert(m.id.clone(), status);
         }
@@ -990,12 +996,53 @@ impl AppModel {
 
     /// Bytes used by downloaded models, for the Models header.
     pub fn models_disk_bytes(&self) -> u64 {
-        self.catalog().iter().filter(|m| self.status_of(&m.id).is_on_disk()).map(|m| m.size_bytes).sum()
+        self.downloadable_models().filter(|m| self.status_of(&m.id).is_on_disk()).map(|m| m.size_bytes).sum()
     }
 
     /// The number of downloaded models, for Settings › History and privacy.
     pub fn models_on_disk(&self) -> usize {
-        self.catalog().iter().filter(|m| m.size_bytes > 0 && self.status_of(&m.id).is_on_disk()).count()
+        self.downloadable_models().filter(|m| m.size_bytes > 0 && self.status_of(&m.id).is_on_disk()).count()
+    }
+
+    /// The models with files on this computer: the models of [`Self::catalog`],
+    /// and the VAD and diarization models.
+    fn downloadable_models(&self) -> impl Iterator<Item = ModelInfo> {
+        let roles = [ModelTask::Vad, ModelTask::Diarization].into_iter().flat_map(sayso_core::models::models_for).cloned();
+        self.catalog().into_iter().chain(roles)
+    }
+
+    // -----------------------------------------------------------------------
+    // VAD and diarization models (jobs of extensions; dictation does not use them)
+    // -----------------------------------------------------------------------
+
+    /// The VAD models of this system, in catalog order. Basic VAD is not a model.
+    pub fn vad_models(&self) -> Vec<ModelInfo> {
+        sayso_core::models::models_for(ModelTask::Vad).filter(|m| crate::shell::model_runs_here(m)).cloned().collect()
+    }
+
+    /// The diarization models of this system, in catalog order.
+    pub fn diarization_models(&self) -> Vec<ModelInfo> {
+        sayso_core::models::models_for(ModelTask::Diarization).filter(|m| crate::shell::model_runs_here(m)).cloned().collect()
+    }
+
+    /// The VAD that a job gets when it names none (`models.vad`).
+    pub fn vad_in_use(&self) -> Vad {
+        sayso_core::models::vad_for(None, &self.config.models.vad, |id| self.status_of(id).is_on_disk())
+    }
+
+    /// The diarization model that a job gets when it names none (`models.diarization`).
+    pub fn diarization_in_use(&self) -> Option<ModelId> {
+        sayso_core::models::diarization_for(None, &self.config.models.diarization, |id| self.status_of(id).is_on_disk())
+    }
+
+    /// Choose the VAD of jobs: Automatic, Basic VAD, or a VAD model.
+    pub fn set_vad(&mut self, choice: RoleChoice, cx: &mut Context<Self>) {
+        self.edit_config(cx, |c| c.models.vad = choice);
+    }
+
+    /// Choose the diarization model of jobs: Automatic or a diarization model.
+    pub fn set_diarization(&mut self, choice: RoleChoice, cx: &mut Context<Self>) {
+        self.edit_config(cx, |c| c.models.diarization = choice);
     }
 
     // -----------------------------------------------------------------------

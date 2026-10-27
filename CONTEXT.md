@@ -53,7 +53,7 @@ The models that an engine knows by id, built into the engine from the model cata
 The file with an engine that the Release workflow attaches to a GitHub release: `sayso-engine-<version>-<os>-<arch>` (`.tar.gz`, and `.zip` on Windows). It holds the engine from the app build, the libraries it needs, its licenses, and a README. Sayso never uses it: the app has its own engine, and Sayso never downloads an engine.
 
 **Model**
-A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". A dictation uses a final model and, when the live preview is on, a preview model. A model is a local model or a cloud model.
+A speech model, for example "Parakeet Unified EN" or "Whisper large-v3". A dictation uses a final model and, when the live preview is on, a preview model. A model is a local model or a cloud model. VAD models and diarization models are local models too, but they give no text (see Model task).
 
 **Local model**
 A model that the user downloads and that runs on this computer in the engine. The audio stays on the computer.
@@ -78,6 +78,21 @@ The streaming local model that gives the live preview. The user chooses it on th
 
 **Streaming model**
 A local model that can give the live preview. Every streaming model can also do the final pass.
+
+**Model task**
+What a local model does: speech (the final pass or the live preview), VAD, or diarization. The engines check it: a request for one task needs a model of that task. The list of speech models (`models::catalog`) has only speech models, so no surface of dictation can offer a VAD or diarization model. The engine catalog has all of them (`models::local_models`).
+
+**VAD model**
+A local model that finds the parts of audio that contain speech. VAD means voice activity detection. The jobs and live sessions of extensions use it to cut long audio at pauses. Dictation does not use VAD. The user chooses it on the Models page (`models.vad`): "auto" (the first VAD model on disk, Silero VAD first, else Basic VAD), "basic", or a model id. A chosen model that is not on disk gives Basic VAD.
+
+**Basic VAD**
+The VAD of the host (`sayso_core::basic_vad`). It finds speech by its sound level, a margin above the noise floor of the last 5 seconds, so a constant noise is not speech. It follows the same rules as the engines: speech under 250 ms is left out, a pause under 500 ms does not end speech, and a part is at most 30 s. It needs no download, so a new install has it. Its id is `basic`.
+
+**Diarization model**
+A local model that finds who speaks when in a recording. It can have more than one file (on Linux and Windows, a segmentation model and a speaker embedding model), but it is one model with one id. The user chooses it on the Models page (`models.diarization`): "auto" (the diarization model on disk, else none) or a model id. There is no built-in fallback.
+
+**Extension**
+A separate app that uses the speech features of Sayso through the Host API (`docs/extensions.md`). Sayso installs it in `<data dir>/extensions/<id>/<version>/`. While at least one is installed, the Models page also shows the VAD and diarization models.
 
 **Dictation language**
 The language the user speaks: a language code, or "auto" to let the model detect it. Each model gets the nearest value that it supports.

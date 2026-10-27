@@ -12,6 +12,9 @@
 //! A model with a live preview also gets a small streaming model, downloaded
 //! with it, or decodes its own growing recording again (`redecode_preview`).
 //!
+//! The VAD model and the diarization model come last. They are single ONNX
+//! files and a segmentation archive of other sherpa-onnx releases.
+//!
 //! The ids match the macOS catalog where the model is the same, so a config
 //! file and the history mean the same model on every system.
 
@@ -23,6 +26,16 @@ const MB: u64 = 1_000_000;
 
 /// The streaming English model that gives the live preview.
 pub const PREVIEW_ARCHIVE: &str = "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06";
+
+/// The speaker embedding model of the diarization model: an ONNX file of the
+/// sherpa-onnx `speaker-recongition-models` release, and its size in bytes.
+/// A benchmark on meeting recordings chose the 3D-Speaker CAM++ model for
+/// Chinese and English (`docs/extensions.md`, "Diarization models").
+pub const SPEAKER_EMBEDDING: (&str, u64) = ("3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx", 28_281_164);
+
+/// The pyannote segmentation archive of the diarization model, without
+/// `.tar.bz2`, and its size in bytes.
+pub const SPEAKER_SEGMENTATION: (&str, u64) = ("sherpa-onnx-pyannote-segmentation-3-0", 6_958_444);
 
 /// A system with its own list of models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,7 +219,40 @@ pub fn catalog_for(system: System) -> Vec<ModelInfo> {
         }
         .build(),
     );
+    models.extend(role_models());
     models
+}
+
+/// The VAD and diarization models. TEN VAD is not here, although the engine
+/// runs it: its license adds conditions to Apache 2.0 that Sayso cannot accept
+/// for its users (`docs/extensions.md`, "VAD models").
+fn role_models() -> Vec<ModelInfo> {
+    let (segmentation, segmentation_size) = SPEAKER_SEGMENTATION;
+    let (embedding, embedding_size) = SPEAKER_EMBEDDING;
+    vec![
+        ModelInfo {
+            card_url: Some("https://github.com/snakers4/silero-vad".into()),
+            ..crate::models::role_model(
+                "silero-vad",
+                "Silero VAD",
+                "Silero",
+                t!("core.model.silero_vad"),
+                EngineKind::SherpaVad { recipe: "silero".into(), file: "silero_vad.onnx".into() },
+                643_854,
+            )
+        },
+        ModelInfo {
+            card_url: Some("https://huggingface.co/pyannote/segmentation-3.0".into()),
+            ..crate::models::role_model(
+                "speaker-diarization",
+                "Speaker Diarization",
+                "pyannote",
+                t!("core.model.speaker_diarization_onnx"),
+                EngineKind::SherpaDiarization { segmentation: segmentation.into(), embedding: embedding.into() },
+                segmentation_size + embedding_size,
+            )
+        },
+    ]
 }
 
 fn parakeet_tdt_v2() -> ModelInfo {
@@ -420,6 +466,14 @@ mod tests {
                     EngineKind::WhisperCpp { file } => {
                         assert_eq!(system, System::Windows, "{}: whisper.cpp runs on Windows only", m.id);
                         assert!(file.starts_with("ggml-") && file.ends_with(".bin"), "{}", m.id);
+                        false
+                    }
+                    EngineKind::SherpaVad { recipe, file } => {
+                        assert!(recipe == "silero" && file.ends_with(".onnx"), "{}", m.id);
+                        false
+                    }
+                    EngineKind::SherpaDiarization { segmentation, embedding } => {
+                        assert!(segmentation.starts_with("sherpa-onnx-") && embedding.ends_with(".onnx"), "{}", m.id);
                         false
                     }
                     _ => panic!("{} is not a model the Rust engine runs", m.id),

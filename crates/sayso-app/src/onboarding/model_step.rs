@@ -328,6 +328,16 @@ mod tests {
     }
 
     #[test]
+    fn onboarding_offers_no_vad_or_diarization_model() {
+        use sayso_core::models::{ModelTask, find_local};
+        for &language in sayso_core::languages::all() {
+            for id in choices(language) {
+                assert_eq!(find_local(&id).map(|m| m.task()), Some(ModelTask::Speech), "{language}: {id}");
+            }
+        }
+    }
+
+    #[test]
     fn a_gpu_model_comes_second_for_its_language_only_when_it_runs_here() {
         let cpu_only = |m: &ModelInfo| !m.engine.needs_gpu();
         let with_gpu = |_: &ModelInfo| true;

@@ -8,9 +8,11 @@
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-/// The clustering threshold when the client gives no number of speakers. It is the default of
-/// sherpa-onnx. A lower value finds more speakers.
-pub const CLUSTER_THRESHOLD: f32 = 0.5;
+/// The clustering threshold when the client gives no number of speakers. A lower value finds
+/// more speakers. The default of sherpa-onnx, 0.5, found 20 to 30 speakers in meetings of 4 to
+/// 6. The benchmark in `docs/extensions.md` ("Diarization models") had the fewest errors at 0.9
+/// to 1.0 with the embedding model of the catalog, and many more at 1.1, so this is 0.9.
+pub const CLUSTER_THRESHOLD: f32 = 0.9;
 
 /// A turn as the model gives it. The speaker number is the number of the model.
 #[derive(Debug, Clone, Copy, PartialEq)]

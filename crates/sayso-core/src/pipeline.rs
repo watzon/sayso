@@ -373,23 +373,25 @@ mod tests {
 
     #[test]
     fn the_retry_gets_only_the_time_that_is_left() {
-        let slow = SlowInvalid { delay: Duration::from_millis(300), timeouts: Mutex::new(vec![]) };
+        // The first attempt takes half of the limit, so a slow CI runner has
+        // 1 s of margin before no time is left for a retry. With 300 ms of
+        // 400 ms the margin was 100 ms, and a macOS runner took 517 ms.
+        let slow = SlowInvalid { delay: Duration::from_millis(1000), timeouts: Mutex::new(vec![]) };
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
-        let timeout = Duration::from_millis(400);
+        let timeout = Duration::from_millis(2000);
         let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&slow), cleaner: None, timeout };
         let started = Instant::now();
         let out = p.run("keep this text");
-        // Two full attempts would take 600 ms. A slow CI runner adds more than
-        // 100 ms to one attempt (517 ms on a macOS runner).
-        assert!(started.elapsed() < timeout + Duration::from_millis(180), "took {:?}", started.elapsed());
+        // Two full attempts would take 3 s.
+        assert!(started.elapsed() < timeout + Duration::from_millis(600), "took {:?}", started.elapsed());
         assert_eq!(out.text, "keep this text");
-        assert_eq!(out.enhance_error, Some(("slow".to_string(), EnhanceError::Timeout(400))), "the limit of the whole step");
+        assert_eq!(out.enhance_error, Some(("slow".to_string(), EnhanceError::Timeout(2000))), "the limit of the whole step");
         let timeouts = slow.timeouts.lock().unwrap();
         assert_eq!(timeouts.len(), 2);
         assert_eq!(timeouts[0], timeout);
-        assert!(timeouts[1] <= Duration::from_millis(100), "the retry got {:?}", timeouts[1]);
-        assert_eq!(out.timings.unwrap().timeout_ms, 400);
+        assert!(timeouts[1] <= Duration::from_millis(1000), "the retry got {:?}", timeouts[1]);
+        assert_eq!(out.timings.unwrap().timeout_ms, 2000);
     }
 
     #[test]

@@ -25,6 +25,8 @@ pub struct Config {
     pub ai: Ai,
     /// Cloud speech providers for the final pass.
     pub speech: Speech,
+    /// The VAD and diarization models of jobs and live sessions.
+    pub models: Models,
     pub history: History,
     pub appearance: AppearanceConfig,
     pub updates: Updates,
@@ -202,31 +204,50 @@ impl Default for Dictation {
     }
 }
 
-/// Which model gives the live preview.
+/// Which model gives the live preview: "auto" (the final model when it
+/// streams, else a streaming model on disk that understands the dictation
+/// language, see `models::preview_for`), or a streaming model, also when
+/// another model would fit better.
+pub type PreviewChoice = RoleChoice;
+
+/// The choice of a model for one role: "auto", or a model id. The section of
+/// each role says what "auto" means.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(from = "String", into = "String")]
-pub enum PreviewChoice {
-    /// The final model when it streams. Otherwise a streaming model on disk
-    /// that understands the dictation language (`models::preview_for`).
+pub enum RoleChoice {
+    /// Sayso chooses the model.
     #[default]
     Auto,
-    /// This streaming model, also when another model would fit better.
+    /// This model.
     Model(ModelId),
 }
 
-impl From<String> for PreviewChoice {
+impl From<String> for RoleChoice {
     fn from(s: String) -> Self {
-        if s == "auto" { PreviewChoice::Auto } else { PreviewChoice::Model(ModelId(s)) }
+        if s == "auto" { RoleChoice::Auto } else { RoleChoice::Model(ModelId(s)) }
     }
 }
 
-impl From<PreviewChoice> for String {
-    fn from(c: PreviewChoice) -> Self {
+impl From<RoleChoice> for String {
+    fn from(c: RoleChoice) -> Self {
         match c {
-            PreviewChoice::Auto => "auto".into(),
-            PreviewChoice::Model(id) => id.0,
+            RoleChoice::Auto => "auto".into(),
+            RoleChoice::Model(id) => id.0,
         }
     }
+}
+
+/// The models of jobs and live sessions (`docs/extensions.md`). Dictation
+/// does not use them.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct Models {
+    /// The VAD model: "auto" (the best VAD model on disk, else Basic VAD),
+    /// "basic" ([`crate::models::BASIC_VAD`]), or the id of a VAD model.
+    pub vad: RoleChoice,
+    /// The diarization model: "auto" (the diarization model on disk, else
+    /// none), or the id of a diarization model.
+    pub diarization: RoleChoice,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -847,6 +868,10 @@ pub enum ConfigProblem {
     UnknownModel(String),
     #[error("\"{0}\" cannot show a live preview. Use \"auto\" or a streaming model")]
     NotAStreamingModel(String),
+    #[error("\"{0}\" is not a VAD model. Sayso uses \"auto\"")]
+    NotAVadModel(String),
+    #[error("\"{0}\" is not a diarization model. Sayso uses \"auto\"")]
+    NotADiarizationModel(String),
     #[error("\"{0}\" is not an interface language Sayso has. Sayso uses the language of the system")]
     UnknownInterfaceLanguage(String),
     #[error("\"{0}\" is not a language code Sayso knows. Use \"auto\" or a code such as \"en\"")]
@@ -946,6 +971,7 @@ impl Config {
         section!("sounds", sounds);
         section!("ai", ai);
         section!("speech", speech);
+        section!("models", models);
         section!("history", history);
         section!("appearance", appearance);
         section!("updates", updates);
@@ -988,11 +1014,21 @@ impl Config {
             issue("dictation.model", ConfigProblem::UnknownModel(self.dictation.model.to_string()));
         }
         if let PreviewChoice::Model(id) = &self.dictation.preview_model {
-            match crate::models::find(id) {
+            match crate::models::find_local(id) {
                 None => issue("dictation.preview_model", ConfigProblem::UnknownModel(id.to_string())),
                 Some(m) if !m.live_preview => issue("dictation.preview_model", ConfigProblem::NotAStreamingModel(id.to_string())),
                 Some(_) => {}
             }
+        }
+        if let RoleChoice::Model(id) = &self.models.vad
+            && !crate::models::is_vad_model(id)
+        {
+            issue("models.vad", ConfigProblem::NotAVadModel(id.to_string()));
+        }
+        if let RoleChoice::Model(id) = &self.models.diarization
+            && !crate::models::is_diarization_model(id)
+        {
+            issue("models.diarization", ConfigProblem::NotADiarizationModel(id.to_string()));
         }
         if !sayso_i18n::is_valid_setting(&self.general.language) {
             issue("general.language", ConfigProblem::UnknownInterfaceLanguage(self.general.language.clone()));
@@ -1139,6 +1175,59 @@ mod tests {
         c.dictation.preview_model = PreviewChoice::Model(batch.clone());
         assert_eq!(c.validate()[0].problem, ConfigProblem::NotAStreamingModel(batch.to_string()));
         assert_eq!(c.validate()[0].field, "dictation.preview_model");
+    }
+
+    #[test]
+    fn vad_and_diarization_are_automatic_unless_the_file_names_a_model() {
+        // A config file from before the section.
+        let old = Config::parse("[dictation]\nlanguage = \"de\"\n");
+        assert!(old.issues.is_empty(), "{:?}", old.issues);
+        assert_eq!(old.config.models, Models { vad: RoleChoice::Auto, diarization: RoleChoice::Auto });
+        let text = Config::default().to_toml();
+        assert!(text.contains("[models]\nvad = \"auto\"\ndiarization = \"auto\""), "{text}");
+
+        let mut c = Config::default();
+        c.models.vad = RoleChoice::Model(ModelId::new("silero-vad"));
+        c.models.diarization = RoleChoice::Model(ModelId::new("speaker-diarization"));
+        let back = Config::parse(&c.to_toml());
+        assert!(back.issues.is_empty(), "{:?}", back.issues);
+        assert_eq!(back.config.models, c.models);
+        c.models.vad = RoleChoice::Model(ModelId::new(crate::models::BASIC_VAD));
+        assert!(c.validate().is_empty(), "Basic VAD is a VAD");
+        let back = Config::parse("[models]\nvad = \"basic\"\n");
+        assert_eq!(back.config.models.vad, RoleChoice::Model(ModelId::new("basic")));
+    }
+
+    #[test]
+    fn a_model_of_another_role_is_reported_and_counts_as_automatic() {
+        let mut c = Config::default();
+        let speech = default_model();
+        c.models.vad = RoleChoice::Model(speech.clone());
+        c.models.diarization = RoleChoice::Model(ModelId::new("silero-vad"));
+        let issues = c.validate();
+        assert_eq!(issues.len(), 2, "{issues:?}");
+        assert_eq!((issues[0].field.as_str(), &issues[0].problem), ("models.vad", &ConfigProblem::NotAVadModel(speech.to_string())));
+        assert_eq!(
+            (issues[1].field.as_str(), &issues[1].problem),
+            ("models.diarization", &ConfigProblem::NotADiarizationModel("silero-vad".into()))
+        );
+        c.models.vad = RoleChoice::Model(ModelId::new("no-such-model"));
+        assert_eq!(c.validate()[0].problem, ConfigProblem::NotAVadModel("no-such-model".into()));
+        // The rules give what "auto" gives.
+        let none = |_: &ModelId| false;
+        assert_eq!(crate::models::vad_for(None, &c.models.vad, none), crate::models::vad_for(None, &RoleChoice::Auto, none));
+        let bad = crate::models::diarization_for(None, &c.models.diarization, |_| true);
+        assert_eq!(bad, crate::models::diarization_for(None, &RoleChoice::Auto, |_| true));
+    }
+
+    #[test]
+    fn a_vad_or_diarization_model_cannot_be_used_for_dictation() {
+        let mut c = Config::default();
+        c.dictation.model = ModelId::new("silero-vad");
+        c.dictation.preview_model = PreviewChoice::Model(ModelId::new("speaker-diarization"));
+        let issues = c.validate();
+        assert_eq!(issues[0].problem, ConfigProblem::UnknownModel("silero-vad".into()), "{issues:?}");
+        assert_eq!(issues[1].problem, ConfigProblem::NotAStreamingModel("speaker-diarization".into()), "{issues:?}");
     }
 
     #[test]

@@ -42,6 +42,8 @@ settings:
       unknown_provider: "нет провайдера с id «%{id}»"
       unknown_model: "«%{id}» не входит в известные модели"
       not_a_streaming_model: "«%{id}» не умеет показывать живой предпросмотр. Используйте «auto» или потоковую модель"
+      not_a_vad_model: "«%{id}» не является моделью VAD. Sayso использует «auto»"
+      not_a_diarization_model: "«%{id}» не является моделью диаризации. Sayso использует «auto»"
       unknown_interface_language: "«%{code}» не является языком интерфейса Sayso. Sayso использует язык системы"
       unknown_dictation_language: "«%{code}» не является кодом языка, известным Sayso. Используйте «auto» или код вроде «en»"
       speech_timeout_too_short: "должно быть не меньше 1000 мс"

@@ -40,6 +40,8 @@ settings:
       unknown_provider: "kein Anbieter hat die ID „%{id}“"
       unknown_model: "„%{id}“ ist kein bekanntes Modell"
       not_a_streaming_model: "„%{id}“ kann keine Live-Vorschau zeigen. Nutze „auto“ oder ein Streaming-Modell"
+      not_a_vad_model: "„%{id}“ ist kein VAD-Modell. Sayso nutzt „auto“"
+      not_a_diarization_model: "„%{id}“ ist kein Diarisierungsmodell. Sayso nutzt „auto“"
       unknown_interface_language: "„%{code}“ ist keine Oberflächensprache, die Sayso hat. Sayso nutzt die Sprache des Systems"
       unknown_dictation_language: "„%{code}“ ist kein Sprachcode, den Sayso kennt. Nutze „auto“ oder einen Code wie „en“"
       speech_timeout_too_short: "muss mindestens 1000 ms betragen"

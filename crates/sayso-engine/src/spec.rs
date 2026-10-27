@@ -2,9 +2,9 @@
 //!
 //! The field is `EngineKind` from `sayso-core`, serialized. This engine runs
 //! the `sherpa`, `parakeet_cpp` (Linux), and `whisper_cpp` (Windows) kinds.
-//! It also runs `sherpa_vad` and `sherpa_diarization`, which the engine
-//! protocol has and the catalog of Sayso does not have yet. This file reads
-//! those two itself.
+//! It also runs `sherpa_vad` and `sherpa_diarization` (the `SherpaVad` and
+//! `SherpaDiarization` kinds). This file reads those two itself, because it
+//! checks their fields more closely.
 
 use anyhow::{Result, anyhow, bail};
 use sayso_core::models::EngineKind;
@@ -463,6 +463,12 @@ mod tests {
                 let spec = ModelSpec::from_json(&value).unwrap_or_else(|e| panic!("{}: {e}", info.id));
                 assert_eq!(spec.has_preview(), info.live_preview, "{system:?} {}", info.id);
                 assert_eq!(spec.recipe.final_pass(), info.final_pass, "{system:?} {}", info.id);
+                let task = match info.task() {
+                    sayso_core::models::ModelTask::Speech => Task::Speech,
+                    sayso_core::models::ModelTask::Vad => Task::Vad,
+                    sayso_core::models::ModelTask::Diarization => Task::Diarization,
+                };
+                assert_eq!(spec.recipe.task(), task, "{system:?} {}", info.id);
             }
         }
     }

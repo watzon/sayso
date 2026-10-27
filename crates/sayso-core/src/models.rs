@@ -10,7 +10,7 @@
 
 mod benchmark;
 
-use crate::config::PreviewChoice;
+use crate::config::{PreviewChoice, RoleChoice};
 use crate::languages;
 use sayso_i18n::t;
 use crate::speech::Speech;
@@ -86,6 +86,31 @@ pub enum EngineKind {
     /// in the Hugging Face repository `repo` at the commit `revision`.
     /// `preview_archive` is a sherpa-onnx streaming model, as for `Sherpa`.
     ParakeetCpp { repo: String, revision: String, file: String, preview_archive: Option<String> },
+    /// A sherpa-onnx VAD model in the Rust engine `sayso-engine`. `file` is an
+    /// ONNX file of the sherpa-onnx `asr-models` release. `recipe` is "silero"
+    /// or "ten".
+    SherpaVad { recipe: String, file: String },
+    /// sherpa-onnx speaker diarization in the Rust engine `sayso-engine`.
+    /// `segmentation` is an archive, without `.tar.bz2`, of the sherpa-onnx
+    /// `speaker-segmentation-models` release. `embedding` is an ONNX file of
+    /// the `speaker-recongition-models` release.
+    SherpaDiarization { segmentation: String, embedding: String },
+    /// FluidAudio Silero VAD (Core ML).
+    FluidVad,
+    /// The FluidAudio offline speaker diarizer (Core ML).
+    FluidDiarization,
+}
+
+/// What a model does. The engines check it: a request for one task needs a
+/// model of that task (`docs/engine-protocol.md`, "VAD").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ModelTask {
+    /// Audio to text: the final pass, the live preview, or both.
+    Speech,
+    /// Finds the parts of the audio with speech (a VAD model).
+    Vad,
+    /// Finds who speaks when (a diarization model).
+    Diarization,
 }
 
 /// How much timing a model gives with its text: the timestamp level of
@@ -131,7 +156,7 @@ impl EngineKind {
             EngineKind::Remote { .. } => "Cloud",
             EngineKind::AppleSpeech => "macOS",
             EngineKind::WhisperCpp { .. } => "whisper.cpp",
-            EngineKind::Sherpa { .. } => "sherpa-onnx",
+            EngineKind::Sherpa { .. } | EngineKind::SherpaVad { .. } | EngineKind::SherpaDiarization { .. } => "sherpa-onnx",
             EngineKind::ParakeetCpp { .. } => "parakeet.cpp",
             _ => "FluidAudio",
         }
@@ -163,6 +188,20 @@ impl EngineKind {
             | EngineKind::SenseVoice
             | EngineKind::Paraformer
             | EngineKind::Remote { .. } => Timestamps::None,
+            // VAD and diarization models give no text.
+            EngineKind::SherpaVad { .. }
+            | EngineKind::SherpaDiarization { .. }
+            | EngineKind::FluidVad
+            | EngineKind::FluidDiarization => Timestamps::None,
+        }
+    }
+
+    /// What the model does.
+    pub fn task(&self) -> ModelTask {
+        match self {
+            EngineKind::SherpaVad { .. } | EngineKind::FluidVad => ModelTask::Vad,
+            EngineKind::SherpaDiarization { .. } | EngineKind::FluidDiarization => ModelTask::Diarization,
+            _ => ModelTask::Speech,
         }
     }
 
@@ -214,6 +253,11 @@ impl ModelInfo {
     /// True for a speech provider's model.
     pub fn is_remote(&self) -> bool {
         matches!(self.engine, EngineKind::Remote { .. })
+    }
+
+    /// What the model does.
+    pub fn task(&self) -> ModelTask {
+        self.engine.task()
     }
 
     /// True when the user can choose a language for this model.
@@ -435,18 +479,71 @@ fn whisper(variant: &str) -> EngineKind {
     EngineKind::Whisper { variant: variant.into() }
 }
 
-/// The local models of this system, in display order, with the text in the
-/// interface language.
+/// A VAD or diarization model. It gives no text, so it has no final pass and
+/// no live preview, and it works for all languages.
+pub(crate) fn role_model(id: &str, name: &str, vendor: &str, description: String, engine: EngineKind, size_bytes: u64) -> ModelInfo {
+    debug_assert!(engine.task() != ModelTask::Speech, "{id} is a speech model");
+    ModelInfo {
+        id: ModelId::new(id),
+        name: name.into(),
+        vendor: vendor.into(),
+        description,
+        engine,
+        size_bytes,
+        languages: languages::all(),
+        final_pass: false,
+        live_preview: false,
+        vocabulary: false,
+        speed: 5,
+        wer_percent: None,
+        preview_wer_percent: None,
+        punctuation: false,
+        rtfx: None,
+        card_url: None,
+        credit: None,
+        recommended: false,
+        min_macos: 0,
+    }
+}
+
+/// The local speech models of this system, in display order, with the text
+/// in the interface language. Every place that offers a model for dictation
+/// reads this list, so it has no VAD or diarization model: see
+/// [`local_models`] and [`models_for`].
 pub fn catalog() -> &'static [ModelInfo] {
+    built().speech
+}
+
+/// Every local model of this system: the speech models, then the VAD and
+/// diarization models. The engine knows all of them.
+pub fn local_models() -> &'static [ModelInfo] {
+    built().all
+}
+
+/// The local models of this system that do `task`, in display order.
+pub fn models_for(task: ModelTask) -> impl Iterator<Item = &'static ModelInfo> {
+    local_models().iter().filter(move |m| m.task() == task)
+}
+
+/// The catalog of one locale.
+#[derive(Clone, Copy)]
+struct Built {
+    all: &'static [ModelInfo],
+    speech: &'static [ModelInfo],
+}
+
+fn built() -> Built {
     /// One catalog for each locale that ran. There are few locales, so each
     /// stays for the life of the process.
-    static CATALOGS: std::sync::Mutex<Vec<(String, &'static [ModelInfo])>> = std::sync::Mutex::new(Vec::new());
+    static CATALOGS: std::sync::Mutex<Vec<(String, Built)>> = std::sync::Mutex::new(Vec::new());
     let locale = sayso_i18n::locale();
     let mut catalogs = CATALOGS.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     if let Some((_, built)) = catalogs.iter().find(|(l, _)| *l == locale) {
-        return built;
+        return *built;
     }
-    let built: &'static [ModelInfo] = Box::leak(build_catalog().into_boxed_slice());
+    let all: &'static [ModelInfo] = Box::leak(build_catalog().into_boxed_slice());
+    let speech: Vec<ModelInfo> = all.iter().filter(|m| m.task() == ModelTask::Speech).cloned().collect();
+    let built = Built { all, speech: Box::leak(speech.into_boxed_slice()) };
     catalogs.push((locale, built));
     built
 }
@@ -775,15 +872,45 @@ pub(crate) fn apple_catalog() -> Vec<ModelInfo> {
             speed: 5,
         }
         .build(),
+        // VAD and diarization models.
+        ModelInfo {
+            card_url: Some("https://huggingface.co/FluidInference/silero-vad-coreml".into()),
+            min_macos: 14,
+            ..role_model("silero-vad", "Silero VAD", "Silero", t!("core.model.silero_vad"), EngineKind::FluidVad, 1_063_427)
+        },
+        ModelInfo {
+            card_url: Some("https://huggingface.co/FluidInference/speaker-diarization-coreml".into()),
+            min_macos: 14,
+            // CC BY 4.0 asks for this text.
+            credit: Some(
+                "Core ML conversion by Fluid Inference of pyannote speaker-diarization-community-1, with \
+                 WeSpeaker and BUT Speech@FIT parts. CC BY 4.0. The files are changed."
+                    .into(),
+            ),
+            ..role_model(
+                "speaker-diarization",
+                "Speaker Diarization",
+                "pyannote",
+                t!("core.model.speaker_diarization"),
+                EngineKind::FluidDiarization,
+                21_787_007,
+            )
+        },
     ]
 }
 
-/// A local model of this system.
+/// A local model of any task: a speech, VAD, or diarization model.
+pub fn find_local(id: &ModelId) -> Option<ModelInfo> {
+    local_models().iter().find(|m| &m.id == id).cloned()
+}
+
+/// A local speech model of this system. It finds no VAD or diarization model
+/// (see [`find_local`]).
 pub fn find(id: &ModelId) -> Option<ModelInfo> {
     catalog().iter().find(|m| &m.id == id).cloned()
 }
 
-/// The local models and the models of every configured speech provider.
+/// The local speech models and the models of every configured speech provider.
 pub fn catalog_with(speech: &Speech) -> Vec<ModelInfo> {
     let mut list = catalog().to_vec();
     list.extend(speech.catalog());
@@ -822,6 +949,69 @@ pub fn preview_for(active: &ModelInfo, choice: &PreviewChoice, language_setting:
 pub fn preview_language_mismatch(active: &ModelInfo, choice: &PreviewChoice, language_setting: &str) -> bool {
     let PreviewChoice::Model(id) = choice else { return false };
     find(id).is_some_and(|m| !m.understands(&active.language_for(language_setting)))
+}
+
+/// The id of Basic VAD: the energy detector of the host
+/// ([`crate::basic_vad`]). It needs no download, so it is not in the catalog.
+pub const BASIC_VAD: &str = "basic";
+
+/// The VAD of a job or a live session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Vad {
+    /// Basic VAD, in the host.
+    Basic,
+    /// A VAD model of the engine.
+    Model(ModelId),
+}
+
+/// True for Basic VAD and for the VAD models of this system.
+pub fn is_vad_model(id: &ModelId) -> bool {
+    id.as_str() == BASIC_VAD || models_for(ModelTask::Vad).any(|m| &m.id == id)
+}
+
+/// True for the diarization models of this system.
+pub fn is_diarization_model(id: &ModelId) -> bool {
+    models_for(ModelTask::Diarization).any(|m| &m.id == id)
+}
+
+/// The model that a job names (`asked`), else the model of the setting. An
+/// id that `of_role` refuses counts as not given.
+fn chosen_for_role<'a>(asked: Option<&'a ModelId>, setting: &'a RoleChoice, of_role: fn(&ModelId) -> bool) -> Option<&'a ModelId> {
+    let setting = match setting {
+        RoleChoice::Model(id) => Some(id),
+        RoleChoice::Auto => None,
+    };
+    asked.filter(|id| of_role(id)).or(setting.filter(|id| of_role(id)))
+}
+
+/// The VAD of a job: `asked`, the id that the job names, else `setting`
+/// (`models.vad`). An id that is not a VAD model counts as not given.
+///
+/// "auto" gives the first VAD model on disk in catalog order (Silero VAD
+/// first), else Basic VAD. A chosen VAD model that is not on disk gives Basic
+/// VAD. `on_disk` tells which local models are downloaded.
+pub fn vad_for(asked: Option<&ModelId>, setting: &RoleChoice, on_disk: impl Fn(&ModelId) -> bool) -> Vad {
+    let chosen = chosen_for_role(asked, setting, is_vad_model);
+    match chosen {
+        Some(id) if id.as_str() == BASIC_VAD => Vad::Basic,
+        Some(id) => if on_disk(id) { Vad::Model(id.clone()) } else { Vad::Basic },
+        None => models_for(ModelTask::Vad).find(|m| on_disk(&m.id)).map_or(Vad::Basic, |m| Vad::Model(m.id.clone())),
+    }
+}
+
+/// The diarization model of a job: `asked`, the id that the job names, else
+/// `setting` (`models.diarization`). An id that is not a diarization model
+/// counts as not given. None when the job cannot be diarized.
+///
+/// "auto" gives the first
+/// diarization model on disk. There is no built-in fallback, so a chosen
+/// model that is not on disk gives None.
+pub fn diarization_for(asked: Option<&ModelId>, setting: &RoleChoice, on_disk: impl Fn(&ModelId) -> bool) -> Option<ModelId> {
+    let chosen = chosen_for_role(asked, setting, is_diarization_model);
+    match chosen {
+        Some(id) => on_disk(id).then(|| id.clone()),
+        None => models_for(ModelTask::Diarization).find(|m| on_disk(&m.id)).map(|m| m.id.clone()),
+    }
 }
 
 /// Human-readable size: "626 MB", "1.3 GB".
@@ -992,6 +1182,104 @@ mod tests {
             }
             assert!(m.preview_wer_percent.is_none() || m.live_preview, "{}", m.id);
         }
+    }
+
+    /// Dictation never sees a VAD or diarization model: they are not speech
+    /// models, so no list or rule for the final pass or the live preview has them.
+    #[test]
+    fn vad_and_diarization_models_are_never_speech_models() {
+        let roles: Vec<&ModelInfo> = local_models().iter().filter(|m| m.task() != ModelTask::Speech).collect();
+        let ids: Vec<&str> = roles.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["silero-vad", "speaker-diarization"], "the same ids on every system");
+        assert_eq!(local_models().len(), catalog().len() + roles.len());
+        for m in &roles {
+            assert!(!m.final_pass && !m.live_preview && !m.vocabulary && !m.recommended, "{}", m.id);
+            assert!(m.size_bytes > 0 && m.languages == languages::all(), "{}", m.id);
+            assert_eq!(m.engine.timestamps(), Timestamps::None, "{}", m.id);
+            assert!(!catalog().iter().any(|c| c.id == m.id), "{} is in the speech catalog", m.id);
+            assert!(!catalog_with(&Speech::default()).iter().any(|c| c.id == m.id), "{}", m.id);
+            assert_eq!(find(&m.id), None, "{}", m.id);
+            assert_eq!(find_with(&Speech::default(), &m.id), None, "{}", m.id);
+            assert_eq!(find_local(&m.id).as_ref(), Some(*m));
+        }
+        assert!(catalog().iter().all(|m| m.task() == ModelTask::Speech));
+        assert_eq!(find(&default_model()).unwrap().task(), ModelTask::Speech);
+        assert_eq!(find(&preview_fallback()).unwrap().task(), ModelTask::Speech);
+
+        // With every local model on disk, no language and no choice gives one.
+        let everything = |_: &ModelId| true;
+        for &code in languages::all() {
+            let suggested = suggested_for(code, |_| true);
+            assert!(!roles.iter().any(|m| m.id == suggested), "{code}: {suggested}");
+            for active in catalog() {
+                for choice in [PreviewChoice::Auto, PreviewChoice::Model(ModelId::new("silero-vad")), PreviewChoice::Model(ModelId::new("speaker-diarization"))] {
+                    if let Some(preview) = preview_for(active, &choice, code, everything) {
+                        assert_eq!(find_local(&preview).unwrap().task(), ModelTask::Speech, "{code} {} {choice:?}", active.id);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn engine_catalogs_have_the_vad_and_diarization_models() {
+        use crate::models_onnx::{System, catalog_for};
+        let tasks = |list: Vec<ModelInfo>| list.into_iter().map(|m| (m.id.0, m.engine.task())).filter(|(_, t)| *t != ModelTask::Speech).collect::<Vec<_>>();
+        let want = vec![("silero-vad".to_string(), ModelTask::Vad), ("speaker-diarization".to_string(), ModelTask::Diarization)];
+        assert_eq!(tasks(apple_catalog()), want);
+        assert_eq!(tasks(catalog_for(System::Linux)), want);
+        assert_eq!(tasks(catalog_for(System::Windows)), want);
+        assert!(!catalog_for(System::Linux).iter().any(|m| m.id.as_str() == "ten-vad"), "see the license note in models_onnx.rs");
+    }
+
+    fn on(ids: &'static [&'static str]) -> impl Fn(&ModelId) -> bool {
+        move |id| ids.contains(&id.as_str())
+    }
+
+    #[test]
+    fn automatic_vad_takes_the_model_on_disk_else_basic() {
+        let silero = ModelId::new("silero-vad");
+        let auto = RoleChoice::Auto;
+        assert_eq!(vad_for(None, &auto, on(&[])), Vad::Basic, "a new install");
+        assert_eq!(vad_for(None, &auto, on(&["silero-vad"])), Vad::Model(silero.clone()));
+        // A speech model on disk is not a VAD model.
+        assert_eq!(vad_for(None, &auto, on(&["parakeet-tdt-v3"])), Vad::Basic);
+    }
+
+    #[test]
+    fn a_chosen_vad_wins_and_needs_its_files() {
+        let silero = ModelId::new("silero-vad");
+        let basic = ModelId::new(BASIC_VAD);
+        let chosen = RoleChoice::Model(silero.clone());
+        assert_eq!(vad_for(None, &chosen, on(&["silero-vad"])), Vad::Model(silero.clone()));
+        assert_eq!(vad_for(None, &chosen, on(&[])), Vad::Basic, "not on disk");
+        assert_eq!(vad_for(None, &RoleChoice::Model(basic.clone()), on(&["silero-vad"])), Vad::Basic, "Basic, also with a model on disk");
+        // The id of a job wins over the setting.
+        assert_eq!(vad_for(Some(&basic), &chosen, on(&["silero-vad"])), Vad::Basic);
+        assert_eq!(vad_for(Some(&silero), &RoleChoice::Model(basic.clone()), on(&["silero-vad"])), Vad::Model(silero.clone()));
+        // An id that is not a VAD model counts as not given.
+        let speech = ModelId::new("parakeet-tdt-v3");
+        assert_eq!(vad_for(Some(&speech), &RoleChoice::Model(basic.clone()), on(&["silero-vad"])), Vad::Basic, "the setting");
+        assert_eq!(vad_for(None, &RoleChoice::Model(speech.clone()), on(&["silero-vad"])), Vad::Model(silero.clone()), "auto");
+        assert_eq!(vad_for(Some(&ModelId::new("ten-vad")), &RoleChoice::Auto, on(&["ten-vad"])), Vad::Basic, "not in the catalog");
+        assert!(is_vad_model(&basic) && is_vad_model(&silero) && !is_vad_model(&speech));
+    }
+
+    #[test]
+    fn diarization_takes_the_model_on_disk_else_none() {
+        let model = ModelId::new("speaker-diarization");
+        let auto = RoleChoice::Auto;
+        assert_eq!(diarization_for(None, &auto, on(&[])), None, "no built-in fallback");
+        assert_eq!(diarization_for(None, &auto, on(&["speaker-diarization"])), Some(model.clone()));
+        let chosen = RoleChoice::Model(model.clone());
+        assert_eq!(diarization_for(None, &chosen, on(&["speaker-diarization"])), Some(model.clone()));
+        assert_eq!(diarization_for(None, &chosen, on(&[])), None, "not on disk");
+        assert_eq!(diarization_for(Some(&model), &auto, on(&["speaker-diarization"])), Some(model.clone()));
+        // Not a diarization model: as not given.
+        let vad = ModelId::new("silero-vad");
+        assert_eq!(diarization_for(Some(&vad), &auto, on(&["silero-vad", "speaker-diarization"])), Some(model.clone()));
+        assert_eq!(diarization_for(None, &RoleChoice::Model(vad.clone()), on(&["silero-vad"])), None);
+        assert!(is_diarization_model(&model) && !is_diarization_model(&vad));
     }
 
     #[test]

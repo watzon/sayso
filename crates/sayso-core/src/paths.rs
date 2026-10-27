@@ -86,6 +86,10 @@ impl Paths {
     pub fn models_dir(&self) -> PathBuf {
         self.data_dir.join("models")
     }
+    /// The installed extensions: `<id>/<version>/` for each (`docs/extensions.md`, "Install").
+    pub fn extensions_dir(&self) -> PathBuf {
+        self.data_dir.join("extensions")
+    }
     /// Runtime state that is not configuration, for example the pill position.
     pub fn state_file(&self) -> PathBuf {
         self.data_dir.join("state.json")

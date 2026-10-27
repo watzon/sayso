@@ -932,8 +932,14 @@ impl AppModel {
         cx.notify();
     }
 
-    /// Re-read config.toml and the styles folder when they change on disk.
+    /// Re-read config.toml, the styles folder, and the extensions folder when
+    /// they change on disk.
     fn check_files(&mut self, cx: &mut Context<Self>) {
+        let extensions = sayso_core::extensions::any_installed(&self.paths.extensions_dir());
+        if extensions != self.extensions_installed {
+            self.extensions_installed = extensions;
+            cx.notify();
+        }
         let path = self.paths.config_file();
         let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         if mtime != self.config_mtime {
