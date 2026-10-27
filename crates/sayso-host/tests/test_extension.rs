@@ -122,19 +122,17 @@ fn watch_prints_each_dictation_until_sayso_closes() {
     let mut child = world.command(&["watch"]).stdout(Stdio::piped()).spawn().unwrap();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
     let mut next_line = move || lines.next().expect("a line").unwrap();
-    let mut next = || message(&next_line());
     // The reply to `subscribe` comes first.
-    let (_, first) = next();
+    let (_, first) = message(&next_line());
     assert!(matches!(&first, HostMessage::Reply(Reply::Ok(fields)) if fields["events"] == serde_json::json!(["dictation_done"])), "{first:?}");
 
     let done = DictationDone { text: "Hello there.".into(), transcript: "hello there".into(), app: Some("Notes".into()), site: None, style: Some("clean".into()), time: "2026-10-26T09:41:00Z".into() };
     world.host.dictation_done(done.clone(), true, false);
     world.host.dictation_done(done.clone(), false, false);
     // Only the second: incognito was on at the start of the first.
-    assert_eq!(next(), (None, HostMessage::Event(Event::DictationDone(done))));
+    assert_eq!(message(&next_line()), (None, HostMessage::Event(Event::DictationDone(done))));
 
     world.host.close();
-    drop(next);
     assert_eq!(next_line(), r#"{"type":"host_gone"}"#);
     let status = wait(&mut child, Duration::from_secs(10));
     assert!(status.success());
