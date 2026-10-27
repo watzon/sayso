@@ -264,6 +264,30 @@ jobs:
           path: dist/sayso-engine-*-macos-arm64.tar.gz
           if-no-files-found: error
 
+  # The Intel engine is a cross-compile of the Swift engine alone. The job
+  # needs no Rust and no app bundle, and Sayso has no Intel app.
+  engine-file-macos-x86_64:
+    name: Engine file, macOS x86_64 (manual)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      # "-" signs ad hoc, because CI has no Developer ID certificate. The
+      # script then does not notarize.
+      - name: Build the Intel engine, not signed with a Developer ID
+        env:
+          SAYSO_SIGN_IDENTITY: "-"
+        run: scripts/build-engine-x86_64.sh
+      - name: Make the engine release file
+        run: scripts/package-engine.sh dist/engine-x86_64/SaysoEngine
+      - name: Keep the engine release file
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-engine-macos-x86_64
+          path: dist/sayso-engine-*-macos-x86_64.tar.gz
+          if-no-files-found: error
+
   engine-file-windows:
     name: Engine file, Windows x86_64 (manual)
     if: github.event_name == 'workflow_dispatch'
@@ -321,7 +345,7 @@ jobs:
   engine-check:
     name: Engine file check
     if: github.event_name == 'workflow_dispatch'
-    needs: [engine-file-macos, engine-file-windows, engine-file-linux]
+    needs: [engine-file-macos, engine-file-macos-x86_64, engine-file-windows, engine-file-linux]
     uses: ./.github/workflows/engine-check.yml
     with:
       ref: ${{ github.sha }}

@@ -156,8 +156,8 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
    - `sayso-<version>-linux-x86_64.tar.gz`, `.deb`, `.rpm`, and `.flatpak`
    - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, and `.flatpak`
    - `sayso-<version>-x86_64.AppImage` and `sayso-<version>-aarch64.AppImage`, each with its `.AppImage.zsync` file
-   - the engine release files: `sayso-engine-<version>-macos-arm64.tar.gz`, `sayso-engine-<version>-linux-x86_64.tar.gz`, `sayso-engine-<version>-linux-arm64.tar.gz`, and `sayso-engine-<version>-windows-x64.zip`
-   - a `.sha256` file for each of the eighteen
+   - the engine release files: `sayso-engine-<version>-macos-arm64.tar.gz`, `sayso-engine-<version>-macos-x86_64.tar.gz`, `sayso-engine-<version>-linux-x86_64.tar.gz`, `sayso-engine-<version>-linux-arm64.tar.gz`, and `sayso-engine-<version>-windows-x64.zip`
+   - a `.sha256` file for each of the nineteen
    - `latest.json`
 
    The tap `watzon/homebrew-tap` must also have a new commit, `sayso <version>`.
@@ -202,7 +202,7 @@ The CI job **Cleanup runtime** (`ci.yml`, start it with `gh workflow run ci.yml`
 
 ## Build the release files on your Mac
 
-`scripts/release.sh` does the same steps as the macOS job and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`) and CMake (for the cleanup runtime).
+`scripts/release.sh` does the same steps as the macOS job and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`) and CMake (for the cleanup runtime). It does not build the engine file for Intel Macs. See "The engine release files".
 
 ```sh
 scripts/release.sh --skip-notarize   # bundle and DMG only. Nothing goes to Apple.
@@ -223,22 +223,34 @@ Each release also has the speech engine as a separate file for each system, for 
 | File | Made by | The engine comes from |
 |---|---|---|
 | `sayso-engine-<version>-macos-arm64.tar.gz` | `scripts/package-engine.sh`, in the **macOS** job after `scripts/release.sh` | `dist/Sayso.app/Contents/MacOS/SaysoEngine`, signed and notarized with the app |
+| `sayso-engine-<version>-macos-x86_64.tar.gz` | `scripts/package-engine.sh --require-signed`, in the **macOS** job after `scripts/build-engine-x86_64.sh` | `dist/engine-x86_64/SaysoEngine`, a cross-compile of the Swift engine for Intel Macs. The script signs and notarizes it like the engine of the app. |
 | `sayso-engine-<version>-windows-x64.zip` | `scripts/package-engine.ps1`, in the **Windows** job after `scripts\bundle-windows.ps1` | `sayso-engine.exe` of the app folder, signed when the certificate is set, with every DLL of that folder |
 | `sayso-engine-<version>-linux-x86_64.tar.gz` and `-linux-arm64.tar.gz` | `scripts/package-engine.sh`, in the `build` job of `linux.yml` after `scripts/bundle-linux.sh` | `bin/sayso-engine` of the Linux tarball |
 
-The scripts copy the engine. They never build one, so the file has the binary that was signed. Each file has the folder `sayso-engine-<version>/` with `sayso-engine` (`sayso-engine.exe` on Windows), the DLLs on Windows, `README.md` (from `packaging/engine/README.md.in`), `LICENSE`, and `licenses/`. The licenses are the ones that the app ships for the engine. On macOS, where the app ships none, the file has the licenses of the two Swift packages that the engine links (FluidAudio and WhisperKit). The Linux engine needs the Vulkan loader (`libvulkan.so.1`) from the system, and the README says so.
+The packing scripts copy the engine. They never build one, so the file has the binary that was signed. Only the Intel engine has its own build script, because Sayso has no Intel app that holds an engine. Each file has the folder `sayso-engine-<version>/` with `sayso-engine` (`sayso-engine.exe` on Windows), the DLLs on Windows, `README.md` (from `packaging/engine/README.md.in`), `LICENSE`, and `licenses/`. The licenses are the ones that the app ships for the engine. On macOS, where the app ships none, the file has the licenses of the two Swift packages that the engine links (FluidAudio and WhisperKit). The Linux engine needs the Vulkan loader (`libvulkan.so.1`) from the system, and the README says so.
 
-The Linux files reach the release in the `manifest` job, like the Linux tarballs. The macOS and Windows jobs attach theirs at once. The `manifest` job stops when one of the four is missing.
+The Linux files reach the release in the `manifest` job, like the Linux tarballs. The macOS and Windows jobs attach theirs at once. The `manifest` job stops when one of the five is missing.
 
-The job **Engine file check** (`engine-check.yml`) runs after the three build jobs and before the `manifest` job, so a release with a bad engine file does not become the latest release. It runs on `macos-latest`, `ubuntu-24.04`, `ubuntu-24.04-arm`, and `windows-latest`. Each job installs only Rust (and the Vulkan loader on Linux), unpacks the file, checks the files, checks that `hello` has the version of the release, and runs the core level of the conformance suite against the unpacked engine. It builds no engine.
+`scripts/package-engine.sh` reads the architecture of a macOS engine with `lipo` and puts it in the file name. It stops when the engine has more than one architecture, so an arm64 engine never gets the name `macos-x86_64`.
 
-To test the files without a release, run `gh workflow run ci.yml`. The jobs **Engine file, macOS arm64 (manual)**, **Engine file, Windows x86_64 (manual)**, and **Engine file, Linux** build the app without a signature, pack the engine with the same scripts, and then **Engine file check** runs. The files from CI are not signed and not notarized. On a Mac, to make a file from a build that you have:
+The Intel engine is for Macs with an Intel processor, on macOS 14 or later. An Intel Mac has no Neural Engine, so the models run on the CPU and the GPU and are slower than on Apple silicon. The macOS job cross-compiles the engine on the arm64 runner (`swift build --arch x86_64`) and signs it with the same identity, identifier (`dev.sayso.Sayso.engine`), entitlements, hardened runtime, and secure timestamp as the engine of the app. Then it uploads the engine to Apple with `notarytool`, in a zip, because Apple takes a bare executable only in an archive. A bare executable cannot have a stapled ticket, so macOS looks the ticket up online the first time that it runs the engine.
+
+The job **Engine file check** (`engine-check.yml`) runs after the three build jobs and before the `manifest` job, so a release with a bad engine file does not become the latest release. It runs on `macos-latest`, `macos-15-intel`, `ubuntu-24.04`, `ubuntu-24.04-arm`, and `windows-latest`. `macos-15-intel` is a real Intel Mac. GitHub plans to end its Intel macOS runners after the macOS 15 image, in 2027. When that happens, the Intel check needs another machine. Each job installs only Rust (and the Vulkan loader on Linux), unpacks the file, checks the files, (on macOS) checks that the architecture of the engine is the one in the file name, checks that `hello` has the version of the release, and runs the core level of the conformance suite against the unpacked engine. It builds no engine.
+
+To test the files without a release, run `gh workflow run ci.yml`. The jobs **Engine file, macOS arm64 (manual)**, **Engine file, macOS x86_64 (manual)**, **Engine file, Windows x86_64 (manual)**, and **Engine file, Linux** build the app (the Intel job builds only the engine) without a signature, pack the engine with the same scripts, and then **Engine file check** runs. The files from CI are not signed and not notarized. On a Mac, to make a file from a build that you have:
 
 ```sh
 scripts/package-engine.sh --out /tmp/engine dist/Sayso.app/Contents/MacOS/SaysoEngine
 ```
 
 `--require-signed` stops the script when the engine has no Developer ID signature. The release workflow uses it.
+
+To make the Intel file on a Mac with Apple silicon, build the Intel engine and pack it. `SAYSO_SIGN_IDENTITY=-` signs ad hoc and skips notarization. Without it, the script signs with the Developer ID and notarizes (the credentials are the ones of `scripts/release.sh`). `--skip-notarize` signs without notarization.
+
+```sh
+SAYSO_SIGN_IDENTITY=- scripts/build-engine-x86_64.sh
+scripts/package-engine.sh --out /tmp/engine dist/engine-x86_64/SaysoEngine
+```
 
 ## Build the Windows files on a PC
 

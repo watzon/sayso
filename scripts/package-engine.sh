@@ -4,16 +4,22 @@
 #
 #   scripts/package-engine.sh [--out <folder>] [--require-signed] <engine binary>
 #
-#   dist/sayso-engine-<version>-<macos-arm64|linux-x86_64|linux-arm64>.tar.gz
+#   dist/sayso-engine-<version>-<macos-arm64|macos-x86_64|linux-x86_64|linux-arm64>.tar.gz
 #   dist/sayso-engine-<version>-<...>.tar.gz.sha256
 #
 # The file holds the folder sayso-engine-<version>/ with sayso-engine, README.md,
 # LICENSE, and licenses/. The script copies the engine that you name. It never
 # builds an engine, so the release file has the binary that was signed in the
-# app bundle (macOS: dist/Sayso.app/Contents/MacOS/SaysoEngine, after
-# scripts/release.sh; Linux: <bundle folder>/sayso-<version>-linux-<arch>/bin/sayso-engine,
+# app bundle (macOS arm64: dist/Sayso.app/Contents/MacOS/SaysoEngine, after
+# scripts/release.sh; macOS x86_64: dist/engine-x86_64/SaysoEngine, after
+# scripts/build-engine-x86_64.sh; Linux: <bundle folder>/sayso-<version>-linux-<arch>/bin/sayso-engine,
 # after scripts/bundle-linux.sh). The file name of the copy is always
 # sayso-engine, and a rename keeps a macOS signature valid.
+#
+# The architecture in the file name is the architecture of the engine. On
+# macOS the script reads it with lipo, so a Mac with Apple silicon packs the
+# Intel engine too. On Linux it is the architecture of the machine. The script
+# stops when the engine has another architecture, or more than one.
 #
 # --require-signed (macOS) stops the script when the engine has no valid
 # Developer ID signature. The release workflow uses it. Without it, the
@@ -36,18 +42,32 @@ done
 [[ -f "$engine" ]] || { echo "error: the engine $engine does not exist" >&2; exit 1; }
 
 version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-case "$(uname -m)" in
-  arm64|aarch64) arch=arm64 ;;
-  x86_64) arch=x86_64 ;;
-  *) echo "error: no engine file for the architecture $(uname -m)" >&2; exit 1 ;;
-esac
 case "$(uname -s)" in
   Darwin) system=macos ;;
   Linux) system=linux ;;
   *) echo "error: this script runs on macOS and Linux. Use scripts/package-engine.ps1 on Windows." >&2; exit 1 ;;
 esac
+# The architecture of the engine, not of this machine, goes into the file name.
+case "$system" in
+  macos)
+    # lipo names two or more architectures for a universal binary.
+    case "$(lipo -archs "$engine")" in
+      arm64) arch=arm64 ;;
+      x86_64) arch=x86_64 ;;
+      *) echo "error: the engine must have exactly one architecture, arm64 or x86_64. It has: $(lipo -archs "$engine")" >&2; exit 1 ;;
+    esac ;;
+  linux)
+    case "$(uname -m)" in
+      arm64|aarch64) arch=arm64; machine=b700 ;;
+      x86_64) arch=x86_64; machine=3e00 ;;
+      *) echo "error: no engine file for the architecture $(uname -m)" >&2; exit 1 ;;
+    esac
+    # The ELF header has the machine in 2 bytes at offset 18: 3e 00 is x86-64,
+    # b7 00 is AArch64. This needs no tool that a container can lack.
+    found=$(od -An -tx1 -j18 -N2 "$engine" | tr -d ' \n')
+    [[ "$found" == "$machine" ]] || { echo "error: the engine is not an $arch ELF file (machine code $found)." >&2; exit 1; } ;;
+esac
 platform="$system-$arch"
-[[ $system == macos && $arch != arm64 ]] && { echo "error: the macOS engine is for arm64 only" >&2; exit 1; }
 [[ $require_signed -eq 1 && $system != macos ]] && { echo "error: --require-signed is for macOS" >&2; exit 2; }
 
 name="sayso-engine-$version"
@@ -109,7 +129,10 @@ esac
 case "$system" in
   macos)
     system_name=macOS
-    requirements='macOS 14 or later, on a Mac with Apple silicon.' ;;
+    case "$arch" in
+      arm64) requirements='macOS 14 or later, on a Mac with Apple silicon.' ;;
+      x86_64) requirements='macOS 14 or later, on a Mac with an Intel processor. An Intel Mac has no Neural Engine, so the models run on the CPU and the GPU. They are slower than on Apple silicon.' ;;
+    esac ;;
   linux)
     system_name=Linux
     # build.rs links the Vulkan loader (crates/sayso-engine/build.rs), and
