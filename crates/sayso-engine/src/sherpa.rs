@@ -7,16 +7,17 @@ use crate::partials::Segment;
 use crate::recognizer::{
     Diarizer, FinalPass, LazyPreview, LivePreview, Loaded, Loader, ModelDirs, PreviewStream, VadModel,
 };
+use crate::sherpa_c::{self, Decoded};
 use crate::spec::{ModelSpec, Recipe, Source, Task};
-use crate::timing::{self, Timed, Timing};
+use crate::timing::{self, TextSegment, Timed, Timing};
 use crate::vad::{self, Detector};
 use anyhow::{Context, Result, anyhow, bail};
 use sherpa_onnx::{
     FastClusteringConfig, OfflineModelConfig, OfflineMoonshineModelConfig,
     OfflineNemoEncDecCtcModelConfig, OfflineRecognizer, OfflineRecognizerConfig,
-    OfflineSenseVoiceModelConfig, OfflineSpeakerDiarization, OfflineSpeakerDiarizationConfig,
+    OfflineSpeakerDiarization, OfflineSpeakerDiarizationConfig,
     OfflineSpeakerSegmentationModelConfig, OfflineSpeakerSegmentationPyannoteModelConfig,
-    OfflineTransducerModelConfig, OfflineWhisperModelConfig, OnlineModelConfig, OnlineRecognizer,
+    OfflineTransducerModelConfig, OnlineModelConfig, OnlineRecognizer,
     OnlineRecognizerConfig, OnlineStream, OnlineTransducerModelConfig, SileroVadModelConfig,
     SpeakerEmbeddingExtractorConfig, TenVadModelConfig, VadModelConfig, VoiceActivityDetector,
 };
@@ -108,9 +109,11 @@ impl Loader for SherpaLoader {
 
 /// An offline model. Whisper and SenseVoice take the language when the
 /// recognizer is made, so they get a new recognizer when the language changes.
+/// Whisper also gets a new one when a request with segments follows one
+/// without, or the opposite (see [`Key`]).
 struct Offline {
     files: OfflineFiles,
-    recognizers: ByLanguage<OfflineRecognizer>,
+    recognizers: ByLanguage<Key, Recognizer>,
 }
 
 impl Offline {
@@ -129,7 +132,7 @@ impl Offline {
         } else {
             // The recognizer does not depend on the language, so make it now. A model
             // that sherpa-onnx cannot read fails at the load.
-            offline.recognizer("auto")?;
+            offline.recognizer("auto", false)?;
         }
         Ok(offline)
     }
@@ -141,10 +144,30 @@ impl Offline {
         )
     }
 
-    fn recognizer(&self, language: &str) -> Result<Arc<OfflineRecognizer>> {
-        let key = recognizer_language(&self.files, language);
+    fn recognizer(&self, language: &str, times: bool) -> Result<Arc<Recognizer>> {
+        let key = recognizer_key(&self.files, language, times);
         self.recognizers
             .get(&key, || create_offline(&self.files, &key))
+    }
+}
+
+/// What a recognizer is made for. Two requests with the same key share one recognizer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Key {
+    /// The value of [`recognizer_language`].
+    language: String,
+    /// Whisper with segment times. With them, the text of Whisper can be
+    /// different: in tests it lost punctuation, and once the last sentence of a
+    /// 26 s clip. So only a `transcribe` with `segments: true` uses them, and
+    /// dictation keeps the recognizer without them.
+    segment_times: bool,
+}
+
+/// The key of the recognizer for a request. `times` is true for a request with segments.
+fn recognizer_key(files: &OfflineFiles, requested: &str, times: bool) -> Key {
+    Key {
+        language: recognizer_language(files, requested),
+        segment_times: times && matches!(files, OfflineFiles::Whisper { .. }),
     }
 }
 
@@ -189,13 +212,13 @@ fn check_readable(files: &OfflineFiles) -> Result<()> {
     Ok(())
 }
 
-/// The one value built for the language of the last request. A request for another
-/// language builds a new value, and a failed build keeps the old one.
-struct ByLanguage<T> {
-    current: Mutex<Option<(String, Arc<T>)>>,
+/// The one value built for the key (the language) of the last request. A request
+/// with another key builds a new value, and a failed build keeps the old one.
+struct ByLanguage<K, T> {
+    current: Mutex<Option<(K, Arc<T>)>>,
 }
 
-impl<T> Default for ByLanguage<T> {
+impl<K, T> Default for ByLanguage<K, T> {
     fn default() -> Self {
         ByLanguage {
             current: Mutex::new(None),
@@ -203,19 +226,19 @@ impl<T> Default for ByLanguage<T> {
     }
 }
 
-impl<T> ByLanguage<T> {
-    /// The value for `language`. `build` runs when there is none for it. The lock stays
-    /// during the build, so a second request for the same language waits and does not
+impl<K: PartialEq + Clone, T> ByLanguage<K, T> {
+    /// The value for `key`. `build` runs when there is none for it. The lock stays
+    /// during the build, so a second request for the same key waits and does not
     /// build again.
-    fn get(&self, language: &str, build: impl FnOnce() -> Result<T>) -> Result<Arc<T>> {
+    fn get(&self, key: &K, build: impl FnOnce() -> Result<T>) -> Result<Arc<T>> {
         let mut current = self.current.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((built_for, value)) = &*current
-            && built_for == language
+            && built_for == key
         {
             return Ok(Arc::clone(value));
         }
         let value = Arc::new(build()?);
-        *current = Some((language.to_string(), Arc::clone(&value)));
+        *current = Some((key.clone(), Arc::clone(&value)));
         Ok(value)
     }
 }
@@ -224,34 +247,84 @@ impl FinalPass for Offline {
     /// Dictionary words need hotwords, which work only for transducers with beam
     /// search. The catalog models cannot use them, so they are ignored.
     fn transcribe(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<String> {
-        self.transcribe_timed(samples, language, vocabulary).map(|timed| timed.text)
+        self.transcribe_detailed(samples, language, vocabulary, false).map(|timed| timed.text)
     }
 
     /// Token times give word times when the model has them (Parakeet TDT,
-    /// SenseVoice). Whisper and Moonshine give none.
-    fn transcribe_timed(&self, samples: &[f32], language: &str, _vocabulary: &[String]) -> Result<Timed> {
-        let recognizer = self.recognizer(language)?;
-        let stream = recognizer.create_stream();
-        stream.accept_waveform(SAMPLE_RATE, samples);
-        recognizer.decode(&stream);
-        let result = stream
-            .get_result()
-            .ok_or_else(|| anyhow!("the model returned no result"))?;
-        let text = result.text.trim().to_string();
+    /// SenseVoice). Whisper gives segment times with `times` only (see [`Key`]).
+    /// Moonshine gives none. Whisper and SenseVoice give the language.
+    fn transcribe_detailed(&self, samples: &[f32], language: &str, _vocabulary: &[String], times: bool) -> Result<Timed> {
+        let recognizer = self.recognizer(language, times)?;
+        let result = recognizer.decode(samples)?;
         let audio_ms = (samples.len() as u64 * 1000) / SAMPLE_RATE as u64;
-        let timing = match &result.timestamps {
-            Some(starts) if !starts.is_empty() && starts.len() == result.tokens.len() => {
-                let words = timing::words_from_tokens(&result.tokens, starts, result.durations.as_deref(), audio_ms);
-                if words.is_empty() { Timing::None } else { Timing::Words(words) }
-            }
-            _ => Timing::None,
-        };
-        Ok(Timed { text, timing })
+        Ok(Timed {
+            text: result.text.trim().to_string(),
+            timing: timing_of(&result, audio_ms),
+            language: result.lang.as_deref().and_then(crate::language::normalize),
+        })
     }
 }
 
-/// Make a recognizer. `language` is the value of `recognizer_language`.
-fn create_offline(files: &OfflineFiles, language: &str) -> Result<OfflineRecognizer> {
+/// The times of a result: the segments of Whisper, else word times from the token times.
+fn timing_of(result: &Decoded, audio_ms: u64) -> Timing {
+    if !result.segments.is_empty() {
+        let ms = |seconds: f32| ((seconds.max(0.0) * 1000.0).round() as u64).min(audio_ms);
+        return Timing::Segments(
+            result
+                .segments
+                .iter()
+                .map(|s| TextSegment {
+                    start_ms: ms(s.start),
+                    end_ms: ms(s.start + s.duration.max(0.0)),
+                    text: s.text.trim().to_string(),
+                    words: None,
+                })
+                .collect(),
+        );
+    }
+    match &result.timestamps {
+        Some(starts) if !starts.is_empty() && starts.len() == result.tokens.len() => {
+            let words = timing::words_from_tokens(&result.tokens, starts, result.durations.as_deref(), audio_ms);
+            if words.is_empty() { Timing::None } else { Timing::Words(words) }
+        }
+        _ => Timing::None,
+    }
+}
+
+/// An offline recognizer. Whisper and SenseVoice are made on the C API, which
+/// gives the language and the segment times (`sherpa_c`). The other models use
+/// the `sherpa-onnx` crate.
+enum Recognizer {
+    Crate(OfflineRecognizer),
+    C(sherpa_c::Recognizer),
+}
+
+impl Recognizer {
+    fn decode(&self, samples: &[f32]) -> Result<Decoded> {
+        match self {
+            Recognizer::Crate(recognizer) => {
+                let stream = recognizer.create_stream();
+                stream.accept_waveform(SAMPLE_RATE, samples);
+                recognizer.decode(&stream);
+                let result = stream
+                    .get_result()
+                    .ok_or_else(|| anyhow!("the model returned no result"))?;
+                Ok(Decoded {
+                    text: result.text,
+                    tokens: result.tokens,
+                    timestamps: result.timestamps,
+                    durations: result.durations,
+                    ..Decoded::default()
+                })
+            }
+            Recognizer::C(recognizer) => recognizer.decode(SAMPLE_RATE, samples),
+        }
+    }
+}
+
+/// Make a recognizer for `key` (see [`recognizer_key`]).
+fn create_offline(files: &OfflineFiles, key: &Key) -> Result<Recognizer> {
+    let language = key.language.as_str();
     let mut model = OfflineModelConfig {
         num_threads: final_pass_threads(),
         provider: Some("cpu".into()),
@@ -284,31 +357,17 @@ fn create_offline(files: &OfflineFiles, language: &str) -> Result<OfflineRecogni
             decoder,
             tokens,
         } => {
-            model.whisper = OfflineWhisperModelConfig {
-                encoder: path(encoder),
-                decoder: path(decoder),
-                // An empty language lets Whisper detect it.
-                language: Some(if language == "auto" {
-                    String::new()
-                } else {
-                    language.to_string()
-                }),
-                task: Some("transcribe".into()),
-                ..Default::default()
-            };
-            model.tokens = path(tokens);
+            let common = sherpa_c::Common { tokens, threads: final_pass_threads() };
+            // An empty language lets Whisper detect it.
+            let language = if language == "auto" { "" } else { language };
+            return sherpa_c::Recognizer::whisper(encoder, decoder, language, key.segment_times, &common).map(Recognizer::C);
         }
         OfflineFiles::SenseVoice {
             model: file,
             tokens,
         } => {
-            model.sense_voice = OfflineSenseVoiceModelConfig {
-                model: path(file),
-                language: Some(language.to_string()),
-                // Inverse text normalization: punctuation, capitals, and digits.
-                use_itn: true,
-            };
-            model.tokens = path(tokens);
+            let common = sherpa_c::Common { tokens, threads: final_pass_threads() };
+            return sherpa_c::Recognizer::sense_voice(file, language, &common).map(Recognizer::C);
         }
         OfflineFiles::MoonshineV2 {
             encoder,
@@ -345,6 +404,7 @@ fn create_offline(files: &OfflineFiles, language: &str) -> Result<OfflineRecogni
         ..Default::default()
     };
     OfflineRecognizer::create(&config)
+        .map(Recognizer::Crate)
         .ok_or_else(|| anyhow!("sherpa-onnx cannot load the model (see the engine log)"))
 }
 
@@ -702,8 +762,60 @@ mod tests {
     }
 
     #[test]
+    fn whisper_with_segments_has_its_own_recognizer() {
+        let dictation = recognizer_key(&whisper(), "auto", false);
+        let job = recognizer_key(&whisper(), "", true);
+        assert_eq!(dictation, Key { language: "auto".into(), segment_times: false });
+        assert_eq!(job, Key { language: "auto".into(), segment_times: true });
+        assert_ne!(dictation, job, "dictation never gets the recognizer with segment times");
+        assert_eq!(recognizer_key(&whisper(), "en-US", true), Key { language: "en".into(), segment_times: true });
+    }
+
+    #[test]
+    fn other_models_share_the_recognizer_with_and_without_segments() {
+        for files in [sense_voice(), nemo_ctc()] {
+            assert_eq!(recognizer_key(&files, "auto", true), recognizer_key(&files, "auto", false));
+        }
+        let cache = ByLanguage::<Key, String>::default();
+        cache.get(&recognizer_key(&sense_voice(), "de", false), || Ok("auto".into())).unwrap();
+        let shared = cache.get(&recognizer_key(&sense_voice(), "fr", true), || Ok("rebuilt".into())).unwrap();
+        assert_eq!(*shared, "auto");
+    }
+
+    #[test]
+    fn whisper_segments_become_segment_times() {
+        let result = Decoded {
+            text: " One. Two. Three.".into(),
+            segments: vec![
+                sherpa_c::RawSegment { start: 0.0, duration: 5.16, text: " One.".into() },
+                sherpa_c::RawSegment { start: 5.16, duration: 4.68, text: " Two.".into() },
+                sherpa_c::RawSegment { start: 9.84, duration: 3.12, text: " Three.".into() },
+            ],
+            ..Decoded::default()
+        };
+        let Timing::Segments(segments) = timing_of(&result, 12_000) else {
+            panic!("segments expected");
+        };
+        let times: Vec<_> = segments.iter().map(|s| (s.start_ms, s.end_ms, s.text.as_str())).collect();
+        assert_eq!(times, [(0, 5_160, "One."), (5_160, 9_840, "Two."), (9_840, 12_000, "Three.")], "the last end stays in the audio");
+    }
+
+    #[test]
+    fn token_times_become_word_times_and_no_times_is_none() {
+        let words = Decoded {
+            text: "Guten Tag.".into(),
+            tokens: vec!["▁Guten".into(), "▁Tag.".into()],
+            timestamps: Some(vec![0.3, 0.66]),
+            ..Decoded::default()
+        };
+        assert!(matches!(timing_of(&words, 2_000), Timing::Words(w) if w.len() == 2));
+        let none = Decoded { text: "Hello.".into(), tokens: vec![" Hello".into()], timestamps: Some(vec![]), ..Decoded::default() };
+        assert_eq!(timing_of(&none, 2_000), Timing::None);
+    }
+
+    #[test]
     fn a_recognizer_is_built_when_first_asked_for_and_once_per_language() {
-        let cache = ByLanguage::<String>::default();
+        let cache = ByLanguage::<&str, String>::default();
         let builds = AtomicUsize::new(0);
         let build = |name: &str| {
             builds.fetch_add(1, Ordering::SeqCst);
@@ -715,18 +827,18 @@ mod tests {
             "nothing builds at the load"
         );
 
-        assert_eq!(*cache.get("en", || build("en")).unwrap(), "en");
-        assert_eq!(*cache.get("en", || build("again")).unwrap(), "en");
+        assert_eq!(*cache.get(&"en", || build("en")).unwrap(), "en");
+        assert_eq!(*cache.get(&"en", || build("again")).unwrap(), "en");
         assert_eq!(
             builds.load(Ordering::SeqCst),
             1,
             "the same language builds once"
         );
 
-        assert_eq!(*cache.get("de", || build("de")).unwrap(), "de");
+        assert_eq!(*cache.get(&"de", || build("de")).unwrap(), "de");
         assert_eq!(builds.load(Ordering::SeqCst), 2);
         assert_eq!(
-            *cache.get("en", || build("en again")).unwrap(),
+            *cache.get(&"en", || build("en again")).unwrap(),
             "en again",
             "only the last language is kept"
         );
@@ -734,12 +846,12 @@ mod tests {
 
     #[test]
     fn a_failed_build_keeps_the_recognizer_that_works() {
-        let cache = ByLanguage::<String>::default();
-        cache.get("en", || Ok("en".to_string())).unwrap();
-        assert!(cache.get("de", || Err(anyhow!("broken"))).is_err());
+        let cache = ByLanguage::<&str, String>::default();
+        cache.get(&"en", || Ok("en".to_string())).unwrap();
+        assert!(cache.get(&"de", || Err(anyhow!("broken"))).is_err());
         let builds = AtomicUsize::new(0);
         let kept = cache
-            .get("en", || {
+            .get(&"en", || {
                 builds.fetch_add(1, Ordering::SeqCst);
                 Ok("rebuilt".to_string())
             })

@@ -106,6 +106,23 @@ impl FinalPass for FakeFinal {
             Ok(format!("{} samples in {language} with {}", samples.len(), vocabulary.join("+")))
         }
     }
+
+    /// It finds German in audio above zero, English in audio below zero, and
+    /// Cantonese in loud audio (a mean above 0.05). Silence has no text.
+    fn transcribe_detailed(&self, samples: &[f32], language: &str, vocabulary: &[String], _times: bool) -> Result<crate::timing::Timed> {
+        let sum: f32 = samples.iter().sum();
+        let found = if sum > 0.05 * samples.len() as f32 {
+            Some("yue")
+        } else if sum > 0.0 {
+            Some("de")
+        } else if sum < 0.0 {
+            Some("en")
+        } else {
+            None
+        };
+        let text = if samples.iter().all(|s| *s == 0.0) { String::new() } else { self.transcribe(samples, language, vocabulary)? };
+        Ok(crate::timing::Timed { text, timing: crate::timing::Timing::None, language: found.map(str::to_string) })
+    }
 }
 
 /// One word per loud chunk. A silent chunk ends the segment.
@@ -321,7 +338,7 @@ fn list_models_without_a_list_gives_the_catalog() {
     assert_eq!(states.len(), models.len(), "one model_state for each model");
     assert!(states.iter().all(|m| m["state"] == "not_downloaded" && m["id"] == "l"));
     for entry in models {
-        for field in ["id", "name", "engine", "size_bytes", "languages", "roles", "timestamps", "recommended"] {
+        for field in ["id", "name", "engine", "size_bytes", "languages", "roles", "timestamps", "detects_language", "recommended"] {
             assert!(entry.get(field).is_some(), "{field} in {entry}");
         }
     }
@@ -358,7 +375,7 @@ fn hello_and_unknown_requests() {
     assert_eq!(reply[0]["protocol"], 1);
     assert_eq!(
         reply[0]["features"],
-        json!(["catalog", "concurrent_streams", "diarization", "keep_preview", "segments", "unload", "vad"])
+        json!(["catalog", "concurrent_streams", "detected_language", "diarization", "keep_preview", "segments", "unload", "vad"])
     );
 
     let prepared = h.call(json!({"v":1,"type":"prepare","id":"p","model":"m","preview":true,"vocabulary":["Sayso"]}));
@@ -974,6 +991,82 @@ fn long_recordings_are_cut_into_pieces() {
     let reply = h.call(json!({"v": 1, "type": "transcribe", "id": "t1", "model": "w", "path": wav, "language": "auto"}));
     let text = reply[0]["text"].as_str().unwrap();
     assert_eq!(text.matches("samples in auto").count(), 2, "{text}");
+}
+
+/// `seconds` of audio at `level`.
+fn level(level: i16, seconds: usize) -> Vec<i16> {
+    vec![level; 16_000 * seconds]
+}
+
+/// A transcribe of `samples` with `language`, by a loaded Whisper model.
+fn transcribe_whisper(samples: &[i16], language: &str) -> Value {
+    let h = harness("http://unused");
+    let whisper = spec_json("whisper", "w", None);
+    install(&h, "w", &whisper);
+    h.call(json!({"v": 1, "type": "load", "id": "o1", "model": "w", "engine": whisper}));
+    let wav = h.models_dir().join("clip.wav");
+    write_wav(&wav, samples);
+    h.call(json!({"v": 1, "type": "transcribe", "id": "t1", "model": "w", "path": wav, "language": language}))[0].clone()
+}
+
+#[test]
+fn auto_gives_the_language_of_the_most_audio() {
+    // Whisper takes 28 s pieces. The cut goes in the second of silence after
+    // 24 s of German. The English after it is cut into two pieces.
+    let mut german_first = level(1000, 24);
+    german_first.extend(level(0, 1));
+    german_first.extend(level(-1000, 30));
+    let reply = transcribe_whisper(&german_first, "auto");
+    assert_eq!(reply["text"].as_str().unwrap().matches("samples in auto").count(), 3, "{reply}");
+    assert_eq!(reply["language"], "en", "30 s of English against 24 s of German: {reply}");
+
+    let mut more_german = level(1000, 24);
+    more_german.extend(level(0, 1));
+    more_german.extend(level(-1000, 10));
+    let reply = transcribe_whisper(&more_german, "");
+    assert_eq!(reply["language"], "de", "an empty language is auto: {reply}");
+}
+
+#[test]
+fn a_named_language_or_no_text_gives_no_language() {
+    for named in ["en", "de", "en-US"] {
+        let reply = transcribe_whisper(&level(1000, 2), named);
+        assert_eq!(reply["type"], "final");
+        assert!(reply.get("language").is_none(), "{named}: {reply}");
+    }
+    let reply = transcribe_whisper(&level(0, 2), "auto");
+    assert_eq!(reply["text"], "");
+    assert!(reply.get("language").is_none(), "{reply}");
+}
+
+#[test]
+fn the_catalog_decides_which_models_report_the_language() {
+    let h = harness("http://unused");
+    let engine_of = |id: &str| {
+        h.engine.catalog["models"].as_array().unwrap().iter().find(|m| m["id"] == id).unwrap()["engine"].clone()
+    };
+    let wav = h.models_dir().join("clip.wav");
+    std::fs::create_dir_all(h.models_dir()).unwrap();
+    let transcribe = |model: &str, samples: &[i16]| {
+        write_wav(&wav, samples);
+        h.call(json!({"v": 1, "type": "transcribe", "id": "t", "model": model, "path": wav, "language": "auto"}))[0].clone()
+    };
+    for model in ["whisper-small", "sensevoice-small", "moonshine-base-en"] {
+        let engine = engine_of(model);
+        install(&h, model, &engine);
+        let reply = h.call(json!({"v": 1, "type": "load", "id": "o", "model": model, "engine": engine}));
+        assert_eq!(last(&reply)["type"], "ok", "{reply:?}");
+    }
+    // Whisper finds the language, but only codes of its catalog languages go out.
+    assert_eq!(transcribe("whisper-small", &level(-1000, 1))["language"], "en");
+    let reply = transcribe("whisper-small", &level(3000, 1));
+    assert!(reply.get("language").is_none(), "yue is not a language of Whisper small: {reply}");
+    // The catalog says that SenseVoice on sherpa-onnx and Moonshine (one language) do not find it.
+    for model in ["sensevoice-small", "moonshine-base-en"] {
+        let reply = transcribe(model, &level(-1000, 1));
+        assert!(reply["text"].as_str().is_some_and(|t| !t.is_empty()), "{reply}");
+        assert!(reply.get("language").is_none(), "{model}: {reply}");
+    }
 }
 
 #[test]

@@ -71,10 +71,15 @@ pub trait FinalPass: Send + Sync {
     /// pieces first, unless the recipe cuts them itself.
     fn transcribe(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<String>;
 
-    /// The same as [`FinalPass::transcribe`], with the times that the model
-    /// gives (`docs/engine-protocol.md`, "Segments"). Times are from the start
-    /// of `samples`. A model without times keeps this default.
-    fn transcribe_timed(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<Timed> {
+    /// The same as [`FinalPass::transcribe`], with the language that the model
+    /// found (`docs/engine-protocol.md`, "Detected language") and, when `times`
+    /// is true, the times that the model gives ("Segments"). Times are from the
+    /// start of `samples`. A model can give times also when `times` is false;
+    /// `times` lets a model use a slower decode that only a request with
+    /// segments needs. A model without times and without a language keeps this
+    /// default.
+    fn transcribe_detailed(&self, samples: &[f32], language: &str, vocabulary: &[String], times: bool) -> Result<Timed> {
+        let _ = times;
         self.transcribe(samples, language, vocabulary).map(Timed::untimed)
     }
 }

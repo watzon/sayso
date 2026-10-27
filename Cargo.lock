@@ -7279,11 +7279,13 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "sherpa-onnx",
+ "sherpa-onnx-sys",
  "tar",
  "tempfile",
  "tiny_http",
  "transcribe-rs",
  "ureq 3.4.2",
+ "whisper-rs",
  "workspace-hack",
 ]
 

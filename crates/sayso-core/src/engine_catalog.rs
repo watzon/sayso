@@ -206,6 +206,12 @@ mod tests {
         let windows = json(Engine::Rust(System::Windows));
         let v3 = windows["models"].as_array().unwrap().iter().find(|m| m["id"] == "parakeet-tdt-v3").unwrap();
         assert_eq!(v3["detects_language"], false, "Parakeet does not report the language");
+        // sherpa-onnx gives `yue` for each language with this SenseVoice export (EngineKind::detects_language).
+        for engine in [Engine::Rust(System::Linux), Engine::Rust(System::Windows)] {
+            let catalog = json(engine);
+            let sense_voice = catalog["models"].as_array().unwrap().iter().find(|m| m["id"] == "sensevoice-small").unwrap();
+            assert_eq!(sense_voice["detects_language"], false, "{engine:?}");
+        }
     }
 
     /// Each engine gets the VAD model and the diarization model with the engine

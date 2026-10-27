@@ -13,7 +13,7 @@ parakeet = []
 # whisper.cpp for the `whisper_cpp` models. Windows always has it. On Linux the
 # feature exists only to test that code; the Linux catalog has no such model.
 # It needs --no-default-features there: parakeet.cpp has its own ggml (lib.rs).
-whisper-cpp = ["dep:transcribe-rs"]
+whisper-cpp = ["dep:transcribe-rs", "dep:whisper-rs"]
 
 [[bin]]
 name = "sayso-engine"
@@ -35,7 +35,12 @@ base64 = "0.22"
 libc = "0.2"
 # Linked statically.
 sherpa-onnx = "=1.13.8"
+# The C API for Whisper and SenseVoice (src/sherpa_c.rs). sherpa-onnx picks the
+# static or the shared library.
+sherpa-onnx-sys = { version = "=1.13.8", default-features = false }
 transcribe-rs = { version = "=0.3.12", default-features = false, features = ["whisper-cpp"], optional = true }
+# The version that transcribe-rs uses, for the language that whisper.cpp finds.
+whisper-rs = { version = "=0.16.0", optional = true }
 
 # The Windows libraries of sherpa-onnx are built with the static C runtime (/MT),
 # and whisper.cpp with the DLL one (/MD). One exe cannot link both, so sherpa-onnx
@@ -43,7 +48,9 @@ transcribe-rs = { version = "=0.3.12", default-features = false, features = ["wh
 # runtime. The release copies them next to the exe (scripts/bundle-windows.ps1).
 [target.'cfg(windows)'.dependencies]
 sherpa-onnx = { version = "=1.13.8", default-features = false, features = ["shared"] }
+sherpa-onnx-sys = { version = "=1.13.8", default-features = false }
 transcribe-rs = { version = "=0.3.12", default-features = false, features = ["whisper-cpp"] }
+whisper-rs = "=0.16.0"
 
 [dependencies]
 workspace-hack.workspace = true

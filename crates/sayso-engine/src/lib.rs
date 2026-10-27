@@ -11,6 +11,7 @@
 //! - [`spec`]: the `engine` field of a request (recipe and archives).
 //! - [`store`]: the model folders on disk.
 //! - [`download`]: download and extract a model archive, or download one file.
+//! - [`language`]: the language that a model finds in the speech.
 //! - [`parakeet`]: the final pass of a `parakeet_cpp` model, on parakeet.cpp.
 //! - [`whisper_cpp`]: the final pass of a `whisper_cpp` model, on whisper.cpp.
 //! - [`vad`]: the rules of voice activity detection, on top of a detector.
@@ -19,6 +20,7 @@
 //! - [`engine`]: the request handlers and the stream worker.
 //! - [`recognizer`]: the traits that hide sherpa-onnx, so tests can use a fake.
 //! - [`sherpa`]: the sherpa-onnx implementation of the recognizer traits.
+//! - [`sherpa_c`]: Whisper and SenseVoice on the C API of sherpa-onnx, for the language and the segment times.
 //!
 //! On macOS this crate is empty. Sayso uses the Swift engine there.
 
@@ -32,6 +34,7 @@ pub mod audio;
 pub mod diarization;
 pub mod download;
 pub mod engine;
+pub mod language;
 pub mod layout;
 pub mod parakeet;
 pub mod partials;
@@ -39,6 +42,7 @@ pub mod protocol;
 pub mod recognizer;
 pub mod redecode;
 pub mod sherpa;
+pub mod sherpa_c;
 pub mod spec;
 pub mod store;
 pub mod timing;

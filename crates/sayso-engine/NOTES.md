@@ -10,7 +10,7 @@ Windows used its own engine before 0.12: `SaysoEngine.exe`, a separate Cargo wor
 |---|---|---|
 | `sherpa` (sherpa-onnx, CPU) | yes | yes |
 | `parakeet_cpp` (parakeet.cpp, Vulkan GPU) | feature `parakeet` (default) | no |
-| `whisper_cpp` (whisper.cpp through transcribe-rs 0.3.12, CPU) | feature `whisper-cpp`, for tests only | always |
+| `whisper_cpp` (whisper.cpp through whisper-rs 0.16.0, with the GPU choice of transcribe-rs 0.3.12) | feature `whisper-cpp`, for tests only | always |
 
 The catalogs are in `crates/sayso-core/src/models_onnx.rs` (`catalog_for`). Windows has Whisper on whisper.cpp; Linux has Whisper on sherpa-onnx. Both systems run Parakeet TDT v3 with a redecode live preview.
 
@@ -101,9 +101,18 @@ Linux arm64 in Docker on an Apple M-series Mac, this engine (sherpa-onnx, Parake
 - Download 487 MB in 22 s, load 930 ms. Final pass: 3.9 s clip in 123 ms, 24.9 s clip in 503 ms.
 - The 3.9 s clip streamed in 160 ms chunks at speaking speed: the first partial 1.3 s after the stream started, then one about every 650 ms. The last partial had the full sentence of the final pass.
 
+## Detected language and segment times
+
+- The engine lists `detected_language` (spec: "Detected language"). With `language` `auto` or empty, `final.language` is the language of the most audio over the pieces of the recording (`language.rs`). The catalog decides which models report it: `detects_language` and the `languages` of the entry. A code that is not in `languages` is left out (for example `yue` from Whisper turbo, whose catalog list has the 99 languages of Whisper).
+- Whisper and SenseVoice on sherpa-onnx are made on the C API (`sherpa_c.rs`), because the `sherpa-onnx` crate drops `lang` and the segment keys of the result JSON. The other sherpa-onnx models use the crate.
+- Whisper on sherpa-onnx gives segment times only with `enable_segment_timestamps`, and its text can then be different (it lost punctuation, and once the last sentence of a 26 s clip). So a recognizer with segment times is made only for `transcribe` with `segments: true`; dictation never uses it. The two recognizers have different cache keys (`Key` in `sherpa.rs`), and only one stays in memory, so a change between the two loads the model again. Token times stay off: the exports have no cross-attention outputs.
+- whisper.cpp (Windows) uses whisper-rs directly for `whisper_full_lang_id_from_state`. The parameters are those of transcribe-rs 0.3.12: beam search 3, the same thresholds, flash attention, and its GPU choice.
+- SenseVoice on sherpa-onnx 1.13.8 with the catalog export (2025-09-09) gives `<|yue|>` for English, German, and Mandarin speech, and no punctuation (the text is the same as before this change). So the catalog has `detects_language: false` for it on Linux and Windows (`EngineKind::detects_language`).
+- Checked on 2026-10-27 in Docker (Linux arm64) with `whisper-tiny` and `sensevoice-small`, and on Windows with `whisper-base` (whisper.cpp) and `sensevoice-small`: `en` and `de` for English and German speech with `auto`, no `language` with a named language, and Whisper segment times on a 34 s clip that the engine cut into two pieces. The conformance ready level passed for both Linux models.
+
 ## Tests
 
-- `cargo test -p sayso-engine`: unit tests with a fake recognizer (protocol, downloads against a local server, legacy files, the redecode logic with synthetic speech), and the client test of the built binary.
+- `cargo test -p sayso-engine`: unit tests with a fake recognizer (protocol, downloads against a local server, legacy files, the redecode logic with synthetic speech, the detected language), the result JSON of the C API (`sherpa_c.rs`), the recognizer cache keys, and the client test of the built binary.
 - `tests/conformance.rs` runs the core and model levels of `sayso-engine-conformance` (`docs/engine-protocol.md`, "Conformance tests") against the built engine. For the ready level, point the suite at a models folder with the model on disk, for example on Windows: `cargo run -p sayso-engine-conformance -- target\release\sayso-engine.exe --model parakeet-tdt-v3 --engine-json <the engine object of the catalog entry> --models-dir <folder> --audio short.wav --stream`.
 - `cargo test -p sayso-engine --no-default-features --features whisper-cpp` builds whisper.cpp on Linux and runs the same tests with it.
 - `tests/real_models.rs` (ignored) downloads real models and runs them through `EngineClient`. On Windows its default models are `parakeet-tdt-v3` and `whisper-base`. It needs `SAYSO_IT_AUDIO_DIR`: a folder with `short.wav` (16 kHz mono, with the word "dictation") and `long30.wav` (about 30 s, with "deployment"). The first-partial time it prints is measured when the test reads the events, after the stream ends, so it is not the latency of the preview.

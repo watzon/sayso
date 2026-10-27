@@ -57,9 +57,9 @@ impl FinalPass for Counted {
         result
     }
 
-    fn transcribe_timed(&self, samples: &[f32], language: &str, vocabulary: &[String]) -> Result<crate::timing::Timed> {
+    fn transcribe_detailed(&self, samples: &[f32], language: &str, vocabulary: &[String], times: bool) -> Result<crate::timing::Timed> {
         self.running.fetch_add(1, Ordering::SeqCst);
-        let result = self.inner.transcribe_timed(samples, language, vocabulary);
+        let result = self.inner.transcribe_detailed(samples, language, vocabulary, times);
         self.running.fetch_sub(1, Ordering::SeqCst);
         result
     }
