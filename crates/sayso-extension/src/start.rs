@@ -183,7 +183,10 @@ mod tests {
         assert_eq!(found, vec![user, all], "the install of the user first");
     }
 
+    // The rule splits PATH and joins paths with the separators of the system it
+    // runs on, and it only runs on Linux, so Windows cannot test it.
     #[test]
+    #[cfg(unix)]
     fn linux_finds_the_tarball_the_packages_the_flatpak_and_the_path() {
         let mut env = Fake::default();
         env.vars.insert("HOME", "/home/me");
