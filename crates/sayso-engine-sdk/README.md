@@ -55,6 +55,7 @@ fn main() -> Result<(), sayso_engine_sdk::Error> {
 - Events (`model_state`, `download_progress`, `part_state`, `partial`, `speech_start`, `speech_end`, `log`) on `Engine::events()`. A call such as `download_with` also gives its own events to a function.
 - A timeout for each kind of call, which you can change with `Engine::set_timeouts`.
 - `Engine::features()`: check a feature before you use an optional request. The Swift engine and the Rust engine have different features.
+- The language of the speech: with the feature `detected_language` and the language `auto` (the default of `TranscribeOptions`), `transcript.language` is the code of the language that the model found, such as `de`. Only the models with `detects_language` in the catalog find it (Whisper on each engine, and SenseVoice on macOS).
 - `wav::TempWav` and `wav::write_i16`: WAV files in the format that the engine reads.
 
 ## Good to know
