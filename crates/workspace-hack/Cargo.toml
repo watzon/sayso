@@ -34,6 +34,7 @@ serde_core = { version = "1", features = ["alloc"] }
 simd-adler32 = { version = "0.3" }
 smallvec = { version = "1", default-features = false, features = ["const_generics"] }
 subtle = { version = "2", default-features = false, features = ["const-generics"] }
+symphonia = { version = "0.5", default-features = false, features = ["aac", "flac", "isomp4", "mp3", "pcm", "wav"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
 ureq = { version = "3", features = ["json"] }
 winnow-ca01ad9e24f5d932 = { package = "winnow", version = "0.7" }

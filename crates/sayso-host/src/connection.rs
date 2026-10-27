@@ -11,7 +11,9 @@ use crate::responder::{Notifier, Outgoing, Responder};
 use crate::transport::Conn;
 use crate::{Peer, Shared};
 use crossbeam_channel::{Receiver, Sender, unbounded};
+use parking_lot::Mutex;
 use sayso_protocol::{Capability, DecodeError, Decoded, ErrorCode, ErrorReply, Event, HelloReply, Kind, PROTOCOL, Reply, Request, decode, encode};
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -80,7 +82,7 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
             entry.extension_id = Some(id.clone());
         }
     }
-    let connection = Connection { shared, extension, notifier };
+    let connection = Connection { shared, number, extension, notifier, jobs: Mutex::new(HashSet::new()) };
     let mut reader = BufReader::new(reader);
     let mut line = Vec::new();
     loop {
@@ -108,6 +110,10 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
     }
 
     open.store(false, Ordering::SeqCst);
+    // The jobs of an extension end with its connection.
+    if let Some(jobs) = &shared.jobs {
+        jobs.cancel_connection(number);
+    }
     let _ = outgoing.send(Outgoing::Close);
     let entry = shared.connections.lock().remove(&number);
     // Wait until the last reply is out. `Host::close` waits for the writers
@@ -158,8 +164,12 @@ fn identify(shared: &Shared, peer: &Peer) -> Option<String> {
 
 struct Connection<'a> {
     shared: &'a Arc<Shared>,
+    /// The number of the connection in the host.
+    number: u64,
     extension: Option<String>,
     notifier: Notifier,
+    /// The jobs that this connection started.
+    jobs: Mutex<HashSet<u64>>,
 }
 
 impl Connection<'_> {
@@ -223,6 +233,8 @@ impl Connection<'_> {
             Request::DownloadModel(request) => {
                 self.spawn("download", responder, move |shared, extension_id, responder| crate::download::download_model(shared, extension_id, &request, responder));
             }
+            Request::TranscribeFile(request) => crate::job_requests::transcribe_file(self.shared, self.number, &self.jobs, &request, responder),
+            Request::CancelJob(request) => crate::job_requests::cancel_job(self.shared, self.number, &self.jobs, &request, responder),
             request => responder.reply(Reply::error(Some(ErrorCode::Unsupported), format!("this version of Sayso cannot run {} yet", request.kind()))),
         }
         false

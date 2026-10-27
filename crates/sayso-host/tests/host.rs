@@ -64,7 +64,8 @@ fn a_change_of_the_grants_counts_at_the_next_request() {
     let ask = || client.request("cancel_job", fields(json!({"job": 1})));
     assert_eq!(refused(ask()).code, Some(ErrorCode::Capability));
     write_state(&setup.state, &here(), &["transcribe.file"], None);
-    assert_eq!(refused(ask()).code, Some(ErrorCode::Unsupported), "granted now");
+    // Granted now: the host looks for the job, and this connection has none.
+    assert_eq!(refused(ask()).code, Some(ErrorCode::BadRequest), "granted now");
     write_state(&setup.state, &here(), &[], None);
     assert_eq!(refused(ask()).code, Some(ErrorCode::Capability), "taken back");
     // Removed: the program is no longer an extension, and the host closes.

@@ -371,7 +371,7 @@ mod tests {
     }
 
     /// Prints how fast each path converts 60 s of 16-bit-range noise. Run it with
-    /// `cargo test --release -p sayso-platform-common resample::tests::bench -- --ignored --nocapture`.
+    /// `cargo test --release -p sayso-core resample::tests::bench -- --ignored --nocapture`.
     #[test]
     #[ignore = "benchmark"]
     fn bench_throughput() {

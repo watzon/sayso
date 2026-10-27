@@ -37,8 +37,6 @@ impl Notifier {
     }
 
     /// Send an event that no request caused, for example `job_progress`.
-    // Jobs and live sessions (6c, 6d) use it. A test covers it until then.
-    #[allow(dead_code)]
     pub fn send(&self, event: &Event) {
         let _ = self.outgoing.send(Outgoing::Line(encode(None, event)));
     }
@@ -46,6 +44,14 @@ impl Notifier {
     /// False after the extension closed the connection. Long work stops then.
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::SeqCst)
+    }
+}
+
+/// The events of a job go to its connection without an id: the job goes on
+/// after the `ok {job}` reply of `transcribe_file`.
+impl crate::jobs::EventSink for Notifier {
+    fn event(&self, event: Event) {
+        self.send(&event);
     }
 }
 
@@ -76,8 +82,6 @@ impl Responder {
     }
 
     /// A handle for events without an id, for work that goes on after the reply.
-    // Jobs and live sessions (6c, 6d) use it. A test covers it until then.
-    #[allow(dead_code)]
     pub fn notifier(&self) -> Notifier {
         self.notifier.clone()
     }

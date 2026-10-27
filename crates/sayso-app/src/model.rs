@@ -111,6 +111,8 @@ pub struct AppModel {
     /// When a dictation last ran or the active model loaded. The idle time
     /// counts from here.
     pub(crate) last_dictation: Instant,
+    /// The links to the jobs of extensions, when the host runs.
+    pub(crate) host_jobs: Option<crate::host::HostJobs>,
     pub permissions: HashMap<Permission, PermissionState>,
     /// A permission check runs on the background executor.
     permissions_checking: bool,
@@ -259,6 +261,7 @@ impl AppModel {
             model_status: HashMap::new(),
             model_idle: false,
             last_dictation: Instant::now(),
+            host_jobs: None,
             permissions: HashMap::new(),
             permissions_checking: false,
             detected: Detected::default(),
@@ -901,14 +904,19 @@ impl AppModel {
             self.last_dictation = Instant::now();
             return;
         }
-        let keep = self.config.dictation.keep_model_minutes;
+        let keep_minutes = self.config.dictation.keep_model_minutes;
         if self.active_local_model().is_some_and(|id| self.status_of(&id).is_usable())
-            && crate::memory::idle_time_ended(keep, self.last_dictation.elapsed())
+            && crate::memory::idle_time_ended(keep_minutes, self.last_dictation.elapsed())
         {
             self.model_idle = true;
         }
         let preview = self.preview_model();
-        for id in crate::memory::unwanted(&self.model_status, &self.wanted_models()) {
+        // A model that a job of an extension uses stays, and leaves after the same idle time.
+        let mut keep = self.wanted_models();
+        if let Some(jobs) = &self.host_jobs {
+            keep.extend(jobs.model_use.wanted(crate::memory::idle_time(keep_minutes)));
+        }
+        for id in crate::memory::unwanted(&self.model_status, &keep) {
             // The idle active model that also gives the live preview: an engine
             // that holds two parts keeps the preview part in memory.
             match engine.unload(&id, crate::memory::keeps_preview(&id, preview.as_ref())) {

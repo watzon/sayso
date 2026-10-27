@@ -74,22 +74,27 @@ pub fn run() {
         apply_language(&loaded.config);
         let services = start_services(&paths, &loaded.config, updates);
         // Extensions connect from now on. When Sayso quits, each one gets `host_closing`.
-        let questions = crate::host::start(&paths, &services).map(|started| {
+        let host = crate::host::start(&paths, &services).map(|started| {
             let host = started.host;
             cx.on_app_quit(move |_| {
                 host.close();
                 async {}
             })
             .detach();
-            started.questions
+            (started.questions, started.jobs)
         });
+        let (questions, host_jobs) = host.unzip();
         apply_theme(&loaded.config, &services, cx);
         cx.set_global(Windows::default());
 
         let config = loaded.config.clone();
         let issues = loaded.issues.clone();
         let p = paths.clone();
-        let model = cx.new(|cx| AppModel::new(p, config, issues, services, cx));
+        let model = cx.new(|cx| {
+            let mut model = AppModel::new(p, config, issues, services, cx);
+            model.host_jobs = host_jobs;
+            model
+        });
 
         cx.subscribe(&model, |model, event, cx| match event {
             AppEvent::OpenHub(route) => open_hub(&model, *route, cx),
