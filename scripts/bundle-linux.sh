@@ -18,12 +18,6 @@ target_dir=$(cargo metadata --format-version 1 --no-deps | python3 -c 'import js
 
 echo "==> app and engine (cargo, $profile)"
 cargo build -p sayso-app -p sayso-engine $cargo_flag
-# The cleanup runtime is its own Cargo workspace (it builds llama.cpp, which is
-# slow in a debug build), so it is always a release build.
-echo "==> cleanup runtime (cargo, release)"
-cargo build --release --manifest-path native/cleanup/Cargo.toml
-cleanup_target=$(cargo metadata --format-version 1 --no-deps --manifest-path native/cleanup/Cargo.toml | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
-cleanup_bin="$cleanup_target/release/sayso-cleanup"
 
 name="sayso-$version-linux-$arch"
 out="${SAYSO_BUNDLE_DIR:-build}/$name"
@@ -31,8 +25,11 @@ rm -rf "$out"
 mkdir -p "$out/bin" "$out/share/applications" "$out/share/metainfo" "$out/lib/udev/rules.d"
 install -m 755 "$target_dir/$profile/sayso" "$out/bin/sayso"
 install -m 755 "$target_dir/$profile/sayso-engine" "$out/bin/sayso-engine"
-# The app finds the cleanup runtime next to itself, like the engine.
-install -m 755 "$cleanup_bin" "$out/bin/sayso-cleanup"
+# The cleanup runtime is its own Cargo workspace (it builds llama.cpp, which is
+# slow in a debug build), so it is always a release build. The app finds it
+# next to itself, like the engine. On x86_64 there are three builds, one for
+# each instruction set (scripts/build-cleanup.sh).
+scripts/build-cleanup.sh "$out/bin"
 cp packaging/linux/dev.sayso.Sayso.desktop "$out/share/applications/"
 cp packaging/linux/dev.sayso.Sayso.metainfo.xml "$out/share/metainfo/"
 cp packaging/linux/70-sayso-uinput.rules "$out/lib/udev/rules.d/"

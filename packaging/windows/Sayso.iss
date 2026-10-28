@@ -85,6 +85,8 @@ Filename: "{app}\Sayso.exe"; Description: "{cm:LaunchProgram,Sayso}"; Flags: now
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM Sayso.exe /F"; Flags: runhidden; RunOnceId: "QuitSayso"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-engine.exe /F"; Flags: runhidden; RunOnceId: "QuitEngine"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanup"
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup-avx.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanupAvx"
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup-baseline.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanupBaseline"
 
 [Registry]
 ; Settings › General › Launch at login writes this value. Remove it with the app.

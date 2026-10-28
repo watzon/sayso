@@ -1,6 +1,7 @@
 //! A stand-in for the cleanup runtime in tests. It answers with the text of the
 //! prompt in capitals. A prompt with `SLEEP` waits 10 s, `CRASH` ends the
-//! process, and `LIMIT` stops at the token limit. A load of a path with
+//! process, `ILLEGAL` runs an illegal instruction (like a build for another
+//! processor), and `LIMIT` stops at the token limit. A load of a path with
 //! `missing` fails.
 
 use sayso_core::cleanup::protocol::{ErrorCode, Reply, ReplyLine, Request, RequestLine, Stop};
@@ -42,6 +43,9 @@ fn main() {
                 if prompt.contains("CRASH") {
                     std::process::exit(3);
                 }
+                if prompt.contains("ILLEGAL") {
+                    illegal_instruction();
+                }
                 if prompt.contains("SLEEP") {
                     std::thread::sleep(std::time::Duration::from_secs(10));
                 }
@@ -57,4 +61,17 @@ fn main() {
         let _ = writeln!(out, "{}", serde_json::to_string(&ReplyLine::new(id, reply)).unwrap());
         let _ = out.flush();
     }
+}
+
+fn illegal_instruction() {
+    // SAFETY: the instruction stops the process; nothing runs after it.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    unsafe {
+        std::arch::asm!("ud2")
+    };
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        std::arch::asm!("udf #0")
+    };
+    std::process::exit(4);
 }

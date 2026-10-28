@@ -104,6 +104,7 @@ settings:
     cleanup_download_failed: "ダウンロードに失敗しました"
     cleanup_download_failed_detail: "Sayso は %{name} をダウンロードできませんでした。インターネット接続を確認してから、もう一度お試しください。"
     cleanup_test_failed_detail: "モデルがテストに応答しませんでした。もう一度試すか、ダウンロードを削除してからダウンロードし直してください。"
+    cleanup_test_failed_cpu_detail: "このコンピュータのプロセッサでは、このバージョンの Sayso のローカルモデルを実行できません。Sayso を更新するか、クラウドのプロバイダを使ってください。"
     suggest_cleanup: "この %{computer} で実行 · %{languages} · %{size}"
     cleanup_runs: "%{styles} を実行"
     cleanup_needs: "%{styles} には、プロンプトを読めるプロバイダが必要です。"
