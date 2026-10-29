@@ -7,8 +7,8 @@ This file says how a separate app uses the speech features of Sayso. The app use
 ## Goal
 
 - An app built on the SDK works alone, and it uses a running Sayso when it can. A change of mode is one option. Both modes use the same messages and the same rules for the end of each piece of work.
-- Each model artifact is on disk once for each user.
-- While Sayso runs, each model is in memory once, with three exceptions: an app in `Mode::Local`, an app that the user refused, and local work that started before Sayso and still runs.
+- Each model artifact is on disk once for each user. The exception is a Sayso and an app on the two sides of a Flatpak sandbox, when step 9a cannot connect them ("Flatpak").
+- While Sayso runs, each model is in memory once, with four exceptions: an app in `Mode::Local`, an app that the user refused, local work that started before Sayso and still runs, and the Flatpak exception above.
 - One microphone capture serves dictation and the app while Sayso runs. Dictation stays first, and it stays as fast as it is today.
 - The SDK captures the microphone and the system audio in both modes, so a meeting app can record a call.
 - Sayso installs nothing, lists nothing, and starts nothing. There is no Marketplace and no registry.
@@ -221,6 +221,8 @@ The messages and the end rules are the same. These things differ, and the tests 
 - **To Sayso.** While in local mode, the SDK watches for the socket of the host. When it appears, the SDK opens a connection and finishes `hello`: the approval, the protocol version, and the features. Only then, and only when no work is active, does it change mode. It sends `mode_changed`, and then stops its engine, so the model is in memory once. When `hello` fails, it stays in local mode and tries again after 30 s or when the socket changes.
 - **To local.** On `host_closing`, the work of the host ends as today (`job_failed`, the end of the live session), and the SDK changes to local mode and sends `mode_changed`.
 - **A lost connection.** When the connection ends without `host_closing` (Sayso crashed), each request without a reply gets `error {code: "connection_lost"}`, each job gets `job_failed {code: "connection_lost"}`, and each live session ends with the same code. The SDK never sends a request again by itself, because it cannot know if the host did it.
+- **One end for each piece of work.** The SDK keeps a table of its open work. The first end of a piece of work (the reply of the host, `job_done`, or the end from a lost connection) removes it from the table, and only that end goes to the app. So a reply and a lost connection at the same moment give one end.
+- **The change after `host_closing` or a lost connection** is one step under the lock: end the open work, close the connection, change to local mode, and send `mode_changed`. Only then does the SDK take new requests. Local mode starts its engine at the first request that needs it.
 - **Generations.** Each connection has a number. The SDK drops events of an older connection, so they cannot reach new work.
 - A change never moves work. When Sayso starts during a long job in local mode, the job ends in local mode, and the next job goes to Sayso.
 
@@ -248,34 +250,71 @@ The store is `v1` in the models folder of Sayso (`Paths::models_dir`): `~/Librar
 
 ```
 v1/
-  artifacts/<digest>/      files that never change, and a `complete` file last
-  models/<model id>/<format>.json   the manifest: format, source revision, artifact digests
-  locks/<digest>.use       shared while loaded, exclusive to delete
-  locks/<digest>.get       exclusive while one engine downloads the artifact
-  locks/store              exclusive for a migration
-  staging/<random>/        downloads in progress
-  cache/<key>/             caches that the engines control, each with its own lock
+  artifacts/<digest>/                 files that never change
+  models/<model id>/<format>.json     the manifest: descriptor revision and artifact digests
+  locks/meta                          the lock of the metadata (see "Rules")
+  locks/<digest>.use                  shared while loaded, exclusive to delete
+  locks/<digest>.get                  exclusive while one engine downloads the artifact
+  staging/<digest>.<pid>.<random>/    a download in progress, with an `owner` file first
+  trash/<digest>.<random>/            artifacts that wait to be deleted
+  migration.json                      the journal of the migration
+  cache/<key>/                        caches that the engines control, each with its own lock
 ```
 
-- **Artifact.** The digest is the SHA-256 of the list of its files with their hashes, and the source revision. Shared files, such as a Whisper tokenizer or the CTC helper, are artifacts of their own. Two engines that read the same format use the same artifact.
+- **Descriptor.** The catalog of Sayso (`sayso-core`, `engine_catalog`), which both engines build in, gets a descriptor for each model in each format: its artifacts, and for each artifact the source (a URL pinned to a revision: a Hugging Face commit, not `main`, or a release file), and each file with its path, size, and SHA-256. A script makes the descriptors: it downloads each source, hashes the files, and writes them into the catalog. A descriptor has a `revision` number that only goes up.
+- **Digest.** The SHA-256 of the canonical list of the files of an artifact: paths relative to the artifact, in `/` form, sorted by bytes, each with its size and hash. The source is not part of the digest, so the same bytes from two revisions are one artifact. The engine knows the digest from the descriptor before it downloads anything.
+- **Archives.** For a source that is an archive (the Rust engine extracts `.tar.bz2` files today), the files are the extracted files after the rule of today: one folder that holds everything is removed (`crates/sayso-engine/src/download.rs`). An archive with a link, a path with `..`, or an absolute path is refused. Markers and the metadata that a library writes (for example `.cache/huggingface`) are not files of the artifact.
+- **Shared files**, such as a Whisper tokenizer or the CTC helper, are artifacts of their own. Two engines that read the same format use the same artifact.
 - **Format.** Each engine kind names the format of its files (for example `fluidaudio-coreml-1`, `sherpa-onnx-1`). Manifests of two formats for one model id live side by side, so engines of different versions and different formats never replace each other's files.
 
 ### Rules
 
 These rules are in the engine feature `store_v1`, in both engines and in the conformance suite.
 
-- **Load.** Read the manifest. Take a shared lock on the `use` file of each artifact, in the order of the digests. Check that each artifact has its `complete` file. Then load. A load never writes in the store: a load that fails reports `failed`, and FluidAudio runs with `offlineMode`. The engine keeps the shared locks until it no longer holds any object that reads the files: after `unload`, and after the end of each running job and stream that uses the model.
-- **Download.** First check, with no lock, whether the manifest exists and each artifact is complete. If so, the model is on disk. Else, for each artifact that is missing: take the exclusive `get` lock (an engine that waits for it reports `downloading`), check again, download into `staging/`, check each file against its hash, and rename the folder to `artifacts/<digest>`. Then write the manifest to a temporary file and rename it into place. A loaded model never blocks a download, because a download does not use the `use` lock.
-- **Delete a model** (the user, in Sayso or in an app): rename its manifest away and delete it. This never fails because of another app. An app that has the model loaded keeps it until it unloads. At its next `list_models`, the model is not on disk.
-- **Clean up.** An artifact that no manifest names is garbage. An engine tries the exclusive `use` lock without waiting. When it gets it, the engine deletes the artifact. When it does not, another engine has it loaded, and the engine tries again at its next start and after its next delete.
-- **Lock files** are never deleted. `flock` on macOS and Linux. On Windows, `LockFileEx` on byte 0 with a length of 1, on a handle opened with `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`. A process that stops lets its locks go.
-- **A stopped download** leaves only a folder in `staging/`. An engine deletes folders in `staging/` that are older than one day and that no `get` lock holds.
+**Locks.** `locks/meta` is the lock of the metadata. Whoever reads or changes manifests, publishes an artifact, or decides that an artifact is garbage holds it, and holds it only for those short steps, never during a download or a load. There is one order: `get` before `meta`, `meta` before `use`, and `use` locks in the order of the digests. Nobody waits for a lock while it holds a lock that comes later in the order. Lock files are never deleted. `flock` on macOS and Linux. On Windows, `LockFileEx` on byte 0 with a length of 1, on a handle opened with `FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE`. A process that stops lets its locks go.
+
+**Load.**
+
+1. Take `meta` shared. Read the manifest of the model in the format of the engine.
+2. Take a shared `use` lock on each of its artifacts, in the order of the digests.
+3. Check that each artifact folder exists. Let `meta` go.
+4. Load. When an artifact is missing in step 3, the model is not on disk, and the engine reports `not_downloaded`. A load never writes in the store: a load that fails reports `failed`, and FluidAudio runs with `offlineMode`.
+5. Keep the `use` locks until the engine no longer holds any object that reads the files: after `unload`, and after the end of each running job and stream that uses the model.
+
+**Download.**
+
+1. Take `meta` shared and read the manifest. When it has the revision of the descriptor and each artifact exists, the model is on disk. Let `meta` go.
+2. For each artifact of the descriptor that is missing: take its `get` lock exclusive (an engine that waits for it reports `downloading`). Look again: another engine may have published it. Make `staging/<digest>.<pid>.<random>/`, write the `owner` file into it first, download, check each file against the descriptor, and keep the `get` lock.
+3. Take `meta` exclusive. Rename each staged folder to `artifacts/<digest>`. Write the manifest to a unique temporary file and rename it into place, unless the manifest that is there has a higher revision. Let `meta` go, then the `get` locks.
+
+An artifact and the manifest that names it appear in one step under `meta`, so cleanup never sees a new artifact without its manifest.
+
+**Delete a model** (the user, in Sayso or in an app): take `meta` exclusive and delete the manifest. This never fails because of another app. An app that has the model loaded keeps it until it unloads. At its next `list_models`, the model is not on disk.
+
+**Clean up.** At the start of an engine and after each delete:
+
+1. Take `meta` exclusive. Find the artifacts that no manifest names.
+2. For each, try its `use` lock exclusive without waiting. When the engine gets it, it renames the artifact into `trash/` and lets the lock go. When it does not, another engine has it loaded, and it stays for the next cleanup.
+3. Let `meta` go, then delete the folders in `trash/`.
+
+An artifact that a crash left without a manifest is valid. A download that needs it finds it in step 2 and uses it, and cleanup deletes it when no manifest names it.
+
+**Staging.** Cleanup also looks at `staging/`. For each folder, it takes the `get` lock of the digest in its name without waiting, keeps it while it deletes the folder, and then lets it go. A folder whose `get` lock another engine holds is a download in progress, and it stays.
 
 ### Migration and downgrade
 
-- At its first start, a Sayso with `store_v1` takes the `store` lock and moves the models of the old folder into `v1`: it hashes the files and renames them into artifacts, so there is no copy and no new download. A file that does not match its expected hash stays in the old folder, and the model shows as not downloaded.
-- After a downgrade, the older Sayso does not see `v1`, and the user downloads the models again. The release notes of the version with `store_v1` say this.
-- The engine of an older app in local mode, without `store_v1`, uses its own folder (`SAYSO_MODELS_DIR`) as today. The SDK passes the store only to an engine that lists `store_v1`.
+Sayso moves its models from the old folders into `v1` once. Only one Sayso runs for each data folder (an instance lock on each system), and the migration runs before Sayso starts its engine, so no engine of Sayso writes the old folders while it runs. An app that points an engine of an older SDK at the models folder of Sayso is not supported: `sayso-engine-sdk` already says that two engines must not use one folder.
+
+1. Take `meta` exclusive for the whole migration. Write the plan into `migration.json`: each model, its descriptor, and its old files.
+2. For each artifact of a model: make hard links of the old files in a staging folder, then hash the linked files and compare them with the descriptor. A hard link takes no space and leaves the old folder as it was. On a volume without hard links, copy the files instead.
+3. When every artifact of a model matches, publish them and the manifest as in "Download", and mark the model as done in `migration.json`. When a file is missing or does not match, the model is not migrated, and the user downloads it again.
+4. When every model is done, delete the old folders, then `migration.json`.
+
+After a crash, the next start reads `migration.json` and does each step again. Each step can run twice with the same result. Models that were done stay done.
+
+After a downgrade, the older Sayso does not see `v1`, and the user downloads the models again. The release notes of the version with `store_v1` say this.
+
+The engine of an older app in local mode, without `store_v1`, uses its own folder (`SAYSO_MODELS_DIR`) as today. The SDK passes the store only to an engine that lists `store_v1`.
 
 ### Caches outside the store
 
@@ -315,7 +354,7 @@ The Linux Flatpak of Sayso has its own folders, and these parts do not work acro
 - **The identity.** The host reads `/proc/<pid>/exe` of the peer. A process in another PID namespace can be missing from `/proc` of the sandbox.
 - **The store.** The Flatpak has its own `XDG_DATA_HOME` (`~/.var/app/dev.sayso.Sayso/data`), so its store is not the store of an app outside it.
 
-Step 9a tests each direction in real sandboxes before the rest of step 9. When the host cannot know the identity of an app across the sandbox, that combination is not supported, and the SDK of the app uses local mode. The host never trusts an app id that the client sends.
+Step 9a tests each direction in real sandboxes before the rest of step 9. When the host cannot know the identity of an app across the sandbox, that combination is not supported, and the SDK of the app uses local mode. Then the app and Sayso use two stores and can load a model twice: the promises of "Goal" do not cover that combination. The host never trusts an app id that the client sends.
 
 ## Security
 
@@ -346,10 +385,12 @@ Each step ends with a check that proves it. The numbers go on from `extensions.m
     - Two engines on one store make one download for two requests of the same model.
     - A model that one engine has loaded stays usable when another engine deletes it, and its artifacts go away after the unload.
     - A model that shares an artifact with another model keeps it when the other model is deleted.
-    - An engine killed during a download, during a load, and during a migration leaves no artifact that looks complete, and the next start cleans up.
+    - Tests that stop at each step of "Load", "Download", "Clean up", and the migration, in every order between two engines (a test hook in each engine waits at each step): no engine loads a file that another engine deletes, no manifest names a missing artifact, and no manifest goes back to a lower revision.
+    - An engine killed at each step of a download, a cleanup, and a migration leaves a store that the next start makes clean, with no model lost that was complete.
+    - A migration of a real 0.13 models folder on each system: the models that match their descriptors move without a download.
     - The engine of the last release and a new engine on the same computer do not change each other's files.
     - A load that fails does not write in the store.
-12. **`sayso-sdk`.** The three modes, local mode, and the mode changes. Check: one test program gets the same message types and end rules in both modes, with the fake engine and with the real engine, for a file job, a live session with the source `client`, a refused download, a job that waits in the queue, a feature that one mode does not have, and a grant that the user takes back. In `Mode::Auto` it moves to Sayso when Sayso starts and to local mode when Sayso quits, and never during work. Kill Sayso during a job: the job ends with `connection_lost`, and no request runs twice.
+12. **`sayso-sdk`.** The three modes, local mode, and the mode changes. Check: one test program gets the same message types and end rules in both modes, with the fake engine and with the real engine, for a file job, a live session with the source `client`, a refused download, a job that waits in the queue, a feature that one mode does not have, and a grant that the user takes back. In `Mode::Auto` it moves to Sayso when Sayso starts and to local mode when Sayso quits, and never during work. Kill Sayso during a job: the job ends with `connection_lost`, and no request runs twice. A reply of the host and a lost connection at the same moment give one end. The first request after a lost connection runs in local mode.
 13. **System audio.** `sayso-capture` on each system, the source `system` in the host and in local mode, and the echo rule. Check, in both modes and on each system: a refused permission, a permission taken back during a session, and a change of the output device give the events of "System audio". Then a call without headphones gives one copy of each sentence, and the speakers of the system audio apart.
 14. **Guide.** A tutorial that builds a small app on the SDK, a how-to for each task, and the reference of the Host API. Publish the crates. Check: someone other than Chris builds an app from the guide alone.
 
@@ -371,6 +412,17 @@ Codex (GPT-6-Astra) reviewed the first version on 2026-10-29. Its findings, and 
 | System audio needs rules for permissions, devices, and what it leaves out | "System audio" |
 | Flatpak does not work across the sandbox today | "Flatpak" and step 9a |
 | The store must be ready before the SDK uses it | Step 11 is the store, step 12 the SDK |
+
+The second round on 2026-10-29 found these, and the plan changed:
+
+| Finding | Change |
+|---|---|
+| Publication and cleanup race, and two downloads can overwrite a manifest | The `meta` lock, one lock order, manifests that never go back in revision, and a load that checks under `meta` ("Rules") |
+| The digest needs expected hashes before the download | Descriptors in the catalog with pinned sources and file hashes; the digest covers the contents only ("Layout") |
+| The migration was not safe from a crash or an old writer | One Sayso for each data folder, hard links with a check against the descriptor, and a journal ("Migration and downgrade") |
+| Staging cleanup and crash recovery were incomplete | Staging folders named by digest and cleaned up under their `get` lock; artifacts without a manifest are valid and reused |
+| A lost connection did not finish the change to local mode | One end for each piece of work, and one step for the change ("Mode changes") |
+| The promise of one copy did not have the Flatpak exception | "Goal", "Flatpak", and ADR 0005 |
 
 ## Open questions
 
