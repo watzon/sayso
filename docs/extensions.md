@@ -1,6 +1,6 @@
 # Extensions
 
-Status: proposed on 2026-10-23. Not built. Chris confirmed the decisions in "Decisions" on 2026-10-23, and the answers to the open questions the same day. No question is open. The ADRs are in [adr/](adr/).
+Status: steps 1 to 7 are done. On 2026-10-29 Chris dropped extensions: [sdk.md](sdk.md) replaces steps 8 to 12, and the sections on the manifest, install, the Marketplace, and the registry no longer apply. The sections on the engine protocol, the Host API, scheduling, capture, lifecycle, and privacy stay valid, with "connected app" for "extension". The rest of this paragraph is the original status. Proposed on 2026-10-23. Not built. Chris confirmed the decisions in "Decisions" on 2026-10-23, and the answers to the open questions the same day. No question is open. The ADRs are in [adr/](adr/).
 
 This file says how other apps use the speech features of Sayso: models, transcription, voice activity detection, audio capture, and the user's AI providers. Sayso stays a dictation app. Meeting notes, media transcription, and the ideas of other developers become extensions: separate apps that Sayso installs, lists, and starts.
 
