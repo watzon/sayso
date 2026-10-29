@@ -18,29 +18,40 @@ use parking_lot::Mutex;
 use sayso_core::enhance::{EnhanceError, Generated, LanguageModel, Unavailable};
 use sayso_core::models::{self, ModelId, ModelInfo};
 use sayso_core::stt::{
-    Diarization, EngineEvent, ModelStatus, SAMPLE_RATE, SessionOptions, SpeechPart, TimedTranscript, Transcript,
+    Diarization, EngineEvent, EngineReason, ModelStatus, SAMPLE_RATE, SessionOptions, SpeechPart, TimedTranscript, Transcript,
     encode_wav, to_pcm16,
 };
 use sayso_platform::{EngineStart, PartReadiness, PlatformError, Result, SttBackend, unsupported_feature};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use sayso_core::cpu::{self, Level};
+use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// The sidecar's file name beside the app executable: the Swift engine on
-/// macOS, and `sayso-engine` (`crates/sayso-engine`) on Windows and Linux.
-const ENGINE_FILE_NAME: &str = if cfg!(target_os = "macos") {
+/// The sidecar's name beside the app executable, without a build suffix or
+/// `.exe`: the Swift engine on macOS, and `sayso-engine` (`crates/sayso-engine`)
+/// on Windows and Linux. Windows has a build of it for each level of the
+/// processor ([`sayso_core::cpu`]), because whisper.cpp compiles its kernels for
+/// one instruction set.
+const ENGINE_PROGRAM: &str = if cfg!(target_os = "macos") {
     "SaysoEngine"
-} else if cfg!(windows) {
-    "sayso-engine.exe"
 } else {
     "sayso-engine"
 };
+
+/// The start of the message of a request that failed because the engine
+/// stopped with an illegal instruction.
+const UNSUPPORTED_CPU: &str = "the processor of this computer cannot run this model";
+
+/// The requests that run a model. When the engine stops with an illegal
+/// instruction during one of them, the model is one that this build cannot
+/// run on this processor.
+const RUNS_A_MODEL: &[&str] = &["load", "transcribe", "stream_start", "vad", "vad_start", "diarize"];
 
 /// The development build, relative to this crate. None where the workspace
 /// builds the engine next to the app binary.
@@ -95,6 +106,13 @@ const START_FAILED: u8 = 2;
 
 fn failed(message: impl Into<String>) -> PlatformError {
     PlatformError::Failed(message.into())
+}
+
+fn unsupported_cpu_status(message: &str) -> ModelStatus {
+    ModelStatus::Failed {
+        message: message.to_string(),
+        reason: Some(EngineReason::UnsupportedCpu),
+    }
 }
 
 /// Why a request failed. `code` is the `code` field of an `error` reply, or
@@ -169,6 +187,13 @@ struct Inner {
     dropped_audio: AtomicU64,
     /// `START_PENDING`, `START_DONE`, or `START_FAILED`.
     start: AtomicU8,
+    /// The generation of the last sidecar process that stopped with an
+    /// illegal instruction, and the message for it.
+    illegal_stop: Mutex<Option<(u64, String)>>,
+    /// Models that stopped the sidecar with an illegal instruction, with the
+    /// message. A request that runs one fails at once, so the app does not
+    /// crash the engine again and again (issue #37).
+    cannot_run: Mutex<HashMap<ModelId, String>>,
 }
 
 /// Stops the sidecar when the last `EngineClient` handle is dropped.
@@ -275,6 +300,8 @@ impl EngineClient {
             supervisor_alive: AtomicBool::new(true),
             dropped_audio: AtomicU64::new(0),
             start: AtomicU8::new(START_PENDING),
+            illegal_stop: Mutex::new(None),
+            cannot_run: Mutex::new(HashMap::new()),
         });
         let stdout = inner.launch().map_err(|e| {
             failed(format!(
@@ -308,21 +335,22 @@ impl EngineClient {
     /// comes back so the spawn error names it.
     ///
     /// The engine is `SaysoEngine` (Swift) on macOS, and `sayso-engine` (Rust,
-    /// `crates/sayso-engine`) on Windows and Linux.
+    /// `crates/sayso-engine`) on Windows and Linux. Next to the executable, the
+    /// best build that this processor runs wins (`sayso-engine-avx.exe` and
+    /// `sayso-engine-baseline.exe` on Windows, [`sayso_core::cpu`]).
     pub fn default_engine_path() -> PathBuf {
         if let Some(path) = std::env::var_os("SAYSO_ENGINE_PATH").filter(|p| !p.is_empty()) {
             return PathBuf::from(path);
         }
-        let beside = std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(|dir| dir.join(ENGINE_FILE_NAME)));
-        if let Some(beside) = beside.as_ref().filter(|path| path.exists()) {
-            return beside.clone();
+        let dir = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf));
+        if let Some(best) = dir.as_deref().and_then(|dir| cpu::best_in(dir, ENGINE_PROGRAM)) {
+            return best;
         }
+        let file = Level::Avx2.file_name(ENGINE_PROGRAM);
         match DEV_ENGINE_PATH {
             Some(dev) => PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(dev),
             // `cargo build -p sayso-engine` puts the engine next to the app binary.
-            None => beside.unwrap_or_else(|| PathBuf::from(ENGINE_FILE_NAME)),
+            None => dir.map_or_else(|| PathBuf::from(&file), |dir| dir.join(&file)),
         }
     }
 
@@ -804,11 +832,24 @@ impl Inner {
             message,
             code: None,
         };
+        let model = RUNS_A_MODEL
+            .contains(&kind)
+            .then(|| fields.get("model").and_then(Value::as_str).map(ModelId::new))
+            .flatten();
+        // The lock ends here: `set_status` takes it again.
+        let cannot_run = model.as_ref().and_then(|model| self.cannot_run.lock().get(model).cloned());
+        if let Some(model) = &model
+            && let Some(message) = cannot_run
+        {
+            self.set_status(model.clone(), unsupported_cpu_status(&message));
+            return Err(plain(message));
+        }
+        let generation = self.generation.load(Ordering::SeqCst);
         let (tx, rx) = bounded(1);
         let id = self
             .send(kind, fields, Pending::Waiter(tx))
             .map_err(|e| plain(e.to_string()))?;
-        match rx.recv_timeout(timeout) {
+        let reply = match rx.recv_timeout(timeout) {
             Ok(reply) => reply,
             Err(RecvTimeoutError::Timeout) => {
                 self.core.lock().pending.remove(&id);
@@ -818,7 +859,27 @@ impl Inner {
                 })
             }
             Err(RecvTimeoutError::Disconnected) => Err(plain("engine stopped".into())),
+        };
+        let illegal_stop = self.illegal_stop.lock().clone();
+        if reply.is_err()
+            && let Some(model) = model
+            && let Some((stopped, message)) = illegal_stop
+            && stopped == generation
+        {
+            self.cannot_run_model(model, &message);
+            return Err(plain(message));
         }
+        reply
+    }
+
+    /// `model` stopped the sidecar with an illegal instruction: this build of
+    /// the engine cannot run it here. It is not loaded again after the
+    /// restart, it shows as failed, and the next request for it fails at once.
+    fn cannot_run_model(&self, model: ModelId, message: &str) {
+        log::error!("{model}: {message}");
+        self.desired_loaded.lock().retain(|m| *m != model);
+        self.cannot_run.lock().insert(model.clone(), message.to_string());
+        self.set_status(model, unsupported_cpu_status(message));
     }
 
     fn load_model(&self, model: &ModelId) -> Result<()> {
@@ -975,6 +1036,12 @@ impl Inner {
 
     /// Update the status cache. Subscribers hear about real changes only.
     fn set_status(&self, model: ModelId, status: ModelStatus) {
+        // A model that this build cannot run stays failed while its files are
+        // there, also after the restart reports them again.
+        let status = match self.cannot_run.lock().get(&model) {
+            Some(message) if status.is_on_disk() => unsupported_cpu_status(message),
+            _ => status,
+        };
         let changed = {
             let mut statuses = self.statuses.lock();
             if statuses.get(&model) == Some(&status) {
@@ -1060,6 +1127,17 @@ impl Inner {
                 let deadline = Instant::now() + Duration::from_secs(2);
                 loop {
                     match child.try_wait() {
+                        Ok(Some(status)) if cpu::illegal_instruction(&status) => {
+                            let needs = Level::of_file(ENGINE_PROGRAM, &self.engine_path)
+                                .map_or("an instruction that it lacks", Level::needs);
+                            let message = format!(
+                                "{UNSUPPORTED_CPU}: the engine {} needs {needs} ({status})",
+                                self.engine_path.display()
+                            );
+                            // Before the waiters fail, so that they find it.
+                            *self.illegal_stop.lock() = Some((self.generation.load(Ordering::SeqCst), message));
+                            break format!("engine stopped with an illegal instruction ({status})");
+                        }
                         Ok(Some(status)) => break format!("engine exited ({status})"),
                         Ok(None) if Instant::now() < deadline => {
                             thread::sleep(Duration::from_millis(20));

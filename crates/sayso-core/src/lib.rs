@@ -6,6 +6,7 @@
 pub mod basic_vad;
 pub mod cleanup;
 pub mod config;
+pub mod cpu;
 pub mod dictation;
 pub mod dictionary;
 pub mod engine_catalog;

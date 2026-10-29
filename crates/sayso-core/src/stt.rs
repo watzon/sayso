@@ -40,6 +40,10 @@ pub enum EngineReason {
     /// The files of the model are in a format that this engine cannot read: the
     /// Parakeet files of the Windows engine before 0.12. The model must download again.
     FormatChanged,
+    /// The engine stopped with an illegal instruction when it ran the model:
+    /// the build lacks instructions of this processor (issue #37). The engine
+    /// client sets this one; no engine sends it.
+    UnsupportedCpu,
     /// This Mac does not support Apple Intelligence.
     DeviceNotEligible,
     /// Apple Intelligence is off in System Settings.
@@ -73,6 +77,7 @@ impl EngineReason {
             EngineReason::LoadFailed => "load_failed",
             EngineReason::NoGpu => "no_gpu",
             EngineReason::FormatChanged => "format_changed",
+            EngineReason::UnsupportedCpu => "unsupported_cpu",
             EngineReason::DeviceNotEligible => "device_not_eligible",
             EngineReason::IntelligenceOff => "intelligence_off",
             EngineReason::ModelNotReady => "model_not_ready",

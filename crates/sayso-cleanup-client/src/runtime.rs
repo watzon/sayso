@@ -5,7 +5,7 @@
 //! passes its deadline kills the process. The next request starts it again, and
 //! a late reply cannot reach it. See `docs/cleanup-models.md`, "Runtime and protocol".
 
-use crate::cpu::Build;
+use sayso_core::cpu::{self, Level};
 use parking_lot::Mutex;
 use sayso_core::cleanup::protocol::{ErrorCode, PROTOCOL_VERSION, Reply, ReplyLine, Request, RequestLine, Stop};
 use std::io::{BufRead, BufReader, Write};
@@ -19,6 +19,9 @@ use std::time::{Duration, Instant};
 /// The start of the message of [`RuntimeError::UnsupportedCpu`]. The settings
 /// look for it in the text of a failed test ([`is_unsupported_cpu`]).
 const UNSUPPORTED_CPU: &str = "the processor of this computer cannot run the cleanup runtime";
+
+/// The name of the runtime program, without a build suffix or `.exe`.
+const PROGRAM: &str = "sayso-cleanup";
 
 /// A load can take this long. The first start on a Mac compiles the Metal
 /// shaders, which took about 4 s in the spike.
@@ -114,20 +117,17 @@ impl Runtime {
     }
 
     /// `SAYSO_CLEANUP_PATH`, else the best build beside the app that this
-    /// processor runs ([`Build`]), else the development build in
+    /// processor runs ([`cpu::best_in`]), else the development build in
     /// `native/cleanup/target/release`. A package with one build (before the
     /// x86_64 builds, or not x86_64) gives `sayso-cleanup`.
     pub fn default_path() -> PathBuf {
         if let Some(path) = std::env::var_os("SAYSO_CLEANUP_PATH").filter(|p| !p.is_empty()) {
             return PathBuf::from(path);
         }
-        if let Some(dir) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf)) {
-            let beside = Build::for_this_cpu().map(|b| dir.join(b.file_name())).find(|path| path.exists());
-            if let Some(path) = beside.or_else(|| Some(dir.join(Build::Avx2.file_name())).filter(|p| p.exists())) {
-                return path;
-            }
+        if let Some(path) = std::env::current_exe().ok().and_then(|exe| cpu::best_in(exe.parent()?, PROGRAM)) {
+            return path;
         }
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../native/cleanup/target/release").join(Build::Avx2.file_name())
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../native/cleanup/target/release").join(Level::Avx2.file_name(PROGRAM))
     }
 
     /// True while the runtime process runs.
@@ -285,7 +285,7 @@ impl Runtime {
         // at the first load. A path from SAYSO_CLEANUP_PATH can be any build,
         // so it starts.
         let from_env = std::env::var_os("SAYSO_CLEANUP_PATH").is_some_and(|p| !p.is_empty());
-        if let Some(build) = Build::of_file(&self.path).filter(|b| !from_env && !b.runs_here()) {
+        if let Some(build) = Level::of_file(PROGRAM, &self.path).filter(|b| !from_env && !b.runs_here()) {
             return Err(RuntimeError::UnsupportedCpu(format!("{} needs {}", self.path.display(), build.needs())));
         }
         let mut child = Command::new(&self.path)
@@ -367,25 +367,12 @@ impl Runtime {
             Ok(status) => status,
             Err(e) => return RuntimeError::Stopped(e.to_string()),
         };
-        if illegal_instruction(&status) {
-            let needs = Build::of_file(&self.path).map_or_else(|| "an instruction that it lacks".to_string(), |b| b.needs().to_string());
+        if cpu::illegal_instruction(&status) {
+            let needs = Level::of_file(PROGRAM, &self.path).map_or_else(|| "an instruction that it lacks".to_string(), |b| b.needs().to_string());
             log::error!("the cleanup runtime {} stopped with an illegal instruction ({status})", self.path.display());
             return RuntimeError::UnsupportedCpu(format!("{} needs {needs} ({status})", self.path.display()));
         }
         RuntimeError::Stopped(format!("the process ended ({status})"))
-    }
-}
-
-/// SIGILL on Unix, STATUS_ILLEGAL_INSTRUCTION on Windows.
-fn illegal_instruction(status: &std::process::ExitStatus) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::ExitStatusExt as _;
-        status.signal() == Some(4)
-    }
-    #[cfg(windows)]
-    {
-        status.code() == Some(0xC000_001D_u32 as i32)
     }
 }
 

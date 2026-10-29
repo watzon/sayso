@@ -1,8 +1,8 @@
 //! The runtime client against the fake runtime (`src/bin/fake-cleanup-runtime.rs`).
 
-use sayso_cleanup_client::cpu::Build;
 use sayso_cleanup_client::runtime::{Runtime, RuntimeError};
 use sayso_core::cleanup::protocol::{ErrorCode, Stop};
+use sayso_core::cpu::Level;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -88,9 +88,9 @@ fn an_illegal_instruction_is_a_processor_that_cannot_run_the_build() {
 fn a_build_that_this_processor_cannot_run_does_not_start() {
     // The build of the packages that this processor lacks the instructions
     // for. Only on x86_64 without AVX, or on another system, is there one.
-    let Some(build) = Build::ALL.into_iter().find(|b| !b.runs_here()) else { return };
+    let Some(build) = Level::ALL.into_iter().find(|b| !b.runs_here()) else { return };
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join(build.file_name());
+    let path = dir.path().join(build.file_name("sayso-cleanup"));
     std::fs::copy(env!("CARGO_BIN_EXE_fake-cleanup-runtime"), &path).unwrap();
     let rt = Runtime::new(path);
     let error = rt.ensure_loaded("a", model(), 2048, None).unwrap_err();
