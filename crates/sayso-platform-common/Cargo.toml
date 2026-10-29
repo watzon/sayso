@@ -9,12 +9,10 @@ publish.workspace = true
 [dependencies]
 sayso-platform.workspace = true
 sayso-core.workspace = true
+# The microphone (MIT, docs/sdk.md "Crates").
+sayso-capture.workspace = true
 crossbeam-channel.workspace = true
 log.workspace = true
 
-cpal = "0.18.2"
 rodio = { version = "0.22.2", default-features = false, features = ["playback", "wav"] }
 workspace-hack.workspace = true
-
-[dev-dependencies]
-parking_lot.workspace = true

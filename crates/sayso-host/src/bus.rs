@@ -1,5 +1,5 @@
 //! One subscription to the events of the engine, shared by all the work of
-//! the host that needs them (downloads now, jobs and live sessions later).
+//! the host that needs them (downloads and live sessions).
 //!
 //! The engine can be missing (`None`) and can restart. The client of the
 //! engine keeps one subscription through a restart and reports `Crashed` and
@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 pub(crate) struct Bus {
-    watchers: Arc<Mutex<Vec<Sender<EngineEvent>>>>,
+    watchers: Arc<Mutex<Watchers>>,
     /// Dropping it stops the thread.
     stop: Mutex<Option<Sender<()>>>,
     /// Asks the thread to pass on the events that wait (see [`Bus::sync`]).
@@ -24,7 +24,7 @@ pub(crate) struct Bus {
 impl Bus {
     /// Subscribe once to `engine`. Without an engine, nobody gets events.
     pub fn start(engine: Option<&Arc<dyn SttBackend>>) -> Bus {
-        let watchers: Arc<Mutex<Vec<Sender<EngineEvent>>>> = Arc::default();
+        let watchers: Arc<Mutex<Watchers>> = Arc::default();
         let Some(engine) = engine else { return Bus::idle(watchers) };
         let events = engine.subscribe();
         let (stop, stopped) = bounded::<()>(0);
@@ -42,7 +42,7 @@ impl Bus {
         }
     }
 
-    fn idle(watchers: Arc<Mutex<Vec<Sender<EngineEvent>>>>) -> Bus {
+    fn idle(watchers: Arc<Mutex<Watchers>>) -> Bus {
         Bus { watchers, stop: Mutex::new(None), syncs: None, thread: Mutex::new(None) }
     }
 
@@ -51,7 +51,15 @@ impl Bus {
     /// receiver ends when the bus stops.
     pub fn watch(&self) -> Receiver<EngineEvent> {
         let (tx, rx) = unbounded();
-        self.watchers.lock().push(tx);
+        self.watchers.lock().all.push(tx);
+        rx
+    }
+
+    /// As [`Bus::watch`], with only the events of live sessions, as the
+    /// types of `sayso-speech`.
+    pub fn watch_speech(&self) -> Receiver<sayso_speech::EngineEvent> {
+        let (tx, rx) = unbounded();
+        self.watchers.lock().speech.push(tx);
         rx
     }
 
@@ -73,8 +81,17 @@ impl Bus {
         if let Some(thread) = self.thread.lock().take() {
             let _ = thread.join();
         }
-        self.watchers.lock().clear();
+        let mut watchers = self.watchers.lock();
+        watchers.all.clear();
+        watchers.speech.clear();
     }
+}
+
+/// The receivers of the events.
+#[derive(Default)]
+struct Watchers {
+    all: Vec<Sender<EngineEvent>>,
+    speech: Vec<Sender<sayso_speech::EngineEvent>>,
 }
 
 impl Drop for Bus {
@@ -83,8 +100,17 @@ impl Drop for Bus {
     }
 }
 
-fn fan_out(events: &Receiver<EngineEvent>, stopped: &Receiver<()>, synced: &Receiver<Sender<()>>, watchers: &Mutex<Vec<Sender<EngineEvent>>>) {
-    let pass_on = |event: EngineEvent| watchers.lock().retain(|watcher| watcher.send(event.clone()).is_ok());
+fn fan_out(events: &Receiver<EngineEvent>, stopped: &Receiver<()>, synced: &Receiver<Sender<()>>, watchers: &Mutex<Watchers>) {
+    let pass_on = |event: EngineEvent| {
+        let mut watchers = watchers.lock();
+        // Most events reach no live session, so convert only when one listens.
+        if !watchers.speech.is_empty()
+            && let Some(speech) = event.for_speech()
+        {
+            watchers.speech.retain(|watcher| watcher.send(speech.clone()).is_ok());
+        }
+        watchers.all.retain(|watcher| watcher.send(event.clone()).is_ok());
+    };
     loop {
         select! {
             recv(events) -> event => match event {

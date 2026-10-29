@@ -9,6 +9,8 @@ publish.workspace = true
 [dependencies]
 sayso-i18n.workspace = true
 sayso-ink.workspace = true
+# Basic VAD and the resampler (MIT, docs/sdk.md "Crates").
+sayso-speech.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true

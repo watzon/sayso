@@ -7,12 +7,20 @@
 //! that is missing gets the choice of the user. A choice of the user that
 //! cannot run falls back where the docs allow it: Basic VAD for VAD, and the
 //! timestamp level `none` for an engine without segments.
+//!
+//! [`SaysoModels`] gives these rules to `sayso-speech` as its `ModelResolver`.
 
-use super::JobSpec;
-use super::plan::VadRun;
-use sayso_core::config::RoleChoice;
+use super::{JobSpec, VadRun};
+use crate::live::SessionSpec;
+use sayso_core::config::{Config, PreviewChoice, RoleChoice};
 use sayso_core::models::{self, BASIC_VAD, ModelId, ModelTask, Timestamps, Vad};
-use sayso_protocol::{ErrorCode, TranscribeFile};
+use sayso_platform::SttBackend;
+use sayso_protocol::{ErrorCode, SessionStart, TranscribeFile};
+use sayso_speech::ModelResolver;
+
+/// A request that the host refuses: the `error` reply of `transcribe_file`
+/// or `session_start`.
+pub use sayso_speech::Refusal;
 
 /// The choices of the user that a job uses when it names no model.
 #[derive(Debug, Clone, Copy)]
@@ -43,16 +51,41 @@ impl EngineView<'_> {
     }
 }
 
-/// A request that the host refuses: the `error` reply of `transcribe_file`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Refusal {
-    pub code: ErrorCode,
-    /// English.
-    pub message: String,
+pub(crate) fn refuse(code: ErrorCode, message: impl Into<String>) -> Refusal {
+    Refusal::new(code, message)
 }
 
-pub(crate) fn refuse(code: ErrorCode, message: impl Into<String>) -> Refusal {
-    Refusal { code, message: message.into() }
+/// The models of Sayso: the choices of the user and the catalog of this computer.
+pub struct SaysoModels<'a> {
+    pub user: UserChoices<'a>,
+    /// `dictation.preview_model`, for live sessions.
+    pub preview: &'a PreviewChoice,
+    pub engine: EngineView<'a>,
+}
+
+impl SaysoModels<'_> {
+    /// Run `f` with the settings of the user in `config` and the engine now.
+    pub(crate) fn with<T>(config: &Config, engine: &dyn SttBackend, f: impl FnOnce(&SaysoModels<'_>) -> T) -> T {
+        let features = engine.features();
+        let on_disk = |id: &ModelId| engine.status(id).is_on_disk();
+        let user = UserChoices {
+            final_model: &config.dictation.model,
+            language: &config.dictation.language,
+            vad: &config.models.vad,
+            diarization: &config.models.diarization,
+        };
+        f(&SaysoModels { user, preview: &config.dictation.preview_model, engine: EngineView { on_disk: &on_disk, features: &features } })
+    }
+}
+
+impl ModelResolver for SaysoModels<'_> {
+    fn job(&self, request: &TranscribeFile) -> Result<JobSpec, Refusal> {
+        resolve(request, &self.user, &self.engine)
+    }
+
+    fn session(&self, request: &SessionStart) -> Result<SessionSpec, Refusal> {
+        crate::live::resolve(request, &self.user, self.preview, &self.engine)
+    }
 }
 
 /// Check `request` and choose its models. `diarization_model` without
@@ -73,10 +106,10 @@ pub fn resolve(request: &TranscribeFile, user: &UserChoices, engine: &EngineView
 
     Ok(JobSpec {
         path: request.path.clone(),
-        model: model.id,
-        timestamps,
+        model: model.id.into(),
+        timestamps: timestamps.into(),
         vad,
-        diarization,
+        diarization: diarization.map(Into::into),
         language: request.language.clone().unwrap_or_else(|| user.language.to_string()),
         speakers: request.speakers,
     })
@@ -119,10 +152,10 @@ pub(crate) fn vad(asked: Option<&str>, user: &UserChoices, engine: &EngineView) 
         Some(id) => {
             let info = checked(&ModelId::new(id), ModelTask::Vad, "vad_model", engine)?;
             need_feature(engine, "vad", &info.id)?;
-            VadRun::Model(info.id)
+            VadRun::Model(info.id.into())
         }
         None => match models::vad_for(None, user.vad, |id| (engine.on_disk)(id)) {
-            Vad::Model(id) if engine.has("vad") => VadRun::Model(id),
+            Vad::Model(id) if engine.has("vad") => VadRun::Model(id.into()),
             _ => VadRun::Basic,
         },
     })
@@ -229,12 +262,12 @@ mod tests {
     fn missing_fields_take_the_choices_of_the_user() {
         let setup = Setup::new();
         let job = setup.resolve(&request()).unwrap();
-        assert_eq!(job.model, setup.final_model);
-        assert_eq!(job.vad, VadRun::Model(first(ModelTask::Vad)), "auto: the VAD model on disk");
+        assert_eq!(job.model, setup.final_model.clone().into());
+        assert_eq!(job.vad, VadRun::Model(first(ModelTask::Vad).into()), "auto: the VAD model on disk");
         assert_eq!(job.diarization, None);
         assert_eq!(job.language, "en");
         let job = setup.resolve(&TranscribeFile { diarize: Some(true), ..request() }).unwrap();
-        assert_eq!(job.diarization, Some(first(ModelTask::Diarization)));
+        assert_eq!(job.diarization, Some(first(ModelTask::Diarization).into()));
         let basic = Setup { vad: RoleChoice::Model(ModelId::new(BASIC_VAD)), ..Setup::new() };
         assert_eq!(basic.resolve(&request()).unwrap().vad, VadRun::Basic);
     }
@@ -251,7 +284,7 @@ mod tests {
             ..request()
         };
         let job = setup.resolve(&named).unwrap();
-        assert_eq!(job.diarization, Some(first(ModelTask::Diarization)), "diarization_model asks for diarization");
+        assert_eq!(job.diarization, Some(first(ModelTask::Diarization).into()), "diarization_model asks for diarization");
         assert_eq!((job.language.as_str(), job.speakers), ("de", Some(3)));
         let off = TranscribeFile { diarize: Some(false), ..named.clone() };
         assert_eq!(setup.resolve(&off).unwrap().diarization, None);
@@ -319,7 +352,7 @@ mod tests {
         assert_eq!(setup.resolve(&request()).unwrap().vad, VadRun::Basic);
         // Without segments, every model gives one segment for each chunk.
         let old = Setup { features: vec!["vad".into()], ..Setup::new() };
-        assert_eq!(old.resolve(&request()).unwrap().timestamps, Timestamps::None);
+        assert_eq!(old.resolve(&request()).unwrap().timestamps, Timestamps::None.into());
         // An engine that did not list its features answers each request itself.
         let unknown = Setup { features: Vec::new(), ..Setup::new() };
         assert!(unknown.resolve(&TranscribeFile { diarize: Some(true), ..request() }).is_ok());

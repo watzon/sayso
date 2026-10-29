@@ -1,15 +1,12 @@
 //! Run one job against the engine: read the file, load the models, find the
 //! speech, transcribe it one chunk at a time, and find the speakers.
 
+use super::JobSpec;
 use super::audio::{self, Audio};
-use super::model_use::ModelUse;
 use super::plan::{self, Chunk, Stopped, VAD_WINDOW_MS};
 use super::queue::{JobRun, RunJob};
 use super::speakers;
-use super::JobSpec;
-use sayso_core::models::{ModelId, Timestamps};
-use sayso_core::stt::SessionOptions;
-use sayso_platform::SttBackend;
+use crate::{ModelId, ModelRetention, SpeechEngine, Timestamps, Turn};
 use sayso_protocol::{Event, Segment, SegmentEvent, SpeakersEvent, Word};
 use std::sync::Arc;
 
@@ -19,20 +16,20 @@ pub const TRANSCRIPTION_SHARE: f64 = 0.9;
 
 /// Runs jobs on the engine of the app.
 pub struct JobRunner {
-    backend: Arc<dyn SttBackend>,
-    models: Arc<ModelUse>,
+    engine: Arc<dyn SpeechEngine>,
+    models: Arc<dyn ModelRetention>,
     vad_window_ms: u64,
 }
 
 impl JobRunner {
-    /// `models` tells the memory policy of the app which models the jobs use.
-    pub fn new(backend: Arc<dyn SttBackend>, models: Arc<ModelUse>) -> JobRunner {
-        JobRunner { backend, models, vad_window_ms: VAD_WINDOW_MS }
+    /// `models` keeps the models of each job in memory while it runs.
+    pub fn new(engine: Arc<dyn SpeechEngine>, models: Arc<dyn ModelRetention>) -> JobRunner {
+        JobRunner { engine, models, vad_window_ms: VAD_WINDOW_MS }
     }
 
-    /// A runner whose VAD model gets windows of `window_ms`, for the tests.
-    #[cfg(test)]
-    pub(crate) fn with_vad_window(mut self, window_ms: u64) -> JobRunner {
+    /// A runner whose VAD model gets windows of `window_ms`. The tests use
+    /// short windows; normally they are [`VAD_WINDOW_MS`].
+    pub fn with_vad_window(mut self, window_ms: u64) -> JobRunner {
         self.vad_window_ms = window_ms;
         self
     }
@@ -47,26 +44,18 @@ impl JobRunner {
         let _hold = self.models.hold(job.models());
         for model in job.models() {
             run.before_engine_call()?;
-            if !self.backend.status(&model).is_usable() {
-                self.backend.load(&model).map_err(|e| Stopped::Failed(format!("Sayso cannot load the model {model}: {e}")))?;
-            }
+            self.engine.load(&model).map_err(|e| Stopped::Failed(format!("Sayso cannot load the model {model}: {e}")))?;
         }
 
-        let parts = plan::speech_parts(&audio, &job.vad, &*self.backend, self.vad_window_ms, &mut || run.before_engine_call())?;
+        let parts = plan::speech_parts(&audio, &job.vad, &*self.engine, self.vad_window_ms, &mut || run.before_engine_call())?;
         let chunks = plan::chunks(&parts, audio.len_ms(), plan::max_chunk_ms(job.timestamps));
-        let options = SessionOptions {
-            final_model: job.model.clone(),
-            preview_model: None,
-            language: job.language.clone(),
-            vocabulary: Vec::new(),
-        };
         let share = if job.diarization.is_some() { TRANSCRIPTION_SHARE } else { 1.0 };
         let len_ms = audio.len_ms().max(1);
         let mut times = Vec::new();
         let mut texts = Vec::new();
         for (i, chunk) in chunks.iter().enumerate() {
             run.before_engine_call()?;
-            for segment in self.transcribe(&audio, *chunk, &options, job.timestamps)? {
+            for segment in self.transcribe(&audio, *chunk, job)? {
                 times.push((segment.start_ms, segment.end_ms));
                 texts.push(segment.text.clone());
                 run.event(Event::Segment(SegmentEvent { job: Some(run.id), session: None, source: None, segment }));
@@ -87,12 +76,12 @@ impl JobRunner {
     }
 
     /// The segments of one chunk, with times from the start of the file.
-    fn transcribe(&self, audio: &Audio, chunk: Chunk, options: &SessionOptions, timestamps: Timestamps) -> Result<Vec<Segment>, Stopped> {
+    fn transcribe(&self, audio: &Audio, chunk: Chunk, job: &JobSpec) -> Result<Vec<Segment>, Stopped> {
         let samples = audio.floats(chunk.start_ms, chunk.end_ms);
         let failed = |e| Stopped::Failed(format!("Transcription failed: {e}"));
-        if timestamps == Timestamps::None {
+        if job.timestamps == Timestamps::None {
             // No times from the model: the chunk is the segment.
-            let text = self.backend.transcribe(&samples, options).map_err(failed)?.text;
+            let text = self.engine.transcribe(&samples, &job.model, &job.language).map_err(failed)?;
             let text = text.trim();
             return Ok(if text.is_empty() {
                 Vec::new()
@@ -100,18 +89,17 @@ impl JobRunner {
                 vec![Segment { start_ms: chunk.start_ms, end_ms: chunk.end_ms, text: text.to_string(), words: None }]
             });
         }
-        let found = self.backend.transcribe_segments(&samples, options).map_err(failed)?;
+        let found = self.engine.transcribe_segments(&samples, &job.model, &job.language).map_err(failed)?;
         let shift = chunk.start_ms;
         Ok(found
-            .segments
             .into_iter()
             .filter(|s| !s.text.trim().is_empty())
             .map(|s| Segment {
                 start_ms: s.start_ms + shift,
                 end_ms: s.end_ms + shift,
                 text: s.text.trim().to_string(),
-                words: (!s.words.is_empty()).then(|| {
-                    s.words.into_iter().map(|w| Word { start_ms: w.start_ms + shift, end_ms: w.end_ms + shift, text: w.text }).collect()
+                words: s.words.map(|words| {
+                    words.into_iter().map(|w| Word { start_ms: w.start_ms + shift, end_ms: w.end_ms + shift, text: w.text }).collect()
                 }),
             })
             .collect())
@@ -119,12 +107,12 @@ impl JobRunner {
 
     /// The turns of the whole file. Without a number of speakers, small
     /// speakers are folded (`speakers::fold_small_speakers`).
-    fn diarize(&self, model: &ModelId, audio: &Audio, speakers: Option<u32>) -> Result<Vec<sayso_core::stt::Turn>, Stopped> {
+    fn diarize(&self, model: &ModelId, audio: &Audio, speakers: Option<u32>) -> Result<Vec<Turn>, Stopped> {
         let found = self
-            .backend
+            .engine
             .diarize(model, &audio.all_floats(), speakers)
             .map_err(|e| Stopped::Failed(format!("Diarization failed: {e}")))?;
-        Ok(if speakers.is_none() { speakers::fold_small_speakers(&found.turns) } else { found.turns })
+        Ok(if speakers.is_none() { speakers::fold_small_speakers(&found) } else { found })
     }
 }
 

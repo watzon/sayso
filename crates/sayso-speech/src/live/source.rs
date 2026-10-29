@@ -8,20 +8,17 @@
 //!   waits for a final pass, so the audio does not wait either.
 //! - **final** runs the final pass on each part, one at a time, and sends a
 //!   `segment` event for each segment, with times from the start of the
-//!   session. Before each part it waits while a dictation runs ([`Priority`]).
+//!   session. Before each part it waits while a dictation runs ([`Gate`]).
 //!
 //! The source stops when its audio channel closes: the intake hears the rest
 //! of the audio, closes the preview stream and the VAD session, cuts the last
 //! part, and waits for the final thread.
 
-use super::engine::LiveEngine;
 use super::wav::WavWriter;
-use super::Priority;
-use crate::jobs::EventSink;
+use crate::basic_vad::BasicVad;
+use crate::jobs::Gate;
+use crate::{EngineEvent, EventSink, ModelId, SpeechEngine};
 use crossbeam_channel::{Receiver, Sender, never, select, unbounded};
-use sayso_core::basic_vad::BasicVad;
-use sayso_core::models::ModelId;
-use sayso_core::stt::EngineEvent;
 use sayso_protocol::{Event, PartialEvent, Segment, SegmentEvent, Source};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -39,7 +36,7 @@ const LOOKBACK_MS: u64 = 10_000;
 
 /// How a source finds speech.
 pub(crate) enum SourceVad {
-    /// Basic VAD, in the host.
+    /// Basic VAD, in this crate.
     Basic,
     /// A VAD session of the engine, with this engine session id.
     Engine { session: u64 },
@@ -74,10 +71,10 @@ pub(crate) struct SourceRun {
 impl SourceRun {
     /// Start the threads. `events` must exist before the engine sessions
     /// opened, so no event is lost. `cancel` stops the final passes that wait.
-    pub fn start(plan: SourcePlan, audio: Receiver<Vec<f32>>, events: Receiver<EngineEvent>, engine: Arc<dyn LiveEngine>, sink: Arc<dyn EventSink>, priority: Arc<dyn Priority>, cancel: Arc<AtomicBool>) -> std::io::Result<SourceRun> {
+    pub fn start(plan: SourcePlan, audio: Receiver<Vec<f32>>, events: Receiver<EngineEvent>, engine: Arc<dyn SpeechEngine>, sink: Arc<dyn EventSink>, gate: Arc<dyn Gate>, cancel: Arc<AtomicBool>) -> std::io::Result<SourceRun> {
         let (parts, waiting) = unbounded::<PartAudio>();
         let final_pass = {
-            let worker = FinalPass { session: plan.session, source: plan.source.clone(), model: plan.final_model.clone(), language: plan.language.clone(), engine: engine.clone(), sink: sink.clone(), priority, cancel };
+            let worker = FinalPass { session: plan.session, source: plan.source.clone(), model: plan.final_model.clone(), language: plan.language.clone(), engine: engine.clone(), sink: sink.clone(), gate, cancel };
             std::thread::Builder::new().name("sayso-host-live-final".into()).spawn(move || worker.run(&waiting))?
         };
         let intake = Intake::new(plan, engine, sink, parts);
@@ -103,7 +100,7 @@ struct Intake {
     source: Source,
     preview: Option<u64>,
     vad: VadState,
-    engine: Arc<dyn LiveEngine>,
+    engine: Arc<dyn SpeechEngine>,
     sink: Arc<dyn EventSink>,
     wav: Option<WavWriter>,
     wav_path: PathBuf,
@@ -125,7 +122,7 @@ enum VadState {
 }
 
 impl Intake {
-    fn new(plan: SourcePlan, engine: Arc<dyn LiveEngine>, sink: Arc<dyn EventSink>, parts: Sender<PartAudio>) -> Intake {
+    fn new(plan: SourcePlan, engine: Arc<dyn SpeechEngine>, sink: Arc<dyn EventSink>, parts: Sender<PartAudio>) -> Intake {
         let vad = match plan.vad {
             SourceVad::Basic => VadState::Basic(Box::new(BasicVad::new())),
             SourceVad::Engine { session } => VadState::Engine { session, open: None },
@@ -276,7 +273,7 @@ impl Intake {
         }
         match std::mem::replace(&mut self.vad, VadState::Engine { session: 0, open: None }) {
             VadState::Basic(vad) => {
-                // The partials that came already. The host does not wait for
+                // The partials that came already. The session does not wait for
                 // the last partial of the engine: the segments have the text.
                 for event in events.try_iter() {
                     self.event(event);
@@ -319,9 +316,9 @@ struct FinalPass {
     source: Source,
     model: ModelId,
     language: String,
-    engine: Arc<dyn LiveEngine>,
+    engine: Arc<dyn SpeechEngine>,
     sink: Arc<dyn EventSink>,
-    priority: Arc<dyn Priority>,
+    gate: Arc<dyn Gate>,
     cancel: Arc<AtomicBool>,
 }
 
@@ -330,10 +327,10 @@ impl FinalPass {
         let mut all = Vec::new();
         for part in parts.iter() {
             let cancelled = || self.cancel.load(Ordering::SeqCst);
-            if cancelled() || !self.priority.wait_idle(&cancelled) {
+            if cancelled() || !self.gate.wait_idle(&cancelled) {
                 continue;
             }
-            let call = self.priority.engine_call();
+            let call = self.gate.engine_call();
             let transcribed = self.engine.transcribe_segments(&part.samples, &self.model, &self.language);
             drop(call);
             let segments = match transcribed {

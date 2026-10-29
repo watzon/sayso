@@ -7226,6 +7226,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-capture"
+version = "0.13.0"
+dependencies = [
+ "cpal 0.18.2",
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "sayso-speech",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sayso-cleanup-client"
 version = "0.13.0"
 dependencies = [
@@ -7251,6 +7263,7 @@ dependencies = [
  "regex",
  "sayso-i18n",
  "sayso-ink",
+ "sayso-speech",
  "serde",
  "serde_json",
  "tempfile",
@@ -7373,10 +7386,10 @@ dependencies = [
  "sayso-extension",
  "sayso-platform",
  "sayso-protocol",
+ "sayso-speech",
  "security-framework",
  "serde",
  "serde_json",
- "symphonia",
  "tempfile",
  "toml 0.9.12+spec-1.1.0",
  "windows-sys 0.61.2",
@@ -7417,11 +7430,10 @@ dependencies = [
 name = "sayso-platform-common"
 version = "0.13.0"
 dependencies = [
- "cpal 0.18.2",
  "crossbeam-channel",
  "log",
- "parking_lot",
  "rodio",
+ "sayso-capture",
  "sayso-core",
  "sayso-platform",
  "workspace-hack",
@@ -7511,6 +7523,19 @@ dependencies = [
  "serde",
  "serde_json",
  "windows-sys 0.61.2",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sayso-speech"
+version = "0.13.0"
+dependencies = [
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "sayso-protocol",
+ "symphonia",
+ "tempfile",
  "workspace-hack",
 ]
 
@@ -10598,7 +10623,6 @@ dependencies = [
  "byteorder",
  "cc",
  "crc32fast",
- "crossbeam-utils",
  "digest 0.10.7",
  "digest 0.11.3",
  "dispatch2",
@@ -10616,6 +10640,7 @@ dependencies = [
  "objc2 0.6.4",
  "objc2-core-foundation",
  "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
  "once_cell",
  "percent-encoding",
  "proc-macro2",
@@ -10630,7 +10655,6 @@ dependencies = [
  "simd-adler32",
  "smallvec",
  "subtle",
- "symphonia",
  "syn 2.0.119",
  "syn 3.0.6",
  "time",

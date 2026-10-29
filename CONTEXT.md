@@ -86,7 +86,7 @@ What a local model does: speech (the final pass or the live preview), VAD, or di
 A local model that finds the parts of audio that contain speech. VAD means voice activity detection. The jobs and live sessions of extensions use it to cut long audio at pauses. Dictation does not use VAD. The user chooses it on the Models page (`models.vad`): "auto" (the first VAD model on disk, Silero VAD first, else Basic VAD), "basic", or a model id. A chosen model that is not on disk gives Basic VAD.
 
 **Basic VAD**
-The VAD of the host (`sayso_core::basic_vad`). It finds speech by its sound level, a margin above the noise floor of the last 5 seconds, so a constant noise is not speech. It follows the same rules as the engines: speech under 250 ms is left out, a pause under 500 ms does not end speech, and a part is at most 30 s. It needs no download, so a new install has it. Its id is `basic`.
+The VAD of the host (`sayso_speech::basic_vad`). It finds speech by its sound level, a margin above the noise floor of the last 5 seconds, so a constant noise is not speech. It follows the same rules as the engines: speech under 250 ms is left out, a pause under 500 ms does not end speech, and a part is at most 30 s. It needs no download, so a new install has it. Its id is `basic`.
 
 **Diarization model**
 A local model that finds who speaks when in a recording. It can have more than one file (on Linux and Windows, a segmentation model and a speaker embedding model), but it is one model with one id. The user chooses it on the Models page (`models.diarization`): "auto" (the diarization model on disk, else none) or a model id. There is no built-in fallback.

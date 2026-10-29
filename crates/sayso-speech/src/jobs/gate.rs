@@ -1,9 +1,14 @@
 //! Dictation first (`docs/extensions.md`, "Scheduling"): a job waits between
 //! two engine calls while a dictation runs.
 //!
+//! Jobs and live sessions ask a [`Gate`] before their engine calls.
+//! [`DictationGate`] is the gate of Sayso. An app without dictation (the
+//! local mode of the SDK) uses it too and never calls `begin`, so live
+//! sessions still come before jobs.
+//!
 //! The app calls [`DictationGate::begin`] when a dictation starts its capture
 //! and [`DictationGate::end`] when the dictation no longer needs the engine.
-//! A dictation of `sayso-app` (`dictation.rs` and the state machine in
+//! A dictation of Sayso (`sayso-app`: `dictation.rs` and the state machine in
 //! `sayso_core::dictation`) ends in one of these ways:
 //!
 //! - the text is inserted (`Event::Inserted`), or the insert fails (`InsertFailed`);
@@ -15,7 +20,7 @@
 //! - the recording is shorter than the shortest dictation, and is discarded;
 //! - Sayso quits during a dictation.
 //!
-//! So the app does not call `end` at each of those places. It calls `begin`
+//! So Sayso does not call `end` at each of those places. It calls `begin`
 //! when its state machine enters `Recording` or `Processing`, and `end` when
 //! it leaves both, in one place after each event (`AppModel::dispatch`).
 //!
@@ -35,6 +40,39 @@
 
 use parking_lot::{Condvar, Mutex};
 use std::time::{Duration, Instant};
+
+/// Dictation first, then live sessions, then jobs (`docs/extensions.md`,
+/// "Scheduling"). The final pass of a part and the diarization of a live
+/// session wait while a dictation runs. The preview stream and the VAD do not
+/// wait. While a part or a diarization is in the engine, jobs wait.
+pub trait Gate: Send + Sync {
+    /// Wait until no dictation runs: for live sessions. Returns false, at
+    /// once, when `stop` becomes true (the work was cancelled).
+    fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool;
+
+    /// Wait until no dictation runs and no live session gives the engine a
+    /// part: for jobs. Returns false, at once, when `stop` becomes true.
+    fn wait_for_job(&self, stop: &dyn Fn() -> bool) -> bool {
+        self.wait_idle(stop)
+    }
+
+    /// A live session gives the engine a part now. Jobs wait until the value drops.
+    fn engine_call(&self) -> Box<dyn Send + '_> {
+        Box::new(())
+    }
+
+    /// Wake the jobs that wait, so a cancelled job stops at once.
+    fn wake(&self) {}
+}
+
+/// No dictation to wait for, and jobs do not wait for live sessions.
+pub struct NoGate;
+
+impl Gate for NoGate {
+    fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool {
+        !stop()
+    }
+}
 
 /// A part of a live session that the engine transcribes now. Jobs wait
 /// until it drops.
@@ -158,6 +196,26 @@ impl DictationGate {
                 false
             }
         }
+    }
+}
+
+/// The gate of Sayso holds live sessions while a dictation runs, and holds
+/// jobs while a dictation runs or a live session uses the engine.
+impl Gate for DictationGate {
+    fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool {
+        DictationGate::wait_idle(self, stop)
+    }
+
+    fn wait_for_job(&self, stop: &dyn Fn() -> bool) -> bool {
+        DictationGate::wait_for_job(self, stop)
+    }
+
+    fn engine_call(&self) -> Box<dyn Send + '_> {
+        Box::new(self.live_part())
+    }
+
+    fn wake(&self) {
+        DictationGate::wake(self);
     }
 }
 

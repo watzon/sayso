@@ -189,7 +189,7 @@ FluidAudio also has streaming diarization (Sortformer, LS-EEND). It can give liv
 
 Config: `models.diarization = "auto"` (the default) or a model id. Automatic means the diarization model on disk. There is no built-in fallback. A request with `diarize: true` and no diarization model on disk gets `error {code: "model_not_downloaded"}`, and the extension can send `download_model`.
 
-In a job, the host gives each segment a speaker (`crates/sayso-host/src/jobs/speakers.rs`):
+In a job, the host gives each segment a speaker (`crates/sayso-speech/src/jobs/speakers.rs`):
 
 1. **Small speakers are folded.** Without a number of speakers, the diarizers find extra speakers that say almost nothing: with CAM++ zh_en at the threshold 0.9, the benchmark found 7 to 10 speakers in 300 s parts of 4-speaker meetings, and many of them had only 0.4 to 9 s of speech (0.1 to 2.6 %). So, when the request has no `speakers`, a speaker with less than 2 % of all speech and less than 10 s of speech (`SMALL_SPEAKER_SHARE`, `SMALL_SPEAKER_MS`) is folded: each of its turns goes to the speaker that overlaps it most, else to the speaker of the nearest turn. The speaker with the most speech always stays. The 10 s limit keeps a real speaker of a long meeting, who has a small share but more than a few words. With these rules, the speakers of those results go from 7, 10, and 8 to 5, 7, and 5 in English (4 real), and from 12, 8, and 8 to 8, 5, and 5 in Mandarin (6 real). In two Mandarin parts that is one speaker too few: a person who says very little can be folded. When the request has `speakers`, the host keeps the speakers of the engine.
 2. **Each segment gets one speaker:** the speaker with the most time in the segment, else the speaker of the nearest turn. The host does not split a segment at a change of speaker, also for models with word times. The segments go to the extension while the job runs, and diarization runs after the last one. Segments of `word` models end at sentence ends and at pauses of 700 ms, where speakers usually change.
@@ -332,7 +332,7 @@ A live session waits only for dictation. A job waits for dictation, and also whi
 
 A job runs one VAD part at a time. When a dictation starts, the job finishes the current part, waits, and goes on after the insert. So a job slows dictation by at most one part. The host keeps parts under about 30 s for this reason.
 
-How a job runs (`crates/sayso-host/src/jobs/`):
+How a job runs (`crates/sayso-speech/src/jobs/`, with the model checks of Sayso in `crates/sayso-host/src/jobs/`):
 
 - **Chunks.** VAD gives the speech parts. Neighbouring parts join into chunks of at most 30 s (10 s for a model with the timestamp level `none`, which gets one segment for each chunk), when the pause between them is at most 3 s. Each chunk gets 200 ms of audio before and after its speech. A VAD model gets the file in windows of 10 minutes.
 - **Dictation and live sessions first.** `AppModel::dispatch` tells the host (`DictationGate`) when the dictation state machine enters `Recording` or `Processing`, and when it leaves both. Every way out of a dictation (insert, failed insert, no speech, cancel, failed capture, a recording that is too short) goes through `dispatch`, and a dictation that has not ended after 20 minutes no longer holds jobs. A job waits before each call to the engine (a load, a VAD window, a chunk, diarization) while a dictation runs, and while a live session has a part or its diarization in the engine. Diarization runs once on the whole file, so on a long file it is the one call that can make a dictation wait for more than one part.
@@ -354,7 +354,7 @@ The microphone is one capture in Sayso (`crates/sayso-app/src/mic.rs`). It start
 - A live session gets its frames through a queue of its own. The capture never waits for that queue, so a slow live session does not delay or drop a frame of a dictation.
 - When the user chooses another microphone in Settings while a live session runs, the capture stays on the old microphone until the next user joins (the next dictation, or the next live session). Then the capture moves to the new microphone for all its users: the new microphone starts first, and the old one stops after that. The live session loses only the frames between the two, and never gets the frames of both.
 
-How a live session runs (`crates/sayso-host/src/live/`):
+How a live session runs (`crates/sayso-speech/src/live/`, with the model checks of Sayso in `crates/sayso-host/src/live/`):
 
 - **One pipeline for each source.** The audio goes to the recording, to a preview stream of the engine when the session has a streaming model (`partial` events), and to the VAD: a VAD session of the engine, or Basic VAD in the host. Each speech that ends is a part, with 200 ms of audio before and after it. The final model transcribes the parts one at a time, and each segment of a part becomes a `segment` event with times from the start of the session.
 - **Dictation first.** The final pass of a part and the diarization wait while a dictation runs. The preview stream and the VAD do not wait, so the session hears all the audio.

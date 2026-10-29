@@ -1,15 +1,15 @@
 //! The speakers of a job (`docs/extensions.md`, "Diarization models").
 //!
-//! The engine gives turns: who speaks when, with speakers from 0. The host
-//! then:
+//! The engine gives turns: who speaks when, with speakers from 0. This
+//! module then:
 //!
 //! 1. Folds a speaker with very little speech into another speaker
-//!    ([`fold_small_speakers`]), when the extension did not give the number of
+//!    ([`fold_small_speakers`]), when the app did not give the number of
 //!    speakers. Without a number, the diarizers find extra speakers that say
 //!    almost nothing.
 //! 2. Gives each segment the speaker with the most time in the segment
 //!    ([`assign`]). A segment is not split at a change of speaker: the
-//!    segments go to the extension while the job runs, and diarization runs
+//!    segments go to the app while the job runs, and diarization runs
 //!    after the last one. Segments of `word` models end at sentence ends and
 //!    pauses of 700 ms, where speakers usually change.
 //! 3. Makes the turns of the `speakers` event from the segments
@@ -17,7 +17,7 @@
 //!    each segment is inside exactly one turn. The labels are `"1"`, `"2"`,
 //!    ... in the order in which the speakers first speak.
 
-use sayso_core::stt::Turn;
+use crate::Turn;
 use std::collections::{BTreeMap, HashMap};
 
 /// A speaker with less than this share of all speech is small...

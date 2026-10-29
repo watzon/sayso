@@ -8,12 +8,12 @@
 //! reply of `session_start`.
 
 use crate::Shared;
-use crate::jobs::{EngineView, EventSink, UserChoices};
-use crate::live::{Owner, resolve};
+use crate::jobs::{EventSink, SaysoModels};
+use crate::live::Owner;
 use crate::responder::{Notifier, Responder};
 use parking_lot::Mutex;
-use sayso_core::models::ModelId;
 use sayso_protocol::{ErrorCode, Event, Reply, SessionAudio, SessionReply, SessionStart, SessionStop, TextReply};
+use sayso_speech::ModelResolver;
 use std::sync::Arc;
 
 fn no_engine() -> Reply {
@@ -27,15 +27,7 @@ pub(crate) fn session_start(shared: &Shared, connection: u64, extension_id: &str
         return;
     };
     let config = shared.services.config();
-    let features = engine.features();
-    let on_disk = |id: &ModelId| engine.status(id).is_on_disk();
-    let user = UserChoices {
-        final_model: &config.dictation.model,
-        language: &config.dictation.language,
-        vad: &config.models.vad,
-        diarization: &config.models.diarization,
-    };
-    let spec = match resolve(request, &user, &config.dictation.preview_model, &EngineView { on_disk: &on_disk, features: &features }) {
+    let spec = match SaysoModels::with(&config, &**engine, |models| models.session(request)) {
         Ok(spec) => spec,
         Err(refusal) => {
             responder.reply(Reply::error(Some(refusal.code), refusal.message));

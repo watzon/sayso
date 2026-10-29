@@ -16,10 +16,8 @@
 //!   next chunk or past the length limit.
 
 use super::audio::Audio;
-use sayso_core::basic_vad::BasicVad;
-use sayso_core::models::{ModelId, Timestamps};
-use sayso_core::stt::SpeechPart;
-use sayso_platform::SttBackend;
+use crate::basic_vad::BasicVad;
+use crate::{ModelId, SpeechEngine, SpeechPart, Timestamps};
 
 /// The longest chunk.
 pub const MAX_CHUNK_MS: u64 = 30_000;
@@ -90,7 +88,7 @@ pub fn chunks(parts: &[SpeechPart], len_ms: u64, max_ms: u64) -> Vec<Chunk> {
 /// The VAD of a job, after the model checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VadRun {
-    /// Basic VAD, in the host.
+    /// Basic VAD, in this crate.
     Basic,
     /// A VAD model of the engine, loaded.
     Model(ModelId),
@@ -117,7 +115,7 @@ pub enum Stopped {
 pub fn speech_parts(
     audio: &Audio,
     vad: &VadRun,
-    backend: &dyn SttBackend,
+    engine: &dyn SpeechEngine,
     window_ms: u64,
     before_call: &mut dyn FnMut() -> Result<(), Stopped>,
 ) -> Result<Vec<SpeechPart>, Stopped> {
@@ -132,7 +130,7 @@ pub fn speech_parts(
     while start < len_ms {
         before_call()?;
         let end = start.saturating_add(window_ms).min(len_ms);
-        let found = backend
+        let found = engine
             .detect_speech(model, &audio.floats(start, end))
             .map_err(|e| Stopped::Failed(format!("Voice detection failed: {e}")))?;
         let mut found: Vec<SpeechPart> = found
