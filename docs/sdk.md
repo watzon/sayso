@@ -261,8 +261,8 @@ v1/
   cache/<key>/                        caches that the engines control, each with its own lock
 ```
 
-- **Descriptor.** The catalog of Sayso (`sayso-core`, `engine_catalog`), which both engines build in, gets a descriptor for each model in each format: its artifacts, and for each artifact the source (a URL pinned to a revision: a Hugging Face commit, not `main`, or a release file), and each file with its path, size, and SHA-256. A script makes the descriptors: it downloads each source, hashes the files, and writes them into the catalog. A descriptor has a `revision` number that only goes up.
-- **Digest.** The SHA-256 of the canonical list of the files of an artifact: paths relative to the artifact, in `/` form, sorted by bytes, each with its size and hash. The source is not part of the digest, so the same bytes from two revisions are one artifact. The engine knows the digest from the descriptor before it downloads anything.
+- **Descriptor.** The catalog of Sayso (`sayso-core`, `engine_catalog`), which both engines build in, gets a descriptor for each model in each format: its artifacts, and for each artifact the source (a URL pinned to a revision: a Hugging Face commit, not `main`, or a release file), and each file with its path, size, and SHA-256. A script makes the descriptors: it downloads each source, hashes the files, and writes them into the catalog. A descriptor has a `revision` number that only goes up. The data is `crates/sayso-core/src/engine_catalog/descriptors.json`, which `scripts/model-descriptors.py` writes, and the Swift engine gets the descriptors of its formats in `Descriptors.generated.swift`.
+- **Digest.** The SHA-256 of the canonical list of the files of an artifact: paths relative to the artifact, in `/` form, sorted by bytes, each with its size and hash. Each file gives one entry: the path, a NUL byte, the size in decimal, a NUL byte, the SHA-256 of the file in lowercase hex, and a line feed (`engine_catalog::descriptors::digest`, with a fixed test vector). The source is not part of the digest, so the same bytes from two revisions are one artifact. The engine knows the digest from the descriptor before it downloads anything.
 - **Archives.** For a source that is an archive (the Rust engine extracts `.tar.bz2` files today), the files are the extracted files after the rule of today: one folder that holds everything is removed (`crates/sayso-engine/src/download.rs`). An archive with a link, a path with `..`, or an absolute path is refused. Markers and the metadata that a library writes (for example `.cache/huggingface`) are not files of the artifact.
 - **Shared files**, such as a Whisper tokenizer or the CTC helper, are artifacts of their own. Two engines that read the same format use the same artifact.
 - **Format.** Each engine kind names the format of its files (for example `fluidaudio-coreml-1`, `sherpa-onnx-1`). Manifests of two formats for one model id live side by side, so engines of different versions and different formats never replace each other's files.
@@ -324,6 +324,83 @@ Step 12 starts with a list of every place where each pinned library writes, for 
 - FluidAudio: Sayso gives the folders of its loaders. The default `~/Library/Application Support/FluidAudio` must not be used.
 - A cache that an engine controls goes into `cache/<key>/` with a key that includes the format and the library version, and a lock for its writer.
 - Caches that the system controls (the compiled Core ML models of macOS) and models that Apple manages (Apple Speech) are outside the store and outside the promise of one copy.
+
+### Write inventory
+
+Step 11 starts with this list (2026-10-29). It names each place where an engine or a pinned library writes files during a download, a load, and inference, in the models folder and outside it. Each write has one of these classes:
+
+- **Artifact**: a file of an artifact. In `v1`, it goes into `staging/` and then `artifacts/<digest>/`.
+- **Cache**: a cache that the engine controls. In `v1`, it goes into `cache/<key>/`.
+- **System**: outside the store, and the system or the user controls it. The promise of one copy does not cover it.
+- **Replaced**: a marker, a staging folder, or library metadata of the folders of today. The rules of `v1` replace it, and it is not a file of an artifact.
+
+A write that a load does in the store today is a **finding**: "Load" says that a load never writes in the store. The findings are at the end.
+
+Paths of Swift libraries are under `native/macos/SaysoEngine/.build/checkouts/`: `FluidAudio/` is FluidAudio 0.17.5, and `argmax-oss-swift/Sources/` (below `ARGMAX/`) is WhisperKit 1.1.0 with its copy of the Hub code of swift-transformers 1.1.6. Paths of Rust crates are under `~/.cargo/registry/src/index.crates.io-*/`. The sources of sherpa-onnx and ONNX Runtime in C++ are not in the crates (the build downloads compiled libraries), so what this list says about them comes from the Rust API and the settings of the engine.
+
+**Rust engine (`sayso-engine`).** Only the code of the engine writes in the models folder. sherpa-onnx, ONNX Runtime, whisper.cpp, and parakeet.cpp only read the model files.
+
+| Write | When | Evidence | Class |
+|---|---|---|---|
+| The model folder and the store root | start, download | `crates/sayso-engine/src/lib.rs:65`, `store.rs:104` | Replaced |
+| `<model>/.partial-<archive>/`: the extracted archive or the single file, then a rename to `<model>/<archive>/` | download | `download.rs:73-98`, `download.rs:142-171` | Artifact |
+| Removal of each entry of the model folder that is not a complete archive of the request, and of `.complete` | download | `store.rs:104-126` | Replaced |
+| `.complete.tmp`, then `.complete` | download | `store.rs:93-98` | Replaced |
+| The files of the Windows engine before 0.12: a move of the GGML file, a new `.complete`, the removal of `.sayso-downloaded` | `list_models`, download, **load** | `store.rs:131-148`, called at `engine.rs:189`, `:277`, `:405` | Replaced; finding 1 |
+| Removal of the model folder | delete | `store.rs:153-165` | Replaced |
+| sherpa-onnx and ONNX Runtime: no file. The engine sets `provider: "cpu"` and leaves `debug` off. The Rust API has no option for an optimized model file, a profile, or a cache of a GPU provider. | load, inference | `crates/sayso-engine/src/sherpa.rs:330`, `:432`, `:543`; `sherpa-onnx-sys-1.13.8/src/offline_asr.rs:178` | none |
+| whisper.cpp: no file. Its only write is `log_mel_spectrogram.json` in the current folder in debug mode, which the engine does not turn on. The Windows build has no GPU backend, so no Core ML or OpenVINO cache. | load, inference | `whisper-rs-sys-0.15.0/whisper.cpp/src/whisper.cpp:3250`, `:5931` | none |
+| parakeet.cpp: no file. It reads the GGUF with `fopen "rb"` and `mmap`. Its only write (`write_file_atomic`) is for a speaker registry that the engine does not use. ggml-vulkan keeps no pipeline cache file. | load, inference | parakeet.cpp at the commit of `crates/sayso-engine/build.rs:36-45`: `src/model_loader.cpp:180`, `src/common.cpp:18-50`, `src/parakeet_capi.cpp:2425` | none |
+| The shader cache of the GPU driver (for example `~/.cache/nvidia` or `~/.cache/mesa_shader_cache`), filled by the warm-up of parakeet.cpp | load | `crates/sayso-engine/src/parakeet.rs:120-123` | System |
+
+At build time (not at run time), `sherpa-onnx-sys` downloads its compiled libraries into `target/` without a hash check (`sherpa-onnx-sys-1.13.8/build.rs:144-157`), and `build.rs` of the engine downloads parakeet.cpp and ggml into `OUT_DIR` with a SHA-256 check. These are not in the store.
+
+**WhisperKit.**
+
+| Write | When | Evidence | Class |
+|---|---|---|---|
+| `models/argmaxinc/whisperkit-coreml/<variant>/...`: each file under `<variant>/` of the repository (glob `*<variant>/*`), from `main` | download | `ARGMAX/WhisperKit/Core/WhisperKit.swift:254-261`; `ARGMAX/ArgmaxCore/External/Hub/HubApi.swift:350-352`, `:477-479` | Artifact |
+| `models/openai/whisper-<size>/`: `config.json`, `tokenizer.json`, `tokenizer_config.json`, from `main`, shared by each variant of a size | download | `ARGMAX/ArgmaxCore/External/Hub/Hub.swift:230-235`; `ARGMAX/WhisperKit/Utilities/ModelUtilities.swift:17-77` | Artifact (its own artifact) |
+| `<repo folder>/.cache/huggingface/download/<path>.<etag>.incomplete` and `<path>.metadata`, beside the variant folder and in the tokenizer folder. A delete of a variant leaves them. | download | `HubApi.swift:443-451`, `:548-549`, `:584-588` | Replaced |
+| The tokenizer again from the Hub, with its metadata, when the local tokenizer is missing or does not parse (for example without `tokenizer_config.json`, which `ModelStore.whisperComplete` does not check) | **load** | `ModelUtilities.swift:57-76`; `native/macos/SaysoEngine/Sources/SaysoEngine/ModelStore.swift:134-147` | Artifact; finding 2 |
+| No model download at load: the engine sets `download: false` and `modelFolder` | load | `WhisperKit.swift:320-357`; `Engine.swift:618-622` | none |
+| The compiled Core ML models that macOS keeps after the first load of each `.mlmodelc` (`MLModel.load`). An update of macOS can remove them. | load | `ARGMAX/WhisperKit/Core/Models.swift:19-25`; `ARGMAX/WhisperKit/Core/Configurations.swift:48-56` | System |
+| No file at inference | inference | | none |
+
+The default download folder of the Hub code is `~/Documents/huggingface` (`HubApi.swift:105-110`). The engine always gives `store.root`, so it is not used. The Hub code reads a token from `HF_TOKEN`, `HF_HOME/token`, or `~/.cache/huggingface/token` and sends it with each request (`HubApi.swift:131-153`). That is a read, not a write.
+
+**Apple Speech.** macOS downloads and keeps the assets (`AssetInventory`), outside the store (`native/macos/SaysoEngine/Sources/SaysoEngine/AppleSpeech.swift:34-45`). The engine writes no file for them. A `transcribe` can start an install of the assets of a language (`AppleSpeech.swift:52`). Class: System.
+
+**FluidAudio.** Below `FA/` is `FluidAudio/Sources/FluidAudio/`, and below `SE/` is `native/macos/SaysoEngine/Sources/SaysoEngine/`.
+
+| Write | When | Evidence | Class |
+|---|---|---|---|
+| `<repo folder>/...`: the required bundles of a repository (each file under `X.mlmodelc/`), and each `.json` and `.txt` file next to them. A repository with a subfolder (`160ms/`, `q8/`, `nemotron_coreml_1120ms/`) also takes a required file from the root (`vocab.json` of Cohere). From `main`, except the diarizer. | download | `FA/Shared/Download/ModelHub.swift:446-520`, `:763-801`; `FA/ModelNames.swift:239-283` | Artifact |
+| `<file>.partial` and `<file>.partial.etag`, then a move to the file | download | `FA/Shared/Download/FileDownloader.swift:74`, `:83`, `:253-255` | Replaced |
+| Removal of the whole repository folder when its revision marker does not match, and the marker `.fluidaudio-revision` for a repository that is not on `main` (the diarizer) | download | `FA/Shared/Download/ModelCache.swift:36-51` | Replaced |
+| Fluid Speech Mini: the engine's own downloader, `<file>.partial` then a move, at a pinned commit | download | `SE/FluidSpeechMini.swift:9`, `:76`, `:142-152` | Artifact |
+| `.sayso-downloaded` in the model folder | download | `SE/ModelStore.swift:70-73`; `SE/Engine.swift:385` | Replaced |
+| SenseVoice: removal of the old `SenseVoiceSmall_int8.mlmodelc` from the model folder | download | `SE/Engine.swift:495-497` | Replaced (a migration of the old folder) |
+| The CTC helper of Parakeet Unified: `CtcModels.download` calls `ModelHub.loadModels`, which loads each bundle and can purge the folder (next row) | download | `FA/ASR/Parakeet/SlidingWindow/CustomVocabulary/WordSpotting/CtcModels.swift:223-228`; `FA/Shared/Download/ModelHub.swift:380` | Artifact |
+| `ModelHub.loadModels` after a load error that is not a network error or a cancellation: removal of the repository folder and a new download. `offlineMode` stops it, and the engine does not set it. The engine reaches it through `AsrModels.load` (Parakeet TDT) and `OfflineDiarizerModels.load` (diarizer). | **load** | `FA/Shared/Download/ModelHub.swift:85-154`; `SE/Engine.swift:642`, `:682` | Artifact; finding 3 |
+| Parakeet TDT-CTC 110M: `AsrModels.load` looks for `CtcHead.mlmodelc`, and when it is missing it downloads `parakeet-ctc-110m-coreml` into the folder of the CTC helper of Parakeet Unified | **load** | `FA/ASR/Parakeet/SlidingWindow/TDT/AsrModels.swift:419-453` | Artifact; finding 4 |
+| Fluid Speech Mini: the link `JointDecisionv3.mlmodelc` to `JointDecision.mlmodelc` in the model folder | **load** | `SE/Engine.swift:628`; `SE/FluidSpeechMini.swift:54-60` | Artifact; finding 5 |
+| A compile of a `.mlpackage` to a temporary `.mlmodelc` (and for Nemotron multilingual a move into the model folder), only when a `.mlmodelc` is missing. The artifacts have the `.mlmodelc` bundles, so this does not occur. | load | `FA/ASR/Canary/CanaryModels.swift:106-109`; `FA/ASR/Parakeet/Streaming/Nemotron/StreamingNemotronMultilingualAsrManager.swift:772-807` | none |
+| The compiled Core ML models that macOS keeps after each `MLModel(contentsOf:)` | load | for example `FA/Shared/Download/ModelHub.swift:380`; `SE/Engine.swift:679` | System |
+| The default folder `~/Library/Application Support/FluidAudio/Models`, used when a caller gives no folder (`AsrModels.defaultCacheDirectory`, `CtcModels.defaultCacheDirectory`, `CtcTokenizer.load()`, `OfflineDiarizerModels.load(from: nil)`). The engine always gives a folder, and `VocabularyBooster` loads the tokenizer from the folder of the CTC helper. | none today | `SE/Engine.swift:436`, `:607`, `:682`; `SE/VocabularyBooster.swift:8-10` | System (not used) |
+| No file at inference | inference | | none |
+
+FluidAudio does not check hashes: it checks the size of each file only (`FileDownloader.swift:117-121`), and a file that exists is not downloaded again, with no size check (`FileDownloader.swift:46`).
+
+**What this changes.** No pinned library needs `cache/<key>/` today. Each write that is not an artifact is a marker or staging of today, which the rules of `v1` replace, or a cache of the system (Core ML, the GPU driver). These are the findings:
+
+1. The Rust engine moves the files of the Windows engine before 0.12 at `list_models`, at a download, and at a load (`engine.rs:189`, `:277`, `:405`). With `store_v1`, this move is a part of the migration, not of a load.
+2. WhisperKit downloads the tokenizer again at a load when the local tokenizer does not parse. The descriptor has `tokenizer_config.json`, which `ModelStore.whisperComplete` does not check. With `store_v1`, the engine gives the tokenizer artifact as a local folder, and a load without the network must not fall back to the Hub.
+3. `ModelHub.loadModels` deletes and downloads again after a load error. `offlineMode` is one flag for the whole process (`FA/Shared/Download/HFClient.swift:16`), and it also stops each download (`ModelHub.swift:431`), so it cannot be on for a load while another model downloads. The engine must load from local folders only: `AsrModels.loadLocal` (as for Fluid Speech Mini) and the public `OfflineDiarizerModels.init`. This is a change to "Load", step 4, which says that FluidAudio runs with `offlineMode`.
+4. Parakeet TDT-CTC 110M downloads `CtcHead.mlmodelc` at a load into a folder of another model. `AsrModels.loadLocal` does not do this.
+5. Fluid Speech Mini makes a link in its folder at each load. In an artifact that never changes, the link must come from the download (an artifact with a link is refused) or the engine must give FluidAudio the file under the name it wants in another way.
+6. The descriptors take the files that the engines download today, so that the migration finds them. Some are not read: the int8 bundles of Paraformer (217 MB), `parakeet_v3_vocab.json`, most `config.json` files, and in the sherpa-onnx archives the `test_wavs/` folders and the second precision of a model. A later revision of a descriptor can leave them out.
+7. Some sources are on `main` today: FluidAudio (except the diarizer), WhisperKit, the Whisper tokenizers, and the whisper.cpp files. The descriptors pin each to a commit, and the engines must download that commit.
 
 ## System audio
 
