@@ -7226,6 +7226,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-capture"
+version = "0.13.0"
+dependencies = [
+ "cpal 0.18.2",
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "sayso-speech",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sayso-cleanup-client"
 version = "0.13.0"
 dependencies = [
@@ -7418,11 +7430,10 @@ dependencies = [
 name = "sayso-platform-common"
 version = "0.13.0"
 dependencies = [
- "cpal 0.18.2",
  "crossbeam-channel",
  "log",
- "parking_lot",
  "rodio",
+ "sayso-capture",
  "sayso-core",
  "sayso-platform",
  "workspace-hack",
@@ -10629,6 +10640,7 @@ dependencies = [
  "objc2 0.6.4",
  "objc2-core-foundation",
  "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
  "once_cell",
  "percent-encoding",
  "proc-macro2",

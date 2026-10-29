@@ -1,0 +1,21 @@
+[package]
+name = "sayso-capture"
+description = "Capture the microphone as 16 kHz mono frames for a Sayso speech engine, with cpal."
+version.workspace = true
+edition.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
+license = "MIT"
+publish = true
+repository = "https://github.com/watzon/sayso"
+readme = "README.md"
+
+[dependencies]
+# The resampler.
+sayso-speech.workspace = true
+crossbeam-channel.workspace = true
+log.workspace = true
+cpal = "0.18.2"
+workspace-hack.workspace = true
+
+[dev-dependencies]
+parking_lot.workspace = true

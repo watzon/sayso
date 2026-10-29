@@ -17,6 +17,7 @@ sayso-protocol = { path = "crates/sayso-protocol", version = "0.13.0" }
 sayso-extension = { path = "crates/sayso-extension", version = "0.13.0" }
 sayso-engine-sdk = { path = "crates/sayso-engine-sdk", version = "0.13.0" }
 sayso-speech = { path = "crates/sayso-speech", version = "0.13.0" }
+sayso-capture = { path = "crates/sayso-capture", version = "0.13.0" }
 sayso-host = { path = "crates/sayso-host" }
 sayso-platform = { path = "crates/sayso-platform" }
 sayso-platform-common = { path = "crates/sayso-platform-common" }
