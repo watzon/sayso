@@ -13,7 +13,8 @@ The extension system had a manifest, install, update, a Marketplace, and a revie
 ## Consequences
 
 - The host knows an app by the identity of its executable and the approval of the user (`apps.toml`), not by an install folder.
-- The models folder of Sayso becomes a store that more than one engine uses at the same time, so both engines need lock rules (the engine feature `shared_store`).
+- The engines get a new model store (`<models folder>/v1`) with immutable artifacts, manifests, and locks (the engine feature `store_v1`), because the folders of today share files between model ids and change files in place. Older engines never open it. Sayso moves its models into it once, and a downgrade downloads them again.
+- Each model artifact is on disk once for each user. While Sayso runs, a model is in memory once, except for an app in local mode by its own choice, an app that the user refused, and local work that started before Sayso.
 - An app ships its own engine release file for local mode.
 - The features of the user (`enhance`, `dictation_done`, the download question) exist only when the app uses Sayso.
 - In local mode the app captures audio in its own process, so the system asks the user for permission for the app.
