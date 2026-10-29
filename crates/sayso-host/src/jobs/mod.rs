@@ -2,75 +2,52 @@
 //! (`transcribe_file` and `cancel_job` in `docs/extensions.md`, "Requests"
 //! and "Scheduling").
 //!
-//! The parts, each of them without the connection:
+//! The jobs run in `sayso_speech::jobs` (MIT), so the local mode of the SDK
+//! runs the same code. The host gives them what is Sayso's:
 //!
-//! - [`resolve`] checks the models of a request and gives a [`JobSpec`].
-//! - [`JobQueue`] runs one job at a time, first in, first out, and cancels.
-//! - [`JobRunner`] runs a job on a [`SttBackend`](sayso_platform::SttBackend):
-//!   [`audio`] reads the file, [`plan`] finds the speech and the chunks,
-//!   and [`speakers`] gives the speakers.
+//! - [`resolve`] checks the models of a request with the choices of the user
+//!   and the catalog of Sayso, and gives a [`JobSpec`].
+//! - [`JobRunner`] runs a job on the engine of the app (`SttBackend`).
 //! - [`DictationGate`] holds a job between two engine calls while a dictation
 //!   runs or a live session transcribes a part.
 //! - [`ModelUse`] tells the memory policy of the app which models the jobs use.
 //!
 //! The events of a job go to an [`EventSink`]; the connection gives one.
 
-pub mod audio;
-mod gate;
 mod model_use;
-pub mod plan;
-mod queue;
 pub(crate) mod resolve;
-mod runner;
-pub mod speakers;
 
 #[cfg(test)]
 mod tests;
 
-pub use gate::{DictationGate, LivePart, STALE_AFTER};
 pub use model_use::{ModelHold, ModelUse};
-pub use plan::VadRun;
-pub use queue::{CANCELLED, JobQueue, JobRun, RunJob};
-pub use resolve::{EngineView, Refusal, UserChoices, resolve};
-pub use runner::{JobRunner, TRANSCRIPTION_SHARE};
+pub use resolve::{EngineView, Refusal, SaysoModels, UserChoices, resolve};
+pub use sayso_speech::EventSink;
+pub use sayso_speech::jobs::{CANCELLED, DictationGate, JobQueue, JobRun, JobSpec, LivePart, RunJob, STALE_AFTER, TRANSCRIPTION_SHARE, VadRun, audio, plan, speakers};
 
-use sayso_core::models::{ModelId, Timestamps};
-use sayso_protocol::Event;
-use std::path::PathBuf;
+use crate::backend::BackendEngine;
+use sayso_platform::SttBackend;
+use std::sync::Arc;
 
-/// Where the events of a job go: the connection of the extension. `event`
-/// must not block, because the queue can call it while it holds its lock.
-pub trait EventSink: Send + Sync {
-    fn event(&self, event: Event);
+/// Runs jobs on the engine of the app: [`sayso_speech::jobs::JobRunner`]
+/// over the `SttBackend` of Sayso.
+pub struct JobRunner(sayso_speech::jobs::JobRunner);
+
+impl JobRunner {
+    /// `models` tells the memory policy of the app which models the jobs use.
+    pub fn new(backend: Arc<dyn SttBackend>, models: Arc<ModelUse>) -> JobRunner {
+        JobRunner(sayso_speech::jobs::JobRunner::new(Arc::new(BackendEngine::new(backend, None)), models))
+    }
+
+    /// A runner whose VAD model gets windows of `window_ms`, for the tests.
+    #[cfg(test)]
+    pub(crate) fn with_vad_window(self, window_ms: u64) -> JobRunner {
+        JobRunner(self.0.with_vad_window(window_ms))
+    }
 }
 
-/// A job after the model checks.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JobSpec {
-    /// The file. Absolute.
-    pub path: PathBuf,
-    /// The speech model.
-    pub model: ModelId,
-    /// The timestamp level of `model` on this engine.
-    pub timestamps: Timestamps,
-    pub vad: VadRun,
-    /// None without diarization.
-    pub diarization: Option<ModelId>,
-    /// A code such as `en`, or `auto`.
-    pub language: String,
-    /// The number of speakers, when the extension knows it.
-    pub speakers: Option<u32>,
-}
-
-impl JobSpec {
-    /// The engine models of the job, in the order of their use.
-    pub fn models(&self) -> Vec<ModelId> {
-        let mut models = Vec::new();
-        if let VadRun::Model(vad) = &self.vad {
-            models.push(vad.clone());
-        }
-        models.push(self.model.clone());
-        models.extend(self.diarization.clone());
-        models
+impl RunJob for JobRunner {
+    fn run(&self, job: &JobSpec, run: &JobRun<'_>) {
+        self.0.run(job, run);
     }
 }

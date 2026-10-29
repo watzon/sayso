@@ -1,5 +1,5 @@
-//! Basic VAD: voice activity detection by the energy of the audio, in the
-//! host. It needs no model and no download, so jobs can cut long audio on
+//! Basic VAD: voice activity detection by the energy of the audio, without
+//! the engine. It needs no model and no download, so jobs can cut long audio on
 //! the first day (`docs/extensions.md`, "VAD models").
 //!
 //! The audio is 16 kHz mono. Each frame of 10 ms is speech when its level is

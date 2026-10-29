@@ -1,9 +1,11 @@
 //! Sayso domain logic.
 //!
 //! This crate must not depend on GPUI, on platform crates, or on other Sayso
-//! crates. A CI check enforces this (see `scripts/check-deps.sh`).
+//! crates, except the catalogs (`sayso-i18n`) and the MIT crates `sayso-ink`
+//! and `sayso-speech`. A CI check enforces this (see `scripts/check-deps.sh`).
 
-pub mod basic_vad;
+/// Basic VAD is in `sayso-speech`, so the jobs of the SDK use it too.
+pub use sayso_speech::basic_vad;
 pub mod cleanup;
 pub mod config;
 pub mod dictation;
@@ -20,8 +22,10 @@ pub mod models;
 pub mod models_onnx;
 pub mod paths;
 pub mod pipeline;
-pub mod resample;
+/// The resampler is in `sayso-speech`, so the SDK reads files at any rate too.
+pub use sayso_speech::resample;
 pub mod speech;
+mod speech_types;
 pub mod spelled;
 pub mod spoken_punctuation;
 pub mod stats;

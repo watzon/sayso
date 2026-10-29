@@ -7251,6 +7251,7 @@ dependencies = [
  "regex",
  "sayso-i18n",
  "sayso-ink",
+ "sayso-speech",
  "serde",
  "serde_json",
  "tempfile",
@@ -7373,10 +7374,10 @@ dependencies = [
  "sayso-extension",
  "sayso-platform",
  "sayso-protocol",
+ "sayso-speech",
  "security-framework",
  "serde",
  "serde_json",
- "symphonia",
  "tempfile",
  "toml 0.9.12+spec-1.1.0",
  "windows-sys 0.61.2",
@@ -7511,6 +7512,19 @@ dependencies = [
  "serde",
  "serde_json",
  "windows-sys 0.61.2",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sayso-speech"
+version = "0.13.0"
+dependencies = [
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "sayso-protocol",
+ "symphonia",
+ "tempfile",
  "workspace-hack",
 ]
 
@@ -10598,7 +10612,6 @@ dependencies = [
  "byteorder",
  "cc",
  "crc32fast",
- "crossbeam-utils",
  "digest 0.10.7",
  "digest 0.11.3",
  "dispatch2",
@@ -10630,7 +10643,6 @@ dependencies = [
  "simd-adler32",
  "smallvec",
  "subtle",
- "symphonia",
  "syn 2.0.119",
  "syn 3.0.6",
  "time",

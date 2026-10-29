@@ -1,8 +1,9 @@
 //! The models that jobs use, for the memory policy of the app
 //! (`crates/sayso-app/src/memory.rs`, and `docs/extensions.md`, "Scheduling").
 //!
-//! The app unloads each model that it does not want. A job holds its models
-//! ([`ModelUse::hold`]) before it loads them, and the app adds
+//! The app unloads each model that it does not want. A job or a live session
+//! holds its models ([`ModelUse::hold`], the `ModelRetention` of
+//! `sayso-speech`) before it loads them, and the app adds
 //! [`ModelUse::wanted`] to the models that it wants, so it does not unload a
 //! model while a job uses it. After the job, the model stays wanted for the
 //! idle time of the other models (`dictation.keep_model_minutes`), so the
@@ -10,13 +11,16 @@
 
 use parking_lot::Mutex;
 use sayso_core::models::ModelId;
+use sayso_speech::ModelRetention;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+type Uses = Arc<Mutex<HashMap<ModelId, Use>>>;
+
 #[derive(Default)]
 pub struct ModelUse {
-    models: Mutex<HashMap<ModelId, Use>>,
+    models: Uses,
 }
 
 #[derive(Default)]
@@ -33,12 +37,12 @@ impl ModelUse {
     }
 
     /// Hold `models` until the result drops.
-    pub fn hold(self: &Arc<Self>, models: Vec<ModelId>) -> ModelHold {
+    pub fn hold(&self, models: Vec<ModelId>) -> ModelHold {
         let mut map = self.models.lock();
         for id in &models {
             map.entry(id.clone()).or_default().holders += 1;
         }
-        ModelHold { owner: self.clone(), models }
+        ModelHold { owner: self.models.clone(), models }
     }
 
     /// The models that must stay in memory: held now, or let go less than
@@ -58,15 +62,22 @@ impl ModelUse {
     }
 }
 
+/// The jobs and the live sessions of `sayso-speech` hold their models here.
+impl ModelRetention for ModelUse {
+    fn hold(&self, models: Vec<sayso_speech::ModelId>) -> Box<dyn Send> {
+        Box::new(ModelUse::hold(self, models.into_iter().map(ModelId::from).collect()))
+    }
+}
+
 /// Models that a job holds. Dropping it lets them go.
 pub struct ModelHold {
-    owner: Arc<ModelUse>,
+    owner: Uses,
     models: Vec<ModelId>,
 }
 
 impl Drop for ModelHold {
     fn drop(&mut self) {
-        let mut map = self.owner.models.lock();
+        let mut map = self.owner.lock();
         for id in &self.models {
             if let Some(u) = map.get_mut(id) {
                 u.holders = u.holders.saturating_sub(1);

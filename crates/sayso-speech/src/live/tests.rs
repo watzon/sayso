@@ -1,10 +1,10 @@
 //! Live sessions with a fake engine, a fake microphone, and a fake dictation.
 
 use super::*;
+use crate::basic_vad::BasicVad;
+use crate::{EngineEvent, SpeechPart, Turn};
 use crossbeam_channel::Sender;
 use parking_lot::Condvar;
-use sayso_core::basic_vad::BasicVad;
-use sayso_core::stt::{EngineEvent, Turn};
 use sayso_protocol::{PartialEvent, Segment, SegmentEvent};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -56,7 +56,7 @@ impl FakeEngine {
         self.released.notify_all();
     }
 
-    fn emit_parts(&self, session: u64, parts: Vec<sayso_core::basic_vad::Part>) {
+    fn emit_parts(&self, session: u64, parts: Vec<crate::basic_vad::Part>) {
         for part in parts {
             self.emit(EngineEvent::SpeechStart { session, start_ms: part.start_ms });
             self.emit(EngineEvent::SpeechEnd { session, start_ms: part.start_ms, end_ms: part.end_ms });
@@ -64,10 +64,18 @@ impl FakeEngine {
     }
 }
 
-impl LiveEngine for FakeEngine {
+impl SpeechEngine for FakeEngine {
     fn load(&self, model: &ModelId) -> Result<(), EngineError> {
         self.state.lock().loads.push(model.clone());
         Ok(())
+    }
+
+    fn transcribe(&self, _samples: &[f32], _model: &ModelId, _language: &str) -> Result<String, EngineError> {
+        Err(EngineError::new("a live session transcribes with segments"))
+    }
+
+    fn detect_speech(&self, _model: &ModelId, _samples: &[f32]) -> Result<Vec<SpeechPart>, EngineError> {
+        Err(EngineError::new("a live session finds speech with a VAD session"))
     }
 
     fn start_stream(&self, session: u64, _model: &ModelId, _language: &str) -> Result<(), EngineError> {
@@ -143,7 +151,7 @@ impl LiveEngine for FakeEngine {
         Ok(vec![Segment { start_ms: (first * 1000 / RATE) as u64, end_ms: (last * 1000 / RATE) as u64, text: format!("part{}", state.transcribed), words: None }])
     }
 
-    fn diarize(&self, _model: &ModelId, samples: &[f32]) -> Result<Vec<Turn>, EngineError> {
+    fn diarize(&self, _model: &ModelId, samples: &[f32], _speakers: Option<u32>) -> Result<Vec<Turn>, EngineError> {
         self.state.lock().diarized.push(samples.len());
         Ok(vec![Turn { start_ms: 900, end_ms: 3100, speaker: 1 }, Turn { start_ms: 3900, end_ms: 5600, speaker: 0 }])
     }
@@ -194,7 +202,7 @@ impl FakeDictation {
     }
 }
 
-impl Priority for FakeDictation {
+impl Gate for FakeDictation {
     fn wait_idle(&self, stop: &dyn Fn() -> bool) -> bool {
         let mut running = self.running.lock();
         while *running && !stop() {
@@ -205,6 +213,15 @@ impl Priority for FakeDictation {
 
     fn engine_call(&self) -> Box<dyn Send + '_> {
         self.engine_calls.fetch_add(1, Ordering::SeqCst);
+        Box::new(())
+    }
+}
+
+/// Models stay where they are.
+struct NoHold;
+
+impl ModelRetention for NoHold {
+    fn hold(&self, _models: Vec<ModelId>) -> Box<dyn Send> {
         Box::new(())
     }
 }
@@ -272,9 +289,9 @@ fn fixture_with(engine: FakeEngine) -> Fixture {
     let sessions = LiveSessions::new(LiveDeps {
         engine: engine.clone(),
         microphone: Some(Arc::new(MicHandle(mic.clone()))),
-        priority: dictation.clone(),
-        models: crate::jobs::ModelUse::new(),
-        temp_dir: temp.path().join("live"),
+        gate: dictation.clone(),
+        models: Arc::new(NoHold),
+        recordings: Arc::new(RecordingFolder::new(temp.path().join("live"))),
     });
     Fixture { engine, mic, dictation, sessions, temp }
 }
@@ -292,7 +309,7 @@ fn spec(sources: &[Source]) -> SessionSpec {
         sources: sources.to_vec(),
         final_model: ModelId::new("final"),
         preview_model: Some(ModelId::new("streaming")),
-        vad: Vad::Basic,
+        vad: VadRun::Basic,
         diarization: None,
         language: "en".into(),
         record_to: None,
@@ -422,7 +439,7 @@ fn a_second_session_is_busy_until_the_first_ends() {
 #[test]
 fn engine_session_ids_are_above_the_ids_of_dictation_and_unique() {
     let f = fixture();
-    let spec = SessionSpec { vad: Vad::Model(ModelId::new("silero-vad")), ..spec(&[Source::Mic, Source::Client]) };
+    let spec = SessionSpec { vad: VadRun::Model(ModelId::new("silero-vad")), ..spec(&[Source::Mic, Source::Client]) };
     for _ in 0..2 {
         let session = f.sessions.start(owner(1), spec.clone(), Arc::new(Events::default())).unwrap();
         assert_eq!(f.engine.open_now(), 4, "a preview stream and a VAD session for each source");
@@ -440,7 +457,7 @@ fn engine_session_ids_are_above_the_ids_of_dictation_and_unique() {
 #[test]
 fn a_full_engine_gives_too_many_streams_and_closes_what_opened() {
     let f = fixture_with(FakeEngine { max_streams: Some(3), ..FakeEngine::default() });
-    let spec = SessionSpec { vad: Vad::Model(ModelId::new("silero-vad")), ..spec(&[Source::Mic, Source::Client]) };
+    let spec = SessionSpec { vad: VadRun::Model(ModelId::new("silero-vad")), ..spec(&[Source::Mic, Source::Client]) };
     let error = f.sessions.start(owner(1), spec, Arc::new(Events::default())).unwrap_err();
     assert_eq!(error.code, Some(ErrorCode::TooManyStreams), "{error:?}");
     assert_eq!(f.engine.open_now(), 0, "the streams of the failed start are closed");
@@ -505,7 +522,7 @@ fn basic_vad_cuts_parts_at_pauses_and_the_stop_ends_the_open_part() {
 fn an_engine_vad_gives_the_parts_and_the_stop_ends_speech_that_is_open() {
     let f = fixture_with(FakeEngine { vad_keeps_open_speech: true, ..FakeEngine::default() });
     let sink = Arc::new(Events::default());
-    let spec = SessionSpec { vad: Vad::Model(ModelId::new("silero-vad")), ..spec(&[Source::Client]) };
+    let spec = SessionSpec { vad: VadRun::Model(ModelId::new("silero-vad")), ..spec(&[Source::Client]) };
     let session = f.sessions.start(owner(1), spec, sink.clone()).unwrap();
     let audio = pcm(&[silence(500), speech(1000), silence(1000), speech(800)].concat());
     send_client(&f.sessions, 1, session, &audio);

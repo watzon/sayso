@@ -1,10 +1,9 @@
-//! What a live session needs from the speech engine, as a small trait of its
-//! own. [`super::backend::BackendEngine`] maps it onto
-//! `sayso_platform::SttBackend` and the `Bus` of the host; the tests use a fake.
+//! What jobs and live sessions need from the speech engine, as a small trait
+//! of its own. Sayso maps it onto its engine client (`sayso-host`,
+//! `BackendEngine`); the tests use a fake.
 
+use crate::{ModelId, SpeechPart, Turn};
 use crossbeam_channel::Receiver;
-use sayso_core::models::ModelId;
-use sayso_core::stt::{EngineEvent, Turn};
 use sayso_protocol::{ErrorCode, Segment};
 
 /// A failed call to the engine. `code` is the `code` of the engine's `error`
@@ -25,24 +24,42 @@ impl EngineError {
     }
 }
 
-impl From<sayso_platform::PlatformError> for EngineError {
-    fn from(error: sayso_platform::PlatformError) -> EngineError {
-        EngineError { code: error.code().map(ErrorCode::parse), message: error.to_string() }
-    }
-}
-
 impl std::fmt::Display for EngineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.message)
     }
 }
 
-/// The engine calls of a live session (`docs/engine-protocol.md`, "Streams",
-/// "VAD", "Segments", "Diarization"). The host calls them from its own
-/// threads. A session uses the events `Partial`, `SpeechStart`, and `SpeechEnd`.
-pub trait LiveEngine: Send + Sync {
+/// The events of the engine that a live session uses (`docs/engine-protocol.md`,
+/// "Streams" and "VAD").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EngineEvent {
+    /// The text of a preview stream so far.
+    Partial { session: u64, committed: String, tentative: String },
+    /// A VAD session heard speech start.
+    SpeechStart { session: u64, start_ms: u64 },
+    /// A VAD session heard speech end.
+    SpeechEnd { session: u64, start_ms: u64, end_ms: u64 },
+}
+
+/// The engine calls of jobs and live sessions (`docs/engine-protocol.md`,
+/// "Streams", "VAD", "Segments", "Diarization"). The calls come from the
+/// threads of this crate. A live session uses the events `Partial`,
+/// `SpeechStart`, and `SpeechEnd`.
+pub trait SpeechEngine: Send + Sync {
     /// Load a model into memory. Blocks. A model that is in memory returns at once.
     fn load(&self, model: &ModelId) -> Result<(), EngineError>;
+    /// The final pass on one part of the audio, as text only: for a model without times.
+    fn transcribe(&self, samples: &[f32], model: &ModelId, language: &str) -> Result<String, EngineError>;
+    /// The final pass on one part of the audio, with segments. The times of
+    /// the segments are from the first sample of `samples`, and the texts are
+    /// trimmed. An engine without segments gives one segment for all of `samples`.
+    fn transcribe_segments(&self, samples: &[f32], model: &ModelId, language: &str) -> Result<Vec<Segment>, EngineError>;
+    /// The speech in `samples` with a VAD model, with times from the first sample.
+    fn detect_speech(&self, model: &ModelId, samples: &[f32]) -> Result<Vec<SpeechPart>, EngineError>;
+    /// Who speaks when in `samples`, with speakers from 0. `speakers` is the
+    /// number of speakers, when the app knows it.
+    fn diarize(&self, model: &ModelId, samples: &[f32], speakers: Option<u32>) -> Result<Vec<Turn>, EngineError>;
     /// Open a preview stream of a streaming model. Its text arrives as
     /// `EngineEvent::Partial`. A full engine gives the code `too_many_streams`.
     fn start_stream(&self, session: u64, model: &ModelId, language: &str) -> Result<(), EngineError>;
@@ -57,13 +74,8 @@ pub trait LiveEngine: Send + Sync {
     fn end_stream(&self, session: u64);
     /// Close a VAD session, and wait for the reply of the engine. The last
     /// `SpeechEnd` of the session must be on the receivers of
-    /// [`LiveEngine::events`] when this returns.
+    /// [`SpeechEngine::events`] when this returns.
     fn end_vad(&self, session: u64) -> Result<(), EngineError>;
-    /// The final pass on one part of the audio, with segments. The times of
-    /// the segments are from the first sample of `samples`.
-    fn transcribe_segments(&self, samples: &[f32], model: &ModelId, language: &str) -> Result<Vec<Segment>, EngineError>;
-    /// Who speaks when in a whole recording, with speakers from 0.
-    fn diarize(&self, model: &ModelId, samples: &[f32]) -> Result<Vec<Turn>, EngineError>;
     /// A new receiver of the events from now on.
     fn events(&self) -> Receiver<EngineEvent>;
 }

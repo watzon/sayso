@@ -6,11 +6,11 @@
 //! they go on after the `ok {job}` reply (see "Code" in the docs).
 
 use crate::Shared;
-use crate::jobs::{EngineView, UserChoices, resolve};
+use crate::jobs::SaysoModels;
 use crate::responder::Responder;
 use parking_lot::Mutex;
-use sayso_core::models::ModelId;
 use sayso_protocol::{CancelJob, ErrorCode, JobReply, Reply, TranscribeFile};
+use sayso_speech::ModelResolver;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -22,15 +22,7 @@ pub(crate) fn transcribe_file(shared: &Shared, connection: u64, owned: &Mutex<Ha
         return;
     };
     let config = shared.services.config();
-    let features = engine.features();
-    let on_disk = |id: &ModelId| engine.status(id).is_on_disk();
-    let user = UserChoices {
-        final_model: &config.dictation.model,
-        language: &config.dictation.language,
-        vad: &config.models.vad,
-        diarization: &config.models.diarization,
-    };
-    let job = match resolve(request, &user, &EngineView { on_disk: &on_disk, features: &features }) {
+    let job = match SaysoModels::with(&config, &**engine, |models| models.job(request)) {
         Ok(job) => job,
         Err(refusal) => {
             responder.reply(Reply::error(Some(refusal.code), refusal.message));

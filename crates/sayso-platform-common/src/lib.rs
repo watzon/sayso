@@ -8,6 +8,6 @@ pub mod audio;
 pub mod enter_send;
 pub mod esc;
 pub mod paste_receipt;
-/// The resampler moved to `sayso-core`, so the host can read files at any rate too.
+/// The resampler is in `sayso-speech`, and `sayso-core` gives it from there.
 pub use sayso_core::resample;
 pub mod sounds;

@@ -8,9 +8,11 @@
 use super::*;
 use crate::jobs::plan::Stopped;
 use parking_lot::Mutex;
-use sayso_core::models::ModelInfo;
+use sayso_core::models::{ModelId, ModelInfo};
 use sayso_core::stt::{Diarization, EngineEvent, ModelStatus, SessionOptions, SpeechPart, TimedTranscript, Transcript, Turn};
 use sayso_platform::{PlatformError, Result as PlatformResult, SttBackend};
+use sayso_protocol::Event;
+use sayso_speech::Timestamps;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -218,7 +220,7 @@ fn wav(samples: &[i16]) -> (tempfile::TempDir, std::path::PathBuf) {
 fn spec(path: std::path::PathBuf, timestamps: Timestamps, vad: VadRun) -> JobSpec {
     JobSpec {
         path,
-        model: ModelId::new("speech"),
+        model: ModelId::new("speech").into(),
         timestamps,
         vad,
         diarization: None,
@@ -228,7 +230,7 @@ fn spec(path: std::path::PathBuf, timestamps: Timestamps, vad: VadRun) -> JobSpe
 }
 
 fn vad_model() -> VadRun {
-    VadRun::Model(ModelId::new("vad"))
+    VadRun::Model(ModelId::new("vad").into())
 }
 
 /// Three words, with pauses longer than a chunk may have.
@@ -396,7 +398,7 @@ fn diarization_gives_labels_in_order_of_first_speech_after_the_last_segment() {
     .chain((0..60).map(|i| Turn { start_ms: 30_000 + i * 1_000, end_ms: 30_900 + i * 1_000, speaker: 0 }))
     .collect();
     let harness = Harness::new(FakeEngine { turns, ..Default::default() });
-    let job = JobSpec { diarization: Some(ModelId::new("diarizer")), ..spec(path, Timestamps::Word, vad_model()) };
+    let job = JobSpec { diarization: Some(ModelId::new("diarizer").into()), ..spec(path, Timestamps::Word, vad_model()) };
     let events = harness.run(job.clone()).all();
 
     let speakers_at = events.iter().position(|e| matches!(e, Event::Speakers(_))).expect("a speakers event");

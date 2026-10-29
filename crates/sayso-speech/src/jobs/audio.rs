@@ -2,13 +2,13 @@
 //! `symphonia` (`docs/extensions.md`, "Requests"). The audio becomes 16 kHz
 //! mono, the format of the engines.
 //!
-//! The host keeps the audio as 16-bit samples: 2 hours take 230 MB, and not
+//! A job keeps the audio as 16-bit samples: 2 hours take 230 MB, and not
 //! the 460 MB of floats. A part becomes floats only when it goes to the
 //! engine. The file is decoded in one pass before the job starts, because the
 //! compressed formats cannot start in the middle cheaply.
 
-use sayso_core::resample::StreamResampler;
-use sayso_core::stt::SAMPLE_RATE;
+use crate::resample::StreamResampler;
+use sayso_protocol::pcm::SAMPLE_RATE;
 use std::path::Path;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::{CODEC_TYPE_NULL, DecoderOptions};
@@ -205,6 +205,24 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)
     }
 
+    /// A 16 kHz mono 16-bit WAV file of `samples`.
+    fn encode_wav(samples: &[i16]) -> Vec<u8> {
+        let data_len = (samples.len() * 2) as u32;
+        let mut wav = Vec::with_capacity(44 + samples.len() * 2);
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + data_len).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        for field in [16u32.to_le_bytes().as_slice(), &1u16.to_le_bytes(), &1u16.to_le_bytes(), &SAMPLE_RATE.to_le_bytes(), &(SAMPLE_RATE * 2).to_le_bytes(), &2u16.to_le_bytes(), &16u16.to_le_bytes()] {
+            wav.extend_from_slice(field);
+        }
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&data_len.to_le_bytes());
+        for sample in samples {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        wav
+    }
+
     /// The RMS level of the audio from `start_ms` to `end_ms`.
     fn rms(audio: &Audio, start_ms: u64, end_ms: u64) -> f32 {
         let floats = audio.floats(start_ms, end_ms);
@@ -265,7 +283,7 @@ mod tests {
         let samples: Vec<i16> = (0..3_200).map(|n| (n % 200) as i16 * 100 - 10_000).collect();
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("same.wav");
-        std::fs::write(&path, sayso_core::stt::encode_wav(&samples)).unwrap();
+        std::fs::write(&path, encode_wav(&samples)).unwrap();
         assert_eq!(read(&path).unwrap().samples(), samples);
     }
 

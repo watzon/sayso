@@ -10,6 +10,7 @@
 //! to the user from `sayso-app` through [`HostServices`], so it runs and is
 //! tested without a window.
 
+mod backend;
 mod bus;
 mod connection;
 mod download;
@@ -209,11 +210,11 @@ impl Host {
         let bus = Arc::new(bus::Bus::start(engine.as_ref()));
         let live = engine.as_ref().map(|engine| {
             live::LiveSessions::new(live::LiveDeps {
-                engine: Arc::new(live::BackendEngine::new(engine.clone(), bus.clone())),
+                engine: Arc::new(live::BackendEngine::new(engine.clone(), Some(bus.clone()))),
                 microphone: services.microphone(),
-                priority: gate.clone(),
+                gate: gate.clone(),
                 models: model_use.clone(),
-                temp_dir: services.live_temp_dir(),
+                recordings: Arc::new(live::RecordingFolder::new(services.live_temp_dir())),
             })
         });
         let observers = holds::Observers::default();

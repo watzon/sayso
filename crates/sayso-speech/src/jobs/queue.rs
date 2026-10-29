@@ -3,15 +3,16 @@
 //!
 //! A job that waits sends `job_progress` with `fraction: 0` when it enters
 //! the queue, and again each time the queue moves (a job ahead of it starts),
-//! so the extension sees that it is alive and waits.
+//! so the app sees that it is alive and waits.
 //!
 //! A job ends with one event: `job_done` or `job_failed`. A cancelled job
 //! gets `job_failed` with the message [`CANCELLED`] at once, and no event
 //! after it. A running job stops its work after the engine call that runs.
 
-use super::gate::DictationGate;
+use super::JobSpec;
+use super::gate::Gate;
 use super::plan::Stopped;
-use super::{EventSink, JobSpec};
+use crate::EventSink;
 use parking_lot::{Condvar, Mutex};
 use sayso_protocol::Event;
 use std::collections::VecDeque;
@@ -32,7 +33,7 @@ pub trait RunJob: Send + Sync {
 pub struct JobRun<'a> {
     pub id: u64,
     events: &'a Events,
-    gate: &'a DictationGate,
+    gate: &'a dyn Gate,
 }
 
 /// The events of one job. After its end event, the job sends nothing more.
@@ -103,7 +104,7 @@ pub struct JobQueue {
 struct Shared {
     state: Mutex<State>,
     wake: Condvar,
-    gate: Arc<DictationGate>,
+    gate: Arc<dyn Gate>,
     runner: Arc<dyn RunJob>,
     /// Told after each change of the jobs that run or wait.
     on_change: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
@@ -142,7 +143,7 @@ struct Running {
 impl JobQueue {
     /// Start the thread of the queue. `runner` runs each job, and `gate` is
     /// the dictation gate of the app.
-    pub fn start(runner: Arc<dyn RunJob>, gate: Arc<DictationGate>) -> io::Result<JobQueue> {
+    pub fn start(runner: Arc<dyn RunJob>, gate: Arc<dyn Gate>) -> io::Result<JobQueue> {
         let shared = Arc::new(Shared { state: Mutex::new(State::default()), wake: Condvar::new(), gate, runner, on_change: Mutex::new(None) });
         let worker = {
             let shared = shared.clone();
@@ -273,7 +274,7 @@ fn work(shared: &Shared) {
             sink.event(Event::JobProgress { job: id, fraction: 0.0 });
         }
         shared.changed();
-        let run = JobRun { id: queued.id, events: &cancel, gate: &shared.gate };
+        let run = JobRun { id: queued.id, events: &cancel, gate: &*shared.gate };
         shared.runner.run(&queued.job, &run);
         shared.state.lock().running = None;
         shared.changed();

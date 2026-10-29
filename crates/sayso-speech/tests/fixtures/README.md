@@ -1,6 +1,6 @@
-Audio fixtures for the job tests of `sayso-host` (`src/jobs/audio.rs`).
+Audio fixtures for the job tests of `sayso-speech` (`src/jobs/audio.rs`).
 
-Each file is 1 s: silence, a 440 Hz sine at half of full scale from 0.3 s to 0.7 s, and silence. They were made for Sayso on 2026-10-26 from a generated signal, so they have no third-party content, and they have the license of Sayso:
+Each file is 1 s: silence, a 440 Hz sine at half of full scale from 0.3 s to 0.7 s, and silence. They were made for Sayso on 2026-10-26 from a generated signal, so they have no third-party content, and they have the license of this crate (MIT):
 
 ```sh
 ffmpeg -f lavfi -i "aevalsrc=if(between(t\,0.3\,0.7)\,0.5*sin(2*PI*440*t)\,0)|if(between(t\,0.3\,0.7)\,0.5*sin(2*PI*440*t)\,0):s=44100:d=1" -c:a pcm_s16le src.wav

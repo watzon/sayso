@@ -11,7 +11,7 @@ const HEADER_BYTES: u64 = 44;
 
 /// A sample from -1 to 1 as 16-bit PCM, with the scale of
 /// `sayso_protocol::pcm`, so the audio of a `client` source goes back to the
-/// same samples that the extension sent.
+/// same samples that the app sent.
 pub(crate) fn to_i16(sample: f32) -> i16 {
     (sample * 32768.0).round().clamp(-32768.0, 32767.0) as i16
 }
