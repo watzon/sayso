@@ -103,7 +103,10 @@ impl Drop for Bus {
 fn fan_out(events: &Receiver<EngineEvent>, stopped: &Receiver<()>, synced: &Receiver<Sender<()>>, watchers: &Mutex<Watchers>) {
     let pass_on = |event: EngineEvent| {
         let mut watchers = watchers.lock();
-        if let Some(speech) = event.for_speech() {
+        // Most events reach no live session, so convert only when one listens.
+        if !watchers.speech.is_empty()
+            && let Some(speech) = event.for_speech()
+        {
             watchers.speech.retain(|watcher| watcher.send(speech.clone()).is_ok());
         }
         watchers.all.retain(|watcher| watcher.send(event.clone()).is_ok());

@@ -51,7 +51,9 @@ impl SpeechEngine for BackendEngine {
         Ok(self.engine.transcribe(samples, &Self::options(model, language, false)).map_err(engine_error)?.text)
     }
 
-    /// An engine without `segments` gives one segment for the whole part.
+    /// An engine without `segments` gives one segment for the whole part. Jobs
+    /// do not reach this case today: model resolution gives such an engine the
+    /// timestamp level `none` (`resolve.rs`), as live sessions always did.
     fn transcribe_segments(&self, samples: &[f32], model: &sayso_speech::ModelId, language: &str) -> Result<Vec<Segment>, EngineError> {
         let options = Self::options(model, language, false);
         if !self.has_segments() {
