@@ -1,6 +1,6 @@
 # The Sayso SDK
 
-Status: proposed on 2026-10-29. Not approved, not built. It replaces steps 8 to 12 of [extensions.md](extensions.md). Chris decided on 2026-10-29 to drop extensions and to build this instead. The ADR is [0005](adr/0005-apps-use-sayso-through-the-sdk.md). Codex (GPT-6-Astra) reviewed the first version on 2026-10-29. This version includes the corrections for its findings ("Review").
+Status: approved by Chris on 2026-10-29, with the answers in "Answered questions". Not built. It replaces steps 8 to 12 of [extensions.md](extensions.md). Chris decided on 2026-10-29 to drop extensions and to build this instead. The ADR is [0005](adr/0005-apps-use-sayso-through-the-sdk.md). Codex (GPT-6-Astra) reviewed the first version on 2026-10-29. This version includes the corrections for its findings ("Review").
 
 This file says how a separate app uses the speech features of Sayso. The app uses one SDK. When Sayso runs, the SDK uses Sayso: its engine, its loaded models, its microphone, and its scheduler. When Sayso does not run, the SDK starts its own engine. The app calls the same API in both cases.
 
@@ -63,7 +63,7 @@ As in `extensions.md`. A capture source is `mic`, `system`, or `client`.
 
 ## Decisions
 
-Proposed. Chris confirms them before step 9.
+Chris approved these on 2026-10-29.
 
 1. **There are no extensions.** Sayso does not install, list, start, or update other apps. A connected app is an ordinary app that the user gets from its author. See [ADR 0005](adr/0005-apps-use-sayso-through-the-sdk.md).
 2. **Any app can connect when the user approves it.** The first connection of an app shows a question in Sayso. Sayso remembers the answer by the identity of the executable. The macOS signature check of today stays.
@@ -424,9 +424,9 @@ The second round on 2026-10-29 found these, and the plan changed:
 | A lost connection did not finish the change to local mode | One end for each piece of work, and one step for the change ("Mode changes") |
 | The promise of one copy did not have the Flatpak exception | "Goal", "Flatpak", and ADR 0005 |
 
-## Open questions
+## Answered questions
 
-For Chris:
+Chris answered these on 2026-10-29.
 
 1. **Names.** "Connected app" in the UI, and the crates `sayso-sdk`, `sayso-speech`, and `sayso-capture`.
-2. **Are the two apps Sayso products?** For example "Sayso Notes" on justsayso.app with the release pipeline of Sayso, or brands of their own. This plan does not depend on the answer.
+2. **The two apps are Sayso products.** They use the name Sayso and the domain justsayso.app.
