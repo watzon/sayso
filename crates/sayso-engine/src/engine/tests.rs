@@ -244,6 +244,10 @@ struct Harness {
 }
 
 fn harness(base_url: &str) -> Harness {
+    harness_with(base_url, None, descriptors::all())
+}
+
+fn harness_with(base_url: &str, store: Option<Store>, descriptors: &'static Descriptors) -> Harness {
     let dir = tempfile::tempdir().unwrap();
     let captured = Captured::default();
     let out = Arc::new(Output::new(Box::new(captured.clone())));
@@ -257,6 +261,8 @@ fn harness(base_url: &str) -> Harness {
         base_url: base_url.to_string(),
         hf_endpoint: base_url.to_string(),
         decode_interval: Duration::ZERO,
+        store,
+        descriptors,
     };
     let engine = Arc::new(Engine::new(
         config,
@@ -375,7 +381,7 @@ fn hello_and_unknown_requests() {
     assert_eq!(reply[0]["protocol"], 1);
     assert_eq!(
         reply[0]["features"],
-        json!(["catalog", "concurrent_streams", "detected_language", "diarization", "keep_preview", "segments", "unload", "vad"])
+        json!(["catalog", "concurrent_streams", "detected_language", "diarization", "keep_preview", "segments", "store_v1", "unload", "vad"])
     );
 
     let prepared = h.call(json!({"v":1,"type":"prepare","id":"p","model":"m","preview":true,"vocabulary":["Sayso"]}));
@@ -1437,4 +1443,169 @@ fn serve_runs_vad_start_on_the_stream_worker() {
     assert_eq!(ids, ["a", "b", "c"], "in arrival order: {messages:?}");
     assert_eq!(messages[1]["message"], "model nope is not loaded");
     assert_eq!(messages[2], json!({"v": 1, "type": "ok", "id": "c", "session": 3}));
+}
+
+// ---------------------------------------------------------------------------
+// Model store
+// ---------------------------------------------------------------------------
+
+mod stored {
+    use super::*;
+    use sayso_core::engine_catalog::descriptors::{Artifact, File, Part, Source as FileSource};
+    use sha2::{Digest as _, Sha256};
+    use std::collections::BTreeMap;
+
+    const VAD: &str = "silero_vad.onnx";
+
+    fn vad_engine() -> Value {
+        json!({ "kind": "sherpa_vad", "recipe": "silero", "file": VAD })
+    }
+
+    /// Descriptors with the model `m`: one file on the fake server, with the bytes `claimed`.
+    fn fixture(server: &Server, claimed: &[u8]) -> &'static Descriptors {
+        let files = vec![File {
+            path: VAD.into(),
+            size: claimed.len() as u64,
+            sha256: Sha256::digest(claimed).iter().map(|b| format!("{b:02x}")).collect(),
+        }];
+        let artifact = Artifact {
+            source: FileSource::File { url: format!("{}/{VAD}", server.base) },
+            digest: descriptors::digest(&files).unwrap(),
+            files,
+        };
+        Box::leak(Box::new(Descriptors {
+            artifacts: BTreeMap::from([("vad".to_string(), artifact)]),
+            descriptors: vec![Descriptor {
+                model: "m".into(),
+                format: descriptors::SHERPA_ONNX.into(),
+                revision: 1,
+                parts: vec![Part { role: "main".into(), artifact: "vad".into() }],
+            }],
+        }))
+    }
+
+    fn engine_on(server: &Server, root: &std::path::Path, data: &'static Descriptors) -> Harness {
+        harness_with(&server.base, Some(Store::open(root.to_path_buf()).unwrap()), data)
+    }
+
+    fn request(kind: &str, id: &str) -> Value {
+        json!({ "v": 1, "type": kind, "id": id, "model": "m", "engine": vad_engine() })
+    }
+
+    fn listed_state(engine: &Harness) -> String {
+        let messages = engine.call(json!({ "v": 1, "type": "list_models", "id": "l", "models": [{ "id": "m", "engine": vad_engine() }] }));
+        states(&messages).pop().unwrap()
+    }
+
+    #[test]
+    fn a_model_goes_through_the_store_and_not_the_models_folder() {
+        let server = serve_archives(vec![(VAD.to_string(), b"model bytes".to_vec())]);
+        let data = fixture(&server, b"model bytes");
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("v1");
+        let engine = engine_on(&server, &root, data);
+
+        assert_eq!(listed_state(&engine), "not_downloaded");
+        let messages = engine.call(request("load", "l1"));
+        assert_eq!(last(&messages)["type"], "error", "{messages:?}");
+        assert_eq!(states(&messages), ["not_downloaded"]);
+
+        let messages = engine.call(request("download", "d1"));
+        assert_eq!(last(&messages)["type"], "ok", "{messages:?}");
+        assert_eq!(states(&messages).last().unwrap(), "downloaded");
+        assert_eq!(listed_state(&engine), "downloaded");
+        let digest = &data.artifacts["vad"].digest;
+        assert_eq!(std::fs::read(root.join("artifacts").join(digest).join(VAD)).unwrap(), b"model bytes");
+        assert!(!engine.models_dir().join("m").exists(), "nothing in the models folder");
+
+        // A second download finds it.
+        let before = server.requests.load(Ordering::SeqCst);
+        assert_eq!(last(&engine.call(request("download", "d2")))["type"], "ok");
+        assert_eq!(server.requests.load(Ordering::SeqCst), before);
+
+        assert_eq!(last(&engine.call(request("load", "l2")))["type"], "ok");
+        assert_eq!(listed_state(&engine), "ready");
+        assert_eq!(states(&engine.call(request("unload", "u"))), ["downloaded"]);
+        assert_eq!(last(&engine.call(request("delete", "x")))["type"], "ok");
+        assert_eq!(listed_state(&engine), "not_downloaded");
+        assert!(!root.join("artifacts").join(digest).exists());
+    }
+
+    #[test]
+    fn wrong_bytes_are_an_incomplete_download_and_leave_nothing() {
+        let server = serve_archives(vec![(VAD.to_string(), b"other bytes".to_vec())]);
+        let data = fixture(&server, b"model bytes");
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("v1");
+        let engine = engine_on(&server, &root, data);
+        let messages = engine.call(request("download", "d"));
+        assert_eq!(last(&messages)["type"], "error");
+        let failed = messages.iter().find(|m| m["state"] == "failed").unwrap();
+        assert_eq!(failed["reason"], "incomplete_download");
+        assert_eq!(std::fs::read_dir(root.join("artifacts")).unwrap().count(), 0);
+        assert_eq!(std::fs::read_dir(root.join("staging")).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn a_loaded_model_stays_until_it_is_unloaded_when_another_engine_deletes_it() {
+        let server = serve_archives(vec![(VAD.to_string(), b"model bytes".to_vec())]);
+        let data = fixture(&server, b"model bytes");
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("v1");
+        let one = engine_on(&server, &root, data);
+        let other = engine_on(&server, &root, data);
+        assert_eq!(last(&one.call(request("download", "d")))["type"], "ok");
+        assert_eq!(last(&one.call(request("load", "l")))["type"], "ok");
+
+        assert_eq!(last(&other.call(request("delete", "x")))["type"], "ok");
+        assert_eq!(listed_state(&other), "not_downloaded");
+        assert_eq!(listed_state(&one), "ready", "it keeps its copy");
+        let folder = root.join("artifacts").join(&data.artifacts["vad"].digest);
+        assert!(folder.join(VAD).is_file());
+
+        // A VAD session keeps the files after the unload.
+        let mut worker = StreamWorker::new(Arc::clone(&one.engine));
+        let start = json!({ "v": 1, "type": "vad_start", "id": "s", "model": "m", "session": 1 });
+        assert_eq!(last(&one.stream(&mut worker, start))["type"], "ok");
+        assert_eq!(states(&one.call(request("unload", "u"))), ["not_downloaded"]);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(folder.join(VAD).is_file(), "the session still runs");
+
+        let end = json!({ "v": 1, "type": "stream_end", "id": "e", "session": 1 });
+        assert_eq!(last(&one.stream(&mut worker, end))["type"], "ok");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while folder.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(!folder.exists(), "the artifact goes after the last use");
+    }
+
+    #[test]
+    fn a_model_without_a_descriptor_stays_in_the_models_folder() {
+        let server = serve_archives(vec![("a".to_string(), archive("a", &["tokens.txt", "model.onnx"]))]);
+        let data = fixture(&server, b"x");
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("v1");
+        let engine = engine_on(&server, &root, data);
+        let request = json!({ "v": 1, "type": "download", "id": "d", "model": "other", "engine": spec_json("sense_voice", "a", None) });
+        let messages = engine.call(request);
+        assert_eq!(last(&messages)["type"], "ok", "{messages:?}");
+        assert!(engine.models_dir().join("other/a").is_dir());
+        assert_eq!(std::fs::read_dir(root.join("artifacts")).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn urls_of_a_descriptor_follow_the_settings() {
+        let engine = harness("http://mirror/releases/asr-models");
+        let inner = &engine.engine;
+        assert_eq!(
+            inner.store_url("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/a.tar.bz2"),
+            "http://mirror/releases/speaker-segmentation-models/a.tar.bz2"
+        );
+        assert_eq!(inner.store_url("http://elsewhere/x"), "http://elsewhere/x");
+        assert_eq!(
+            inner.store_url("https://huggingface.co/o/r/resolve/c/f"),
+            "http://mirror/releases/asr-models/o/r/resolve/c/f"
+        );
+    }
 }

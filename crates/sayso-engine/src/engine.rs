@@ -19,14 +19,17 @@ use crate::layout;
 use crate::partials::Partials;
 use crate::protocol::{Coded, FEATURES, Output, PROTOCOL_VERSION, Request};
 use crate::timing::{self, Piece};
-use crate::recognizer::{Diarizer, LivePreview, Loaded, Loader, ModelDirs, PreviewStream, VadModel};
+use crate::recognizer::{Diarizer, LivePreview, Loaded, Loader, ModelDirs, PreviewStream, StoreUse, VadModel};
 use crate::spec::{ModelSpec, Source, Task};
 use crate::store::{Legacy, ModelStore};
 use crate::vad::{self, Tracker};
 use sayso_core::engine_catalog;
+use sayso_core::engine_catalog::descriptors::{self, Descriptor, Descriptors};
+use sayso_core::model_store::{self, Lease, Store};
 use sayso_core::models_onnx::System;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::io::BufRead;
 use std::path::PathBuf;
@@ -46,6 +49,11 @@ pub struct Config {
     pub hf_endpoint: String,
     /// Shortest time between two decodes of a live preview stream.
     pub decode_interval: Duration,
+    /// `SAYSO_MODEL_STORE`: the model store. A model without a descriptor, and each
+    /// model without a store, stays in `models_dir`.
+    pub store: Option<Store>,
+    /// The descriptors of the catalog, or those of a test.
+    pub descriptors: &'static Descriptors,
 }
 
 impl Config {
@@ -63,6 +71,8 @@ impl Config {
             base_url,
             hf_endpoint,
             decode_interval: Duration::from_millis(150),
+            store: None,
+            descriptors: descriptors::all(),
         }
     }
 }
@@ -186,6 +196,13 @@ impl Engine {
             Some(_) => return ("ready", json!({})),
             None => {}
         }
+        if let Some((store, descriptor)) = self.stored(model, spec) {
+            let on_disk = store.on_disk(descriptor).unwrap_or_else(|e| {
+                self.out.log("warning", &format!("{model}: cannot read the model store: {e}"));
+                false
+            });
+            return (if on_disk { "downloaded" } else { "not_downloaded" }, json!({}));
+        }
         if self.adopt_legacy(model, spec) == Legacy::FormatChanged {
             let message = "the files of this model are in an old format; download the model again";
             return ("failed", json!({ "message": message, "reason": "format_changed" }));
@@ -195,6 +212,13 @@ impl Engine {
         } else {
             ("not_downloaded", json!({}))
         }
+    }
+
+    /// The store and the descriptor of a model in the model store. None for a
+    /// model in the models folder: without a store, or without a descriptor.
+    fn stored(&self, model: &str, spec: &ModelSpec) -> Option<(&Store, &'static Descriptor)> {
+        let store = self.config.store.as_ref()?;
+        Some((store, self.config.descriptors.find(model, spec.format())?))
     }
 
     /// Move the files of the Windows engine before 0.12 into place
@@ -273,6 +297,9 @@ impl Engine {
         let id = request.id();
         let model = request.string("model")?;
         let spec = self.spec_of(model, request.optional_value("engine"))?;
+        if let Some((store, descriptor)) = self.stored(model, &spec) {
+            return self.download_stored(request, store, descriptor);
+        }
         self.store.folder(model)?;
         if self.adopt_legacy(model, &spec) != Legacy::FormatChanged && self.store.is_downloaded(model, &spec) {
             self.model_state(id, model, "downloaded", json!({}));
@@ -292,6 +319,64 @@ impl Engine {
         self.model_state(id, model, "downloaded", json!({}));
         self.out.ok(id, json!({}));
         Ok(())
+    }
+
+    /// `download` of a model in the model store. The store has the rules.
+    fn download_stored(&self, request: &Request, store: &Store, descriptor: &Descriptor) -> Result<()> {
+        let id = request.id();
+        let model = descriptor.model.as_str();
+        let data = self.config.descriptors;
+        if store.on_disk(descriptor)? {
+            self.model_state(id, model, "downloaded", json!({}));
+            self.out.ok(id, json!({}));
+            return Ok(());
+        }
+        let _busy = self.acquire(model)?;
+        let size = data.parts(descriptor).map(|(_, artifact)| artifact.size()).sum();
+        let progress = RefCell::new(Progress::new(request.optional_u64("size_bytes").unwrap_or(size)));
+        progress.borrow_mut().due(Instant::now());
+        self.report(id, model, &progress.borrow(), 0.0);
+        let result = store.download(
+            data,
+            descriptor,
+            &mut |artifact, work, files| {
+                let on_bytes = &mut |bytes| {
+                    let mut progress = progress.borrow_mut();
+                    progress.add(bytes);
+                    if progress.due(Instant::now()) {
+                        self.report(id, model, &progress, progress.fraction());
+                    }
+                };
+                download::fetch_artifact(&self.agent, artifact, &|url| self.store_url(url), work, files, on_bytes)
+                    .map_err(|e| format!("{e:#}").into())
+            },
+            &mut || {
+                // Another engine downloads a part of this model.
+                let progress = progress.borrow();
+                self.report(id, model, &progress, progress.fraction());
+            },
+        );
+        if let Err(e) = result {
+            let reason = if matches!(e, model_store::Error::Verify(_)) { "incomplete_download" } else { "download_failed" };
+            self.model_state(id, model, "failed", json!({ "message": e.to_string(), "reason": reason }));
+            return Err(e.into());
+        }
+        self.report(id, model, &progress.borrow(), 1.0);
+        self.model_state(id, model, "downloaded", json!({}));
+        self.out.ok(id, json!({}));
+        Ok(())
+    }
+
+    /// The URL to use for a URL of a descriptor: `SAYSO_MODELS_URL` and
+    /// `SAYSO_HF_ENDPOINT` also move the files of a descriptor.
+    fn store_url(&self, url: &str) -> String {
+        if let Some(rest) = url.strip_prefix(download::HF_PREFIX) {
+            return format!("{}/{rest}", self.config.hf_endpoint.trim_end_matches('/'));
+        }
+        if let Some(rest) = url.strip_prefix(download::RELEASES_PREFIX) {
+            return download::sibling_release_url(&self.config.base_url, rest);
+        }
+        url.to_string()
     }
 
     /// Send `download_progress` and the matching `model_state`.
@@ -362,7 +447,22 @@ impl Engine {
         let model = request.string("model")?;
         let _busy = self.acquire(model)?;
         self.evict(model);
-        self.store.delete(model)?;
+        let formats = [descriptors::SHERPA_ONNX, descriptors::WHISPER_CPP, descriptors::PARAKEET_CPP];
+        let stored: Vec<&Descriptor> = self
+            .config
+            .descriptors
+            .descriptors
+            .iter()
+            .filter(|d| d.model == model && formats.contains(&d.format.as_str()))
+            .collect();
+        match &self.config.store {
+            Some(store) if !stored.is_empty() => {
+                for descriptor in stored {
+                    store.delete(model, &descriptor.format)?;
+                }
+            }
+            _ => self.store.delete(model)?,
+        }
         self.model_state(request.id(), model, "not_downloaded", json!({}));
         self.out.ok(request.id(), json!({}));
         Ok(())
@@ -402,14 +502,30 @@ impl Engine {
             }
             _ => None,
         };
-        self.adopt_legacy(model, &spec);
-        if !self.store.is_downloaded(model, &spec) {
-            bail!("model {model} is not downloaded");
-        }
+        // The locks of "Load" in the model store. A load never writes in the store.
+        let store_use = match self.stored(model, &spec) {
+            Some((store, descriptor)) => match store.load(descriptor)? {
+                Some(lease) => Some(Arc::new(StoreUse { lease: Some(lease), store: store.clone() })),
+                None => {
+                    self.model_state(id, model, "not_downloaded", json!({}));
+                    bail!("model {model} is not downloaded");
+                }
+            },
+            None => {
+                self.adopt_legacy(model, &spec);
+                if !self.store.is_downloaded(model, &spec) {
+                    bail!("model {model} is not downloaded");
+                }
+                None
+            }
+        };
         let busy = self.acquire(model)?;
         self.model_state(id, model, "optimizing", json!({}));
         let start = Instant::now();
-        let dirs = self.dirs(model, &spec)?;
+        let dirs = match store_use.as_ref().and_then(|used| used.lease.as_ref()) {
+            Some(lease) => stored_dirs(&spec, lease)?,
+            None => self.dirs(model, &spec)?,
+        };
         // With the live preview in memory, only the final pass loads.
         let result = match kept_preview {
             Some(preview) => self
@@ -430,7 +546,7 @@ impl Engine {
                 Ok(crate::redecode::attach(final_pass))
             }),
         };
-        let loaded = match result {
+        let mut loaded = match result {
             Ok(loaded) => loaded,
             Err(e) => {
                 let reason = if e.is::<crate::parakeet::NoGpu>() { "no_gpu" } else { "load_failed" };
@@ -440,6 +556,10 @@ impl Engine {
                 return Err(e);
             }
         };
+        if let Some(used) = &store_use {
+            used.store.step("load.loaded");
+        }
+        loaded.store_use = store_use;
         self.state()
             .loaded
             .insert(model.to_string(), (spec, loaded));
@@ -475,8 +595,14 @@ impl Engine {
                 let extra = json!({ "preview": true });
                 self.model_state(request.id(), model, "downloaded", extra);
             }
-        } else if self.evict(model) {
-            self.model_state(request.id(), model, "downloaded", json!({}));
+        } else {
+            let spec = self.state().loaded.get(model).map(|(spec, _)| spec.clone());
+            if let Some(spec) = spec {
+                self.evict(model);
+                // In the model store, another engine can have deleted it in the meantime.
+                let (status, extra) = self.status(model, &spec);
+                self.model_state(request.id(), model, status, extra);
+            }
         }
         self.out.ok(request.id(), json!({}));
         Ok(())
@@ -595,12 +721,18 @@ impl Engine {
     // VAD and diarization
     // -----------------------------------------------------------------------
 
+    /// What keeps the files of a loaded model in the model store.
+    fn store_use(&self, model: &str) -> Option<Arc<StoreUse>> {
+        self.state().loaded.get(model).and_then(|(_, loaded)| loaded.store_use.clone())
+    }
+
     /// `vad`: the parts of a WAV file with speech. It uses the same tracker as a VAD
     /// session, so a session that gets the same audio finds the same parts.
     fn vad(&self, request: &Request) -> Result<()> {
         let model = request.string("model")?;
         let path = PathBuf::from(request.string("path")?);
         let vad_model = self.vad_model(model)?;
+        let _store_use = self.store_use(model);
         let samples = audio::read_wav(&path)?;
         let mut tracker = Tracker::new(vad_model.detector()?);
         let mut events = tracker.accept(&samples);
@@ -619,6 +751,7 @@ impl Engine {
         let path = PathBuf::from(request.string("path")?);
         let speakers = speakers(request)?;
         let diarizer = self.diarizer(model)?;
+        let _store_use = self.store_use(model);
         let samples = audio::read_wav(&path)?;
         let audio_ms = (samples.len() * 1000 / audio::SAMPLE_RATE) as u64;
         let raw = if samples.is_empty() { Vec::new() } else { diarizer.diarize(&samples, speakers)? };
@@ -720,6 +853,20 @@ fn check_files(spec: &ModelSpec, dirs: &ModelDirs) -> Result<()> {
     Ok(())
 }
 
+/// The folders of a model in the model store. The roles are those of
+/// `engine_catalog::descriptors`.
+fn stored_dirs(spec: &ModelSpec, lease: &Lease) -> Result<ModelDirs> {
+    let role = |name: &str| lease.folder(name).map(PathBuf::from);
+    let main = role("main")
+        .or_else(|| role("segmentation"))
+        .with_context(|| format!("the manifest of {} has no main artifact", spec.archive))?;
+    Ok(ModelDirs {
+        stream: spec.stream_archive().map(|_| role("preview").unwrap_or_else(|| main.clone())),
+        embedding: role("embedding"),
+        main,
+    })
+}
+
 /// True when the model has a final pass that is not in memory now: an
 /// `unload` with `keep_preview` took it out.
 fn final_pass_is_out(spec: &ModelSpec, loaded: &Loaded) -> bool {
@@ -743,13 +890,19 @@ fn release_free_memory() {
 /// A stream: a live preview, or a VAD session.
 enum Session {
     Preview(PreviewSession),
-    Vad(Tracker),
+    Vad {
+        tracker: Tracker,
+        /// Keeps the files of the model while the session is open.
+        _store_use: Option<Arc<StoreUse>>,
+    },
 }
 
 struct PreviewSession {
     stream: Box<dyn PreviewStream>,
     partials: Partials,
     last_decode: Instant,
+    /// Keeps the files of the model while the stream is open.
+    _store_use: Option<Arc<StoreUse>>,
 }
 
 /// The most streams that are open at the same time, on all models together.
@@ -803,6 +956,7 @@ impl StreamWorker {
                     stream,
                     partials: Partials::default(),
                     last_decode: Instant::now(),
+                    _store_use: self.engine.store_use(model),
                 };
                 self.sessions.insert(session, Session::Preview(session_state));
                 self.engine.out.ok(request.id(), json!({}));
@@ -812,7 +966,7 @@ impl StreamWorker {
                 let vad_model = self.engine.vad_model(model)?;
                 self.reserve(session)?;
                 let tracker = Tracker::new(vad_model.detector()?);
-                self.sessions.insert(session, Session::Vad(tracker));
+                self.sessions.insert(session, Session::Vad { tracker, _store_use: self.engine.store_use(model) });
                 self.engine.out.ok(request.id(), json!({}));
             }
             "stream_audio" => {
@@ -839,7 +993,7 @@ impl StreamWorker {
                             send_partial(&self.engine.out, session, &mut state.partials);
                         }
                     }
-                    Session::Vad(tracker) => send_speech(&self.engine.out, session, tracker.accept(&samples)),
+                    Session::Vad { tracker, .. } => send_speech(&self.engine.out, session, tracker.accept(&samples)),
                 }
             }
             "stream_end" => {
@@ -857,7 +1011,7 @@ impl StreamWorker {
                             .out
                             .ok(request.id(), json!({ "session": session, "text": text }));
                     }
-                    Session::Vad(mut tracker) => {
+                    Session::Vad { mut tracker, .. } => {
                         send_speech(&self.engine.out, session, tracker.finish());
                         self.engine.out.ok(request.id(), json!({ "session": session }));
                     }

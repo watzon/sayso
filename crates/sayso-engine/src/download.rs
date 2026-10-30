@@ -7,8 +7,9 @@
 
 use anyhow::{Context, Result, bail};
 use bzip2::read::MultiBzDecoder;
+use sayso_core::engine_catalog::descriptors::{Artifact, Source, check_path};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Component, Path};
 use std::time::{Duration, Instant};
 
 /// The sherpa-onnx release that holds the speech model archives.
@@ -43,6 +44,12 @@ pub fn sibling_release_url(base_url: &str, release: &str) -> String {
         None => release.to_string(),
     }
 }
+
+/// The start of the URL of a file of a sherpa-onnx release in a descriptor.
+pub const RELEASES_PREFIX: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/";
+
+/// The start of the URL of a file of Hugging Face in a descriptor.
+pub const HF_PREFIX: &str = "https://huggingface.co/";
 
 pub fn hf_file_url(hf_endpoint: &str, repo: &str, revision: &str, file: &str) -> String {
     format!("{}/{repo}/resolve/{revision}/{file}", hf_endpoint.trim_end_matches('/'))
@@ -82,6 +89,31 @@ pub fn fetch(
         let _ = std::fs::remove_dir_all(staging);
     }
     result
+}
+
+/// Put the files of an artifact of the model store at `files`. `url_of` gives
+/// the URL to use for a URL of a descriptor. `work` is an empty folder for the
+/// time of the download.
+pub fn fetch_artifact(
+    agent: &ureq::Agent,
+    artifact: &Artifact,
+    url_of: &dyn Fn(&str) -> String,
+    work: &Path,
+    files: &Path,
+    on_bytes: &mut dyn FnMut(u64),
+) -> Result<()> {
+    if let Source::Archive { url } = &artifact.source {
+        return fetch(agent, &url_of(url), None, &work.join("extract"), files, on_bytes);
+    }
+    for file in &artifact.files {
+        check_path(&file.path)?;
+        let url = artifact.source.file_url(&file.path).context("a source without a file URL")?;
+        let path = files.join(&file.path);
+        let folder = path.parent().context("a file has a folder")?;
+        std::fs::create_dir_all(folder).with_context(|| format!("cannot create {}", folder.display()))?;
+        download_to_file(agent, &url_of(&url), &path, on_bytes)?;
+    }
+    Ok(())
 }
 
 fn download_to_file(
@@ -141,9 +173,19 @@ fn download_and_extract(
     {
         let mut archive = tar::Archive::new(MultiBzDecoder::new(&mut body));
         archive.set_preserve_permissions(false);
-        archive
-            .unpack(staging)
-            .with_context(|| format!("cannot extract {url}"))?;
+        for entry in archive.entries().with_context(|| format!("cannot extract {url}"))? {
+            let mut entry = entry.with_context(|| format!("cannot extract {url}"))?;
+            let kind = entry.header().entry_type();
+            if kind.is_pax_global_extensions() || kind.is_pax_local_extensions() {
+                continue;
+            }
+            let path = entry.path().with_context(|| format!("cannot extract {url}"))?.into_owned();
+            let plain = path.components().all(|part| matches!(part, Component::Normal(_) | Component::CurDir));
+            if !plain || !(kind.is_file() || kind.is_dir() || kind.is_gnu_sparse()) {
+                bail!("the archive {url} has an entry that is not a plain file or folder: {}", path.display());
+            }
+            entry.unpack_in(staging).with_context(|| format!("cannot extract {url}"))?;
+        }
     }
     // Read to the end, so that the size check counts every byte.
     std::io::copy(&mut body, &mut std::io::sink())
@@ -253,6 +295,60 @@ impl Progress {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Serve `body` once and return the URL.
+    fn serve_once(body: Vec<u8>) -> String {
+        let server = tiny_http::Server::http("127.0.0.1:0").unwrap();
+        let port = server.server_addr().to_ip().unwrap().port();
+        std::thread::spawn(move || {
+            if let Ok(request) = server.recv() {
+                let _ = request.respond(tiny_http::Response::from_data(body));
+            }
+        });
+        format!("http://127.0.0.1:{port}/a.tar.bz2")
+    }
+
+    fn compressed(tar: Vec<u8>) -> Vec<u8> {
+        use std::io::Write;
+        let mut encoder = bzip2::write::BzEncoder::new(Vec::new(), bzip2::Compression::fast());
+        encoder.write_all(&tar).unwrap();
+        encoder.finish().unwrap()
+    }
+
+    /// Fetch an archive with one entry and return the result.
+    fn fetch_entry(path: &str, kind: tar::EntryType, link: Option<&str>) -> Result<()> {
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(kind);
+        header.set_mode(0o644);
+        header.set_size(if kind.is_file() { 1 } else { 0 });
+        // `set_path` refuses `..`, so the path goes straight into the header.
+        let name = &mut header.as_old_mut().name;
+        name[..path.len()].copy_from_slice(path.as_bytes());
+        if let Some(link) = link {
+            header.set_link_name(link).unwrap();
+        }
+        header.set_cksum();
+        let mut builder = tar::Builder::new(Vec::new());
+        let body: &[u8] = if kind.is_file() { b"x" } else { b"" };
+        builder.append(&header, body).unwrap();
+        let url = serve_once(compressed(builder.into_inner().unwrap()));
+        let dir = tempfile::tempdir().unwrap();
+        fetch(&agent(), &url, None, &dir.path().join("work"), &dir.path().join("dest"), &mut |_| {})
+    }
+
+    #[test]
+    fn an_archive_with_a_link_or_an_unsafe_path_is_refused() {
+        fetch_entry("a/model.onnx", tar::EntryType::Regular, None).unwrap();
+        for (path, kind, link) in [
+            ("a/link", tar::EntryType::Symlink, Some("/etc/passwd")),
+            ("a/hard", tar::EntryType::Link, Some("a/model.onnx")),
+            ("../outside", tar::EntryType::Regular, None),
+            ("/absolute", tar::EntryType::Regular, None),
+        ] {
+            let error = fetch_entry(path, kind, link).unwrap_err();
+            assert!(format!("{error:#}").contains("not a plain file or folder"), "{path}: {error:#}");
+        }
+    }
 
     #[test]
     fn progress_is_monotonic_capped_and_throttled() {

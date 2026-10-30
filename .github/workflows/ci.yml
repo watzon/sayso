@@ -100,6 +100,8 @@ jobs:
           fi
       - name: Test
         run: cargo test --workspace
+      - name: Two engines on one model store
+        run: cargo test -p sayso-engine --test conformance -- --ignored
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
@@ -136,6 +138,8 @@ jobs:
           fi
       - name: Test
         run: cargo test --workspace
+      - name: Two engines on one model store
+        run: cargo test -p sayso-engine --test conformance -- --ignored
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
