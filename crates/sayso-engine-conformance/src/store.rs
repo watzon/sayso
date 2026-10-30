@@ -527,9 +527,10 @@ fn one_download(fx: &Fixture) -> Result<(), String> {
     let second_id = second.send("download", "store-a")?;
     std::thread::sleep(CONTENTION);
     second.engine.drain();
-    let waits = second.engine.pending.iter().any(|m| m["id"] == json!(second_id) && m["type"] == "model_state" && m["state"] == "downloading");
-    if !waits {
-        return Err(format!("the second engine did not report downloading: {:?}", second.engine.pending));
+    // One `downloading` at the start of each download, and one more for the wait.
+    let reports = second.engine.pending.iter().filter(|m| m["id"] == json!(second_id) && m["type"] == "model_state" && m["state"] == "downloading");
+    if reports.count() < 2 {
+        return Err(format!("the second engine did not report that it waits: {:?}", second.engine.pending));
     }
     first.release("download.fetched")?;
     first.engine.wait_reply(&first_id, fx.suite.load_timeout)?.expect_type("ok")?;

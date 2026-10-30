@@ -196,6 +196,19 @@ impl Store {
         Ok(self.read_manifest(&descriptor.model, &descriptor.format)?.is_some_and(|m| self.complete(&m, descriptor)))
     }
 
+    /// [`Store::on_disk`] without a wait: None when another engine has `meta` now.
+    pub fn on_disk_now(&self, descriptor: &Descriptor) -> Result<Option<bool>, Error> {
+        let path = self.lock_path("meta");
+        let meta = open_lock(&path)?;
+        match meta.try_lock_shared() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock) => return Ok(None),
+            Err(std::fs::TryLockError::Error(e)) => return Err(io("cannot lock", &path)(e)),
+        }
+        let manifest = self.read_manifest(&descriptor.model, &descriptor.format)?;
+        Ok(Some(manifest.is_some_and(|m| self.complete(&m, descriptor))))
+    }
+
     /// "Load", steps 1 to 3: the folders of the model, locked for use. None when
     /// the model is not on disk. It never writes in the store, apart from the
     /// lock files.
@@ -260,7 +273,16 @@ impl Store {
                     self.artifact(&artifact.digest).is_dir()
                 };
                 if !exists {
-                    staged.push(self.fetch(artifact, fetch)?);
+                    match self.fetch(artifact, fetch) {
+                        Ok(stage) => staged.push(stage),
+                        Err(e) => {
+                            // A retry starts again, so a stage of this attempt is only in the way.
+                            for (_, stage) in staged {
+                                let _ = std::fs::remove_dir_all(stage);
+                            }
+                            return Err(e);
+                        }
+                    }
                 }
             }
             // Step 3.
@@ -274,12 +296,22 @@ impl Store {
                 let _ = std::fs::remove_dir_all(&stage);
                 self.step("download.artifact_published");
             }
+            sync_folder(&self.root.join("artifacts"));
             // A cleanup can take an artifact that no manifest named after step 1.
             // Then this goes back to step 1, with what it has published, and the
             // `get` locks go in the right order again.
             if artifacts.iter().all(|a| self.artifact(&a.digest).is_dir()) {
                 self.write_manifest(descriptor, data)?;
                 self.step("download.manifest_written");
+                // A manifest with a higher revision stays, and it can name an
+                // artifact that a power cut or a person took away.
+                let manifest = self.read_manifest(&descriptor.model, &descriptor.format)?;
+                if !manifest.is_some_and(|m| self.complete(&m, descriptor)) {
+                    return Err(Error::Verify(format!(
+                        "the manifest of {} has a higher revision and names a missing artifact; delete the model",
+                        descriptor.model
+                    )));
+                }
                 drop(meta);
                 drop(gets);
                 self.step("download.done");
@@ -351,7 +383,9 @@ impl Store {
             file.sync_all()
         });
         written.map_err(io("cannot write", &temp))?;
-        rename(&temp, &path)
+        rename(&temp, &path)?;
+        sync_folder(folder);
+        Ok(())
     }
 
     /// "Delete a model", then "Clean up". This never fails because of another
@@ -367,7 +401,11 @@ impl Store {
             }
             self.step("delete.manifest_removed");
         }
-        self.cleanup()
+        // The model is gone now. What a cleanup cannot do stays for the next one.
+        if let Err(e) = self.cleanup() {
+            log::warn!("the cleanup of the model store failed: {e}");
+        }
+        Ok(())
     }
 
     /// "Clean up". Run it at the start of an engine and after each delete. What
@@ -378,7 +416,7 @@ impl Store {
             let _meta = self.meta_exclusive()?;
             self.step("cleanup.meta_locked");
             if let Some(named) = self.named_digests()? {
-                for entry in read_dir(&self.root.join("artifacts"))? {
+                for entry in folders(&self.root.join("artifacts"))? {
                     let digest = entry.file_name().to_string_lossy().into_owned();
                     if named.contains(&digest) {
                         continue;
@@ -399,7 +437,7 @@ impl Store {
             let _ = std::fs::remove_dir_all(entry.path());
         }
         self.step("cleanup.trash_emptied");
-        for entry in read_dir(&self.root.join("staging"))? {
+        for entry in folders(&self.root.join("staging"))? {
             let name = entry.file_name().to_string_lossy().into_owned();
             let digest = name.split('.').next().unwrap_or_default();
             let lock = open_lock(&self.lock_path(&format!("{digest}.get")))?;
@@ -418,7 +456,8 @@ impl Store {
     /// so that it is not known what is garbage.
     fn named_digests(&self) -> Result<Option<HashSet<String>>, Error> {
         let mut named = HashSet::new();
-        for model in read_dir(&self.root.join("models"))? {
+        // A file that is no folder (`.DS_Store`, `desktop.ini`) is not a model.
+        for model in folders(&self.root.join("models"))? {
             for file in read_dir(&model.path())? {
                 let path = file.path();
                 if file.file_name().to_string_lossy().starts_with('.') {
@@ -440,6 +479,24 @@ impl Store {
 fn read_dir(path: &Path) -> Result<Vec<std::fs::DirEntry>, Error> {
     let entries = std::fs::read_dir(path).map_err(io("cannot read", path))?;
     entries.collect::<std::io::Result<_>>().map_err(io("cannot read", path))
+}
+
+/// The folders in `path`. The store ignores other files that programs leave there.
+fn folders(path: &Path) -> Result<Vec<std::fs::DirEntry>, Error> {
+    let mut entries = read_dir(path)?;
+    entries.retain(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()));
+    Ok(entries)
+}
+
+/// Make a rename in `folder` last through a power cut, where the system can do
+/// that. A failure leaves the rename as good as the system made it.
+fn sync_folder(folder: &Path) {
+    #[cfg(unix)]
+    if let Ok(file) = File::open(folder) {
+        let _ = file.sync_all();
+    }
+    #[cfg(not(unix))]
+    let _ = folder;
 }
 
 /// A rename. Windows can refuse for a moment while another program has a file
@@ -475,6 +532,10 @@ fn verify(folder: &Path, artifact: &Artifact) -> Result<(), Error> {
         if hash_file(&path)? != file.sha256 {
             return Err(Error::Verify(format!("{} does not have the hash of its descriptor", file.path)));
         }
+        // After a power cut, a published artifact must not have short files: only
+        // the folder is checked at a load.
+        let synced = File::options().write(true).open(&path).and_then(|f| f.sync_all());
+        synced.map_err(io("cannot write", &path))?;
     }
     Ok(())
 }
@@ -846,6 +907,64 @@ mod tests {
         // Each manifest names artifacts that exist.
         assert!(other.on_disk(data.find("a", "test-1").unwrap()).unwrap());
         assert!(other.artifact(&shared.digest).join("main.bin").is_file());
+    }
+
+    #[test]
+    fn a_failure_in_a_later_artifact_leaves_no_stage_of_the_earlier_one() {
+        let (_dir, store) = store();
+        let data = data(1);
+        let a = data.find("a", "test-1").unwrap();
+        let mut count = 0;
+        let mut second_fails = |artifact: &Artifact, _: &Path, files: &Path| {
+            count += 1;
+            if count == 2 {
+                return Err("no network".into());
+            }
+            put_files(artifact, files)
+        };
+        store.download(&data, a, &mut second_fails, &mut || {}).unwrap_err();
+        assert!(names(&store, "staging").is_empty());
+        assert!(names(&store, "artifacts").is_empty());
+    }
+
+    #[test]
+    fn stray_files_stop_nothing() {
+        let (_dir, store) = store();
+        let data = data(1);
+        download(&store, &data, "a");
+        for folder in ["models", "artifacts", "staging", "trash"] {
+            std::fs::write(store.root.join(folder).join(".DS_Store"), b"x").unwrap();
+        }
+        store.delete("a", "test-1").unwrap();
+        assert_eq!(names(&store, "artifacts"), [".DS_Store"]);
+        assert_eq!(names(&store, "models"), [".DS_Store"]);
+        download(&store, &data, "a");
+        assert!(store.on_disk(data.find("a", "test-1").unwrap()).unwrap());
+    }
+
+    #[test]
+    fn a_download_says_so_when_a_higher_manifest_names_a_missing_artifact() {
+        let (_dir, store) = store();
+        // The new revision has an artifact that the older descriptor does not know.
+        let (old, mut new) = (data(1), data(2));
+        new.artifacts.insert("only-a".to_string(), artifact(&[("b.bin", "bytes of b")]));
+        download(&store, &new, "a");
+        std::fs::remove_dir_all(store.artifact(&digest_of(&new, "only-a"))).unwrap();
+        let a = old.find("a", "test-1").unwrap();
+        let error = store.download(&old, a, &mut |x, _, files| put_files(x, files), &mut || {}).unwrap_err();
+        assert!(matches!(error, Error::Verify(_)), "{error}");
+    }
+
+    #[test]
+    fn on_disk_now_does_not_wait() {
+        let (_dir, store) = store();
+        let data = data(1);
+        download(&store, &data, "a");
+        let a = data.find("a", "test-1").unwrap();
+        assert_eq!(store.on_disk_now(a).unwrap(), Some(true));
+        let meta = store.meta_exclusive().unwrap();
+        assert_eq!(store.on_disk_now(a).unwrap(), None);
+        drop(meta);
     }
 
     #[test]

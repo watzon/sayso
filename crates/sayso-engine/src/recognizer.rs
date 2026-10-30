@@ -26,11 +26,15 @@ pub struct ModelDirs {
     pub stream: Option<PathBuf>,
     /// The speaker embedding model of a diarization model. Its segmentation model is `main`.
     pub embedding: Option<PathBuf>,
+    /// Keeps the files of a model in the model store. A loader that reads the
+    /// folders later (a live preview that loads at the first stream) holds a copy.
+    pub store_use: Option<Arc<StoreUse>>,
 }
 
 /// The files of a loaded model in the model store: the `use` locks stay while
 /// something holds this. When the last holder lets go, a cleanup removes the
 /// artifacts of a model that another engine has deleted in the meantime.
+#[derive(Debug)]
 pub struct StoreUse {
     pub lease: Option<Lease>,
     pub store: Store,

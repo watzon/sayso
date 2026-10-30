@@ -60,6 +60,10 @@ pub fn agent() -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         .timeout_connect(Some(Duration::from_secs(30)))
         .timeout_recv_response(Some(Duration::from_secs(60)))
+        // A stalled download holds a lock of the model store that other engines
+        // wait for. ureq has no limit for the time between two reads, so this is
+        // a limit for the whole file, far above what the largest model needs.
+        .timeout_recv_body(Some(Duration::from_secs(6 * 60 * 60)))
         .max_redirects(10)
         .build();
     ureq::Agent::new_with_config(config)

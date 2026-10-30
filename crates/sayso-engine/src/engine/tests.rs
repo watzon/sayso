@@ -23,6 +23,10 @@ struct FakeLoader {
     final_loads: AtomicUsize,
     /// The `speakers` of each `diarize` that reached a fake diarization model.
     diarized: Arc<Mutex<Vec<Option<u32>>>>,
+    /// Each load fails.
+    fail: std::sync::atomic::AtomicBool,
+    /// Whether the last load got what keeps the files in the model store.
+    had_store_use: std::sync::atomic::AtomicBool,
 }
 
 impl Loader for FakeLoader {
@@ -40,6 +44,10 @@ impl Loader for FakeLoader {
 
     fn load(&self, spec: &ModelSpec, dirs: &ModelDirs) -> Result<Loaded> {
         self.loads.fetch_add(1, Ordering::SeqCst);
+        self.had_store_use.store(dirs.store_use.is_some(), Ordering::SeqCst);
+        if self.fail.load(Ordering::SeqCst) {
+            bail!("a broken model");
+        }
         if !dirs.main.is_dir() {
             bail!("missing {}", dirs.main.display());
         }
@@ -255,6 +263,8 @@ fn harness_with(base_url: &str, store: Option<Store>, descriptors: &'static Desc
         loads: AtomicUsize::new(0),
         final_loads: AtomicUsize::new(0),
         diarized: Arc::new(Mutex::new(Vec::new())),
+        fail: std::sync::atomic::AtomicBool::new(false),
+        had_store_use: std::sync::atomic::AtomicBool::new(false),
     });
     let config = Config {
         models_dir: dir.path().join("models"),
@@ -1578,6 +1588,30 @@ mod stored {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(!folder.exists(), "the artifact goes after the last use");
+    }
+
+    #[test]
+    fn a_load_that_fails_writes_nothing_and_keeps_no_lock() {
+        let server = serve_archives(vec![(VAD.to_string(), b"model bytes".to_vec())]);
+        let data = fixture(&server, b"model bytes");
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("v1");
+        let engine = engine_on(&server, &root, data);
+        assert_eq!(last(&engine.call(request("download", "d")))["type"], "ok");
+        let digest = &data.artifacts["vad"].digest;
+        let file = root.join("artifacts").join(digest).join(VAD);
+
+        engine.loader.fail.store(true, Ordering::SeqCst);
+        let messages = engine.call(request("load", "l"));
+        assert_eq!(last(&messages)["type"], "error");
+        assert_eq!(states(&messages).last().unwrap(), "failed");
+        assert!(engine.loader.had_store_use.load(Ordering::SeqCst), "a loader can keep the files");
+        assert_eq!(std::fs::read(&file).unwrap(), b"model bytes");
+        assert_eq!(listed_state(&engine), "downloaded");
+
+        // The `use` lock went with the load, so a delete removes the files at once.
+        assert_eq!(last(&engine.call(request("delete", "x")))["type"], "ok");
+        assert!(!file.exists());
     }
 
     #[test]

@@ -25,7 +25,7 @@ use crate::store::{Legacy, ModelStore};
 use crate::vad::{self, Tracker};
 use sayso_core::engine_catalog;
 use sayso_core::engine_catalog::descriptors::{self, Descriptor, Descriptors};
-use sayso_core::model_store::{self, Lease, Store};
+use sayso_core::model_store::{self, Store};
 use sayso_core::models_onnx::System;
 use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
@@ -94,6 +94,9 @@ pub struct Engine {
     agent: ureq::Agent,
     state: Mutex<State>,
 }
+
+/// What keeps the files of a loaded model, for a model in the model store.
+type KeptFiles = Option<Arc<StoreUse>>;
 
 /// Marks a model busy until it is dropped.
 struct Busy<'a> {
@@ -191,7 +194,12 @@ impl Engine {
     fn status(&self, model: &str, spec: &ModelSpec) -> (&'static str, Value) {
         match self.state().loaded.get(model) {
             Some((spec, loaded)) if final_pass_is_out(spec, loaded) => {
-                return ("downloaded", json!({ "preview": true }));
+                let spec = spec.clone();
+                let on_disk = match self.stored(model, &spec) {
+                    Some((store, descriptor)) => store.on_disk(descriptor).unwrap_or(true),
+                    None => true,
+                };
+                return (if on_disk { "downloaded" } else { "not_downloaded" }, json!({ "preview": true }));
             }
             Some(_) => return ("ready", json!({})),
             None => {}
@@ -483,6 +491,7 @@ impl Engine {
                 Some(archive) => Some(self.store.archive_dir(model, archive)?),
                 None => None,
             },
+            store_use: None,
         })
     }
 
@@ -522,8 +531,8 @@ impl Engine {
         let busy = self.acquire(model)?;
         self.model_state(id, model, "optimizing", json!({}));
         let start = Instant::now();
-        let dirs = match store_use.as_ref().and_then(|used| used.lease.as_ref()) {
-            Some(lease) => stored_dirs(&spec, lease)?,
+        let dirs = match &store_use {
+            Some(used) => stored_dirs(&spec, used)?,
             None => self.dirs(model, &spec)?,
         };
         // With the live preview in memory, only the final pass loads.
@@ -590,22 +599,30 @@ impl Engine {
             .loaded
             .get(model)
             .is_some_and(|(spec, loaded)| loaded.preview.is_some() && spec.stream_archive().is_some());
+        let spec = self.state().loaded.get(model).map(|(spec, _)| spec.clone());
         if keep_preview && has_preview {
             if self.evict_final_pass(model) {
-                let extra = json!({ "preview": true });
-                self.model_state(request.id(), model, "downloaded", extra);
+                let state = self.state_after_unload(model, spec.as_ref());
+                self.model_state(request.id(), model, state, json!({ "preview": true }));
             }
-        } else {
-            let spec = self.state().loaded.get(model).map(|(spec, _)| spec.clone());
-            if let Some(spec) = spec {
-                self.evict(model);
-                // In the model store, another engine can have deleted it in the meantime.
-                let (status, extra) = self.status(model, &spec);
-                self.model_state(request.id(), model, status, extra);
-            }
+        } else if self.evict(model) {
+            let state = self.state_after_unload(model, spec.as_ref());
+            self.model_state(request.id(), model, state, json!({}));
         }
         self.out.ok(request.id(), json!({}));
         Ok(())
+    }
+
+    /// The state of a model after `unload`. In the model store, another engine can
+    /// have deleted it in the meantime. `unload` runs on the stdin loop, so this
+    /// does not wait for a lock: when another engine has the lock now, it says
+    /// `downloaded`, and the next `list_models` knows.
+    fn state_after_unload(&self, model: &str, spec: Option<&ModelSpec>) -> &'static str {
+        let stored = spec.and_then(|spec| self.stored(model, spec));
+        match stored.map(|(store, descriptor)| store.on_disk_now(descriptor)) {
+            Some(Ok(Some(false))) => "not_downloaded",
+            _ => "downloaded",
+        }
     }
 
     /// Drop the final pass of a loaded model and keep its live preview. False
@@ -721,18 +738,12 @@ impl Engine {
     // VAD and diarization
     // -----------------------------------------------------------------------
 
-    /// What keeps the files of a loaded model in the model store.
-    fn store_use(&self, model: &str) -> Option<Arc<StoreUse>> {
-        self.state().loaded.get(model).and_then(|(_, loaded)| loaded.store_use.clone())
-    }
-
     /// `vad`: the parts of a WAV file with speech. It uses the same tracker as a VAD
     /// session, so a session that gets the same audio finds the same parts.
     fn vad(&self, request: &Request) -> Result<()> {
         let model = request.string("model")?;
         let path = PathBuf::from(request.string("path")?);
-        let vad_model = self.vad_model(model)?;
-        let _store_use = self.store_use(model);
+        let (vad_model, _store_use) = self.vad_model(model)?;
         let samples = audio::read_wav(&path)?;
         let mut tracker = Tracker::new(vad_model.detector()?);
         let mut events = tracker.accept(&samples);
@@ -750,8 +761,7 @@ impl Engine {
         let model = request.string("model")?;
         let path = PathBuf::from(request.string("path")?);
         let speakers = speakers(request)?;
-        let diarizer = self.diarizer(model)?;
-        let _store_use = self.store_use(model);
+        let (diarizer, _store_use) = self.diarizer(model)?;
         let samples = audio::read_wav(&path)?;
         let audio_ms = (samples.len() * 1000 / audio::SAMPLE_RATE) as u64;
         let raw = if samples.is_empty() { Vec::new() } else { diarizer.diarize(&samples, speakers)? };
@@ -759,40 +769,44 @@ impl Engine {
         Ok(())
     }
 
-    /// The VAD of a loaded VAD model.
-    fn vad_model(&self, model: &str) -> Result<Arc<dyn VadModel>> {
+    /// The VAD of a loaded VAD model, and what keeps its files. They come in one
+    /// step, because an `unload` can run at the same time.
+    fn vad_model(&self, model: &str) -> Result<(Arc<dyn VadModel>, KeptFiles)> {
         let state = self.state();
         let (spec, loaded) = state
             .loaded
             .get(model)
             .ok_or_else(|| anyhow!("model {model} is not loaded"))?;
         check_task(model, spec, Task::Vad)?;
-        loaded.vad.clone().ok_or_else(|| anyhow!("model {model} has no VAD"))
+        let vad = loaded.vad.clone().ok_or_else(|| anyhow!("model {model} has no VAD"))?;
+        Ok((vad, loaded.store_use.clone()))
     }
 
-    /// The diarizer of a loaded diarization model.
-    fn diarizer(&self, model: &str) -> Result<Arc<dyn Diarizer>> {
+    /// The diarizer of a loaded diarization model, and what keeps its files.
+    fn diarizer(&self, model: &str) -> Result<(Arc<dyn Diarizer>, KeptFiles)> {
         let state = self.state();
         let (spec, loaded) = state
             .loaded
             .get(model)
             .ok_or_else(|| anyhow!("model {model} is not loaded"))?;
         check_task(model, spec, Task::Diarization)?;
-        loaded.diarizer.clone().ok_or_else(|| anyhow!("model {model} has no diarizer"))
+        let diarizer = loaded.diarizer.clone().ok_or_else(|| anyhow!("model {model} has no diarizer"))?;
+        Ok((diarizer, loaded.store_use.clone()))
     }
 
-    /// The live preview of a loaded model.
-    fn preview(&self, model: &str) -> Result<Arc<dyn LivePreview>> {
+    /// The live preview of a loaded model, and what keeps its files.
+    fn preview(&self, model: &str) -> Result<(Arc<dyn LivePreview>, KeptFiles)> {
         let state = self.state();
         let (spec, loaded) = state
             .loaded
             .get(model)
             .ok_or_else(|| anyhow!("model {model} is not loaded"))?;
         check_task(model, spec, Task::Speech)?;
-        loaded
+        let preview = loaded
             .preview
             .clone()
-            .ok_or_else(|| anyhow!("model {model} has no live preview"))
+            .ok_or_else(|| anyhow!("model {model} has no live preview"))?;
+        Ok((preview, loaded.store_use.clone()))
     }
 }
 
@@ -855,7 +869,8 @@ fn check_files(spec: &ModelSpec, dirs: &ModelDirs) -> Result<()> {
 
 /// The folders of a model in the model store. The roles are those of
 /// `engine_catalog::descriptors`.
-fn stored_dirs(spec: &ModelSpec, lease: &Lease) -> Result<ModelDirs> {
+fn stored_dirs(spec: &ModelSpec, used: &Arc<StoreUse>) -> Result<ModelDirs> {
+    let lease = used.lease.as_ref().context("a model in use has a lease")?;
     let role = |name: &str| lease.folder(name).map(PathBuf::from);
     let main = role("main")
         .or_else(|| role("segmentation"))
@@ -863,6 +878,7 @@ fn stored_dirs(spec: &ModelSpec, lease: &Lease) -> Result<ModelDirs> {
     Ok(ModelDirs {
         stream: spec.stream_archive().map(|_| role("preview").unwrap_or_else(|| main.clone())),
         embedding: role("embedding"),
+        store_use: Some(Arc::clone(used)),
         main,
     })
 }
@@ -949,24 +965,24 @@ impl StreamWorker {
         match request.kind.as_str() {
             "stream_start" => {
                 let model = request.string("model")?;
-                let preview = self.engine.preview(model)?;
+                let (preview, store_use) = self.engine.preview(model)?;
                 self.reserve(session)?;
                 let stream = preview.start()?;
                 let session_state = PreviewSession {
                     stream,
                     partials: Partials::default(),
                     last_decode: Instant::now(),
-                    _store_use: self.engine.store_use(model),
+                    _store_use: store_use,
                 };
                 self.sessions.insert(session, Session::Preview(session_state));
                 self.engine.out.ok(request.id(), json!({}));
             }
             "vad_start" => {
                 let model = request.string("model")?;
-                let vad_model = self.engine.vad_model(model)?;
+                let (vad_model, store_use) = self.engine.vad_model(model)?;
                 self.reserve(session)?;
                 let tracker = Tracker::new(vad_model.detector()?);
-                self.sessions.insert(session, Session::Vad { tracker, _store_use: self.engine.store_use(model) });
+                self.sessions.insert(session, Session::Vad { tracker, _store_use: store_use });
                 self.engine.out.ok(request.id(), json!({}));
             }
             "stream_audio" => {

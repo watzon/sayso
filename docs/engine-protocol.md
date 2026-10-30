@@ -305,7 +305,7 @@ The messages do not change. With a store:
 
 - `model_state` `downloading` also means that another engine downloads the files, and this engine waits for them.
 - `load` of a model that is not on disk sends `model_state` `not_downloaded` before the `error`.
-- `delete` takes the model away for each engine on the store. An engine that has it loaded keeps it until it unloads, and its `unload` then gives `not_downloaded`.
+- `delete` takes the model away for each engine on the store. An engine that has it loaded keeps it until it unloads, and its `unload` then gives `not_downloaded`. When another engine holds the lock of the metadata at that moment, `unload` gives `downloaded`, and the next `list_models` is right.
 - `download` and `delete` of an engine change no file in `SAYSO_MODELS_DIR` for a model with a descriptor.
 
 Two variables are for tests only:
