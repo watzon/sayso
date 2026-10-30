@@ -7,7 +7,7 @@ let protocolVersion = 1
 /// (docs/engine-protocol.md, "Features").
 let engineFeatures = [
     "catalog", "concurrent_streams", "detected_language", "diarization", "language_model", "prepare", "segments",
-    "unload", "vad",
+    "store_v1", "unload", "vad",
 ]
 /// The Sayso version, as in `Cargo.toml`. A test in `sayso-core` fails when they differ.
 /// Keep this on one line: that test reads it.

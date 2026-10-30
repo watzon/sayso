@@ -1,6 +1,8 @@
 // Fluid Speech Mini: a Core ML model on Hugging Face that FluidAudio's `ModelHub` cannot
 // fetch, because `ModelHub` only knows its own `Repo` list. This file has a small
 // downloader for the one pinned revision. The model loads as Parakeet Ultra.
+import CoreML
+import FluidAudio
 import Foundation
 
 enum FluidSpeechMini {
@@ -57,6 +59,32 @@ enum FluidSpeechMini {
         if (try? fm.destinationOfSymbolicLink(atPath: link.path)) == "JointDecision.mlmodelc" { return }
         try? fm.removeItem(at: link)
         try fm.createSymbolicLink(atPath: link.path, withDestinationPath: "JointDecision.mlmodelc")
+    }
+
+    /// The models of an artifact in the model store (docs/sdk.md, findings 3 and 5). An artifact
+    /// never changes, so it has no link to the name that FluidAudio wants, and `AsrModels.loadLocal`
+    /// cannot read it. The compute units are those that `loadLocal` gives Parakeet Ultra.
+    static func loadStored(from folder: URL) throws -> AsrModels {
+        let configuration = AsrModels.defaultConfiguration()
+        func model(_ name: String, units: MLComputeUnits) throws -> MLModel {
+            let modelConfiguration = MLModelConfiguration()
+            modelConfiguration.computeUnits = units
+            modelConfiguration.allowLowPrecisionAccumulationOnGPU = configuration.allowLowPrecisionAccumulationOnGPU
+            return try MLModel(contentsOf: folder.appendingPathComponent(name), configuration: modelConfiguration)
+        }
+        let data = try Data(contentsOf: folder.appendingPathComponent(vocabulary))
+        guard let tokens = try JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            throw EngineError("the vocabulary of Fluid Speech Mini has an unknown form")
+        }
+        let words = tokens.reduce(into: [Int: String]()) { result, entry in
+            if let id = Int(entry.key) { result[id] = entry.value }
+        }
+        return AsrModels(
+            encoder: try model("Encoder.mlmodelc", units: configuration.computeUnits),
+            preprocessor: try model("Preprocessor.mlmodelc", units: .cpuOnly),
+            decoder: try model("Decoder.mlmodelc", units: configuration.computeUnits),
+            joint: try model("JointDecision.mlmodelc", units: configuration.computeUnits),
+            configuration: configuration, vocabulary: words, version: TdtVersion.fluidMini.fluid)
     }
 
     private static func url(api: Bool, path: String = "") -> URL {
@@ -155,7 +183,7 @@ enum FluidSpeechMini {
 
 /// One URLSession download task with byte progress. It owns its session, so a finished
 /// or failed task leaves nothing behind.
-private final class FileLoader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+final class FileLoader: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
     private let target: URL
     private let onBytes: @Sendable (Int64) -> Void
     private let lock = NSLock()
