@@ -3,24 +3,22 @@
 //!
 //! The reader answers `hello`, `bye`, and the requests that fail at once. A
 //! request that waits (for the engine, or for the user) runs on a worker with
-//! a [`Responder`], so the reader goes on and the extension can send another
+//! a [`Responder`], so the reader goes on and the app can send another
 //! request on the same connection.
 
-use crate::identity::find_record;
+use crate::approval::{self, HelloStep};
+use crate::identity::Caller;
 use crate::responder::{Notifier, Outgoing, Responder};
 use crate::transport::Conn;
 use crate::{Peer, Shared};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
-use sayso_protocol::{Capability, DecodeError, Decoded, ErrorCode, ErrorReply, Event, HelloReply, Kind, PROTOCOL, Reply, Request, Subscribe, SubscribeReply, decode, encode};
+use sayso_protocol::{Capability, DecodeError, Decoded, ErrorCode, ErrorReply, Event, Hello, Kind, Reply, Request, Subscribe, SubscribeReply, decode, encode};
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
-
-/// The optional parts of the Host API that this host serves.
-const FEATURES: [&str; 0] = [];
 
 /// A longer line is not a request. Audio comes in small parts.
 const MAX_LINE: u64 = 16 * 1024 * 1024;
@@ -28,15 +26,14 @@ const MAX_LINE: u64 = 16 * 1024 * 1024;
 /// The event after each insert of a dictation.
 pub(crate) const DICTATION_DONE: &str = "dictation_done";
 
-/// The events that an extension can subscribe to, and the capability that
+/// The events that an app can subscribe to, and the capability that
 /// each one needs.
 const EVENTS: [(&str, Capability); 1] = [(DICTATION_DONE, Capability::DictationObserve)];
 
 /// A connection in the registry of the host.
 pub(crate) struct Entry {
-    /// None until the host knows the extension, and for a client that is not
-    /// an extension.
-    pub extension_id: Option<String>,
+    /// The key of the app, when the program has an identity.
+    pub app_id: Option<String>,
     outgoing: Sender<Outgoing>,
     writer: Option<JoinHandle<()>>,
     /// The events of `subscribe`.
@@ -45,7 +42,7 @@ pub(crate) struct Entry {
 
 impl Entry {
     fn new(outgoing: Sender<Outgoing>, writer: JoinHandle<()>) -> Entry {
-        Entry { extension_id: None, outgoing, writer: Some(writer), events: Vec::new() }
+        Entry { app_id: None, outgoing, writer: Some(writer), events: Vec::new() }
     }
 
     /// Send `host_closing`, then close. Gives the writer thread, to wait for it.
@@ -87,15 +84,15 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
         connections.insert(number, Entry::new(outgoing.clone(), writer));
     }
 
-    let extension = identify(shared, &peer);
+    let caller = identify(shared, &peer);
     drop(peer);
-    if let Some(id) = &extension {
-        log::info!("host: {id} connected");
+    if let Some(caller) = &caller {
+        log::info!("host: {} connected", caller.name);
         if let Some(entry) = shared.connections.lock().get_mut(&number) {
-            entry.extension_id = Some(id.clone());
+            entry.app_id = Some(caller.identity.id());
         }
     }
-    let connection = Connection { shared, number, extension, notifier, jobs: Mutex::new(HashSet::new()) };
+    let connection = Connection { shared, number, caller, notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
     let mut reader = BufReader::new(reader);
     let mut line = Vec::new();
     loop {
@@ -123,7 +120,7 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
     }
 
     open.store(false, Ordering::SeqCst);
-    // The jobs and the live session of an extension end with its connection.
+    // The jobs and the live session of an app end with its connection.
     if let Some(jobs) = &shared.jobs {
         jobs.cancel_connection(number);
     }
@@ -137,8 +134,8 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
     if let Some(writer) = entry.and_then(|mut entry| entry.writer.take()) {
         let _ = writer.join();
     }
-    if let Some(id) = &connection.extension {
-        log::info!("host: {id} disconnected");
+    if let Some(caller) = &connection.caller {
+        log::info!("host: {} disconnected", caller.name);
     }
 }
 
@@ -158,21 +155,13 @@ fn write_loop(mut writer: Box<dyn Write + Send>, messages: &Receiver<Outgoing>, 
     closer();
 }
 
-/// The id of the extension at the other end, from its executable and
-/// `state.toml`.
-fn identify(shared: &Shared, peer: &Peer) -> Option<String> {
-    let executable = match shared.identify.executable(peer) {
-        Ok(executable) => executable,
+/// The app at the other end. None: the system gives no identity that the
+/// host can trust, and the app gets `not_approved` with no question.
+fn identify(shared: &Shared, peer: &Peer) -> Option<Caller> {
+    match shared.identify.identify(peer) {
+        Ok(caller) => Some(caller),
         Err(e) => {
-            log::warn!("host: cannot find the program of a client: {e}");
-            return None;
-        }
-    };
-    let state = shared.state.current();
-    match find_record(&state, &executable, |team_id, bundle_id| shared.identify.signed_by(peer, team_id, bundle_id)) {
-        Some(record) => Some(record.id.clone()),
-        None => {
-            log::warn!("host: {} is not an installed extension", executable.display());
+            log::warn!("host: a program has no identity: {e}");
             None
         }
     }
@@ -182,10 +171,14 @@ struct Connection<'a> {
     shared: &'a Arc<Shared>,
     /// The number of the connection in the host.
     number: u64,
-    extension: Option<String>,
+    caller: Option<Caller>,
     notifier: Notifier,
     /// The jobs that this connection started.
     jobs: Mutex<HashSet<u64>>,
+    /// False when the reader ends.
+    open: Arc<AtomicBool>,
+    /// `hello` of this connection waits for the user.
+    asking: Arc<AtomicBool>,
 }
 
 impl Connection<'_> {
@@ -196,13 +189,13 @@ impl Connection<'_> {
     /// Answer one line, and say true when the connection closes after it.
     fn handle(&self, line: &str) -> bool {
         let decoded = decode::<Request>(line);
-        let Some(extension_id) = &self.extension else {
+        let Some(caller) = &self.caller else {
             let id = match &decoded {
                 Ok(Decoded::Known(message)) => message.id.clone(),
                 Ok(Decoded::Unknown { id, .. }) | Err(DecodeError::BadFields { id, .. }) => id.clone(),
                 Err(DecodeError::NotAMessage(_)) => None,
             };
-            self.responder(id.as_deref()).reply(not_an_extension());
+            self.responder(id.as_deref()).reply(approval::not_approved());
             return true;
         };
         let message = match decoded {
@@ -225,44 +218,80 @@ impl Connection<'_> {
             responder.reply(Reply::ok());
             return true;
         }
+        let request = match message.body {
+            Request::Hello(hello) => return self.hello(caller, hello, responder),
+            request => request,
+        };
         // Read on each request, so a grant that the user takes back stops the next one.
-        let state = self.shared.state.current();
-        let Some(record) = state.record(extension_id) else {
-            log::info!("host: {extension_id} is no longer installed");
-            responder.reply(not_an_extension());
+        let apps = self.shared.apps.current();
+        let Some(record) = apps.find(&caller.identity).filter(|record| record.allowed) else {
+            if self.asking.load(Ordering::SeqCst) {
+                responder.reply(Reply::error(Some(ErrorCode::BadRequest), "wait for the reply to hello: the user has not answered yet"));
+                return false;
+            }
+            log::info!("host: {} is not approved", caller.name);
+            responder.reply(approval::not_approved());
             return true;
         };
         let granted = record.capabilities();
-        if let Some(missing) = message.body.capabilities().into_iter().find(|capability| !granted.contains(capability)) {
+        if let Some(missing) = request.capabilities().into_iter().find(|capability| !granted.contains(capability)) {
             responder.reply(capability_error(&missing));
             return false;
         }
-        match message.body {
-            Request::Hello(_) => responder.reply(Reply::ok_with(&HelloReply {
-                host_version: self.shared.host_version.clone(),
-                protocol: PROTOCOL,
-                features: FEATURES.iter().map(|feature| feature.to_string()).collect(),
-                extension_id: extension_id.clone(),
-                capabilities: granted,
-            })),
+        match request {
             Request::ListModels(request) => self.spawn("list-models", responder, move |shared, _, responder| crate::models::list_models(shared, &request, responder)),
             Request::DownloadModel(request) => {
-                self.spawn("download", responder, move |shared, extension_id, responder| crate::download::download_model(shared, extension_id, &request, responder));
+                self.spawn("download", responder, move |shared, app_id, responder| crate::download::download_model(shared, app_id, &request, responder));
             }
             Request::TranscribeFile(request) => crate::job_requests::transcribe_file(self.shared, self.number, &self.jobs, &request, responder),
             Request::CancelJob(request) => crate::job_requests::cancel_job(self.shared, self.number, &self.jobs, &request, responder),
             Request::SessionStart(request) => {
                 let number = self.number;
-                self.spawn("live-start", responder, move |shared, extension_id, responder| crate::live_requests::session_start(shared, number, extension_id, &request, responder));
+                self.spawn("live-start", responder, move |shared, app_id, responder| crate::live_requests::session_start(shared, number, app_id, &request, responder));
             }
             Request::SessionAudio(request) => crate::live_requests::session_audio(self.shared, self.number, &request, responder),
             Request::SessionStop(request) => {
                 let number = self.number;
                 self.spawn("live-stop", responder, move |shared, _, responder| crate::live_requests::session_stop(shared, number, &request, responder));
             }
-            Request::Enhance(request) => self.spawn("enhance", responder, move |shared, extension_id, responder| crate::enhance::enhance(shared, extension_id, &request, responder)),
+            Request::Enhance(request) => self.spawn("enhance", responder, move |shared, app_id, responder| crate::enhance::enhance(shared, app_id, &request, responder)),
             Request::Subscribe(request) => self.subscribe(&request, responder),
             request => responder.reply(Reply::error(Some(ErrorCode::Unsupported), format!("this version of Sayso cannot run {} yet", request.kind()))),
+        }
+        false
+    }
+
+    /// `hello`: reply at once when the record of the app has the answers.
+    /// Else ask on a worker, and hold the reply until the user answered.
+    /// Says true when the connection closes after it.
+    fn hello(&self, caller: &Caller, hello: Hello, responder: Responder) -> bool {
+        if self.asking.load(Ordering::SeqCst) {
+            responder.reply(Reply::error(Some(ErrorCode::BadRequest), "an earlier hello waits for the user"));
+            return false;
+        }
+        match approval::hello_step(self.shared, caller, &hello) {
+            HelloStep::Reply(reply) => responder.reply(Reply::ok_with(&reply)),
+            HelloStep::Refuse => {
+                log::info!("host: {} is not approved", caller.name);
+                responder.reply(approval::not_approved());
+                return true;
+            }
+            HelloStep::Ask(question) => {
+                self.asking.store(true, Ordering::SeqCst);
+                let shared = self.shared.clone();
+                let caller = caller.clone();
+                let open = self.open.clone();
+                let asking = self.asking.clone();
+                // A thread that cannot start drops the responder, which sends the error.
+                let spawned = std::thread::Builder::new().name("sayso-host-approval".into()).spawn(move || {
+                    approval::ask_and_reply(&shared, &caller, &hello, question, &open, responder);
+                    asking.store(false, Ordering::SeqCst);
+                });
+                if let Err(e) = spawned {
+                    self.asking.store(false, Ordering::SeqCst);
+                    log::warn!("host: cannot start a thread for the approval question: {e}");
+                }
+            }
         }
         false
     }
@@ -281,14 +310,14 @@ impl Connection<'_> {
         responder.reply(Reply::ok_with(&SubscribeReply { events: events.iter().map(|name| name.to_string()).collect() }));
     }
 
-    /// Run `work` on a thread of its own. `work` gets the host, the id of the
-    /// extension, and the responder, and must reply.
+    /// Run `work` on a thread of its own. `work` gets the host, the key of the
+    /// app, and the responder, and must reply.
     fn spawn(&self, what: &str, responder: Responder, work: impl FnOnce(&Shared, &str, Responder) + Send + 'static) {
-        let Some(extension_id) = self.extension.clone() else { return };
+        let Some(app_id) = self.caller.as_ref().map(|caller| caller.identity.id()) else { return };
         let shared = self.shared.clone();
         // The responder moves into the closure. A thread that cannot start
         // drops the closure, and the dropped responder sends the error.
-        let spawned = std::thread::Builder::new().name(format!("sayso-host-{what}")).spawn(move || work(&shared, &extension_id, responder));
+        let spawned = std::thread::Builder::new().name(format!("sayso-host-{what}")).spawn(move || work(&shared, &app_id, responder));
         if let Err(e) = spawned {
             log::warn!("host: cannot start a thread for {what}: {e}");
         }
@@ -296,30 +325,26 @@ impl Connection<'_> {
 }
 
 /// Send `event` (the event `name`) to each connection that subscribed to it,
-/// when its extension still has the capability of the event. The grant is
+/// when its app still has the capability of the event. The grant is
 /// read for each event, so a grant that the user takes back stops the next one.
 pub(crate) fn send_to_subscribers(shared: &Shared, name: &str, event: &Event) {
     if shared.is_closing() {
         return;
     }
     let Some((_, capability)) = EVENTS.iter().find(|(known, _)| *known == name) else { return };
-    // Without a subscriber, the app (a dictation) does not read `state.toml`.
+    // Without a subscriber, the app (a dictation) does not read `apps.toml`.
     if !shared.connections.lock().values().any(|entry| entry.events.contains(&name)) {
         return;
     }
-    let state = shared.state.current();
+    let apps = shared.apps.current();
     let line = encode(None, event);
     let connections = shared.connections.lock();
     for entry in connections.values().filter(|entry| entry.events.contains(&name)) {
-        let granted = entry.extension_id.as_deref().and_then(|id| state.record(id)).is_some_and(|record| record.capabilities().contains(capability));
+        let granted = entry.app_id.as_deref().and_then(|id| apps.record(id)).is_some_and(|record| record.allowed && record.capabilities().contains(capability));
         if granted {
             let _ = entry.outgoing.send(Outgoing::Line(line.clone()));
         }
     }
-}
-
-fn not_an_extension() -> Reply {
-    Reply::error(Some(ErrorCode::NotAnExtension), "this program is not an installed extension of Sayso")
 }
 
 fn capability_error(missing: &Capability) -> Reply {

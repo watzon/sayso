@@ -1,4 +1,4 @@
-//! `transcribe_file` and `cancel_job` (`docs/extensions.md`, "Requests").
+//! `transcribe_file` and `cancel_job` (`docs/apps.md`, "Requests").
 //!
 //! Both answer on the reader thread: the checks read the settings and the
 //! state of the engine, and do not wait. The job then runs on the thread of

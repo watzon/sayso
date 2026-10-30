@@ -1,4 +1,4 @@
-//! Requests from an extension to the host (`docs/extensions.md`, "Requests").
+//! Requests from a connected app to the host (`docs/extensions.md`, "Requests").
 
 use crate::codec::tagged_kind;
 use crate::{Capability, Role, Source};
@@ -66,13 +66,26 @@ impl Request {
 /// The first request of a client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hello {
-    /// The name and version of the SDK, for example `sayso-extension 0.11.0`.
+    /// The name and version of the SDK, for example `sayso-extension 0.13.0`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdk: Option<String>,
     pub protocol: u32,
     /// The optional parts of the protocol that the client knows.
     #[serde(default)]
     pub features: Vec<String>,
+    /// What the app says about itself. The host does not check it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<AppName>,
+    /// The capabilities that the app asks for. The host asks the user for the
+    /// ones that have no answer yet.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub capabilities: Vec<Capability>,
+}
+
+/// `app` of `hello`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppName {
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -85,7 +98,7 @@ pub struct ListModels {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DownloadModel {
     pub model: String,
-    /// Why the extension needs the model, for the question to the user.
+    /// Why the app needs the model, for the question to the user.
     pub reason: String,
 }
 
@@ -103,7 +116,7 @@ pub struct TranscribeFile {
     pub diarize: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diarization_model: Option<String>,
-    /// The number of speakers, when the extension knows it.
+    /// The number of speakers, when the app knows it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speakers: Option<u32>,
 }

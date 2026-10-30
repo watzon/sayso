@@ -1,5 +1,5 @@
-//! `enhance` (`docs/extensions.md`, "Requests"): run a style of the user, or
-//! a free prompt, on text from an extension, with an AI provider of the user.
+//! `enhance` (`docs/apps.md`, "Requests"): run a style of the user, or
+//! a free prompt, on text from an app, with an AI provider of the user.
 //!
 //! The host chooses the style and the provider from the request and the
 //! settings of the user ([`plan`]). The app runs the style step with the code
@@ -18,7 +18,7 @@ use sayso_core::style::{CleanupField, RunPlan, Style, StyleLibrary};
 use sayso_protocol::{Enhance, EnhanceReply, ErrorCode, Reply};
 
 /// The id of the style that the host makes for a `prompt`.
-pub const PROMPT_STYLE_ID: &str = "extension-prompt";
+pub const PROMPT_STYLE_ID: &str = "app-prompt";
 
 /// A style step for `enhance`: what the host chose from the request and the
 /// settings of the user.
@@ -48,11 +48,11 @@ impl EnhanceRefusal {
 }
 
 /// `enhance`. Runs on a worker thread: a provider can take seconds.
-pub(crate) fn enhance(shared: &Shared, extension_id: &str, request: &Enhance, responder: Responder) {
+pub(crate) fn enhance(shared: &Shared, app_id: &str, request: &Enhance, responder: Responder) {
     let reply = match run(shared, request) {
         Ok(reply) => reply,
         Err(refusal) => {
-            log::info!("host: enhance of {extension_id} failed: {}", refusal.message);
+            log::info!("host: enhance of {app_id} failed: {}", refusal.message);
             refusal.reply()
         }
     };
@@ -166,7 +166,7 @@ fn prompt_style(prompt: &str) -> Style {
 }
 
 /// The reply to the result of the style step. The text is never lost in a
-/// dictation, but an extension asked for the style: a step that did not
+/// dictation, but an app asked for the style: a step that did not
 /// apply is an error.
 pub fn reply(provider: &Provider, out: PipelineOutput) -> Result<Reply, EnhanceRefusal> {
     if let Some((provider_id, error)) = &out.enhance_error {

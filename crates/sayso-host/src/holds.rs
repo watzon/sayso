@@ -1,54 +1,55 @@
-//! The work of extensions that holds Sayso open (`docs/extensions.md`,
+//! The work of apps that holds Sayso open (`docs/extensions.md`,
 //! "Lifecycle"): a live session, or a job that runs or waits. Sayso asks
-//! before it quits, and does not install an update, while an extension has
-//! such work.
+//! before it quits, and does not install an update, while an app has such
+//! work.
 
 use crate::Shared;
 use crate::live::{LiveInfo, LiveObserver};
 use parking_lot::Mutex;
 use std::sync::Arc;
 
-/// One extension with work that holds Sayso open.
+/// One app with work that holds Sayso open.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hold {
-    pub extension_id: String,
-    /// The name to show: the name in `state.toml`, else the id.
+    pub app_id: String,
+    /// The name to show: the name in `apps.toml`.
     pub name: String,
     pub work: Work,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Work {
-    /// A live session: the extension records.
+    /// A live session: the app records.
     LiveSession,
     /// A job that runs or waits in the queue.
     Job,
 }
 
 /// The holds now: the live session first, then the jobs in the order of
-/// their connections, one entry for each extension and kind of work.
+/// their connections, one entry for each app and kind of work.
 pub(crate) fn holds(shared: &Shared) -> Vec<Hold> {
     let mut found: Vec<(String, Work)> = Vec::new();
     if let Some(live) = shared.live.as_ref().and_then(crate::live::LiveSessions::current) {
-        found.push((live.extension_id, Work::LiveSession));
+        found.push((live.app_id, Work::LiveSession));
     }
     if let Some(jobs) = &shared.jobs {
         let owners = jobs.connections();
         let connections = shared.connections.lock();
         for connection in owners {
-            if let Some(id) = connections.get(&connection).and_then(|entry| entry.extension_id.clone()) {
+            if let Some(id) = connections.get(&connection).and_then(|entry| entry.app_id.clone()) {
                 found.push((id, Work::Job));
             }
         }
     }
-    let state = shared.state.current();
+    let apps = shared.apps.current();
     let mut holds: Vec<Hold> = Vec::new();
-    for (extension_id, work) in found {
-        if holds.iter().any(|hold| hold.extension_id == extension_id && hold.work == work) {
+    for (app_id, work) in found {
+        if holds.iter().any(|hold| hold.app_id == app_id && hold.work == work) {
             continue;
         }
-        let name = state.record(&extension_id).map_or_else(|| extension_id.clone(), |record| record.display_name().to_string());
-        holds.push(Hold { extension_id, name, work });
+        // A record that the user removed during the work: the key still names the app.
+        let name = apps.record(&app_id).map_or_else(|| app_id.clone(), |record| record.name.clone());
+        holds.push(Hold { app_id, name, work });
     }
     holds
 }

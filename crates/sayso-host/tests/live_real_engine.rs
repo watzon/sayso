@@ -41,6 +41,9 @@ impl HostServices for Services {
     fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
     }
+    fn ask_approval(&self, _: &sayso_host::ApprovalQuestion, _: &dyn Fn() -> bool) -> Option<bool> {
+        None
+    }
 }
 
 fn read_pcm(path: &Path) -> Vec<i16> {
@@ -64,7 +67,7 @@ fn a_client_session_on_the_real_engine_gives_partials_segments_and_speakers() {
     let mut config = Config::default();
     config.dictation.model = ModelId::new("parakeet-unified-en");
     config.models.vad = RoleChoice::Model(ModelId::new("silero-vad"));
-    write_state(&setup.state, &here(), &["session.live"], None);
+    write_apps(&setup.apps, &["session.live"]);
     let host = start_with(&setup, Arc::new(Services { engine, config }));
     let client = Client::connect_to(&setup.socket).unwrap();
     let events = client.events();

@@ -33,7 +33,7 @@ pub struct Message<T> {
 pub enum Decoded<T> {
     Known(Message<T>),
     /// A `type` that this version does not know, for example from a newer
-    /// peer. A host replies with an `error`, and an extension ignores it.
+    /// peer. A host replies with an `error`, and an app ignores it.
     Unknown { id: Option<String>, kind: String, fields: Fields },
 }
 

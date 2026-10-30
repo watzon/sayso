@@ -262,6 +262,9 @@ impl HostServices for Services {
     fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
     }
+    fn ask_approval(&self, _: &sayso_host::ApprovalQuestion, _: &dyn Fn() -> bool) -> Option<bool> {
+        None
+    }
     fn microphone(&self) -> Option<Arc<dyn Microphone>> {
         self.mic.clone().map(|mic| mic as Arc<dyn Microphone>)
     }
@@ -301,7 +304,7 @@ struct World {
 
 fn world(granted: &[&str], engine: LiveEngine) -> World {
     let setup = setup();
-    write_state(&setup.state, &here(), granted, None);
+    write_apps(&setup.apps, granted);
     let engine = Arc::new(engine);
     let mic = Arc::new(FakeMic::default());
     let mut config = Config::default();
@@ -381,7 +384,7 @@ fn a_client_session_gives_partials_segments_speakers_and_its_text() {
     let (client, events) = world.client();
     let record_to = world.setup.dir.path().join("meeting");
     let session = session_of(start(&client, json!({"sources": ["client"], "diarize": true, "record_to": record_to})));
-    let running = LiveInfo { session, extension_id: ID.into(), sources: vec![Source::Client], captures_mic: false, stopping: false };
+    let running = LiveInfo { session, app_id: id(), sources: vec![Source::Client], captures_mic: false, stopping: false };
     assert_eq!(world.host.live_session(), Some(running.clone()));
     assert_eq!(world.engine.open_streams(), 2, "a preview stream and a VAD session");
 
@@ -448,30 +451,21 @@ fn a_session_without_audio_stops_with_no_text() {
 }
 
 #[test]
-fn one_session_runs_at_a_time_across_extensions() {
+fn one_session_runs_at_a_time_across_connections() {
     let world = world(LIVE, LiveEngine::new());
     let (first, _) = world.client();
     let session = session_of(start(&first, json!({"sources": ["client"]})));
 
-    // A second extension: a deeper folder wins, so the next connection is it.
-    let other = "dev.example.other";
-    let state = format!(
-        "[[extensions]]\nid = \"{ID}\"\nversion = \"0.1.0\"\npath = '{}'\nsideloaded = true\ngranted = [\"session.live\"]\n\n[[extensions]]\nid = \"{other}\"\nversion = \"0.1.0\"\npath = '{}'\nsideloaded = true\ngranted = [\"session.live\"]\n",
-        here().parent().unwrap().display(),
-        here().display()
-    );
-    std::fs::write(&world.setup.state, state).unwrap();
     let (second, _) = world.client();
-    assert_eq!(second.hello().extension_id, other);
     let busy = refused(start(&second, json!({"sources": ["client"]})));
     assert_eq!(busy.code, Some(ErrorCode::Busy));
-    // The other extension cannot stop or feed a session that it did not start.
+    // The other connection cannot stop or feed a session that it did not start.
     assert_eq!(refused(second.request("session_stop", fields(json!({"session": session})))).code, Some(ErrorCode::BadRequest));
-    assert_eq!(world.host.live_session().map(|l| l.extension_id), Some(ID.to_string()));
+    assert_eq!(world.host.live_session().map(|l| l.app_id), Some(id()));
 
     stop(&first, session);
     let session = session_of(start(&second, json!({"sources": ["client"]})));
-    assert_eq!(world.host.live_session().map(|l| l.extension_id), Some(other.to_string()));
+    assert_eq!(world.host.live_session().map(|l| l.app_id), Some(id()));
     stop(&second, session);
 }
 
@@ -605,7 +599,7 @@ fn a_live_session_holds_sayso_open_until_it_ends() {
     world.host.set_live_observer(observer.clone());
     let (client, _events) = world.client();
     let session = session_of(start(&client, json!({"sources": ["mic"]})));
-    let hold = sayso_host::Hold { extension_id: ID.into(), name: ID.into(), work: sayso_host::Work::LiveSession };
+    let hold = sayso_host::Hold { app_id: id(), name: "Test".into(), work: sayso_host::Work::LiveSession };
     assert_eq!(world.host.holds(), vec![hold]);
     assert_eq!(changes.load(Ordering::SeqCst), 1);
     stop(&client, session);

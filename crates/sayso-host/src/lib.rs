@@ -1,15 +1,17 @@
-//! The host of Sayso extensions: the server of the Host API
-//! (`docs/extensions.md`, "Host API").
+//! The host of connected apps: the server of the Host API
+//! (`docs/extensions.md`, "Host API", and `docs/sdk.md`, "Approval").
 //!
-//! An extension connects to a local socket (a named pipe on Windows) and
-//! sends NDJSON messages of `sayso-protocol`. The host knows the extension by
-//! its executable ([`Identify`]) and the record of `state.toml` ([`StateFile`]),
-//! and checks the capabilities of each request.
+//! An app connects to a local socket (a named pipe on Windows) and sends
+//! NDJSON messages of `sayso-protocol`. The host knows the app by its
+//! executable ([`Identify`]) and the answer of the user in `apps.toml`
+//! ([`AppsFile`]), and checks the capabilities of each request.
 //!
 //! The host has no GPUI. It gets the engine, the capture, and the questions
 //! to the user from `sayso-app` through [`HostServices`], so it runs and is
 //! tested without a window.
 
+mod apps;
+mod approval;
 mod backend;
 mod bus;
 mod connection;
@@ -22,14 +24,14 @@ pub mod live;
 mod live_requests;
 mod models;
 mod responder;
-mod state;
 pub mod jobs;
 mod transport;
 
 pub use enhance::StyleRequest;
 pub use holds::{Hold, Work};
-pub use identity::{Identify, Peer, SystemIdentify};
-pub use state::{Record, State, StateFile};
+pub use approval::ApprovalQuestion;
+pub use apps::{AppRecord, Apps, AppsFile};
+pub use identity::{Caller, Identify, Identity, Peer, SystemIdentify, clean_name};
 /// The event of [`Host::dictation_done`], for the app.
 pub use sayso_protocol::DictationDone;
 
@@ -64,14 +66,24 @@ pub trait HostServices: Send + Sync {
     /// request, so a change counts at once.
     fn config(&self) -> Config;
 
-    /// Ask the user whether an extension may download a model. Blocks until
-    /// the user answers. True means download. A user who closes the question
+    /// Ask the user whether an app may download a model. Blocks until the
+    /// user answers. True means download. A user who closes the question
     /// without an answer says no.
     ///
-    /// `withdrawn` becomes true when the extension disconnects or Sayso
-    /// closes. Then close the question, as a Cancel, and return false. Look
-    /// at it a few times each second.
+    /// `withdrawn` becomes true when the app disconnects or Sayso closes.
+    /// Then close the question, as a Cancel, and return false. Look at it a
+    /// few times each second.
     fn ask_download(&self, question: &DownloadQuestion, withdrawn: &dyn Fn() -> bool) -> bool;
+
+    /// Ask the user whether an app may use Sayso. Blocks until the user
+    /// answers. `Some(true)` is **Allow**, and `Some(false)` is **Don't allow**
+    /// or a question that the user closed. The host keeps both.
+    ///
+    /// `withdrawn` becomes true when each connection of the app has closed or
+    /// Sayso closes. Then close the question and return `None`: the host keeps
+    /// no answer, and Sayso asks again at the next connection. Also `None` when
+    /// the question cannot show. Look at it a few times each second.
+    fn ask_approval(&self, question: &ApprovalQuestion, withdrawn: &dyn Fn() -> bool) -> Option<bool>;
 
     /// The styles of the user and the base prompt, for `enhance`. Read again
     /// for each request. None: this host has no AI, and `enhance` gets
@@ -108,17 +120,17 @@ pub trait HostServices: Send + Sync {
     }
 }
 
-/// The question to the user before the download of a model for an extension.
+/// The question to the user before the download of a model for an app.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadQuestion {
-    pub extension_id: String,
-    /// The name to show: the name in `state.toml`, else the id.
-    pub extension_name: String,
+    pub app_id: String,
+    /// The name to show: the name in `apps.toml`.
+    pub app_name: String,
     pub model_id: String,
     pub model_name: String,
     pub size_bytes: u64,
-    /// Why the extension needs the model. It is text from the extension, and
-    /// the host cuts it to 300 characters.
+    /// Why the app needs the model. It is text from the app, and the host
+    /// cuts it to 300 characters.
     pub reason: String,
 }
 
@@ -126,22 +138,21 @@ pub struct DownloadQuestion {
 pub struct HostConfig {
     /// The socket, or the name of the pipe on Windows.
     pub socket: PathBuf,
-    /// `state.toml`.
-    pub state_file: PathBuf,
+    /// `apps.toml`.
+    pub apps: Arc<AppsFile>,
     /// The version of Sayso, for the `hello` reply.
     pub host_version: String,
     pub identify: Arc<dyn Identify>,
 }
 
 impl HostConfig {
-    pub fn new(socket: PathBuf, state_file: PathBuf) -> HostConfig {
-        HostConfig { socket, state_file, host_version: env!("CARGO_PKG_VERSION").into(), identify: Arc::new(SystemIdentify) }
+    pub fn new(socket: PathBuf, apps_file: PathBuf) -> HostConfig {
+        HostConfig { socket, apps: Arc::new(AppsFile::new(apps_file)), host_version: env!("CARGO_PKG_VERSION").into(), identify: Arc::new(SystemIdentify) }
     }
 
-    /// The socket of `sayso_protocol::socket`, and `state.toml` in the
-    /// extensions folder.
+    /// The socket of `sayso_protocol::socket`, and `apps.toml` in the data folder.
     pub fn for_paths(paths: &Paths) -> io::Result<HostConfig> {
-        Ok(HostConfig::new(sayso_protocol::socket::host_socket_path()?, paths.extensions_dir().join("state.toml")))
+        Ok(HostConfig::new(sayso_protocol::socket::host_socket_path()?, paths.apps_file()))
     }
 }
 
@@ -156,7 +167,9 @@ pub struct Host {
 pub(crate) struct Shared {
     pub host_version: String,
     pub identify: Arc<dyn Identify>,
-    pub state: StateFile,
+    pub apps: Arc<AppsFile>,
+    /// The connections that wait for the approval question.
+    pub approvals: approval::Approvals,
     pub services: Arc<dyn HostServices>,
     /// `services.engine()` at the start.
     pub engine: Option<Arc<dyn SttBackend>>,
@@ -165,7 +178,7 @@ pub(crate) struct Shared {
     /// The models that the host asked the engine to download, until the
     /// request that asked ends (see `download`).
     pub downloads: Mutex<HashSet<ModelId>>,
-    /// One lock for each extension: the one question at a time.
+    /// One lock for each app: the one download question at a time.
     questions: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     /// Holds jobs between two engine calls while a dictation runs.
     pub gate: Arc<jobs::DictationGate>,
@@ -189,15 +202,15 @@ impl Shared {
         self.closing.load(Ordering::SeqCst)
     }
 
-    /// The lock that an extension holds while a question to the user is open.
-    pub fn question_gate(&self, extension_id: &str) -> Arc<Mutex<()>> {
-        self.questions.lock().entry(extension_id.to_string()).or_default().clone()
+    /// The lock that an app holds while a download question to the user is open.
+    pub fn question_gate(&self, app_id: &str) -> Arc<Mutex<()>> {
+        self.questions.lock().entry(app_id.to_string()).or_default().clone()
     }
 }
 
 impl Host {
     /// Listen on the socket of `config`. Fails when the socket cannot be made,
-    /// for example when another Sayso serves extensions.
+    /// for example when another Sayso serves apps.
     pub fn start(config: HostConfig, services: Arc<dyn HostServices>) -> io::Result<Host> {
         let listener = Arc::new(transport::Listener::bind(&config.socket)?);
         let engine = services.engine();
@@ -228,7 +241,8 @@ impl Host {
         let shared = Arc::new(Shared {
             host_version: config.host_version,
             identify: config.identify,
-            state: StateFile::new(config.state_file),
+            apps: config.apps,
+            approvals: approval::Approvals::default(),
             bus,
             engine,
             services,
@@ -248,13 +262,13 @@ impl Host {
             let listener = listener.clone();
             std::thread::Builder::new().name("sayso-host".into()).spawn(move || accept_loop(&shared, &listener))?
         };
-        log::info!("host: extensions connect at {}", config.socket.display());
+        log::info!("host: apps connect at {}", config.socket.display());
         Ok(Host { socket: config.socket, shared, listener, accept: Mutex::new(Some(accept)) })
     }
 
-    /// The ids of the extensions that are connected now, in order.
-    pub fn connected_extensions(&self) -> Vec<String> {
-        let mut ids: Vec<String> = self.shared.connections.lock().values().filter_map(|entry| entry.extension_id.clone()).collect();
+    /// The keys of the apps that are connected now, in order.
+    pub fn connected_apps(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self.shared.connections.lock().values().filter_map(|entry| entry.app_id.clone()).collect();
         ids.sort();
         ids
     }
@@ -303,10 +317,41 @@ impl Host {
         self.shared.model_use.clone()
     }
 
-    /// The live session that runs now: its extension and whether it captures
-    /// the microphone, for the menu bar (step 8).
+    /// The live session that runs now: its app and whether it captures the
+    /// microphone, for the menu bar.
     pub fn live_session(&self) -> Option<live::LiveInfo> {
         self.shared.live.as_ref().and_then(live::LiveSessions::current)
+    }
+
+    /// **Stop** in the popover: end the live session. The last parts go on
+    /// the connection of the app, then `session_ended`. False when this
+    /// session no longer runs.
+    pub fn stop_live_session(&self, session: u64) -> bool {
+        self.shared.live.as_ref().is_some_and(|live| live.stop_for_user(session))
+    }
+
+    /// Stop the live session of an app that no longer has the grants for its
+    /// sources, or no longer has a record. Without this, a microphone that
+    /// the user turned off for the app would record until the next request.
+    /// The app calls it after each change of `apps.toml`.
+    pub fn stop_live_without_grant(&self) {
+        let Some(live) = self.live_session().filter(|live| !live.stopping) else { return };
+        let apps = self.shared.apps.current();
+        let granted = apps.record(&live.app_id).filter(|record| record.allowed).map(|record| record.capabilities()).unwrap_or_default();
+        let allowed = live.sources.iter().all(|source| match source {
+            sayso_protocol::Source::Mic => granted.contains(&sayso_protocol::Capability::AudioMic),
+            sayso_protocol::Source::System => granted.contains(&sayso_protocol::Capability::AudioSystem),
+            _ => granted.contains(&sayso_protocol::Capability::SessionLive),
+        });
+        if !allowed {
+            log::info!("host: live session {} stops: the grants of its app changed", live.session);
+            self.stop_live_session(live.session);
+        }
+    }
+
+    /// `apps.toml`, for Settings.
+    pub fn apps(&self) -> Arc<AppsFile> {
+        self.shared.apps.clone()
     }
 
     /// Tell `observer` each time a live session starts, stops, or ends.
@@ -314,9 +359,8 @@ impl Host {
         self.shared.observers.set_live(observer);
     }
 
-    /// The extensions that hold Sayso open now: the live session first, then
-    /// the jobs that run or wait, one entry for each extension and kind of
-    /// work. Sayso asks before it quits, and does not install an update,
+    /// The apps that hold Sayso open now: the live session first, then the
+    /// jobs that run or wait, one entry for each app and kind of work. Sayso asks before it quits, and does not install an update,
     /// while this is not empty (`docs/extensions.md`, "Lifecycle").
     pub fn holds(&self) -> Vec<Hold> {
         holds::holds(&self.shared)

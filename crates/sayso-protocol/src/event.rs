@@ -28,14 +28,17 @@ pub enum Event {
         code: Option<ErrorCode>,
     },
     Partial(PartialEvent),
+    /// The user stopped the live session in Sayso, not the app. The last
+    /// `segment` and `speakers` events come before it, and it is the end of
+    /// the session: there is no reply to `session_stop`.
+    SessionEnded {
+        session: u64,
+        /// The text of all segments in the order of time.
+        text: String,
+    },
     DictationDone(DictationDone),
     /// Sayso quits or restarts, and closes the connection.
     HostClosing,
-    /// The user chose an entry of the extension in the popover of Sayso.
-    Command {
-        /// The `id` of the entry in `[[commands]]` of the manifest.
-        command: String,
-    },
 }
 
 tagged_kind!(Event {
@@ -47,9 +50,9 @@ tagged_kind!(Event {
     JobDone => "job_done",
     JobFailed => "job_failed",
     Partial => "partial",
+    SessionEnded => "session_ended",
     DictationDone => "dictation_done",
     HostClosing => "host_closing",
-    Command => "command",
 });
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

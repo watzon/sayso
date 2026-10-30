@@ -54,16 +54,16 @@ macro_rules! names {
 }
 
 names! {
-    /// A permission that an extension declares in its manifest and the user
-    /// grants at install (`docs/extensions.md`, "Capabilities").
+    /// A permission that an app asks for in `hello` and the user grants in the
+    /// approval question (`docs/sdk.md`, "Approval").
     Capability {
-        /// List models and their state. Always granted.
+        /// List models and their state. It needs no grant.
         ModelsRead = "models.read",
         /// Ask the user to download a model.
         ModelsDownload = "models.download",
         /// Jobs: transcribe files.
         TranscribeFile = "transcribe.file",
-        /// Live sessions with audio from the extension.
+        /// Live sessions with audio from the app.
         SessionLive = "session.live",
         /// Live sessions from the microphone.
         AudioMic = "audio.mic",
@@ -79,11 +79,13 @@ names! {
 names! {
     /// The `code` of an `error`: a stable code that a client can act on.
     ErrorCode {
-        /// The client is not an installed extension. The host closes the connection.
-        NotAnExtension = "not_an_extension",
+        /// The user did not approve this app, or its program has no identity
+        /// that the host can trust. The host closes the connection.
+        NotApproved = "not_approved",
         /// The user did not grant the capability in `capability`.
         Capability = "capability",
-        /// Another live session runs.
+        /// Another live session runs, or too many connections wait for an
+        /// approval question.
         Busy = "busy",
         /// The user said no to a download.
         Declined = "declined",
@@ -152,7 +154,7 @@ names! {
     Source {
         Mic = "mic",
         System = "system",
-        /// The extension sends the audio with `session_audio`.
+        /// The app sends the audio with `session_audio`.
         Client = "client",
     }
 }
