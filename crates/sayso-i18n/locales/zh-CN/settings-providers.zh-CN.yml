@@ -104,6 +104,7 @@ settings:
     cleanup_download_failed: "下载失败"
     cleanup_download_failed_detail: "Sayso 无法下载 %{name}。请检查网络连接，然后重试。"
     cleanup_test_failed_detail: "模型没有响应测试。请重试，或删除下载后重新下载。"
+    cleanup_test_failed_cpu_detail: "这台电脑的处理器无法运行此版本 Sayso 的本地模型。请更新 Sayso，或使用云端服务商。"
     suggest_cleanup: "在这台%{computer}上运行 · %{languages} · %{size}"
     cleanup_runs: "运行 %{styles}"
     cleanup_needs: "%{styles}需要能读取提示词的服务商。"

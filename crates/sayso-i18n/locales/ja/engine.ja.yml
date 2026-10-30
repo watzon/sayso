@@ -6,6 +6,7 @@ engine:
   load_failed: "Sayso はモデルを読み込めませんでした：%{detail}。"
   no_gpu: "このモデルには Vulkan ドライバーのある専用 GPU が必要ですが、Sayso は見つけられませんでした。「モデル」で CPU で動くモデルを選択してください。"
   format_changed: "このバージョンの Sayso では、このモデルに別のファイルを使います。モデルをもう一度ダウンロードしてください。"
+  unsupported_cpu: "このコンピュータのプロセッサでは、このバージョンの Sayso でこのモデルを実行できません。「モデル」で別のモデルを選択するか、Sayso をアップデートしてください。"
   device_not_eligible: "この Mac は Apple Intelligence に対応していません。"
   intelligence_off: "Apple Intelligence がオフです。システム設定でオンにしてください。"
   model_not_ready: "macOS が Apple Intelligence のモデルをまだダウンロードしています。数分後にもう一度お試しください。"

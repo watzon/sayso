@@ -29,10 +29,13 @@ fi
 
 mkdir -p "$bin" "$lib" "$share/applications" "$share/metainfo"
 # The app finds the engine and the cleanup runtime next to itself, so all
-# three live in one folder.
+# of them live in one folder.
 install -m 755 "$here/bin/sayso" "$lib/sayso"
 install -m 755 "$here/bin/sayso-engine" "$lib/sayso-engine"
-install -m 755 "$here/bin/sayso-cleanup" "$lib/sayso-cleanup"
+# On x86_64 the cleanup runtime has one build for each instruction set.
+for cleanup in "$here"/bin/sayso-cleanup*; do
+  install -m 755 "$cleanup" "$lib/$(basename "$cleanup")"
+done
 ln -sf "$lib/sayso" "$bin/sayso"
 sed "s|^Exec=sayso|Exec=$lib/sayso|" "$here/share/applications/dev.sayso.Sayso.desktop" > "$share/applications/dev.sayso.Sayso.desktop"
 cp "$here/share/metainfo/dev.sayso.Sayso.metainfo.xml" "$share/metainfo/"

@@ -36,6 +36,10 @@
 //! The file `hello-delay-ms` makes `hello` wait that many milliseconds. The file
 //! `exit-at-hello` makes the process end at `hello`, with no answer.
 //!
+//! The file `illegal-<model>` makes `load` and `transcribe` of that model run an
+//! illegal instruction, like a build that lacks instructions of the processor
+//! (issue #37).
+//!
 //! It passes the core and ready levels of `sayso-engine-conformance`. It does
 //! not keep download or load state for `load`, `transcribe`, and
 //! `stream_start`, so it does not pass the model level.
@@ -210,6 +214,9 @@ fn handle(
         kind,
         "download" | "delete" | "load" | "unload" | "prepare" | "transcribe" | "vad" | "diarize"
     );
+    if matches!(kind, "load" | "transcribe") && dir.join(format!("illegal-{model}")).exists() {
+        illegal_instruction();
+    }
     if needs_model && request["model"].as_str().is_none() {
         reply(out, request, "error", json!({"message": "missing string field model"}));
         return;
@@ -500,4 +507,18 @@ fn send(out: &Arc<Mutex<std::io::Stdout>>, mut body: Value) {
     let mut out = out.lock().unwrap();
     let _ = writeln!(out, "{body}");
     let _ = out.flush();
+}
+
+/// Stop the way a build stops on a processor that lacks its instructions.
+fn illegal_instruction() -> ! {
+    // SAFETY: the instruction stops the process; nothing runs after it.
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    unsafe {
+        std::arch::asm!("ud2")
+    };
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        std::arch::asm!("udf #0")
+    };
+    std::process::exit(4)
 }

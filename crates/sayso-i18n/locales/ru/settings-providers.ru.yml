@@ -107,6 +107,7 @@ settings:
     cleanup_download_failed: "Не удалось скачать"
     cleanup_download_failed_detail: "Sayso не смог скачать %{name}. Проверьте подключение к интернету и повторите."
     cleanup_test_failed_detail: "Модель не ответила на проверку. Повторите или удалите загрузку и скачайте модель снова."
+    cleanup_test_failed_cpu_detail: "Процессор этого компьютера не может запустить локальную модель в этой версии Sayso. Обновите Sayso или используйте облачного провайдера."
     suggest_cleanup: "Работает на этом устройстве (%{computer}) · %{languages} · %{size}"
     cleanup_runs: "Запускает: %{styles}"
     cleanup_needs: "Для стилей %{styles} нужен провайдер, который читает промпты."

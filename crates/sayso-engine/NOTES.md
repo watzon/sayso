@@ -39,6 +39,8 @@ cargo build -p sayso-engine --release
 
 The result is `target\release\sayso-engine.exe`. `scripts\dev.ps1` and `scripts\bundle-windows.ps1` build it.
 
+`whisper-rs-sys` passes every `GGML_*` variable to CMake, and leaves `GGML_NATIVE` on. With it on, MSVC builds ggml for the processor of the build machine, so an engine built on a CI runner with AVX2 (or AVX-512) stops with an illegal instruction on an older processor (issue #37). `scripts\bundle-windows.ps1` sets `GGML_NATIVE=OFF` and builds the engine three times, each in its own target folder: `sayso-engine.exe` (ggml's default without native: AVX2, FMA, F16C, BMI2), `sayso-engine-avx.exe` (`GGML_AVX2`, `GGML_FMA`, `GGML_F16C`, `GGML_BMI2` off), and `sayso-engine-baseline.exe` (also `GGML_AVX` and `GGML_SSE42` off). The engine is CPU-only on Windows, so these flags decide its speed. The app picks the build (`crates/sayso-engine-client/NOTES.md`, "Engine builds"). A dev build from `cargo build` keeps the native default.
+
 Prerequisites: Visual Studio 2022 Build Tools (MSVC and a Windows SDK), CMake, and libclang (for the bindgen step of `whisper-rs-sys`). `scripts\windows-env.ps1` finds them. With a long checkout path (a worktree), the Visual Studio generator of CMake can fail on the 260-character path limit; use Ninja (`CMAKE_GENERATOR=Ninja`), and after a failed configure delete `target\release\build\whisper-rs-sys-*\out\build`.
 
 Network at build time: the build script of `sherpa-onnx-sys` downloads the prebuilt sherpa-onnx 1.13.8 libraries into `target\sherpa-onnx-prebuilt`. whisper.cpp builds from the sources in `whisper-rs-sys`.

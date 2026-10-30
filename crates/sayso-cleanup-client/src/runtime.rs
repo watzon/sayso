@@ -5,6 +5,7 @@
 //! passes its deadline kills the process. The next request starts it again, and
 //! a late reply cannot reach it. See `docs/cleanup-models.md`, "Runtime and protocol".
 
+use sayso_core::cpu::{self, Level};
 use parking_lot::Mutex;
 use sayso_core::cleanup::protocol::{ErrorCode, PROTOCOL_VERSION, Reply, ReplyLine, Request, RequestLine, Stop};
 use std::io::{BufRead, BufReader, Write};
@@ -15,10 +16,12 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-#[cfg(windows)]
-const RUNTIME_FILE_NAME: &str = "sayso-cleanup.exe";
-#[cfg(not(windows))]
-const RUNTIME_FILE_NAME: &str = "sayso-cleanup";
+/// The start of the message of [`RuntimeError::UnsupportedCpu`]. The settings
+/// look for it in the text of a failed test ([`is_unsupported_cpu`]).
+const UNSUPPORTED_CPU: &str = "the processor of this computer cannot run the cleanup runtime";
+
+/// The name of the runtime program, without a build suffix or `.exe`.
+const PROGRAM: &str = "sayso-cleanup";
 
 /// A load can take this long. The first start on a Mac compiles the Metal
 /// shaders, which took about 4 s in the spike.
@@ -44,6 +47,16 @@ pub enum RuntimeError {
     Unexpected,
     #[error("the cleanup model cannot load now: it is being deleted, or AI is off")]
     Closed,
+    /// The build lacks instructions of this processor: Sayso refused to start
+    /// it, or it stopped with an illegal instruction.
+    #[error("{UNSUPPORTED_CPU}: {0}")]
+    UnsupportedCpu(String),
+}
+
+/// True when `message` (the text of an error of a cleanup) is a
+/// [`RuntimeError::UnsupportedCpu`].
+pub fn is_unsupported_cpu(message: &str) -> bool {
+    message.contains(UNSUPPORTED_CPU)
 }
 
 /// A completion of the runtime.
@@ -103,17 +116,18 @@ impl Runtime {
         })
     }
 
-    /// `SAYSO_CLEANUP_PATH`, else the binary beside the app, else the
-    /// development build in `native/cleanup/target/release`.
+    /// `SAYSO_CLEANUP_PATH`, else the best build beside the app that this
+    /// processor runs ([`cpu::best_in`]), else the development build in
+    /// `native/cleanup/target/release`. A package with one build (before the
+    /// x86_64 builds, or not x86_64) gives `sayso-cleanup`.
     pub fn default_path() -> PathBuf {
         if let Some(path) = std::env::var_os("SAYSO_CLEANUP_PATH").filter(|p| !p.is_empty()) {
             return PathBuf::from(path);
         }
-        let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|dir| dir.join(RUNTIME_FILE_NAME)));
-        if let Some(beside) = beside.as_ref().filter(|path| path.exists()) {
-            return beside.clone();
+        if let Some(path) = std::env::current_exe().ok().and_then(|exe| cpu::best_in(exe.parent()?, PROGRAM)) {
+            return path;
         }
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../native/cleanup/target/release").join(RUNTIME_FILE_NAME)
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../native/cleanup/target/release").join(Level::Avx2.file_name(PROGRAM))
     }
 
     /// True while the runtime process runs.
@@ -262,11 +276,18 @@ impl Runtime {
                 }
                 Err(RuntimeError::Timeout)
             }
-            Outcome::Dead => Err(RuntimeError::Stopped(exit_message(process.take()))),
+            Outcome::Dead => Err(self.stopped(process.take())),
         }
     }
 
     fn start(&self) -> Result<Process, RuntimeError> {
+        // A build of the packages that this processor cannot run would stop
+        // at the first load. A path from SAYSO_CLEANUP_PATH can be any build,
+        // so it starts.
+        let from_env = std::env::var_os("SAYSO_CLEANUP_PATH").is_some_and(|p| !p.is_empty());
+        if let Some(build) = Level::of_file(PROGRAM, &self.path).filter(|b| !from_env && !b.runs_here()) {
+            return Err(RuntimeError::UnsupportedCpu(format!("{} needs {}", self.path.display(), build.needs())));
+        }
         let mut child = Command::new(&self.path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -337,10 +358,22 @@ impl Drop for Runtime {
     }
 }
 
-fn exit_message(process: Option<Process>) -> String {
-    let Some(mut process) = process else { return "no process".into() };
-    let status = process.child.wait().map(|s| s.to_string()).unwrap_or_else(|e| e.to_string());
-    format!("the process ended ({status})")
+impl Runtime {
+    /// The error for a process that ended. An illegal instruction is a build
+    /// that this processor cannot run.
+    fn stopped(&self, process: Option<Process>) -> RuntimeError {
+        let Some(mut process) = process else { return RuntimeError::Stopped("no process".into()) };
+        let status = match process.child.wait() {
+            Ok(status) => status,
+            Err(e) => return RuntimeError::Stopped(e.to_string()),
+        };
+        if cpu::illegal_instruction(&status) {
+            let needs = Level::of_file(PROGRAM, &self.path).map_or_else(|| "an instruction that it lacks".to_string(), |b| b.needs().to_string());
+            log::error!("the cleanup runtime {} stopped with an illegal instruction ({status})", self.path.display());
+            return RuntimeError::UnsupportedCpu(format!("{} needs {needs} ({status})", self.path.display()));
+        }
+        RuntimeError::Stopped(format!("the process ended ({status})"))
+    }
 }
 
 /// The requests of one cleanup, with the model loaded and the process locked.

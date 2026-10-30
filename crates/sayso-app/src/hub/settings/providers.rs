@@ -407,10 +407,16 @@ impl ProviderSettings {
                 Problem { message: t!("settings.providers.cleanup_delete_failed_detail", name = info.name), details: Some(raw) },
             ),
             CleanupModelState::Ready => match test {
-                Some(Test::Failed(raw)) => bad(
-                    t!("settings.providers.test_failed"),
-                    Problem { message: t!("settings.providers.cleanup_test_failed_detail"), details: Some(raw.clone()) },
-                ),
+                Some(Test::Failed(raw)) => {
+                    // The cleanup runtime of this package needs instructions that the processor lacks: a new
+                    // download of the model does not help.
+                    let message = if sayso_cleanup_client::runtime::is_unsupported_cpu(raw) {
+                        t!("settings.providers.cleanup_test_failed_cpu_detail")
+                    } else {
+                        t!("settings.providers.cleanup_test_failed_detail")
+                    };
+                    bad(t!("settings.providers.test_failed"), Problem { message, details: Some(raw.clone()) })
+                }
                 Some(Test::Passed(ms)) => Status { dot: c.success, line: t!("settings.providers.answered_in", ms = ms), color: c.success, problem: None },
                 _ => Status {
                     dot: c.success,

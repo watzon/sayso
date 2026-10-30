@@ -45,7 +45,11 @@ and an engine restart clear the record. No overlay text changes with this protoc
 
 The app translates the `reason` code (`crates/sayso-app/src/engine_text.rs`, catalog `engine.en.yml`, keys `engine.<reason>`) and shows `message` only as a detail, or when there is no usable `reason`. An engine that sends no `reason` (an older engine) still works: the app shows a general sentence with `message`. A `reason` that the client does not know gives the same result. The client reads the code into `sayso_core::stt::EngineReason` (`ModelStatus::Failed { message, reason }`, and `Unavailable { reason, message }` from `LanguageModel::availability`). A new code therefore needs a variant in `EngineReason`, a key in `engine.en.yml`, and a line in the table of the spec.
 
-Who sends which code: both engines send `incomplete_download`, `download_failed`, and `load_failed`. The Rust engine sends `no_gpu` (Linux) and `format_changed` (Windows, for the Parakeet files of the Windows engine before 0.12). The Swift engine sends the language model codes.
+Who sends which code: both engines send `incomplete_download`, `download_failed`, and `load_failed`. The Rust engine sends `no_gpu` (Linux) and `format_changed` (Windows, for the Parakeet files of the Windows engine before 0.12). The Swift engine sends the language model codes. No engine sends `unsupported_cpu`: the client sets it on a model whose `load`, `transcribe`, or other model request stopped the engine with an illegal instruction (SIGILL, or `0xC000001D` on Windows). The client then keeps that model `Failed` until the app quits, answers its later requests without the engine, and takes it out of the models that it loads again after a restart, so a model that the processor cannot run does not crash the engine in a loop (issue #37).
+
+### Engine builds
+
+On Windows the engine comes in three builds, because whisper.cpp is compiled for one instruction set: `sayso-engine.exe` (AVX2, FMA, F16C, BMI2), `sayso-engine-avx.exe` (AVX, SSE 4.2), and `sayso-engine-baseline.exe` (x86-64 only). The client starts the best one in the folder of the app that the processor runs (`sayso_core::cpu::best_in`), unless `SAYSO_ENGINE_PATH` names one. Other systems have one build, under the name `sayso-engine` (`SaysoEngine` on macOS).
 
 The `error` reply of a `download` or `load` carries no `reason`. The client keeps the reason of the `model_state failed` event that came just before it, when the message is the same.
 
