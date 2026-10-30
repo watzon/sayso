@@ -52,6 +52,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 log = "0.4"
 env_logger = "0.11"
 regex = "1"
+sha2 = "0.10"
 tempfile = "3"
 
 # Debug information is most of the size of target/. Workspace crates keep

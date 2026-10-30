@@ -1,3 +1,6 @@
 # Batch files need Windows line endings.
 *.cmd text eol=crlf
 *.bat text eol=crlf
+# Generated files that tests compare byte for byte with their generator.
+crates/sayso-core/src/engine_catalog/descriptors.json text eol=lf
+native/macos/SaysoEngine/Sources/SaysoEngine/*.generated.swift text eol=lf
