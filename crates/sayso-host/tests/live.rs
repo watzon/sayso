@@ -613,3 +613,43 @@ fn a_live_session_holds_sayso_open_until_it_ends() {
     drop(client);
     eventually("the session of a closed connection ends", || world.host.holds().is_empty());
 }
+
+fn wait_for_end(events: &Receiver<Event>, session: u64) -> String {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        match events.recv_timeout(left) {
+            Ok(Event::Host { event: HostEvent::SessionEnded { session: ended, text }, .. }) if ended == session => return text,
+            Ok(_) => {}
+            Err(_) => panic!("no session_ended for session {session}"),
+        }
+    }
+}
+
+#[test]
+fn stop_in_sayso_ends_the_session_and_tells_the_app() {
+    let world = world(LIVE, LiveEngine::new());
+    let (client, events) = world.client();
+    let session = session_of(start(&client, json!({"sources": ["client"]})));
+    assert!(world.host.stop_live_session(session));
+    assert!(!world.host.stop_live_session(session), "it stops once");
+    wait_for_end(&events, session);
+    eventually("the slot is free", || world.host.live_session().is_none());
+    assert_eq!(refused(client.request("session_stop", fields(json!({"session": session})))).code, Some(ErrorCode::BadRequest), "the session is gone");
+    let next = session_of(start(&client, json!({"sources": ["client"]})));
+    assert_ne!(next, session);
+    stop(&client, next);
+}
+
+#[test]
+fn a_session_ends_when_the_user_takes_its_grant_back() {
+    let world = world(LIVE, LiveEngine::new());
+    let (client, events) = world.client();
+    let session = session_of(start(&client, json!({"sources": ["client"]})));
+    world.host.stop_live_without_grant();
+    assert!(world.host.live_session().is_some_and(|live| !live.stopping), "the grant is still there");
+    world.host.apps().set_grant(&id(), &Capability::SessionLive, false).unwrap();
+    world.host.stop_live_without_grant();
+    wait_for_end(&events, session);
+    eventually("the slot is free", || world.host.live_session().is_none());
+}

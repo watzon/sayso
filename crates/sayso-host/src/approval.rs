@@ -222,13 +222,14 @@ pub(crate) fn not_approved() -> Reply {
 
 /// The rest of `hello` after [`hello_step`] said [`HelloStep::Ask`], on a worker: ask, and
 /// reply when the user answered. Close the connection after `not_approved`.
-pub(crate) fn ask_and_reply(shared: &Shared, caller: &Caller, request: &Hello, mut question: ApprovalQuestion, open: &Arc<AtomicBool>, responder: Responder) {
+pub(crate) fn ask_and_reply(shared: &Shared, caller: &Caller, request: &Hello, mut question: ApprovalQuestion, open: &Arc<AtomicBool>, asking: &AtomicBool, responder: Responder) {
     loop {
         let waited = shared.approvals.wait(shared, caller, &question, open);
         let next = match waited {
             Wait::Busy => {
                 let approved = question.approved;
                 let notifier = responder.notifier();
+                asking.store(false, Ordering::SeqCst);
                 responder.reply(Reply::error(Some(ErrorCode::Busy), "too many connections wait for an approval question; try again later"));
                 // An approved app keeps its connection and its old grants.
                 if !approved {
@@ -249,11 +250,14 @@ pub(crate) fn ask_and_reply(shared: &Shared, caller: &Caller, request: &Hello, m
         };
         match next {
             HelloStep::Reply(hello) => {
+                // Before the reply: the next request of the app can come at once.
+                asking.store(false, Ordering::SeqCst);
                 responder.reply(Reply::ok_with(&hello));
                 return;
             }
             HelloStep::Refuse => {
                 let notifier = responder.notifier();
+                asking.store(false, Ordering::SeqCst);
                 responder.reply(not_approved());
                 notifier.close();
                 return;

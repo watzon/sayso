@@ -206,8 +206,14 @@ mod system {
         PathBuf::from(std::ffi::OsString::from_vec(buffer)).canonicalize().map_err(|e| format!("no file for pid {pid}: {e}"))
     }
 
-    /// The team id, the identifier, and the first certificate of valid code.
-    fn signing_information(code: &SecCode) -> Result<(Option<String>, Option<String>, Option<SecCertificate>), String> {
+    /// What the signature of valid code says.
+    struct Signing {
+        team_id: Option<String>,
+        identifier: Option<String>,
+        leaf: Option<SecCertificate>,
+    }
+
+    fn signing_information(code: &SecCode) -> Result<Signing, String> {
         let mut raw: CFDictionaryRef = std::ptr::null();
         // SAFETY: the code is alive, and `raw` gets a dictionary that we own.
         let status = unsafe { SecCodeCopySigningInformation(code.as_concrete_TypeRef().cast(), SIGNING_INFORMATION, &mut raw) };
@@ -227,7 +233,7 @@ mod system {
             let array: CFArray<SecCertificate> = unsafe { CFArray::wrap_under_get_rule(*value as CFArrayRef) };
             array.get(0).map(|certificate| certificate.clone())
         });
-        Ok((team_id, identifier, leaf))
+        Ok(Signing { team_id, identifier, leaf })
     }
 
     pub fn identify(peer: &Peer) -> Result<Caller, String> {
@@ -252,7 +258,7 @@ mod system {
         let url = CFURL::from_path(&executable, false).ok_or_else(|| format!("no URL for {}", executable.display()))?;
         let on_disk = SecStaticCode::from_path(&url, Flags::NONE).map_err(|e| format!("cannot read the file of {}: {e}", executable.display()))?;
         on_disk.check_validity(Flags::DO_NOT_VALIDATE_RESOURCES, &any).map_err(|e| format!("the signature of {} is not valid: {e}", executable.display()))?;
-        let (team_id, identifier, leaf) = signing_information(&code)?;
+        let Signing { team_id, identifier, leaf } = signing_information(&code)?;
         let (Some(team_id), Some(identifier)) = (team_id.filter(|team| !team.is_empty()), identifier) else {
             // Ad hoc: each build of a developer has a new signature, so the path is the identity.
             return Ok(Caller::from_path(executable));

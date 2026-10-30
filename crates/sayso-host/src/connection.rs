@@ -284,8 +284,7 @@ impl Connection<'_> {
                 let asking = self.asking.clone();
                 // A thread that cannot start drops the responder, which sends the error.
                 let spawned = std::thread::Builder::new().name("sayso-host-approval".into()).spawn(move || {
-                    approval::ask_and_reply(&shared, &caller, &hello, question, &open, responder);
-                    asking.store(false, Ordering::SeqCst);
+                    approval::ask_and_reply(&shared, &caller, &hello, question, &open, &asking, responder);
                 });
                 if let Err(e) = spawned {
                     self.asking.store(false, Ordering::SeqCst);
