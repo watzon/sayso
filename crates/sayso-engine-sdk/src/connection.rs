@@ -47,7 +47,8 @@ impl Connection {
     /// Start the process and the threads that read its stdout and stderr.
     pub(crate) fn spawn(options: &EngineOptions, store: Option<&Path>) -> Result<(Connection, Receiver<Event>), Error> {
         let mut command = Command::new(&options.program);
-        command.args(&options.args).env("SAYSO_MODELS_DIR", &options.models_dir);
+        // Only the options choose the store, not the environment of the app.
+        command.args(&options.args).env("SAYSO_MODELS_DIR", &options.models_dir).env_remove("SAYSO_MODEL_STORE");
         for (key, value) in &options.env {
             command.env(key, value);
         }

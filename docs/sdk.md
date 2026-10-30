@@ -257,6 +257,7 @@ v1/
   locks/<digest>.get                  exclusive while one engine downloads the artifact
   staging/<digest>.<pid>.<random>/    a download in progress: an `owner` file first, then `work/` and `files/`
   trash/<digest>.<random>/            artifacts that wait to be deleted
+  migrating/<digest>/                 a stage of the migration, which the cleanup of an engine does not touch
   migration.json                      the journal of the migration
   cache/<key>/                        caches that the engines control, each with its own lock
 ```
@@ -308,11 +309,13 @@ An engine also runs a cleanup after the last holder of a loaded model lets it go
 Sayso moves its models from the old folders into `v1` once. Only one Sayso runs for each data folder (an instance lock on each system), and the migration runs before Sayso starts its engine, so no engine of Sayso writes the old folders while it runs. It runs on the thread that starts the engine, because the hash check takes seconds and the tray and the overlay must not wait for it. An engine that the user chose (the setting `engine_path` or `SAYSO_ENGINE_PATH`) can be older than the store, so Sayso does not migrate for it and does not give it the store. An app that points an engine of an older SDK at the models folder of Sayso is not supported: `sayso-engine-sdk` already says that two engines must not use one folder.
 
 1. Take `meta` exclusive for the whole migration. Write the plan into `migration.json`: each model, its descriptor, and its old files.
-2. For each artifact of a model: make hard links of the old files in a staging folder, then hash the linked files and compare them with the descriptor. A hard link takes no space and leaves the old folder as it was. On a volume without hard links, copy the files instead.
-3. When every artifact of a model matches, publish them and the manifest as in "Download", and mark the model as done in `migration.json`. When a file is missing or does not match, the model is not migrated and is marked as kept, with the reason, and the user downloads it again. Its old files stay until then.
-4. When every model is done, delete the old folders of the models that moved, and mark `migration.json` as finished. The file stays with the kept models, so the next start does not hash them again. When a kept model is in the store, the next start deletes its old folders.
+2. For each artifact of a model: make hard links of the old files in `migrating/<digest>/`, then hash the linked files and compare them with the descriptor. A hard link takes no space and leaves the old folder as it was. On a volume without hard links, copy the files instead.
+3. When every artifact of a model matches, publish them and the manifest as in "Download", and mark the model as done in `migration.json`. When a file is missing, cannot be read, or does not match, the model is not migrated and is marked as kept, with the reason, and the user downloads it again. Its old files stay until then.
+4. When every model is done, mark `migration.json` as removing, then delete the old folders of the models that moved, and mark `migration.json` as finished. The file stays with the kept models, so the next start does not hash them again. When a kept model is in the store, the next start deletes its old folders.
 
 After a crash, the next start reads `migration.json` and does each step again. Each step can run twice with the same result. Models that were done stay done.
+
+When the migration fails before it marks `migration.json` as removing, each old folder is still there, so the engine runs on them without the store for this start. The next start looks at the old folders again, also for a model that was kept, because the user can have downloaded a model in between. After the mark, the engine uses the store, also when the migration fails. A Parakeet Unified folder without its CTC helper is kept, and the user downloads it again. A kept model has no delete button, because it is not on disk for the engine: its old files go when the user downloads it.
 
 After a downgrade, the older Sayso does not see `v1`, and the user downloads the models again. The release notes of the version with `store_v1` say this.
 

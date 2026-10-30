@@ -13,6 +13,9 @@
 //! A model whose old files do not match its descriptor is not moved. Its folders
 //! stay, the journal keeps its name so that later starts do not hash it again, and
 //! the folders go at the first start with the model in the store.
+//!
+//! Until the first old folder goes, an engine can run on the old folders after an
+//! error ([`store_in_use`]). Each later run then looks at the old folders again.
 
 use crate::engine_catalog::descriptors::{self, Artifact, Descriptor, Descriptors};
 use crate::engine_catalog::{self, Engine};
@@ -27,6 +30,11 @@ use std::path::Path;
 
 /// The name of the journal in the store.
 pub const JOURNAL: &str = "migration.json";
+
+/// The folder of the stages in the store. It is not `staging/`, because the cleanup
+/// of an engine of another program deletes a stage whose `get` lock nobody holds,
+/// and the migration cannot wait for a `get` lock while it holds `meta`.
+const STAGES: &str = "migrating";
 
 /// The steps of the test hook, in order ([`Store::step`]).
 pub const STEPS: [&str; 9] = [
@@ -95,6 +103,9 @@ struct Entry {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Journal {
     finished: bool,
+    /// Old folders can be gone from here on, so an engine must use the store.
+    #[serde(default)]
+    removing: bool,
     models: Vec<Entry>,
 }
 
@@ -116,17 +127,39 @@ pub fn run(models_dir: &Path) -> Result<Report, Error> {
     run_with(&store, models_dir, descriptors::all(), &old_models(engine), Links::Hard)
 }
 
+/// After an error of [`run`]: true when the engine must use the store anyway,
+/// because the old folders of the models that moved can be gone. When false, each
+/// old folder is still there, and the engine can run on them for this start.
+pub fn store_in_use(models_dir: &Path) -> bool {
+    std::fs::read(models_dir.join(model_store::FOLDER).join(JOURNAL))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Journal>(&bytes).ok())
+        .is_some_and(|journal| journal.finished || journal.removing)
+}
+
 /// [`run`] with other descriptors and another list of old models.
 pub fn run_with(store: &Store, models_dir: &Path, data: &Descriptors, old: &[OldModel], links: Links) -> Result<Report, Error> {
     let meta = store.meta_exclusive()?;
     store.step("migration.meta_locked");
+    // A run that stopped can leave copies, and they must not fill the disk.
+    let stages = store.root().join(STAGES);
+    let _ = std::fs::remove_dir_all(&stages);
     let path = store.root().join(JOURNAL);
     // A journal that does not parse holds nothing that the old folders do not say.
     let stored: Option<Journal> = std::fs::read(&path).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok());
     let first = stored.is_none();
     let resume = stored.as_ref().is_some_and(|j| !j.finished);
     let mut journal = match stored {
-        Some(journal) if !journal.finished => journal,
+        // An engine can have run on the old folders since then, so a model can be
+        // new, and a model that did not match can match now.
+        Some(mut journal) if !journal.finished => {
+            for entry in journal.models.iter_mut().filter(|e| e.state == State::Kept) {
+                entry.state = State::Pending;
+                entry.why.clear();
+            }
+            let removing = journal.removing;
+            Journal { removing, ..plan(models_dir, old, journal.models) }
+        }
         previous => plan(models_dir, old, previous.map(|j| j.models).unwrap_or_default()),
     };
     let work = first || resume || journal.models.iter().any(|e| e.state == State::Pending);
@@ -183,14 +216,19 @@ pub fn run_with(store: &Store, models_dir: &Path, data: &Descriptors, old: &[Old
         remove.extend(old.iter().flat_map(|m| m.remove.iter().map(String::as_str)));
     }
     let removed = journal.models.iter().any(|e| e.state == State::Done);
+    if work {
+        journal.removing = true;
+        write_journal(&path, &journal)?;
+    }
     for folder in remove.difference(&keep) {
         remove_old_folder(models_dir, folder);
         store.step("migration.folder_removed");
     }
     report.kept = kept.iter().map(|e| (e.old.model.clone(), e.why.clone())).collect();
     if work || removed {
-        write_journal(&path, &Journal { finished: true, models: kept })?;
+        write_journal(&path, &Journal { finished: true, removing: false, models: kept })?;
     }
+    let _ = std::fs::remove_dir_all(&stages);
     store.step("migration.finished");
     drop(meta);
     // A crash can leave a staging folder and an artifact without a manifest.
@@ -200,10 +238,10 @@ pub fn run_with(store: &Store, models_dir: &Path, data: &Descriptors, old: &[Old
     Ok(report)
 }
 
-/// The journal of a new run: the models whose first folder is there, and the
-/// models that an earlier run kept.
+/// The journal of a new run: the models of `previous`, and each other model whose
+/// first folder is there.
 fn plan(models_dir: &Path, old: &[OldModel], previous: Vec<Entry>) -> Journal {
-    let mut models: Vec<Entry> = previous.into_iter().filter(|e| e.state == State::Kept).collect();
+    let mut models = previous;
     for model in old {
         if models.iter().any(|e| e.old.model == model.model && e.old.format == model.format) {
             continue;
@@ -213,7 +251,7 @@ fn plan(models_dir: &Path, old: &[OldModel], previous: Vec<Entry>) -> Journal {
             models.push(Entry { old: model.clone(), state: State::Pending, why: String::new() });
         }
     }
-    Journal { finished: true, models }
+    Journal { finished: true, removing: false, models }
 }
 
 /// Steps 2 and 3 for one model. Hold `meta` exclusive when you call this. The inner
@@ -282,12 +320,12 @@ fn stage_artifact(
     part: &OldPart,
     links: Links,
 ) -> Result<Result<std::path::PathBuf, String>, Error> {
-    let name = format!("{}.{}.{}", artifact.digest, std::process::id(), uuid::Uuid::new_v4().simple());
-    let stage = store.root().join("staging").join(name);
+    let stage = store.root().join(STAGES).join(&artifact.digest);
     let files = stage.join("files");
     std::fs::create_dir_all(&files).map_err(io("cannot create", &files))?;
-    let owner = stage.join("owner");
-    std::fs::write(&owner, format!("{}\n", std::process::id())).map_err(io("cannot write", &owner))?;
+    // A file that this user cannot read keeps its model out. Another error, as for
+    // a full disk, stops the run, and the next start tries again.
+    let unreadable = |e: &Error| matches!(e, Error::Io { source, .. } if source.kind() == std::io::ErrorKind::PermissionDenied);
     let refuse = |why: String| {
         let _ = std::fs::remove_dir_all(&stage);
         Ok(Err(why))
@@ -303,16 +341,16 @@ fn stage_artifact(
         if let Some(parent) = to.parent() {
             std::fs::create_dir_all(parent).map_err(io("cannot create", parent))?;
         }
-        link_or_copy(&from, &to, links).map_err(io("cannot copy", &from))?;
+        if let Err(e) = link_or_copy(&from, &to, links).map_err(io("cannot copy", &from)) {
+            return if unreadable(&e) { refuse(e.to_string()) } else { Err(e) };
+        }
     }
     store.step("migration.linked");
     match verify(&files, artifact) {
         Ok(()) => {}
         Err(Error::Verify(why)) => return refuse(why),
-        Err(e) => {
-            let _ = std::fs::remove_dir_all(&stage);
-            return Err(e);
-        }
+        Err(e) if unreadable(&e) => return refuse(e.to_string()),
+        Err(e) => return Err(e),
     }
     store.step("migration.verified");
     Ok(Ok(stage))
@@ -329,6 +367,10 @@ fn link_or_copy(from: &Path, to: &Path, links: Links) -> std::io::Result<()> {
 /// not go now goes at a later start, because its model is still found there.
 fn remove_old_folder(models_dir: &Path, folder: &str) {
     let path = models_dir.join(folder);
+    // A link to a volume that is not there at this start keeps its place.
+    if path.is_symlink() && !path.exists() {
+        return;
+    }
     match std::fs::remove_dir_all(&path) {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
             log::warn!("cannot delete {}: {e}", path.display());

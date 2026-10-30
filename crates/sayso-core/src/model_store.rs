@@ -534,7 +534,8 @@ pub(crate) fn verify(folder: &Path, artifact: &Artifact) -> Result<(), Error> {
         }
         // After a power cut, a published artifact must not have short files: only
         // the folder is checked at a load.
-        let synced = File::options().write(true).open(&path).and_then(|f| f.sync_all());
+        // Windows can only flush a handle that can write. A file of a migration can be read-only.
+        let synced = File::options().read(!cfg!(windows)).write(cfg!(windows)).open(&path).and_then(|f| f.sync_all());
         synced.map_err(io("cannot write", &path))?;
     }
     Ok(())

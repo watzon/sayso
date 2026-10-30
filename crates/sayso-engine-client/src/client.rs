@@ -1040,6 +1040,8 @@ impl Inner {
         }
         let mut child = command
             .env("SAYSO_MODELS_DIR", &self.models_dir)
+            // Only what `Options` says chooses the store, not the shell of Sayso.
+            .env_remove("SAYSO_MODEL_STORE")
             .envs(self.options.env.iter().map(|(k, v)| (k, v)))
             .envs(self.launch_env.lock().iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::piped())

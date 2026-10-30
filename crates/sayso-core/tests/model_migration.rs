@@ -270,6 +270,79 @@ fn a_folder_with_nothing_goes() {
     assert!(dir.path().join("v1").join(JOURNAL).is_file());
 }
 
+/// A file where the stages go stops a run with an error before any model moved.
+fn block_stages(root: &Path) {
+    put(root, "v1/migrating", "");
+}
+
+fn unblock_stages(root: &Path) {
+    std::fs::remove_file(root.join("v1/migrating")).unwrap();
+}
+
+#[test]
+fn a_model_downloaded_after_a_failed_run_is_not_lost() {
+    let dir = tempfile::tempdir().unwrap();
+    models_folder(dir.path());
+    block_stages(dir.path());
+    assert!(model_migration::run_with(&open(dir.path()), dir.path(), &data(), &old(), Links::Hard).is_err());
+    assert!(!model_migration::store_in_use(dir.path()), "each old folder is there, so the engine can use them");
+    assert_eq!(std::fs::read_to_string(dir.path().join("repo-b/b.bin")).unwrap(), "bytes of b");
+
+    // The engine ran on the old folders, and the user downloaded and repaired a model.
+    put(dir.path(), "repo-absent/x.bin", "x");
+    put(dir.path(), "repo-changed/c.bin", "the bytes of the descriptor");
+    unblock_stages(dir.path());
+    let report = migrate(dir.path());
+
+    assert!(report.moved.contains(&"absent".to_string()), "{report:?}");
+    assert!(report.moved.contains(&"changed".to_string()), "{report:?}");
+    assert!(on_disk(dir.path(), "absent"));
+    assert!(on_disk(dir.path(), "changed"));
+    assert!(model_migration::store_in_use(dir.path()));
+}
+
+#[test]
+fn the_cleanup_of_an_engine_leaves_a_stage_of_the_migration() {
+    let dir = tempfile::tempdir().unwrap();
+    put(dir.path(), "v1/migrating/stage/files/a.bin", "bytes");
+    open(dir.path()).cleanup().unwrap();
+    assert!(dir.path().join("v1/migrating/stage/files/a.bin").is_file());
+    // The next run removes what a run left.
+    migrate(dir.path());
+    assert!(!dir.path().join("v1/migrating").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn files_that_are_read_only_or_unreadable_do_not_stop_the_run() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    models_folder(dir.path());
+    let set = |path: &str, mode: u32| std::fs::set_permissions(dir.path().join(path), std::fs::Permissions::from_mode(mode)).unwrap();
+    set("repo-b/b.bin", 0o444);
+    put(dir.path(), "repo-absent/x.bin", "x");
+    set("repo-absent/x.bin", 0o000);
+    let unreadable = std::fs::File::open(dir.path().join("repo-absent/x.bin")).is_err();
+
+    let report = migrate(dir.path());
+
+    assert!(report.moved.contains(&"b".to_string()), "{report:?}");
+    if unreadable {
+        assert!(report.kept.iter().any(|(model, _)| model == "absent"), "{report:?}");
+        set("repo-absent/x.bin", 0o644);
+        assert_eq!(std::fs::read_to_string(dir.path().join("repo-absent/x.bin")).unwrap(), "x");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_to_a_missing_volume_keeps_its_place() {
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink("/nonexistent/sayso-volume", dir.path().join("repo-absent")).unwrap();
+    migrate(dir.path());
+    assert!(dir.path().join("repo-absent").is_symlink());
+}
+
 /// The child: it runs the migration with the hook of its environment. It runs
 /// only when the test below starts it.
 #[test]
@@ -320,6 +393,8 @@ fn a_kill_at_each_step_gives_the_same_result_after_the_next_run() {
         wait_for(&hook.path().join(format!("at-{step}")), &mut child, step);
         child.kill().unwrap();
         child.wait().unwrap();
+        let before_removal = STEPS.iter().position(|s| *s == step) < STEPS.iter().position(|s| *s == "migration.folder_removed");
+        assert_eq!(model_migration::store_in_use(dir.path()), !before_removal, "at {step}");
 
         // Before the old folders go, each of their files is there.
         if STEPS.iter().position(|s| *s == step) < STEPS.iter().position(|s| *s == "migration.folder_removed") {

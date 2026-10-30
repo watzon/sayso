@@ -392,25 +392,32 @@ pub fn finish_onboarding(model: &Entity<AppModel>, window: &mut Window, cx: &mut
 
 /// Move the models from the old folders into the model store, and give the
 /// environment that tells the engine to use the store. After an error, the engine
-/// runs without the store for this start, and the next start goes on with the migration.
+/// runs on the old folders for this start when they are all still there, and the
+/// next start goes on with the migration.
 fn model_store_env(models_dir: &std::path::Path) -> Vec<(String, String)> {
     let Some(store) = models_dir.join(sayso_core::model_store::FOLDER).to_str().map(str::to_string) else {
         log::warn!("the models folder {} is not UTF-8, so Sayso does not use the model store", models_dir.display());
         return Vec::new();
     };
-    match sayso_core::model_migration::run(models_dir) {
-        Ok(report) => {
+    let store_env = vec![("SAYSO_MODEL_STORE".to_string(), store)];
+    // A panic here must not leave the app waiting for an engine that never starts.
+    let result = std::panic::catch_unwind(|| sayso_core::model_migration::run(models_dir));
+    match result {
+        Ok(Ok(report)) => {
             if !report.moved.is_empty() {
                 log::info!("moved to the model store: {}", report.moved.join(", "));
             }
             for (model, reason) in &report.kept {
                 log::info!("{model} is not in the model store, so its old files stay: {reason}");
             }
-            vec![("SAYSO_MODEL_STORE".to_string(), store)]
+            store_env
         }
-        Err(e) => {
-            log::error!("the migration of the models failed: {e}");
-            Vec::new()
+        failed => {
+            match failed {
+                Ok(Err(e)) => log::error!("the migration of the models failed: {e}"),
+                _ => log::error!("the migration of the models panicked"),
+            }
+            if sayso_core::model_migration::store_in_use(models_dir) { store_env } else { Vec::new() }
         }
     }
 }
