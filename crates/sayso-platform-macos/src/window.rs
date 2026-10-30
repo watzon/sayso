@@ -23,6 +23,7 @@ use objc2_foundation::NSObjectProtocol;
 use objc2_app_kit::NSAccessibility as _;
 use objc2::runtime::NSObject;
 use objc2_app_kit::{
+    NSBox, NSBoxType, NSTitlePosition,
     NSApplication, NSApplicationActivationPolicy, NSColor, NSEvent, NSEventMask, NSPanel, NSScreen,
     NSStatusItem, NSView, NSWindow, NSWindowCollectionBehavior, NSWindowOrderingMode, NSWindowStyleMask, NSWorkspace,
 };
@@ -335,6 +336,62 @@ pub fn make_status_item_accessible(item: *mut c_void, label: &str, on_press: imp
     }
     button.setAccessibilityLabel(Some(&NSString::from_str(label)));
     Some(target)
+}
+
+/// Change the name that an assistive client reads for the menu bar icon.
+pub fn set_status_item_label(item: *mut c_void, label: &str) {
+    let Some(mtm) = MainThreadMarker::new() else { return };
+    if item.is_null() {
+        return;
+    }
+    // SAFETY: the caller promises a live `NSStatusItem`.
+    let item = unsafe { &*item.cast::<NSStatusItem>() };
+    if let Some(button) = item.button(mtm) {
+        button.setAccessibilityLabel(Some(&NSString::from_str(label)));
+    }
+}
+
+/// A round dot at the top right of the menu bar icon. The icon stays a
+/// template image. Dropping the value removes the dot.
+pub struct StatusBadge(Retained<NSBox>);
+
+impl StatusBadge {
+    /// The size of the dot and of its ring, in points.
+    const DOT: f64 = 7.;
+    const RING: f64 = 1.5;
+    /// The space to the top and to the right of the icon box.
+    const INSET: f64 = 2.;
+
+    pub fn add(item: *mut c_void, dot: [u8; 3], ring: [u8; 3]) -> Option<StatusBadge> {
+        let mtm = MainThreadMarker::new()?;
+        if item.is_null() {
+            return None;
+        }
+        // SAFETY: the caller promises a live `NSStatusItem`.
+        let item = unsafe { &*item.cast::<NSStatusItem>() };
+        let button = item.button(mtm)?;
+        let color = |[r, g, b]: [u8; 3]| NSColor::colorWithSRGBRed_green_blue_alpha(f64::from(r) / 255., f64::from(g) / 255., f64::from(b) / 255., 1.);
+        let side = Self::DOT + 2. * Self::RING;
+        let bounds = button.bounds();
+        let y = if button.isFlipped() { Self::INSET } else { bounds.size.height - side - Self::INSET };
+        let frame = NSRect::new(NSPoint::new(bounds.size.width - side - Self::INSET, y), NSSize::new(side, side));
+        let badge = NSBox::initWithFrame(NSBox::alloc(mtm), frame);
+        badge.setBoxType(NSBoxType::Custom);
+        badge.setTitlePosition(NSTitlePosition::NoTitle);
+        badge.setFillColor(&color(dot));
+        badge.setBorderColor(&color(ring));
+        badge.setBorderWidth(Self::RING);
+        badge.setCornerRadius(side / 2.);
+        // Under the view of the icon that takes the clicks, so a click on the dot still counts.
+        button.addSubview_positioned_relativeTo(&badge, NSWindowOrderingMode::Below, None);
+        Some(StatusBadge(badge))
+    }
+}
+
+impl Drop for StatusBadge {
+    fn drop(&mut self) {
+        self.0.removeFromSuperview();
+    }
 }
 
 /// Keeps a global mouse monitor alive. Dropping it removes the monitor.

@@ -17,6 +17,7 @@ hub:
     appearance: "Darstellung"
     history_privacy: "Verlauf und Datenschutz"
     permissions: "Berechtigungen"
+    connected_apps: "Verbundene Apps"
     advanced: "Erweitert"
   sidebar:
     expand: "Seitenleiste einblenden"

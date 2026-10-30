@@ -198,13 +198,15 @@ pub fn install_global_click_monitor(callback: impl Fn(Point) + 'static) -> Monit
 /// The icon in the notification area. It has no menu: a click shows the popover.
 pub struct Tray {
     icon: tray_icon::TrayIcon,
+    /// Incognito, and the app that records: what the image shows.
+    look: std::cell::RefCell<(bool, Option<super::TrayRecording>)>,
 }
 
 impl Tray {
     /// Show the icon. `on_event` runs on any thread.
     pub fn install(on_event: impl Fn(TrayEvent) + Send + Sync + 'static) -> Option<Tray> {
         let mut builder = tray_icon::TrayIconBuilder::new().with_tooltip("Sayso");
-        if let Some(icon) = tray_icon_image(false) {
+        if let Some(icon) = tray_icon_image(false, None) {
             builder = builder.with_icon(icon);
         } else {
             builder = builder.with_title("Sayso");
@@ -228,7 +230,7 @@ impl Tray {
                 on_event(TrayEvent::Click);
             }
         }));
-        Some(Tray { icon })
+        Some(Tray { icon, look: Default::default() })
     }
 
     /// The icon has no menu, so no label changes with the language.
@@ -236,9 +238,21 @@ impl Tray {
 
     /// Gray out the icon while incognito is on.
     pub fn set_incognito(&self, on: bool) {
-        if let Err(e) = self.icon.set_icon(tray_icon_image(on)) {
+        let mut look = self.look.borrow_mut();
+        look.0 = on;
+        if let Err(e) = self.icon.set_icon(tray_icon_image(on, look.1.as_ref())) {
             log::warn!("could not change the tray icon: {e}");
         }
+    }
+
+    /// The dot on the icon and the tooltip while an app records.
+    pub fn set_recording(&self, recording: Option<&super::TrayRecording>) {
+        let mut look = self.look.borrow_mut();
+        look.1 = recording.cloned();
+        if let Err(e) = self.icon.set_icon(tray_icon_image(look.0, recording)) {
+            log::warn!("could not change the tray icon: {e}");
+        }
+        let _ = self.icon.set_tooltip(Some(recording.map_or("Sayso", |recording| recording.label.as_str())));
     }
 
     /// The icon's screen frame. tray-icon gives physical pixels with the
@@ -249,7 +263,7 @@ impl Tray {
     }
 }
 
-fn tray_icon_image(incognito: bool) -> Option<tray_icon::Icon> {
+fn tray_icon_image(incognito: bool, recording: Option<&super::TrayRecording>) -> Option<tray_icon::Icon> {
     let bytes = crate::app_assets::bytes("tray.png")?;
     let mut img = image::load_from_memory(&bytes).ok()?.into_rgba8();
     // The icon is a black template. On a dark taskbar it must be white to show.
@@ -260,6 +274,9 @@ fn tray_icon_image(incognito: bool) -> Option<tray_icon::Icon> {
     }
     if incognito {
         super::dim_icon(&mut img);
+    }
+    if let Some(recording) = recording {
+        super::draw_recording_dot(&mut img, recording.dot, recording.ring);
     }
     let (w, h) = img.dimensions();
     tray_icon::Icon::from_rgba(img.into_raw(), w, h).ok()

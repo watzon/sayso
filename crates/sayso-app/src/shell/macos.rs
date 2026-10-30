@@ -182,6 +182,8 @@ pub struct Tray {
     icon: tray_icon::TrayIcon,
     /// The action target for an assistive client's press of the icon.
     _press: Option<objc2::rc::Retained<mac::StatusPress>>,
+    /// The dot while an app records.
+    badge: std::cell::RefCell<Option<mac::StatusBadge>>,
 }
 
 impl Tray {
@@ -220,7 +222,7 @@ impl Tray {
                 on_event(TrayEvent::Click)
             })
         });
-        Some(Tray { icon, _press: press })
+        Some(Tray { icon, _press: press, badge: std::cell::RefCell::new(None) })
     }
 
     /// The icon has no menu, so no label changes with the language.
@@ -231,6 +233,15 @@ impl Tray {
         if let Err(e) = self.icon.set_icon_templated(tray_icon_image(on)) {
             log::warn!("could not change the menu bar icon: {e}");
         }
+    }
+
+    /// The dot on the icon and the name for a screen reader while an app
+    /// records. The icon stays a template image, so it follows the menu bar.
+    pub fn set_recording(&self, recording: Option<&super::TrayRecording>) {
+        let Some(item) = self.icon.ns_status_item() else { return };
+        let item = objc2::rc::Retained::as_ptr(&item) as *mut c_void;
+        *self.badge.borrow_mut() = recording.and_then(|recording| mac::StatusBadge::add(item, recording.dot, recording.ring));
+        mac::set_status_item_label(item, recording.map_or("Sayso", |recording| recording.label.as_str()));
     }
 
     /// The icon's screen frame. Read it at click time: right after creation

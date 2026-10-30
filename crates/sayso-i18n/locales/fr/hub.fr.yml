@@ -17,6 +17,7 @@ hub:
     appearance: "Apparence"
     history_privacy: "Historique et confidentialité"
     permissions: "Autorisations"
+    connected_apps: "Apps connectées"
     advanced: "Avancé"
   sidebar:
     expand: "Développer la barre latérale"

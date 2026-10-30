@@ -17,6 +17,7 @@ hub:
     appearance: "Appearance"
     history_privacy: "History and privacy"
     permissions: "Permissions"
+    connected_apps: "Connected apps"
     advanced: "Advanced"
   sidebar:
     expand: "Expand sidebar"

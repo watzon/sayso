@@ -74,5 +74,5 @@ update:
   now_version: "현재 Sayso 버전: %{version}"
   whats_new: "새로운 기능"
   dismiss: "닫기"
-  # "Restart to update" while an extension records or transcribes.
-  waits_for_extension: "%{extension}의 작업이 끝나면 Sayso를 다시 시작하여 업데이트해요."
+  # "Restart to update" while an app records or transcribes.
+  waits_for_app: "%{app}의 작업이 끝나면 Sayso를 다시 시작하여 업데이트해요."

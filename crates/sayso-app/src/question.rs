@@ -1,6 +1,6 @@
 //! A small window that asks the user one question with two buttons: the
-//! download question of an extension (`download_ask`) and the quit question
-//! (`quit`). It is a window of its own, like "What is new": it does not need
+//! download question of an app (`download_ask`), the approval question
+//! (`approval_ask`), and the quit question (`quit`). It is a window of its own, like "What is new": it does not need
 //! the Hub, so it shows also when the Hub is closed.
 //!
 //! Each answer comes once. Cancel, Esc, and the close button of the window
@@ -11,6 +11,7 @@ use gpui_kit::*;
 use sayso_ui::fonts::{Face, LocaleFonts as _};
 use sayso_ui::components::*;
 use sayso_ui::paper::PaperStyled;
+use sayso_ui::theme::Colors;
 use sayso_ui::texture::{Grain, grain};
 use sayso_ui::{ActivePaper, text};
 use std::cell::RefCell;
@@ -22,14 +23,18 @@ pub struct Texts {
     pub window_title: String,
     pub title: String,
     pub body: String,
+    /// More of the question, under its text: the identity of an app and what it asks for.
+    pub details: Option<Details>,
     /// Text that the question quotes, with a label above it: for example the
-    /// reason that an extension gives.
+    /// reason that an app gives.
     pub quote: Option<(String, String)>,
     pub cancel: String,
     pub confirm: String,
     /// The confirm button stops work of the user: it shows as a danger.
     pub danger: bool,
 }
+
+pub type Details = Box<dyn FnOnce(&Colors) -> AnyElement>;
 
 type AnswerFn = Box<dyn FnOnce(bool, &mut App)>;
 
@@ -126,6 +131,7 @@ impl Render for QuestionView {
             .gap(px(10.))
             .child(text::title(texts.title, 28., &c).line_height(px(34.)))
             .child(text::ui(texts.body, 15., FontWeight::NORMAL, c.graphite).line_height(px(22.)));
+        let details = texts.details.map(|details| details(&c));
         let quote = texts.quote.map(|(label, quoted)| {
             div()
                 .flex()
@@ -186,7 +192,7 @@ impl Render for QuestionView {
                     .shadow(sayso_ui::paper::sheet(&c))
                     .child(grain(Grain::Sheet, px(12.), cx))
                     .child(self.top_bar(window, cx))
-                    .child(div().flex().flex_col().flex_1().min_h_0().gap(px(20.)).px(px(44.)).pt(px(8.)).pb(px(24.)).child(heading).children(quote))
+                    .child(div().id(SharedString::from(format!("{}-content", self.id))).flex().flex_col().flex_1().min_h_0().gap(px(20.)).px(px(44.)).pt(px(8.)).pb(px(24.)).overflow_y_scroll().child(heading).children(details).children(quote))
                     .child(footer),
             )
             .children(crate::caption::caption_bar(false, cx))

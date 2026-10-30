@@ -135,6 +135,7 @@ pub struct Tray;
 
 impl Tray {
     pub fn set_incognito(&self, _on: bool) {}
+    pub fn set_recording(&self, _recording: Option<&super::TrayRecording>) {}
     pub fn refresh_labels(&self) {}
 
     pub fn install(_on_event: impl Fn(TrayEvent) + Send + Sync + 'static) -> Option<Tray> {

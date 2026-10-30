@@ -17,6 +17,7 @@ hub:
     appearance: "Aspetto"
     history_privacy: "Cronologia e privacy"
     permissions: "Permessi"
+    connected_apps: "App collegate"
     advanced: "Avanzate"
   sidebar:
     expand: "Espandi barra laterale"

@@ -124,6 +124,35 @@ fn dim_icon(rgba: &mut [u8]) {
     }
 }
 
+/// The tray icon while an app records: its name for a screen reader, and the
+/// colors of the dot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrayRecording {
+    pub label: String,
+    pub dot: [u8; 3],
+    pub ring: [u8; 3],
+}
+
+/// Draw the recording dot at the top right of a tray icon image, with a ring
+/// that keeps it apart from the icon. macOS keeps a template image and shows
+/// the dot as a view, so only the other systems draw it.
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn draw_recording_dot(image: &mut image::RgbaImage, dot: [u8; 3], ring: [u8; 3]) {
+    let (width, height) = image.dimensions();
+    let radius = width.min(height) as f32 * 0.17;
+    let ring_radius = radius * 1.45;
+    let (center_x, center_y) = (width as f32 - ring_radius, ring_radius);
+    for (x, y, pixel) in image.enumerate_pixels_mut() {
+        let distance = ((x as f32 + 0.5 - center_x).powi(2) + (y as f32 + 0.5 - center_y).powi(2)).sqrt();
+        if distance <= radius {
+            *pixel = image::Rgba([dot[0], dot[1], dot[2], 255]);
+        } else if distance <= ring_radius {
+            *pixel = image::Rgba([ring[0], ring[1], ring[2], 255]);
+        }
+    }
+}
+
 /// What happened at the menu bar or tray icon.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(any(target_os = "macos", windows), allow(dead_code))] // The macOS and Windows icons have no menu, so they only send `Click`.

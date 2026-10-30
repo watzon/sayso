@@ -150,9 +150,9 @@ models:
     use_preview: "실시간 미리보기에 사용: %{name}"
   roles:
     vad_title: "음성 감지"
-    vad_note: "확장 프로그램을 위해 긴 녹음에서 말소리를 찾아요. 받아쓰기에는 쓰지 않아요."
+    vad_note: "연결된 앱을 위해 긴 녹음에서 말소리를 찾아요. 받아쓰기에는 쓰지 않아요."
     speakers_title: "화자"
-    speakers_note: "확장 프로그램을 위해 녹음에서 누가 언제 말하는지 찾아요."
+    speakers_note: "연결된 앱을 위해 녹음에서 누가 언제 말하는지 찾아요."
     automatic_uses: "지금은 %{name} 사용"
     automatic_none: "다운로드한 화자 모델이 없어요. 아래에서 하나를 다운로드하세요."
     basic: "기본"

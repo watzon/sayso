@@ -17,6 +17,7 @@ hub:
     appearance: "Оформление"
     history_privacy: "История и конфиденциальность"
     permissions: "Разрешения"
+    connected_apps: "Подключённые приложения"
     advanced: "Дополнительно"
   sidebar:
     expand: "Развернуть боковую панель"

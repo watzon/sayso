@@ -1,6 +1,6 @@
-//! The quit question (`docs/extensions.md`, "Lifecycle"). When an extension
-//! has a live session or a job, the Quit of the Popover and of the tray menu
-//! names the extension and asks first: "Notetaker is recording. Quit
+//! The quit question (`docs/extensions.md`, "Lifecycle"). When an app has
+//! a live session or a job, the Quit of the Popover and of the tray menu names
+//! the app, by its record in `apps.toml`, and asks first: "Notetaker is recording. Quit
 //! anyway?". Without such work, Sayso quits at once.
 //!
 //! A quit that the system starts (log out, shut down, Quit in the Dock on
@@ -19,9 +19,9 @@ thread_local! {
     static OPEN: RefCell<Option<AnyWindowHandle>> = const { RefCell::new(None) };
 }
 
-/// Quit, or ask first when an extension works.
+/// Quit, or ask first when an app works.
 pub fn request(model: &Entity<AppModel>, cx: &mut App) {
-    let holds = model.read(cx).extension_holds();
+    let holds = model.read(cx).app_holds();
     if holds.is_empty() {
         cx.quit();
         return;
@@ -49,15 +49,16 @@ pub fn request(model: &Entity<AppModel>, cx: &mut App) {
 
 fn texts(holds: &[Hold]) -> Texts {
     let title = crate::host::quit_question(holds).unwrap_or_default();
-    // The other extensions that work now, when there are more.
+    // The other apps that work now, when there are more.
     let others: Vec<&str> = holds.iter().skip(1).map(|hold| hold.name.as_str()).filter(|name| *name != holds[0].name).collect();
     Texts {
-        window_title: t!("extensions.quit_ask.window_title"),
+        window_title: t!("apps.quit_ask.window_title"),
         title,
-        body: t!("extensions.quit_ask.body"),
-        quote: (!others.is_empty()).then(|| (t!("extensions.quit_ask.others_label"), others.join(", "))),
-        cancel: t!("extensions.quit_ask.cancel"),
-        confirm: t!("extensions.quit_ask.quit"),
+        body: t!("apps.quit_ask.body"),
+        details: None,
+        quote: (!others.is_empty()).then(|| (t!("apps.quit_ask.others_label"), others.join(", "))),
+        cancel: t!("apps.quit_ask.cancel"),
+        confirm: t!("apps.quit_ask.quit"),
         danger: true,
     }
 }

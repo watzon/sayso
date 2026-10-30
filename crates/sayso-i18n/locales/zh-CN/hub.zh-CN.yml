@@ -17,6 +17,7 @@ hub:
     appearance: "外观"
     history_privacy: "历史记录与隐私"
     permissions: "权限"
+    connected_apps: "已连接的应用"
     advanced: "高级"
   sidebar:
     expand: "展开边栏"
