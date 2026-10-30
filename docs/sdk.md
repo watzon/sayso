@@ -130,6 +130,7 @@ The system permissions stay separate. Sayso asks the system for the system audio
 name = "Notetaker"            # The name from the system, which Sayso shows.
 team_id = "ABCDE12345"        # macOS, signed apps.
 identifier = "app.justsayso.notetaker"
+signer = "Example LLC"        # The organization on the certificate, which Sayso shows.
 # path = "/opt/notetaker/bin/notetaker"   # Other identities.
 allowed = true
 granted = ["session.live", "audio.mic", "audio.system", "transcribe.file"]
@@ -514,5 +515,6 @@ Chris answered these on 2026-10-29.
 
 | Step | State | Notes |
 |---|---|---|
+| 9. Approval | In progress | Chris approved the designs on 2026-10-30. 9b is built: the identity rules, `apps.toml`, `hello` with `app` and `capabilities`, the question and its limits, `not_approved`, Settings › Connected apps, the recording state, and the removal of the extension code. Checked on macOS, with automated tests and in the real app. Open: 9a, and the runs on Windows and Linux. |
 | 10. MIT core | Done | `sayso-speech` (MIT): jobs and live sessions from `sayso-host` (the plan of chunks, the final pass of each part, the speakers, the queue, `DictationGate`), Basic VAD and the resampler from `sayso-core`, and the file decoder (`symphonia`). Its own types (`ModelId`, `Timestamps`, `Turn`, `EngineEvent`, `EngineError`, `Refusal`, `JobSpec`, `SessionSpec`); the events are the messages of `sayso-protocol`. The traits `SpeechEngine`, `ModelResolver`, `ModelRetention`, `Gate`, `EventSink`, and `Recordings`. `sayso-capture` (MIT): the microphone with `cpal`, from `sayso-platform-common/src/audio.rs`; the place for the system audio of step 13 is the module `system`. `sayso-host` gives the adapters: `BackendEngine` (`SttBackend` and the bus), `SaysoModels` (the choices of the user and the catalog), `ModelUse`, and `RecordingFolder`. `sayso-core` re-exports `basic_vad` and `resample` and converts its types. The shared microphone stays in `sayso-app/src/mic.rs`. Every author of the moved files is Chris (`git log --follow`, 2026-10-29). Checked: `cargo test --workspace`, clippy, `scripts/check-deps.sh`, `cargo tree` of both crates (no GPL crate), and `cargo package` of both crates with `workspace-hack` removed. The dictation benchmark (`docs/benchmark.md`) showed no regression in two pairs of runs, on the record in #64. |
 | 11. Model store | In progress | Done: the write inventory and the descriptors (#65), the rules in `sayso_core::model_store`, `store_v1` in the Rust engine, and the store level of the conformance suite. Open: `store_v1` in the Swift engine, the migration in Sayso, and the checks of a real 0.13 models folder and of the engine of the last release beside a new one. A stalled download holds its `get` lock until the limit of 6 hours for one file, because `ureq` has no limit for the time between two reads. sherpa-onnx ends the process on a broken VAD model, so that load gives no `failed` reply; the store stays as it was. |
