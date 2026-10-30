@@ -60,7 +60,7 @@ pub enum Error {
     Verify(String),
 }
 
-fn io(what: impl std::fmt::Display, path: &Path) -> impl FnOnce(std::io::Error) -> Error {
+pub(crate) fn io(what: impl std::fmt::Display, path: &Path) -> impl FnOnce(std::io::Error) -> Error {
     let what = format!("{what} {}", path.display());
     move |source| Error::Io { what, source }
 }
@@ -142,7 +142,7 @@ impl Store {
         }
     }
 
-    fn artifact(&self, digest: &str) -> PathBuf {
+    pub(crate) fn artifact(&self, digest: &str) -> PathBuf {
         self.root.join("artifacts").join(digest)
     }
 
@@ -157,7 +157,7 @@ impl Store {
         Ok(lock)
     }
 
-    fn meta_exclusive(&self) -> Result<File, Error> {
+    pub(crate) fn meta_exclusive(&self) -> Result<File, Error> {
         let path = self.lock_path("meta");
         let lock = open_lock(&path)?;
         lock.lock().map_err(io("cannot lock", &path))?;
@@ -175,7 +175,7 @@ impl Store {
     }
 
     /// Hold `meta` when you call this. A file that does not parse is no manifest.
-    fn read_manifest(&self, model: &str, format: &str) -> Result<Option<Manifest>, Error> {
+    pub(crate) fn read_manifest(&self, model: &str, format: &str) -> Result<Option<Manifest>, Error> {
         let path = self.manifest_path(model, format)?;
         match std::fs::read(&path) {
             Ok(bytes) => Ok(serde_json::from_slice(&bytes).ok()),
@@ -185,7 +185,7 @@ impl Store {
     }
 
     /// Hold `meta` when you call this. The revision is enough and each artifact exists.
-    fn complete(&self, manifest: &Manifest, descriptor: &Descriptor) -> bool {
+    pub(crate) fn complete(&self, manifest: &Manifest, descriptor: &Descriptor) -> bool {
         manifest.revision >= descriptor.revision && manifest.parts.iter().all(|p| self.artifact(&p.digest).is_dir())
     }
 
@@ -361,7 +361,7 @@ impl Store {
 
     /// Hold `meta` exclusive when you call this. A manifest never goes back to
     /// a lower revision.
-    fn write_manifest(&self, descriptor: &Descriptor, data: &Descriptors) -> Result<(), Error> {
+    pub(crate) fn write_manifest(&self, descriptor: &Descriptor, data: &Descriptors) -> Result<(), Error> {
         let existing = self.read_manifest(&descriptor.model, &descriptor.format)?;
         if existing.is_some_and(|m| m.revision > descriptor.revision) {
             return Ok(());
@@ -490,7 +490,7 @@ fn folders(path: &Path) -> Result<Vec<std::fs::DirEntry>, Error> {
 
 /// Make a rename in `folder` last through a power cut, where the system can do
 /// that. A failure leaves the rename as good as the system made it.
-fn sync_folder(folder: &Path) {
+pub(crate) fn sync_folder(folder: &Path) {
     #[cfg(unix)]
     if let Ok(file) = File::open(folder) {
         let _ = file.sync_all();
@@ -501,7 +501,7 @@ fn sync_folder(folder: &Path) {
 
 /// A rename. Windows can refuse for a moment while another program has a file
 /// open (a virus scanner), so there it tries again for about two seconds.
-fn rename(from: &Path, to: &Path) -> Result<(), Error> {
+pub(crate) fn rename(from: &Path, to: &Path) -> Result<(), Error> {
     let attempts = if cfg!(windows) { 20 } else { 1 };
     for attempt in 1.. {
         match std::fs::rename(from, to) {
@@ -514,7 +514,7 @@ fn rename(from: &Path, to: &Path) -> Result<(), Error> {
 }
 
 /// Check that `folder` holds the files of `artifact` and nothing else.
-fn verify(folder: &Path, artifact: &Artifact) -> Result<(), Error> {
+pub(crate) fn verify(folder: &Path, artifact: &Artifact) -> Result<(), Error> {
     let mut found = Vec::new();
     walk(folder, "", &mut found)?;
     found.sort();
