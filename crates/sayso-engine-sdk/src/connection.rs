@@ -6,6 +6,7 @@ use sayso_protocol::engine::{self, FromEngine, Reply, Request};
 use sayso_protocol::{Decoded, Message, decode, encode};
 use std::collections::HashMap;
 use std::io::{self, BufRead, BufReader, Write};
+use std::path::Path;
 use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -44,11 +45,14 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 impl Connection {
     /// Start the process and the threads that read its stdout and stderr.
-    pub(crate) fn spawn(options: &EngineOptions) -> Result<(Connection, Receiver<Event>), Error> {
+    pub(crate) fn spawn(options: &EngineOptions, store: Option<&Path>) -> Result<(Connection, Receiver<Event>), Error> {
         let mut command = Command::new(&options.program);
         command.args(&options.args).env("SAYSO_MODELS_DIR", &options.models_dir);
         for (key, value) in &options.env {
             command.env(key, value);
+        }
+        if let Some(store) = store {
+            command.env("SAYSO_MODEL_STORE", store);
         }
         command.stdin(Stdio::piped()).stdout(Stdio::piped());
         command.stderr(match &options.stderr {
