@@ -12,6 +12,7 @@ use crate::spec::ModelSpec;
 use crate::timing::Timed;
 use crate::vad::Detector;
 use anyhow::{Result, anyhow};
+use sayso_core::model_store::{Lease, Store};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -25,6 +26,28 @@ pub struct ModelDirs {
     pub stream: Option<PathBuf>,
     /// The speaker embedding model of a diarization model. Its segmentation model is `main`.
     pub embedding: Option<PathBuf>,
+    /// Keeps the files of a model in the model store. A loader that reads the
+    /// folders later (a live preview that loads at the first stream) holds a copy.
+    pub store_use: Option<Arc<StoreUse>>,
+}
+
+/// The files of a loaded model in the model store: the `use` locks stay while
+/// something holds this. When the last holder lets go, a cleanup removes the
+/// artifacts of a model that another engine has deleted in the meantime.
+#[derive(Debug)]
+pub struct StoreUse {
+    pub lease: Option<Lease>,
+    pub store: Store,
+}
+
+impl Drop for StoreUse {
+    fn drop(&mut self) {
+        self.lease = None;
+        let store = self.store.clone();
+        let _ = std::thread::Builder::new().name("store-cleanup".into()).spawn(move || {
+            let _ = store.cleanup();
+        });
+    }
 }
 
 /// Loads models. Loading is slow, so the engine calls it on a worker thread.
@@ -49,6 +72,8 @@ pub struct Loaded {
     pub preview: Option<Arc<dyn LivePreview>>,
     pub vad: Option<Arc<dyn VadModel>>,
     pub diarizer: Option<Arc<dyn Diarizer>>,
+    /// For a model in the model store. A job or a stream that uses the model holds it too.
+    pub store_use: Option<Arc<StoreUse>>,
 }
 
 /// A VAD model. It makes one detector for each audio.

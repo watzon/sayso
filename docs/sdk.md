@@ -255,7 +255,7 @@ v1/
   locks/meta                          the lock of the metadata (see "Rules")
   locks/<digest>.use                  shared while loaded, exclusive to delete
   locks/<digest>.get                  exclusive while one engine downloads the artifact
-  staging/<digest>.<pid>.<random>/    a download in progress, with an `owner` file first
+  staging/<digest>.<pid>.<random>/    a download in progress: an `owner` file first, then `work/` and `files/`
   trash/<digest>.<random>/            artifacts that wait to be deleted
   migration.json                      the journal of the migration
   cache/<key>/                        caches that the engines control, each with its own lock
@@ -278,26 +278,28 @@ These rules are in the engine feature `store_v1`, in both engines and in the con
 1. Take `meta` shared. Read the manifest of the model in the format of the engine.
 2. Take a shared `use` lock on each of its artifacts, in the order of the digests.
 3. Check that each artifact folder exists. Let `meta` go.
-4. Load. When an artifact is missing in step 3, the model is not on disk, and the engine reports `not_downloaded`. A load never writes in the store: a load that fails reports `failed`, and FluidAudio runs with `offlineMode`.
+4. Load. When an artifact is missing in step 3, the model is not on disk, and the engine reports `not_downloaded`. A load never writes in the store: a load that fails reports `failed`. FluidAudio loads through its local loaders only (`AsrModels.loadLocal`, `OfflineDiarizerModels.init`), because its `offlineMode` is one flag for the whole process and it also stops each download (finding 3 of "Write inventory").
 5. Keep the `use` locks until the engine no longer holds any object that reads the files: after `unload`, and after the end of each running job and stream that uses the model.
 
 **Download.**
 
-1. Take `meta` shared and read the manifest. When it has the revision of the descriptor and each artifact exists, the model is on disk. Let `meta` go.
-2. For each artifact of the descriptor that is missing: take its `get` lock exclusive (an engine that waits for it reports `downloading`). Look again: another engine may have published it. Make `staging/<digest>.<pid>.<random>/`, write the `owner` file into it first, download, check each file against the descriptor, and keep the `get` lock.
-3. Take `meta` exclusive. Rename each staged folder to `artifacts/<digest>`. Write the manifest to a unique temporary file and rename it into place, unless the manifest that is there has a higher revision. Let `meta` go, then the `get` locks.
+1. Take `meta` shared and read the manifest. When it has the revision of the descriptor or a higher one, and each artifact exists, the model is on disk. Let `meta` go.
+2. For each artifact of the descriptor that is missing, in the order of the digests: take its `get` lock exclusive (an engine that waits for it reports `downloading`). Look again: another engine may have published it. Make `staging/<digest>.<pid>.<random>/`, write the `owner` file into it first, download into its `files/`, check each file against the descriptor, and keep the `get` lock.
+3. Take `meta` exclusive. Rename each staged `files/` to `artifacts/<digest>`. When an artifact of the descriptor is now missing (a cleanup took it, because no manifest named it after step 1), let the locks go and start again at step 1. Else write the manifest to a unique temporary file and rename it into place, unless the manifest that is there has a higher revision. Let `meta` go, then the `get` locks.
 
-An artifact and the manifest that names it appear in one step under `meta`, so cleanup never sees a new artifact without its manifest.
+An artifact and the manifest that names it appear in one step under `meta`, so cleanup never sees a new artifact without its manifest. An engine with an older descriptor uses a manifest with a higher revision, because one format means that the engine can read it. A manifest with a lower revision is not on disk for the engine, and its next download replaces it.
 
 **Delete a model** (the user, in Sayso or in an app): take `meta` exclusive and delete the manifest. This never fails because of another app. An app that has the model loaded keeps it until it unloads. At its next `list_models`, the model is not on disk.
 
 **Clean up.** At the start of an engine and after each delete:
 
-1. Take `meta` exclusive. Find the artifacts that no manifest names.
+1. Take `meta` exclusive. Find the artifacts that no manifest names. When a manifest does not parse, it is not known what is garbage, and no artifact goes. Remove the temporary manifest files of a crash, and the folder of a model without manifests.
 2. For each, try its `use` lock exclusive without waiting. When the engine gets it, it renames the artifact into `trash/` and lets the lock go. When it does not, another engine has it loaded, and it stays for the next cleanup.
 3. Let `meta` go, then delete the folders in `trash/`.
 
 An artifact that a crash left without a manifest is valid. A download that needs it finds it in step 2 and uses it, and cleanup deletes it when no manifest names it.
+
+An engine also runs a cleanup after the last holder of a loaded model lets it go, so the artifacts of a model that another engine deleted go after the unload.
 
 **Staging.** Cleanup also looks at `staging/`. For each folder, it takes the `get` lock of the digest in its name without waiting, keeps it while it deletes the folder, and then lets it go. A folder whose `get` lock another engine holds is a download in progress, and it stays.
 
@@ -512,4 +514,5 @@ Chris answered these on 2026-10-29.
 
 | Step | State | Notes |
 |---|---|---|
-| 10. MIT core | Done, benchmark open | `sayso-speech` (MIT): jobs and live sessions from `sayso-host` (the plan of chunks, the final pass of each part, the speakers, the queue, `DictationGate`), Basic VAD and the resampler from `sayso-core`, and the file decoder (`symphonia`). Its own types (`ModelId`, `Timestamps`, `Turn`, `EngineEvent`, `EngineError`, `Refusal`, `JobSpec`, `SessionSpec`); the events are the messages of `sayso-protocol`. The traits `SpeechEngine`, `ModelResolver`, `ModelRetention`, `Gate`, `EventSink`, and `Recordings`. `sayso-capture` (MIT): the microphone with `cpal`, from `sayso-platform-common/src/audio.rs`; the place for the system audio of step 13 is the module `system`. `sayso-host` gives the adapters: `BackendEngine` (`SttBackend` and the bus), `SaysoModels` (the choices of the user and the catalog), `ModelUse`, and `RecordingFolder`. `sayso-core` re-exports `basic_vad` and `resample` and converts its types. The shared microphone stays in `sayso-app/src/mic.rs`. Every author of the moved files is Chris (`git log --follow`, 2026-10-29). Checked: `cargo test --workspace`, clippy, `scripts/check-deps.sh`, `cargo tree` of both crates (no GPL crate), and `cargo package` of both crates with `workspace-hack` removed. Open: the dictation benchmark (`docs/benchmark.md`) needs `silero-vad`, `speaker-diarization`, and the benchmark clips, which the machine of the build did not have. |
+| 10. MIT core | Done | `sayso-speech` (MIT): jobs and live sessions from `sayso-host` (the plan of chunks, the final pass of each part, the speakers, the queue, `DictationGate`), Basic VAD and the resampler from `sayso-core`, and the file decoder (`symphonia`). Its own types (`ModelId`, `Timestamps`, `Turn`, `EngineEvent`, `EngineError`, `Refusal`, `JobSpec`, `SessionSpec`); the events are the messages of `sayso-protocol`. The traits `SpeechEngine`, `ModelResolver`, `ModelRetention`, `Gate`, `EventSink`, and `Recordings`. `sayso-capture` (MIT): the microphone with `cpal`, from `sayso-platform-common/src/audio.rs`; the place for the system audio of step 13 is the module `system`. `sayso-host` gives the adapters: `BackendEngine` (`SttBackend` and the bus), `SaysoModels` (the choices of the user and the catalog), `ModelUse`, and `RecordingFolder`. `sayso-core` re-exports `basic_vad` and `resample` and converts its types. The shared microphone stays in `sayso-app/src/mic.rs`. Every author of the moved files is Chris (`git log --follow`, 2026-10-29). Checked: `cargo test --workspace`, clippy, `scripts/check-deps.sh`, `cargo tree` of both crates (no GPL crate), and `cargo package` of both crates with `workspace-hack` removed. The dictation benchmark (`docs/benchmark.md`) showed no regression in two pairs of runs, on the record in #64. |
+| 11. Model store | In progress | Done: the write inventory and the descriptors (#65), the rules in `sayso_core::model_store`, `store_v1` in the Rust engine, and the store level of the conformance suite. Open: `store_v1` in the Swift engine, the migration in Sayso, and the checks of a real 0.13 models folder and of the engine of the last release beside a new one. A stalled download holds its `get` lock until the limit of 6 hours for one file, because `ureq` has no limit for the time between two reads. sherpa-onnx ends the process on a broken VAD model, so that load gives no `failed` reply; the store stays as it was. |

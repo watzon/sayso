@@ -82,6 +82,7 @@ An engine that sends no `features` is older than this spec. A client can still s
 | `diarization` | The request `diarize` (see "Diarization"). | yes | yes |
 | `catalog` | The built-in catalog: `list_models` without `models`, and requests without `engine` (see "Models"). | yes | yes |
 | `detected_language` | The field `language` of `final`, and `detects_language` in the catalog (see "Detected language"). | yes | yes |
+| `store_v1` | The model store of `SAYSO_MODEL_STORE` (see "Model store"). | no | yes |
 
 The Rust engine replies `ok` to `prepare` and does nothing, so it does not list `prepare`.
 
@@ -296,21 +297,41 @@ With the feature `catalog`, each engine has a built-in catalog: the models that 
 - A request with `engine` uses that object, also for an id that is not in the catalog. Sayso sends `engine`, and a client can use it to run a model that the catalog does not have.
 - A model id is public. It does not change after the first release of this spec. A model that goes out of the catalog stays as `retired`: a request with its id and without `engine` gets an `error` with `code: "model_retired"` and a `message` that says what to use instead.
 
+## Model store
+
+An engine with `store_v1` keeps the models that have a descriptor in the store at the environment variable `SAYSO_MODEL_STORE`, with the rules of `docs/sdk.md`, "Model store". It still needs `SAYSO_MODELS_DIR`: a model without a descriptor stays there. An engine without the feature does not know the variable, and uses `SAYSO_MODELS_DIR` for each model. So a client can set both for an engine of any version.
+
+The messages do not change. With a store:
+
+- `model_state` `downloading` also means that another engine downloads the files, and this engine waits for them.
+- `load` of a model that is not on disk sends `model_state` `not_downloaded` before the `error`.
+- `delete` takes the model away for each engine on the store. An engine that has it loaded keeps it until it unloads, and its `unload` then gives `not_downloaded`. When another engine holds the lock of the metadata at that moment, `unload` gives `downloaded`, and the next `list_models` is right.
+- `download` and `delete` of an engine change no file in `SAYSO_MODELS_DIR` for a model with a descriptor.
+
+Two variables are for tests only:
+
+- `SAYSO_STORE_TEST_DESCRIPTORS`: a file in the form of `descriptors.json`, in place of the descriptors that the engine has built in.
+- `SAYSO_STORE_TEST_HOOK`: a folder. At each step of the rules, the engine writes the file `at-<step>` there. When the file `hold-<step>` is there, the engine then waits until it is gone. `crates/sayso-engine-conformance/src/store.rs` lists the steps.
+
+`SAYSO_HF_ENDPOINT` and `SAYSO_MODELS_URL` also move the sources of the descriptors.
+
 ## Conformance tests
 
-`sayso-engine-conformance` (`crates/sayso-engine-conformance`, MIT) checks an engine against this spec. It starts the engine, sends requests, and checks each line that comes back. It has three levels:
+`sayso-engine-conformance` (`crates/sayso-engine-conformance`, MIT) checks an engine against this spec. It starts the engine, sends requests, and checks each line that comes back. It has four levels:
 
 | Level | Needs | Checks |
 |---|---|---|
 | core | nothing | `hello` and `features`, `"v":1` and `type` on every line, one reply for each request, the errors of this spec, unknown stream sessions, `unload` and `language_model` when listed, `shutdown`, and the exit when stdin closes |
 | model | a model id and its `engine` object | `list_models`, `delete`, and the errors for a model that is not downloaded or not loaded |
 | ready | a models folder with the model on disk, and a WAV file with speech | `list_models`, `load`, `transcribe`, a stream (with `--stream`), and `unload`; with the features, segments, the detected language, three streams at the same time, VAD (with `--vad`), and diarization (with `--diarization`) |
+| store | the feature `store_v1`, and a small VAD model of the catalog with its `engine` object | Two engines on one store: one download for two requests, a loaded model that another engine deletes, a shared artifact, manifests that do not go back in revision, and a load that fails. Then one engine stops at each step of the rules while the other does each kind of work, and one engine is killed at each step. After each, the store is checked and a new engine makes it clean. It downloads the model once, and after that it serves the files itself. |
 
 ```text
 cargo run -p sayso-engine-conformance -- <engine> \
     [--model <id> --engine-json <json>] \
     [--models-dir <dir> --audio <wav> [--stream]] \
-    [--vad <id> <json>] [--diarization <id> <json>]
+    [--vad <id> <json>] [--diarization <id> <json>] \
+    [--store <id> <json>]
 ```
 
 `--vad` and `--diarization` give a VAD model and a diarization model in the same models folder.
@@ -319,7 +340,7 @@ The suite does not download or delete in the ready level, but the engine can wri
 
 Where it runs:
 
-- `cargo test -p sayso-engine` runs the core and model levels against the Rust engine, on Linux and Windows.
+- `cargo test -p sayso-engine` runs the core and model levels against the Rust engine, on Linux and Windows. CI also runs its ignored test, the store level.
 - `cargo test -p sayso-engine-client` runs the core and ready levels against `sayso-fake-engine`. The fake engine keeps no download or load state, so it does not run the model level.
 - The macOS job of CI builds the Swift engine and runs the core and model levels against it.
 
