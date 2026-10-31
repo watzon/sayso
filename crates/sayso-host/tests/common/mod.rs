@@ -78,9 +78,12 @@ pub fn start_as(setup: &Setup, callers: Vec<std::result::Result<Caller, String>>
     Host::start(config, services).unwrap()
 }
 
-/// A host with another cooldown after a question that an app took back.
-pub fn start_cooling(setup: &Setup, cooldown: Duration, services: Arc<dyn HostServices>) -> Host {
+/// A host with another cooldown after a question that an app took back. A fake
+/// identity, because the real check of a large test program can take longer than
+/// a short cooldown.
+pub fn start_cooling(setup: &Setup, caller: Caller, cooldown: Duration, services: Arc<dyn HostServices>) -> Host {
     let mut config = HostConfig::new(setup.socket.clone(), setup.apps.clone());
+    config.identify = Arc::new(FakeIdentify { callers: Mutex::new(vec![Ok(caller)].into()) });
     config.approval_cooldown = cooldown;
     Host::start(config, services).unwrap()
 }

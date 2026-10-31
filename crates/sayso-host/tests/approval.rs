@@ -211,7 +211,7 @@ fn a_request_without_hello_gets_not_approved_and_no_question() {
 fn a_question_goes_away_when_the_app_closes_and_keeps_no_answer() {
     let setup = setup();
     let services = FakeServices::new(None);
-    let _host = start_cooling(&setup, Duration::from_millis(800), services.clone());
+    let _host = start_cooling(&setup, path("loop"), Duration::from_millis(800), services.clone());
     #[cfg(unix)]
     {
         use std::io::Write;
