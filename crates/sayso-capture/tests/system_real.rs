@@ -83,8 +83,8 @@ fn permission_state() {
 /// The first run on a Mac can show a question of the system for the program
 /// that started the test (the terminal). A person answers it. After a refusal
 /// the buffers are silent, and the test says so. On Linux it needs `paplay`.
-/// The first sound after the start of a new PulseAudio server was silent in the
-/// monitor, also for `parec`: play a sound once before the test on such a server.
+/// On a new PulseAudio server, the first sound was silent in the monitor in some
+/// runs, also for `parec`. If the frames are silent there, run the test again.
 #[test]
 #[ignore = "plays a quiet tone, and can show a question of the system"]
 fn finds_a_quiet_tone() {
