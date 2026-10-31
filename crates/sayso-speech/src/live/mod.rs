@@ -444,7 +444,7 @@ impl LiveSessions {
                 String::new()
             });
             sessions.free(session);
-            sink.event(Event::SessionEnded { session, text });
+            sink.event(Event::SessionEnded { session, text, code: None });
         });
         if let Err(e) = spawned {
             log::warn!("host: cannot stop live session {session}: {e}");

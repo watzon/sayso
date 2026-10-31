@@ -166,7 +166,7 @@ fn events() -> Vec<(&'static str, Event)> {
             }),
         ),
         (r#"{"v":1,"type":"host_closing"}"#, Event::HostClosing),
-        (r#"{"v":1,"type":"session_ended","session":7,"text":"Hello there."}"#, Event::SessionEnded { session: 7, text: "Hello there.".into() }),
+        (r#"{"v":1,"type":"session_ended","session":7,"text":"Hello there."}"#, Event::SessionEnded { session: 7, text: "Hello there.".into(), code: None }),
     ]
 }
 

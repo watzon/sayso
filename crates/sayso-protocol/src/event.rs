@@ -30,11 +30,14 @@ pub enum Event {
     Partial(PartialEvent),
     /// The user stopped the live session in Sayso, not the app. The last
     /// `segment` and `speakers` events come before it, and it is the end of
-    /// the session: there is no reply to `session_stop`.
+    /// the session: there is no reply to `session_stop`. The SDK also gives
+    /// this event, with a `code`, when the connection ends during a session.
     SessionEnded {
         session: u64,
         /// The text of all segments in the order of time.
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<ErrorCode>,
     },
     DictationDone(DictationDone),
     /// Sayso quits or restarts, and closes the connection.
