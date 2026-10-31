@@ -207,6 +207,12 @@ fn init_logging(paths: &Paths, level: Option<&str>) {
     // GPUI logs its errors without a module. The file and the line say where they come from.
     builder.format(|out, record| {
         use std::io::Write;
+        // The vsync thread of GPUI on Windows asks each window to redraw, also
+        // one that the main thread destroyed a moment ago. Nothing goes wrong,
+        // and Sayso cannot prevent it, so this one line stays out of the log.
+        if record.file().is_some_and(|file| file.contains("gpui-pre-windows")) && record.args().to_string().starts_with("Invalid window handle") {
+            return Ok(());
+        }
         let source = match (record.target(), record.file(), record.line()) {
             ("", Some(file), Some(line)) => format!("{file}:{line}"),
             (target, ..) => target.to_owned(),
@@ -331,9 +337,10 @@ pub fn appkit_later(cx: &App, f: impl FnOnce() + 'static) {
 pub fn close_question_window(window: &mut Window, cx: &mut App) {
     #[cfg(windows)]
     if let Some(ns) = crate::shell::native(window) {
-        crate::shell::order_out(ns);
         let handle = window.window_handle();
+        // After this update: hiding the window calls into GPUI at once.
         cx.spawn(async move |cx| {
+            crate::shell::order_out(ns);
             cx.background_executor().timer(std::time::Duration::from_millis(50)).await;
             let _ = handle.update(cx, |_, window, _| window.remove_window());
         })
