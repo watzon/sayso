@@ -409,11 +409,11 @@ fn jobs_need_their_capability_and_an_engine() {
     let world = world(&[], JobEngine::new());
     let (client, _events) = world.client();
     let path = world.wav("a.wav", 1_000, &[]);
-    for (kind, body) in [("transcribe_file", json!({"path": path})), ("cancel_job", json!({"job": 1}))] {
-        let error = refused(client.request(kind, fields(body)));
-        assert_eq!(error.code, Some(ErrorCode::Capability), "{kind}");
-        assert_eq!(error.capability, Some(sayso_extension::protocol::Capability::TranscribeFile));
-    }
+    let error = refused(client.request("transcribe_file", fields(json!({"path": path}))));
+    assert_eq!(error.code, Some(ErrorCode::Capability));
+    assert_eq!(error.capability, Some(sayso_extension::protocol::Capability::TranscribeFile));
+    // An app can always cancel its own job, so this needs no grant.
+    assert_eq!(refused(client.request("cancel_job", fields(json!({"job": 1})))).code, Some(ErrorCode::BadRequest));
 
     let setup = setup();
     write_apps(&setup.apps, ALL);
@@ -505,4 +505,27 @@ fn jobs_hold_sayso_open_until_they_end() {
     assert!(matches!(until_end(&events, first).last(), Some(HostEvent::JobDone { .. })));
     eventually("the jobs no longer hold Sayso", || world.host.holds().is_empty());
     eventually("the observer hears the end", || changes.load(Ordering::SeqCst) > before_end);
+}
+
+#[test]
+fn a_grant_that_goes_ends_the_jobs_of_the_app_with_capability() {
+    let world = world(ALL, JobEngine::new());
+    let (client, events) = world.client();
+    let path = world.wav("a.wav", 20_000, &THREE);
+    world.host.dictation_gate().begin();
+    let running = start_job(&client, &path, json!({}));
+    let waiting = start_job(&client, &path, json!({}));
+    world.host.stop_work_without_grant();
+    assert!(!world.host.holds().is_empty(), "the grant is still there");
+
+    world.host.apps().set_grant(&id(), &sayso_extension::protocol::Capability::TranscribeFile, false).unwrap();
+    world.host.stop_work_without_grant();
+    let gone = |job| HostEvent::JobFailed { job, message: sayso_host::jobs::GRANT_GONE.into(), code: Some(ErrorCode::Capability) };
+    assert_eq!(until_end(&events, running).last(), Some(&gone(running)));
+    assert_eq!(until_end(&events, waiting).last(), Some(&gone(waiting)));
+    world.host.dictation_gate().end();
+    assert_eq!(world.engine.transcribed(), 0, "no text after the grant went");
+
+    // An app can always cancel its own job.
+    client.request("cancel_job", fields(json!({"job": running}))).unwrap();
 }

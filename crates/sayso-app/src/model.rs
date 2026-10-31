@@ -545,7 +545,7 @@ impl AppModel {
     }
 
     /// `apps.toml` may have changed: an answer, a switch in Settings, or an
-    /// edit of the file. A session without its grants stops now.
+    /// edit of the file. A session or a job without its grants stops now.
     pub(crate) fn apps_changed(&mut self, cx: &mut Context<Self>) {
         let apps = self.apps_file.current();
         let broken = self.apps_file.is_broken();
@@ -555,7 +555,7 @@ impl AppModel {
         self.apps = apps;
         self.apps_broken = broken;
         if let Some(host) = &self.host {
-            host.stop_live_without_grant();
+            host.stop_work_without_grant();
         }
         self.refresh_recording_app();
         cx.notify();

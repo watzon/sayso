@@ -40,6 +40,8 @@ pub(crate) fn session_start(shared: &Shared, connection: u64, app_id: &str, requ
         Ok(session) => {
             responder.reply(Reply::ok_with(&SessionReply { session }));
             sink.release();
+            // The user can have taken a grant back during the load.
+            shared.stop_work_without_grant();
         }
         Err(e) => responder.reply(e.reply()),
     }

@@ -44,7 +44,7 @@ use sayso_core::paths::Paths;
 use sayso_core::pipeline::PipelineOutput;
 use sayso_core::style::StyleLibrary;
 use sayso_platform::SttBackend;
-use sayso_protocol::Event;
+use sayso_protocol::{Capability, Event};
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -202,6 +202,36 @@ impl Shared {
         self.closing.load(Ordering::SeqCst)
     }
 
+    /// See [`Host::stop_work_without_grant`]. A session in its start and a job
+    /// in its checks are not there yet, so these requests call this too when
+    /// their work runs.
+    pub fn stop_work_without_grant(&self) {
+        let apps = self.apps.current();
+        let has_all = |app_id: &str, needed: &[Capability]| {
+            let granted = apps.record(app_id).filter(|record| record.allowed).map(|record| record.capabilities()).unwrap_or_default();
+            needed.iter().all(|capability| granted.contains(capability))
+        };
+        if let Some(live) = self.live.as_ref().and_then(live::LiveSessions::current).filter(|live| !live.stopping)
+            && !has_all(&live.app_id, &sayso_protocol::session_capabilities(&live.sources))
+        {
+            log::info!("host: live session {} stops: the grants of its app changed", live.session);
+            self.live.as_ref().map(|sessions| sessions.stop_for_user(live.session));
+        }
+        let Some(jobs) = &self.jobs else { return };
+        let without_grant: Vec<u64> = {
+            let connections = self.connections.lock();
+            let mut numbers = jobs.connections();
+            numbers.sort_unstable();
+            numbers.dedup();
+            numbers.retain(|number| connections.get(number).and_then(|entry| entry.app_id.as_deref()).is_some_and(|app_id| !has_all(app_id, &[Capability::TranscribeFile])));
+            numbers
+        };
+        for number in without_grant {
+            log::info!("host: the jobs of connection {number} stop: the grants of its app changed");
+            jobs.grant_gone(number);
+        }
+    }
+
     /// The lock that an app holds while a download question to the user is open.
     pub fn question_gate(&self, app_id: &str) -> Arc<Mutex<()>> {
         self.questions.lock().entry(app_id.to_string()).or_default().clone()
@@ -330,23 +360,12 @@ impl Host {
         self.shared.live.as_ref().is_some_and(|live| live.stop_for_user(session))
     }
 
-    /// Stop the live session of an app that no longer has the grants for its
-    /// sources, or no longer has a record. Without this, a microphone that
-    /// the user turned off for the app would record until the next request.
-    /// The app calls it after each change of `apps.toml`.
-    pub fn stop_live_without_grant(&self) {
-        let Some(live) = self.live_session().filter(|live| !live.stopping) else { return };
-        let apps = self.shared.apps.current();
-        let granted = apps.record(&live.app_id).filter(|record| record.allowed).map(|record| record.capabilities()).unwrap_or_default();
-        let allowed = live.sources.iter().all(|source| match source {
-            sayso_protocol::Source::Mic => granted.contains(&sayso_protocol::Capability::AudioMic),
-            sayso_protocol::Source::System => granted.contains(&sayso_protocol::Capability::AudioSystem),
-            _ => granted.contains(&sayso_protocol::Capability::SessionLive),
-        });
-        if !allowed {
-            log::info!("host: live session {} stops: the grants of its app changed", live.session);
-            self.stop_live_session(live.session);
-        }
+    /// Stop the live session and the jobs of an app that no longer has the
+    /// grants for them, or no longer has a record. Without this, a microphone
+    /// that the user turned off for the app would record until the next
+    /// request. The app calls it after each change of `apps.toml`.
+    pub fn stop_work_without_grant(&self) {
+        self.shared.stop_work_without_grant();
     }
 
     /// `apps.toml`, for Settings.

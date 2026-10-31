@@ -317,7 +317,9 @@ fn requests_need_the_capabilities_of_the_table() {
     assert_eq!(needs(r#"{"type":"bye"}"#), vec![]);
     assert_eq!(needs(r#"{"type":"list_models"}"#), vec![Capability::ModelsRead]);
     assert_eq!(needs(r#"{"type":"download_model","model":"m","reason":"r"}"#), vec![Capability::ModelsDownload]);
-    assert_eq!(needs(r#"{"type":"cancel_job","job":1}"#), vec![Capability::TranscribeFile]);
+    assert_eq!(needs(r#"{"type":"cancel_job","job":1}"#), vec![]);
+    assert_eq!(needs(r#"{"type":"session_stop","session":1}"#), vec![]);
+    assert_eq!(needs(r#"{"type":"session_audio","session":1,"pcm":""}"#), vec![Capability::SessionLive]);
     assert_eq!(needs(r#"{"type":"session_start","sources":["client"]}"#), vec![Capability::SessionLive]);
     assert_eq!(needs(r#"{"type":"session_start","sources":["mic","system"]}"#), vec![Capability::SessionLive, Capability::AudioMic, Capability::AudioSystem]);
     assert_eq!(needs(r#"{"type":"enhance","prompt":"p"}"#), vec![Capability::AiEnhance]);

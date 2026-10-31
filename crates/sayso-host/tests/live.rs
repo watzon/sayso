@@ -48,6 +48,8 @@ struct LiveEngine {
     /// The engine refuses a stream or a VAD session when this many are open.
     max_streams: usize,
     transcriptions: AtomicUsize,
+    /// A load waits for one message here, when it is set. It says first that it runs.
+    load_gate: Mutex<Option<(Sender<()>, Receiver<()>)>>,
 }
 
 impl LiveEngine {
@@ -61,6 +63,7 @@ impl LiveEngine {
             vads: Mutex::default(),
             max_streams: 8,
             transcriptions: AtomicUsize::new(0),
+            load_gate: Mutex::default(),
         }
     }
 
@@ -125,6 +128,10 @@ impl SttBackend for LiveEngine {
         Ok(())
     }
     fn load(&self, model: &ModelId) -> Result<()> {
+        if let Some((started, release)) = self.load_gate.lock().take() {
+            let _ = started.send(());
+            let _ = release.recv();
+        }
         self.loaded.lock().insert(model.clone());
         Ok(())
     }
@@ -475,8 +482,10 @@ fn a_session_needs_its_capabilities() {
     let (client, _) = world.client();
     let error = refused(start(&client, json!({"sources": ["client"]})));
     assert_eq!((error.code, error.capability), (Some(ErrorCode::Capability), Some(Capability::SessionLive)));
-    let error = refused(client.request("session_stop", fields(json!({"session": 1}))));
+    let error = refused(client.request("session_audio", fields(json!({"session": 1, "pcm": ""}))));
     assert_eq!(error.capability, Some(Capability::SessionLive));
+    // An app can always stop its own session, so this needs no grant.
+    assert_eq!(refused(client.request("session_stop", fields(json!({"session": 1})))).code, Some(ErrorCode::BadRequest));
 
     let world = self::world(LIVE, LiveEngine::new());
     let (client, _) = world.client();
@@ -646,10 +655,59 @@ fn a_session_ends_when_the_user_takes_its_grant_back() {
     let world = world(LIVE, LiveEngine::new());
     let (client, events) = world.client();
     let session = session_of(start(&client, json!({"sources": ["client"]})));
-    world.host.stop_live_without_grant();
+    world.host.stop_work_without_grant();
     assert!(world.host.live_session().is_some_and(|live| !live.stopping), "the grant is still there");
     world.host.apps().set_grant(&id(), &Capability::SessionLive, false).unwrap();
-    world.host.stop_live_without_grant();
+    world.host.stop_work_without_grant();
     wait_for_end(&events, session);
+    eventually("the slot is free", || world.host.live_session().is_none());
+}
+
+#[test]
+fn a_grant_that_goes_during_the_load_stops_the_session_when_it_runs() {
+    let engine = LiveEngine::new();
+    let (started, load_started) = crossbeam_channel::bounded(1);
+    let (release, released) = crossbeam_channel::bounded(1);
+    *engine.load_gate.lock() = Some((started, released));
+    let world = world(&["session.live", "audio.mic"], engine);
+    let (client, events) = world.client();
+    let starting = std::thread::spawn(move || {
+        let answer = start(&client, json!({"sources": ["mic"]}));
+        (client, answer)
+    });
+    load_started.recv_timeout(Duration::from_secs(5)).unwrap();
+
+    world.host.apps().set_grant(&id(), &Capability::AudioMic, false).unwrap();
+    world.host.stop_work_without_grant();
+    assert_eq!(world.mic.open_feeds(), 0, "the session does not run yet");
+    release.send(()).unwrap();
+
+    let (_client, answer) = starting.join().unwrap();
+    wait_for_end(&events, session_of(answer));
+    eventually("the slot is free", || world.host.live_session().is_none());
+    eventually("the microphone is off", || world.mic.open_feeds() == 0);
+}
+
+#[test]
+fn a_mic_session_ends_when_session_live_goes() {
+    let world = world(&["session.live", "audio.mic"], LiveEngine::new());
+    let (client, events) = world.client();
+    let session = session_of(start(&client, json!({"sources": ["mic"]})));
+    assert_eq!(world.mic.open_feeds(), 1);
+    world.host.apps().set_grant(&id(), &Capability::SessionLive, false).unwrap();
+    world.host.stop_work_without_grant();
+    wait_for_end(&events, session);
+    eventually("the microphone is off", || world.mic.open_feeds() == 0);
+}
+
+#[test]
+fn an_app_can_stop_its_own_session_after_a_grant_goes() {
+    let world = world(LIVE, LiveEngine::new());
+    let (client, _events) = world.client();
+    let session = session_of(start(&client, json!({"sources": ["client"]})));
+    world.host.apps().set_grant(&id(), &Capability::SessionLive, false).unwrap();
+    let audio = fields(json!({"session": session, "pcm": ""}));
+    assert_eq!(refused(client.request("session_audio", audio)).code, Some(ErrorCode::Capability), "no new audio");
+    stop(&client, session);
     eventually("the slot is free", || world.host.live_session().is_none());
 }

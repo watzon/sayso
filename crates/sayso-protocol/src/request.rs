@@ -37,26 +37,31 @@ tagged_kind!(Request {
     Bye => "bye",
 });
 
+/// The capabilities that a live session with these sources needs, for its
+/// start and while it runs.
+pub fn session_capabilities(sources: &[Source]) -> Vec<Capability> {
+    let mut needed = vec![Capability::SessionLive];
+    if sources.contains(&Source::Mic) {
+        needed.push(Capability::AudioMic);
+    }
+    if sources.contains(&Source::System) {
+        needed.push(Capability::AudioSystem);
+    }
+    needed
+}
+
 impl Request {
     /// The capabilities that the user must grant before the host runs this
-    /// request (the "Capability" column of "Requests").
+    /// request (the "Capability" column of "Requests"). An app can always end
+    /// its own work, so `cancel_job` and `session_stop` need none.
     pub fn capabilities(&self) -> Vec<Capability> {
         match self {
-            Request::Hello(_) | Request::Bye => vec![],
+            Request::Hello(_) | Request::Bye | Request::CancelJob(_) | Request::SessionStop(_) => vec![],
             Request::ListModels(_) => vec![Capability::ModelsRead],
             Request::DownloadModel(_) => vec![Capability::ModelsDownload],
-            Request::TranscribeFile(_) | Request::CancelJob(_) => vec![Capability::TranscribeFile],
-            Request::SessionStart(start) => {
-                let mut needed = vec![Capability::SessionLive];
-                if start.sources.contains(&Source::Mic) {
-                    needed.push(Capability::AudioMic);
-                }
-                if start.sources.contains(&Source::System) {
-                    needed.push(Capability::AudioSystem);
-                }
-                needed
-            }
-            Request::SessionAudio(_) | Request::SessionStop(_) => vec![Capability::SessionLive],
+            Request::TranscribeFile(_) => vec![Capability::TranscribeFile],
+            Request::SessionStart(start) => session_capabilities(&start.sources),
+            Request::SessionAudio(_) => vec![Capability::SessionLive],
             Request::Enhance(_) => vec![Capability::AiEnhance],
             Request::Subscribe(_) => vec![Capability::DictationObserve],
         }

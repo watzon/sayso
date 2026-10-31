@@ -58,11 +58,11 @@ fn a_change_of_the_grants_counts_at_the_next_request() {
     write_apps(&setup.apps, &[]);
     let _host = start(&setup);
     let client = Client::connect_to(&setup.socket).unwrap();
-    let ask = || client.request("cancel_job", fields(json!({"job": 1})));
+    let ask = || client.request("transcribe_file", fields(json!({"path": "/no/file.wav"})));
     assert_eq!(refused(ask()).code, Some(ErrorCode::Capability));
     write_apps(&setup.apps, &["transcribe.file"]);
-    // Granted now: the host looks for the job, and this connection has none.
-    assert_eq!(refused(ask()).code, Some(ErrorCode::BadRequest), "granted now");
+    // Granted now: the host looks for its engine, and this host has none.
+    assert_eq!(refused(ask()).code, Some(ErrorCode::Unsupported), "granted now");
     write_apps(&setup.apps, &[]);
     assert_eq!(refused(ask()).code, Some(ErrorCode::Capability), "taken back");
     // Removed: the app is no longer approved, and the host closes.

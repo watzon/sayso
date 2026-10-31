@@ -95,13 +95,15 @@ fn a_grant_that_is_taken_back_stops_the_next_request() {
     services.wait_for_approvals(1);
     services.answer(true);
     let client = waiting.join().unwrap().unwrap();
-    let ask = || client.request("cancel_job", fields(json!({"job": 1})));
-    assert_eq!(refused(ask()).code, Some(ErrorCode::BadRequest), "granted: the host looks for the job");
+    let ask = || client.request("transcribe_file", fields(json!({"path": "/no/file.wav"})));
+    assert_eq!(refused(ask()).code, Some(ErrorCode::Unsupported), "granted: the host looks for its engine");
 
     // The switch in Settings.
     host.apps().set_grant(&id(), &Capability::TranscribeFile, false).unwrap();
     let error = refused(ask());
     assert_eq!((error.code, error.capability), (Some(ErrorCode::Capability), Some(Capability::TranscribeFile)));
+    // An app can always end its own work.
+    assert_eq!(refused(client.request("cancel_job", fields(json!({"job": 1})))).code, Some(ErrorCode::BadRequest), "the host looks for the job");
 
     // A later connection is told what the user took back.
     let second = Client::connect_as(&setup.socket, &asking(&[Capability::TranscribeFile])).unwrap();
