@@ -277,6 +277,14 @@ struct FakeSystem {
     feed: Mutex<Option<Sender<FeedItem>>>,
     refuse: Mutex<Option<OpenError>>,
     app_pid: Mutex<Option<u32>>,
+    /// While true, `open` waits, as for a question of the system.
+    hold: AtomicBool,
+    /// `open` is waiting.
+    waiting: AtomicBool,
+    /// `open` panics.
+    panics: AtomicBool,
+    /// How many times `open` started.
+    opens: AtomicU64,
 }
 
 impl FakeSystem {
@@ -304,6 +312,12 @@ impl Drop for SystemLease {
 
 impl SystemAudio for SystemHandle {
     fn open(&self, app_pid: Option<u32>) -> Result<AudioFeed, OpenError> {
+        self.0.opens.fetch_add(1, Ordering::SeqCst);
+        while self.0.hold.load(Ordering::SeqCst) {
+            self.0.waiting.store(true, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(!self.0.panics.load(Ordering::SeqCst), "a panic in the capture");
         if let Some(error) = self.0.refuse.lock().clone() {
             return Err(error);
         }
@@ -840,4 +854,117 @@ fn a_source_that_starts_late_gets_silence_so_the_sources_share_their_times() {
     f.sessions.stop(1, session).unwrap();
     assert_eq!(wav::read(&record_to.join("mic.wav")).unwrap().len(), RATE);
     assert_eq!(wav::read(&record_to.join("system.wav")).unwrap().len(), RATE, "300 ms of silence and 700 ms of audio");
+}
+
+/// A start on a thread of its own that waits in the capture of the system audio.
+fn start_that_waits(f: &Fixture, connection: u64, spec: SessionSpec) -> std::thread::JoinHandle<Result<Started, LiveError>> {
+    f.system.hold.store(true, Ordering::SeqCst);
+    let sessions = f.sessions.clone();
+    let start = std::thread::spawn(move || sessions.start(owner(connection), spec, Arc::new(Events::default())));
+    eventually("the capture waits", || f.system.waiting.load(Ordering::SeqCst));
+    start
+}
+
+#[test]
+fn a_start_whose_connection_closes_ends_when_the_question_ends_and_frees_the_slot() {
+    let f = fixture();
+    let observed = Arc::new(Observed::default());
+    f.sessions.set_observer(observed.clone());
+    let start = start_that_waits(&f, 1, spec(&[Source::Mic, Source::System]));
+
+    f.sessions.connection_closed(2);
+    f.sessions.connection_closed(1);
+    let other = f.sessions.start(owner(3), spec(&[Source::Client]), Arc::new(Events::default())).unwrap_err();
+    assert_eq!(other.code, Some(ErrorCode::Busy), "the slot stays taken while the question is open");
+
+    f.system.hold.store(false, Ordering::SeqCst);
+    let error = start.join().unwrap().unwrap_err();
+    assert!(error.message.contains("closed"), "{error:?}");
+    assert_eq!(f.system.feed.lock().is_some(), false, "the capture closed");
+    assert_eq!(f.mic.opened.load(Ordering::SeqCst), 0, "the microphone did not open");
+    assert_eq!(f.engine.open_now(), 0);
+    assert_eq!(f.sessions.current(), None);
+    assert!(observed.0.lock().is_empty(), "no recording state for a session that did not start");
+    let next = f.sessions.start(owner(3), spec(&[Source::Client]), Arc::new(Events::default())).unwrap();
+    f.sessions.stop(3, next.session).unwrap();
+}
+
+#[test]
+fn a_cancel_of_another_connection_does_not_end_a_start() {
+    let f = fixture();
+    let start = start_that_waits(&f, 1, spec(&[Source::System]));
+    f.sessions.connection_closed(2);
+    f.system.hold.store(false, Ordering::SeqCst);
+    let started = start.join().unwrap().unwrap();
+    f.sessions.stop(1, started.session).unwrap();
+}
+
+#[test]
+fn a_close_during_a_start_ends_it_and_no_session_starts_after_it() {
+    let f = fixture();
+    let start = start_that_waits(&f, 1, spec(&[Source::System]));
+    f.sessions.close();
+    f.system.hold.store(false, Ordering::SeqCst);
+    assert!(start.join().unwrap().is_err());
+    assert!(f.system.feed.lock().is_none());
+    assert_eq!(f.sessions.current(), None);
+    assert!(f.sessions.start(owner(1), spec(&[Source::Client]), Arc::new(Events::default())).is_err(), "Sayso closes");
+}
+
+#[test]
+fn the_microphone_waits_for_the_question_of_the_system_also_when_it_is_first_in_the_list() {
+    let f = fixture();
+    let start = start_that_waits(&f, 1, spec(&[Source::Mic, Source::System]));
+    assert_eq!(f.mic.opened.load(Ordering::SeqCst), 0, "no microphone while the user answers");
+    f.system.hold.store(false, Ordering::SeqCst);
+    let started = start.join().unwrap().unwrap();
+    assert_eq!(f.mic.opened.load(Ordering::SeqCst), 1);
+    assert_eq!(f.sessions.current().map(|live| live.captures_mic), Some(true));
+    f.mic.send(silence(100));
+    f.sessions.stop(1, started.session).unwrap();
+}
+
+#[test]
+fn a_refused_system_audio_opens_no_microphone_and_leaves_no_recording() {
+    let f = fixture();
+    let folder = f.temp.path().join("recordings");
+    *f.system.refuse.lock() = Some(OpenError::Permission("refused".into()));
+    let spec = SessionSpec { record_to: Some(folder.clone()), ..spec(&[Source::Mic, Source::System]) };
+    let error = f.sessions.start(owner(1), spec, Arc::new(Events::default())).unwrap_err();
+    assert_eq!(error.code, Some(ErrorCode::Permission));
+    assert_eq!(f.mic.opened.load(Ordering::SeqCst), 0);
+    assert_eq!(f.engine.open_now(), 0);
+    assert!(std::fs::read_dir(&folder).unwrap().next().is_none(), "no WAV stays");
+}
+
+#[test]
+fn a_start_that_fails_late_deletes_the_recordings_that_it_made() {
+    let f = fixture_with(FakeEngine { max_streams: Some(1), ..FakeEngine::default() });
+    let folder = f.temp.path().join("recordings");
+    let spec = SessionSpec { record_to: Some(folder.clone()), ..spec(&[Source::Client, Source::Mic]) };
+    let error = f.sessions.start(owner(1), spec, Arc::new(Events::default())).unwrap_err();
+    assert_eq!(error.code, Some(ErrorCode::TooManyStreams), "{error:?}");
+    assert!(std::fs::read_dir(&folder).unwrap().next().is_none(), "no WAV stays");
+}
+
+#[test]
+fn a_panic_in_a_start_frees_the_slot() {
+    let f = fixture();
+    f.system.panics.store(true, Ordering::SeqCst);
+    let sessions = f.sessions.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sessions.start(owner(1), spec(&[Source::System]), Arc::new(Events::default()))));
+    assert!(result.is_err());
+    f.system.panics.store(false, Ordering::SeqCst);
+    let started = f.sessions.start(owner(1), spec(&[Source::Client]), Arc::new(Events::default())).expect("the slot is free");
+    f.sessions.stop(1, started.session).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_recording_is_for_this_user_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::TempDir::new().unwrap();
+    let path = temp.path().join("mic.wav");
+    wav::WavWriter::create(&path).unwrap().finish().unwrap();
+    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
 }

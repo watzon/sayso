@@ -298,6 +298,8 @@ pub struct LiveSessions {
 struct Inner {
     deps: LiveDeps,
     slot: Mutex<Slot>,
+    /// After [`LiveSessions::close`], no session starts. Changed under the lock of the slot.
+    closed: AtomicBool,
     next_session: AtomicU64,
     next_engine_session: AtomicU64,
     observer: Mutex<Option<Arc<dyn LiveObserver>>>,
@@ -305,8 +307,10 @@ struct Inner {
 
 enum Slot {
     Free,
-    /// `session_start` checks the models and opens the engine sessions.
-    Starting,
+    /// `session_start` opens the captures and the engine sessions, and can wait for
+    /// the answer of the user. `cancelled`: its connection closed or Sayso quits,
+    /// so the start ends when it can, with nothing left open.
+    Starting { connection: u64, cancelled: bool },
     Running(Box<Running>),
 }
 
@@ -330,6 +334,8 @@ struct Stopper {
     diarization: Option<ModelId>,
     /// The recordings to delete after the stop (no `record_to`).
     temporary: Vec<PathBuf>,
+    /// All the recordings, for a start that was cancelled.
+    recordings: Vec<PathBuf>,
     /// The echo rule, when the session has both `mic` and `system`.
     echo: Option<Arc<EchoGate>>,
     /// The models of the session, until it ends.
@@ -342,6 +348,7 @@ impl LiveSessions {
             inner: Arc::new(Inner {
                 deps,
                 slot: Mutex::new(Slot::Free),
+                closed: AtomicBool::new(false),
                 next_session: AtomicU64::new(1),
                 next_engine_session: AtomicU64::new(ENGINE_SESSION_BASE),
                 observer: Mutex::new(None),
@@ -369,35 +376,49 @@ impl LiveSessions {
         check_sources(&spec.sources, self.inner.deps.microphone.is_some(), self.inner.deps.system_audio.is_some())?;
         {
             let mut slot = self.inner.slot.lock();
+            if self.inner.closed.load(Ordering::SeqCst) {
+                return Err(start_cancelled());
+            }
             if !matches!(*slot, Slot::Free) {
                 return Err(LiveError::new(Some(ErrorCode::Busy), "another live session runs; Sayso runs one at a time"));
             }
-            *slot = Slot::Starting;
+            *slot = Slot::Starting { connection: owner.connection, cancelled: false };
         }
+        // Each way out of here without a session frees the slot, also a panic.
+        let _free = FreeAfterStart(&self.inner);
         let session = self.inner.next_session.fetch_add(1, Ordering::SeqCst);
-        match self.open(session, &owner, &spec, sink) {
-            Ok(running) => {
-                let info = running.info.clone();
-                let excludes = running.excludes.clone();
-                *self.inner.slot.lock() = Slot::Running(Box::new(running));
+        let mut running = self.open(session, &owner, &spec, sink)?;
+        let info = running.info.clone();
+        let excludes = running.excludes.clone();
+        {
+            let mut slot = self.inner.slot.lock();
+            if !matches!(*slot, Slot::Starting { cancelled: true, .. }) {
+                *slot = Slot::Running(Box::new(running));
+                drop(slot);
                 log::info!("host: live session {session} of {} started with {:?}", owner.app_id, spec.sources);
                 self.notify(Some(&info));
-                Ok(Started { session, excludes })
-            }
-            Err(e) => {
-                *self.inner.slot.lock() = Slot::Free;
-                Err(e)
+                return Ok(Started { session, excludes });
             }
         }
+        // The app or Sayso went while this opened. The slot stays taken until the sources closed.
+        if let Some(mut stopper) = running.stopper.take() {
+            stopper.cancel.store(true, Ordering::SeqCst);
+            stopper.temporary = std::mem::take(&mut stopper.recordings);
+            let _ = self.finish(session, stopper, true);
+        }
+        Err(start_cancelled())
     }
 
-    /// Open the engine sessions, the recordings, and the microphone, and start the sources.
+    fn start_is_cancelled(&self) -> bool {
+        matches!(*self.inner.slot.lock(), Slot::Starting { cancelled: true, .. })
+    }
+
+    /// Open the captures, the engine sessions, and the recordings, and start the sources.
     fn open(&self, session: u64, owner: &Owner, spec: &SessionSpec, sink: Arc<dyn EventSink>) -> Result<Running, LiveError> {
         let deps = &self.inner.deps;
         let engine = &deps.engine;
         let mut opened = Opened::new(engine.clone());
         let recordings = deps.recordings.paths(session, spec.record_to.as_deref(), &spec.sources)?;
-        opened.temporary = if spec.record_to.is_none() { recordings.clone() } else { Vec::new() };
 
         // Hold before the load, so the app does not unload a model between the two.
         let held = deps.models.hold(spec.models());
@@ -413,7 +434,27 @@ impl LiveSessions {
         let cancel = Arc::new(AtomicBool::new(false));
         let clock = Arc::new(SessionClock::new());
         let echo = (spec.sources.contains(&Source::Mic) && spec.sources.contains(&Source::System)).then(|| Arc::new(EchoGate::new(session, sink.clone())));
+        // The captures first, and the system audio first of them. It can wait for the answer of
+        // the user, and the microphone must not run during that wait, when Sayso shows no
+        // recording state yet. A refusal stops the start with no microphone and no recording.
         let mut excludes = Vec::new();
+        let mut feeds: Vec<(Source, Receiver<FeedItem>)> = Vec::new();
+        if spec.sources.contains(&Source::System) {
+            let Some(system) = &deps.system_audio else { unreachable!("checked in check_sources") };
+            let feed = system.open(owner.pid).map_err(|e| e.live(&Source::System))?;
+            opened.leases.push(feed.lease);
+            excludes = feed.excludes;
+            feeds.push((Source::System, feed.items));
+            if self.start_is_cancelled() {
+                return Err(start_cancelled());
+            }
+        }
+        if spec.sources.contains(&Source::Mic) {
+            let Some(microphone) = &deps.microphone else { unreachable!("checked in check_sources") };
+            let feed = microphone.open().map_err(|e| e.live(&Source::Mic))?;
+            opened.leases.push(feed.lease);
+            feeds.push((Source::Mic, feed.items));
+        }
         for (source, path) in spec.sources.iter().zip(&recordings) {
             // Watch before the engine sessions open, so no event is lost.
             let events = engine.events();
@@ -436,21 +477,10 @@ impl LiveSessions {
                 }
             };
             let wav = WavWriter::create(path).map_err(|e| LiveError::new(Some(ErrorCode::BadRequest), format!("cannot write {}: {e}", path.display())))?;
-            let audio = match source {
-                Source::Mic => {
-                    let Some(microphone) = &deps.microphone else { unreachable!("checked in check_sources") };
-                    let feed = microphone.open().map_err(|e| e.live(source))?;
-                    opened.leases.push(feed.lease);
-                    feed.items
-                }
-                Source::System => {
-                    let Some(system) = &deps.system_audio else { unreachable!("checked in check_sources") };
-                    let feed = system.open(owner.pid).map_err(|e| e.live(source))?;
-                    opened.leases.push(feed.lease);
-                    excludes = feed.excludes;
-                    feed.items
-                }
-                _ => {
+            opened.written.push(path.clone());
+            let audio = match feeds.iter().position(|(captured, _)| captured == source) {
+                Some(at) => feeds.swap_remove(at).1,
+                None => {
                     let (tx, rx) = unbounded();
                     opened.client = Some(tx);
                     rx
@@ -475,7 +505,7 @@ impl LiveSessions {
             owner: owner.clone(),
             client: kept.client,
             excludes,
-            stopper: Some(Stopper { sources: kept.sources, leases: kept.leases, cancel, sink, diarization: spec.diarization.clone(), temporary: kept.temporary, echo, _models: held }),
+            stopper: Some(Stopper { sources: kept.sources, leases: kept.leases, cancel, sink, diarization: spec.diarization.clone(), temporary: if spec.record_to.is_none() { recordings.clone() } else { Vec::new() }, recordings, echo, _models: held }),
         })
     }
 
@@ -564,15 +594,24 @@ impl LiveSessions {
     }
 
     /// Sayso quits: stop the session that runs as [`LiveSessions::connection_closed`] does.
+    /// No session starts after this.
     pub fn close(&self) {
         self.cancel(None);
     }
 
-    /// Cancel the session of `connection`, or any session.
+    /// Cancel the session of `connection`, or any session. A session in its start cannot
+    /// stop now, for example during a question of the system. It ends when the question ends.
     fn cancel(&self, connection: Option<u64>) {
         let taken = {
             let mut slot = self.inner.slot.lock();
+            if connection.is_none() {
+                self.inner.closed.store(true, Ordering::SeqCst);
+            }
             match &mut *slot {
+                Slot::Starting { connection: owner, cancelled } if connection.is_none_or(|c| *owner == c) => {
+                    *cancelled = true;
+                    None
+                }
                 Slot::Running(running) if connection.is_none_or(|c| running.owner.connection == c) => {
                     running.client = None;
                     running.info.stopping = true;
@@ -595,7 +634,7 @@ impl LiveSessions {
     }
 
     fn finish(&self, session: u64, stopper: Stopper, cancelled: bool) -> Result<String, LiveError> {
-        let Stopper { sources, leases, cancel: _, sink, diarization, temporary, echo, _models } = stopper;
+        let Stopper { sources, leases, cancel: _, sink, diarization, temporary, recordings: _, echo, _models } = stopper;
         // The audio of the captures ends here, and the client sender went with the slot.
         drop(leases);
         let mut results: Vec<SourceResult> = sources.into_iter().filter_map(SourceRun::join).collect();
@@ -665,6 +704,22 @@ fn owned(slot: &Slot, connection: u64, session: u64) -> Result<&Running, LiveErr
     }
 }
 
+/// Frees the slot of a start that has no session, after each other lock of the start.
+struct FreeAfterStart<'a>(&'a Inner);
+
+impl Drop for FreeAfterStart<'_> {
+    fn drop(&mut self) {
+        let mut slot = self.0.slot.lock();
+        if matches!(*slot, Slot::Starting { .. }) {
+            *slot = Slot::Free;
+        }
+    }
+}
+
+fn start_cancelled() -> LiveError {
+    LiveError::new(None, "the app or Sayso closed during the start of the live session")
+}
+
 fn unknown_session(session: u64) -> LiveError {
     LiveError::new(Some(ErrorCode::BadRequest), format!("no live session {session} of this connection runs"))
 }
@@ -690,8 +745,9 @@ fn check_sources(sources: &[Source], has_microphone: bool, has_system_audio: boo
     Ok(())
 }
 
-/// What a start opened so far. A start that fails closes it all on drop:
-/// the sources that run end, and the engine sessions that no source owns yet close.
+/// What a start opened so far. A start that fails closes it all on drop: the
+/// sources that run end, the engine sessions that no source owns yet close, and
+/// the recordings that it made go.
 struct Opened {
     engine: Arc<dyn SpeechEngine>,
     sources: Vec<SourceRun>,
@@ -699,7 +755,7 @@ struct Opened {
     streams: Vec<u64>,
     vads: Vec<u64>,
     leases: Vec<Box<dyn Send>>,
-    temporary: Vec<PathBuf>,
+    written: Vec<PathBuf>,
     kept: bool,
 }
 
@@ -708,17 +764,16 @@ struct Kept {
     sources: Vec<SourceRun>,
     client: Option<Sender<FeedItem>>,
     leases: Vec<Box<dyn Send>>,
-    temporary: Vec<PathBuf>,
 }
 
 impl Opened {
     fn new(engine: Arc<dyn SpeechEngine>) -> Opened {
-        Opened { engine, sources: Vec::new(), client: None, streams: Vec::new(), vads: Vec::new(), leases: Vec::new(), temporary: Vec::new(), kept: false }
+        Opened { engine, sources: Vec::new(), client: None, streams: Vec::new(), vads: Vec::new(), leases: Vec::new(), written: Vec::new(), kept: false }
     }
 
     fn keep(mut self) -> Kept {
         self.kept = true;
-        Kept { sources: std::mem::take(&mut self.sources), client: self.client.take(), leases: std::mem::take(&mut self.leases), temporary: std::mem::take(&mut self.temporary) }
+        Kept { sources: std::mem::take(&mut self.sources), client: self.client.take(), leases: std::mem::take(&mut self.leases) }
     }
 }
 
@@ -739,7 +794,7 @@ impl Drop for Opened {
         for &id in &self.vads {
             let _ = self.engine.end_vad(id);
         }
-        for path in &self.temporary {
+        for path in &self.written {
             let _ = std::fs::remove_file(path);
         }
     }

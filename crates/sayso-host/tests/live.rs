@@ -259,6 +259,9 @@ struct FakeSystem {
     feed: Mutex<Option<Sender<FeedItem>>>,
     /// The process that the session asked to leave out.
     app_pid: Mutex<Option<u32>>,
+    /// While true, `open` waits, as for a question of the system.
+    hold: AtomicBool,
+    waiting: AtomicBool,
 }
 
 impl FakeSystem {
@@ -269,6 +272,10 @@ impl FakeSystem {
 
 impl SystemAudio for FakeSystem {
     fn open(&self, app_pid: Option<u32>) -> std::result::Result<AudioFeed, OpenError> {
+        while self.hold.load(Ordering::SeqCst) {
+            self.waiting.store(true, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(1));
+        }
         if self.refused.load(Ordering::SeqCst) {
             return Err(OpenError::Permission("the system audio permission is denied".into()));
         }
@@ -782,4 +789,24 @@ fn an_app_can_stop_its_own_session_after_a_grant_goes() {
     assert_eq!(refused(client.request("session_audio", audio)).code, Some(ErrorCode::Capability), "no new audio");
     stop(&client, session);
     eventually("the slot is free", || world.host.live_session().is_none());
+}
+
+/// An app that quits while the system asks its question: nothing captures after the answer.
+#[cfg(unix)]
+#[test]
+fn an_app_that_quits_during_the_question_of_the_system_leaves_no_session() {
+    use std::io::Write;
+    let world = world_with(&["session.live", "audio.system"], LiveEngine::new(), true);
+    world.system.hold.store(true, Ordering::SeqCst);
+    let mut app = std::os::unix::net::UnixStream::connect(&world.setup.socket).unwrap();
+    writeln!(app, r#"{{"v":1,"type":"session_start","id":"s","sources":["system"]}}"#).unwrap();
+    eventually("the capture waits", || world.system.waiting.load(Ordering::SeqCst));
+    drop(app);
+    let (client, _events) = world.client();
+    eventually("the host saw the end of the connection", || world.host.connected_apps().len() == 1);
+    assert_eq!(refused(start(&client, json!({"sources": ["client"]}))).code, Some(ErrorCode::Busy), "the question is still open");
+
+    world.system.hold.store(false, Ordering::SeqCst);
+    eventually("the slot is free", || start(&client, json!({"sources": ["client"]})).is_ok());
+    assert_eq!(world.host.live_session().map(|live| live.sources), Some(vec![Source::Client]), "the session of the app that quit is gone");
 }

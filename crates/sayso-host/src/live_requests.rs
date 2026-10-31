@@ -36,12 +36,18 @@ pub(crate) fn session_start(shared: &Shared, connection: u64, app_id: &str, app_
     };
     // The events of the session wait until the app has its id.
     let sink = Arc::new(AfterReply::new(responder.notifier()));
+    let notifier = responder.notifier();
     match live.start(Owner { connection, app_id: app_id.to_string(), pid: app_pid }, spec, sink.clone()) {
         Ok(started) => {
             responder.reply(Reply::ok_with(&SessionReply { session: started.session, excludes: started.excludes }));
             sink.release();
             // The user can have taken a grant back during the load.
             shared.stop_work_without_grant();
+            // The connection can have closed before the start took the slot, where its close
+            // did not see it. A close after this look finds the session in the slot.
+            if !notifier.is_open() {
+                live.connection_closed(connection);
+            }
         }
         Err(e) => responder.reply(e.reply()),
     }
