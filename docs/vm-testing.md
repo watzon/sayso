@@ -48,7 +48,7 @@ Get the files of the last release with `gh release download`.
 | Check | macOS 27.2 | macOS 14.6.1 | Windows 11 | Ubuntu 24.04 | Fedora 44 |
 |---|---|---|---|---|---|
 | Package installs | DMG | DMG | Installer, over 0.13 | `.deb`, over 0.13; `.flatpak`; `.AppImage` | `.rpm` |
-| The app starts | Pass | Pass | Pass | Pass | **Crash**, see below |
+| The app starts | Pass | Pass | Pass | Pass | **Crash** in 0.14.0, pass with the fix for 0.14.1, see below |
 | A real 0.13 models folder moves | Pass | Clean install | Pass | Pass | Not run |
 | Connected app, Allow | Pass | Pass, up to the job | Pass | Pass | Not run |
 | Don't allow | Not run | Not run | Pass | Pass | Not run |
@@ -62,7 +62,7 @@ Get the files of the last release with `gh release download`.
 
 Problems found, none new in 0.14.0:
 
-- **Fedora 44 in a VM.** Sayso ends with SIGSEGV one second after the start, in `libLLVM.so.22.1`, when Mesa compiles a shader for the software renderer llvmpipe on aarch64. The released 0.13.0 does the same. The VM has only that renderer, because the virgl adapter does not pass the limits of `wgpu`. Ubuntu has llvmpipe with LLVM 20 and works. A computer with a real GPU does not use this path.
+- **Fedora 44 in a VM (fixed for 0.14.1).** The released 0.13.0 and 0.14.0 end with SIGSEGV one second after the start, in `libLLVM.so.22.1`, when Mesa compiles a fragment shader for the software renderer llvmpipe on Vulkan (lavapipe). The VM has only that renderer, because the virgl adapter has no compute and no storage buffers, so it does not pass the limits that GPUI asks for. Mesa 26.0.3 calls `llvm.masked.gather` with an alignment argument that LLVM 22 removed: the LLVM verifier rejects the module (`Intrinsic has incorrect argument type!`). A copy of the module as text compiles, because the LLVM parser updates the old call. LLVM 22.1.1 and 22.1.8 both crash. Sayso now keeps the instance data in a texture on llvmpipe with LLVM 22 or later ([vendor/gpui-pre-wgpu/SAYSO.md](../vendor/gpui-pre-wgpu/SAYSO.md)). Ubuntu 24.04 has LLVM 20 and keeps the storage buffer. A computer with a real GPU does not use this path. x86_64 was not tested: the call to Mesa is the same there, so we expect the same crash and the same fix.
 - **macOS.** At the first start the system asks for Accessibility or Events access before onboarding explains why.
 - **Windows.** The log has `Invalid window handle` and `window not found` when the question closes. Nothing else goes wrong.
 - **Windows.** A silent install stops with exit code 1 while Sayso runs, because the installer cannot ask to close it. An install with its window asks.

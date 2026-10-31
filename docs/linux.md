@@ -243,6 +243,7 @@ On an RTX 4070 the final pass took 77 ms for 5 s of speech and 347 ms for 58 s, 
 
 ## Known limits
 
+- Without a GPU that passes the limits of `wgpu`, Sayso draws on the processor with Mesa's llvmpipe, which is slower. With LLVM 22 or later, Sayso keeps its instance data in a texture on llvmpipe, because Mesa 26.0 ends with a crash in LLVM on the storage buffer ([vm-testing.md](vm-testing.md)). The log has `llvmpipe with LLVM 22 or later`.
 - Linux has no common way to detect a password field, so Sayso cannot warn you about one.
 - On GNOME, typing (the fallback method) works only for characters of the active keyboard layout. Pasting is not affected.
 - Through `/dev/uinput`, typing works only for ASCII characters with a US layout.
