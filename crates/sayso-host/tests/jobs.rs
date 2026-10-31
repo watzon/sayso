@@ -251,6 +251,31 @@ fn cancelled(job: u64) -> HostEvent {
 // Tests
 // ---------------------------------------------------------------------------
 
+/// The bridge of a Sayso in a Flatpak opens the file in the view of the app, and
+/// the job reads that file (`docs/sdk.md`, "Flatpak").
+#[cfg(target_os = "linux")]
+#[test]
+fn a_job_through_the_bridge_reads_the_file_that_the_bridge_opened() {
+    let world = world(&["transcribe.file"], JobEngine::new());
+    let socket = world.setup.dir.path().join("outside").join("host.sock");
+    let (ours, theirs) = sayso_bridge::wire::pair(libc::SOCK_SEQPACKET).unwrap();
+    world.host.attach_bridge(ours);
+    {
+        let socket = socket.clone();
+        std::thread::spawn(move || sayso_bridge::serve::run(theirs, &socket));
+    }
+    let client = (0..200).find_map(|_| {
+        std::thread::sleep(Duration::from_millis(10));
+        Client::connect_to(&socket).ok()
+    });
+    let client = client.expect("the bridge listens");
+    let events = client.events();
+    let path = world.wav("three.wav", 18_000, &THREE);
+    let job = start_job(&client, &path, json!({}));
+    let found = until_end(&events, job);
+    assert!(matches!(found.last(), Some(HostEvent::JobDone { .. })), "{found:?}");
+}
+
 #[test]
 fn a_job_gives_progress_segments_speakers_and_its_text() {
     let mut engine = JobEngine::new();

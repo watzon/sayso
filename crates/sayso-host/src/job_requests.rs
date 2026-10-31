@@ -7,16 +7,32 @@
 
 use crate::Shared;
 use crate::jobs::SaysoModels;
-use crate::responder::Responder;
+use crate::responder::{Notifier, Responder};
+use crate::sandbox::OpenedFile;
 use parking_lot::Mutex;
 use sayso_protocol::{CancelJob, ErrorCode, JobReply, Reply, TranscribeFile};
-use sayso_speech::ModelResolver;
+use sayso_protocol::Event;
+use sayso_speech::{EventSink, ModelResolver};
 use std::collections::HashSet;
 use std::sync::Arc;
 
+/// The events of a job, and the file that the path of the job opens again.
+/// The queue keeps the sink until the job ends, so the file stays open as long.
+struct SinkWithFile {
+    notifier: Notifier,
+    _file: OpenedFile,
+}
+
+impl EventSink for SinkWithFile {
+    fn event(&self, event: Event) {
+        self.notifier.event(event);
+    }
+}
+
 /// Check the request and queue the job. The reply is `ok {job}` or `error {code}`.
-/// `owned` gets the id of the job, for `cancel_job`.
-pub(crate) fn transcribe_file(shared: &Shared, connection: u64, owned: &Mutex<HashSet<u64>>, request: &TranscribeFile, responder: Responder) {
+/// `owned` gets the id of the job, for `cancel_job`. `file` is the file of the
+/// path of the request, when it is a path that only this process can open.
+pub(crate) fn transcribe_file(shared: &Shared, connection: u64, owned: &Mutex<HashSet<u64>>, request: &TranscribeFile, file: Option<OpenedFile>, responder: Responder) {
     let (Some(engine), Some(queue)) = (&shared.engine, &shared.jobs) else {
         responder.reply(Reply::error(Some(ErrorCode::Unsupported), "the speech engine of Sayso does not run"));
         return;
@@ -29,7 +45,10 @@ pub(crate) fn transcribe_file(shared: &Shared, connection: u64, owned: &Mutex<Ha
             return;
         }
     };
-    let sink = Arc::new(responder.notifier());
+    let sink: Arc<dyn EventSink> = match file {
+        Some(file) => Arc::new(SinkWithFile { notifier: responder.notifier(), _file: file }),
+        None => Arc::new(responder.notifier()),
+    };
     // The reply goes out before the first event of the job. After a close of
     // the host, the dropped responder replies with an error.
     if let Some(id) = queue.submit(connection, job, sink, move |job| responder.reply(Reply::ok_with(&JobReply { job }))) {

@@ -680,7 +680,7 @@ impl Speech {
         }
         let socket = match &options.socket {
             Some(socket) => Ok(socket.clone()),
-            None => protocol::socket::host_socket_path().map_err(|e| e.to_string()),
+            None => protocol::socket::client_socket_path().map_err(|e| e.to_string()),
         };
         let tried = socket.as_ref().ok().and_then(|socket| transport::socket_id(socket));
         let shared = Arc::new(Shared {

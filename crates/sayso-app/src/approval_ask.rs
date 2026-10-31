@@ -108,6 +108,7 @@ pub fn identity_text(identity: &Identity) -> String {
     match identity {
         Identity::Signed { team_id, identifier } => format!("{identifier} · {team_id}"),
         Identity::Path(path) => sayso_host::visible_path(path),
+        Identity::Flatpak { app_id } => format!("{app_id} · Flatpak"),
     }
 }
 

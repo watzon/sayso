@@ -231,6 +231,7 @@ impl Listener {
             writer: Box::new(PipeIo(pipe.clone())),
             closer: Arc::new(move || closer.shutdown()),
             peer: Box::new(move || crate::identity::system::client(&client)),
+            attested: None,
         })
     }
 

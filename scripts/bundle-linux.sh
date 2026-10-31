@@ -24,6 +24,13 @@ echo "==> cleanup runtime (cargo, release)"
 cargo build --release --manifest-path native/cleanup/Cargo.toml
 cleanup_target=$(cargo metadata --format-version 1 --no-deps --manifest-path native/cleanup/Cargo.toml | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
 cleanup_bin="$cleanup_target/release/sayso-cleanup"
+# The bridge runs outside the Flatpak sandbox, on any Linux of the user, so it
+# has no library of the system. It is linked statically, and always a release
+# build. Only this crate gets the flag, because of --target.
+echo "==> bridge (cargo, release, static)"
+bridge_target="$arch-unknown-linux-gnu"
+RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -p sayso-bridge --target "$bridge_target"
+bridge_bin="$target_dir/$bridge_target/release/sayso-bridge"
 
 name="sayso-$version-linux-$arch"
 out="${SAYSO_BUNDLE_DIR:-build}/$name"
@@ -33,6 +40,7 @@ install -m 755 "$target_dir/$profile/sayso" "$out/bin/sayso"
 install -m 755 "$target_dir/$profile/sayso-engine" "$out/bin/sayso-engine"
 # The app finds the cleanup runtime next to itself, like the engine.
 install -m 755 "$cleanup_bin" "$out/bin/sayso-cleanup"
+install -m 755 "$bridge_bin" "$out/bin/sayso-bridge"
 cp packaging/linux/dev.sayso.Sayso.desktop "$out/share/applications/"
 cp packaging/linux/dev.sayso.Sayso.metainfo.xml "$out/share/metainfo/"
 cp packaging/linux/70-sayso-uinput.rules "$out/lib/udev/rules.d/"

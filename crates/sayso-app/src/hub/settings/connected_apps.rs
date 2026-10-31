@@ -212,6 +212,7 @@ impl ConnectedAppsSettings {
         let identity = match record.identity() {
             Some(Identity::Signed { team_id, identifier }) => format!("{team_id} · {identifier}"),
             Some(Identity::Path(path)) => short_path(&path),
+            Some(Identity::Flatpak { app_id }) => format!("{app_id} · Flatpak"),
             None => String::new(),
         };
         let (allow_id, forget_id) = (id.to_string(), id.to_string());
@@ -313,7 +314,7 @@ mod tests {
 
     #[test]
     fn the_id_line_shows_each_character_that_can_mislead() {
-        let record = AppRecord { name: "x".into(), team_id: None, identifier: None, signer: None, path: Some("/opt/ev\u{202E}il\nname".into()), allowed: true, granted: vec![], denied: vec![], first_seen: None };
+        let record = AppRecord { name: "x".into(), team_id: None, identifier: None, signer: None, flatpak: None, path: Some("/opt/ev\u{202E}il\nname".into()), allowed: true, granted: vec![], denied: vec![], first_seen: None };
         assert_eq!(id_line(&record, ""), "/opt/ev\u{FFFD}il\u{FFFD}name");
     }
 

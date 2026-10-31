@@ -49,6 +49,15 @@ fn command_for(sandboxed: bool, program: &Path, envs: &[(&str, &str)], cwd: Opti
     command
 }
 
+/// A command for a program of the user's system that gets the descriptor `fd`
+/// of this process, with the same number. Only for a Sayso in a Flatpak: the
+/// program runs on the host, and it stops when Sayso goes away.
+pub fn host_command_with_fd(program: &Path, fd: i32) -> Command {
+    let mut command = Command::new("flatpak-spawn");
+    command.args(["--host", "--watch-bus"]).arg(format!("--forward-fd={fd}")).arg(program);
+    command
+}
+
 /// The folder for temporary files that a host program must read or write.
 /// None outside a Flatpak, where the system folder is right. The sandbox has
 /// its own `/tmp`, which the host cannot see. The cache folder of the app has
@@ -85,6 +94,12 @@ mod tests {
         assert_eq!(words(&command), ["/usr/bin/codex"]);
         assert_eq!(command.get_current_dir(), Some(Path::new("/tmp/x")));
         assert!(command.get_envs().any(|(k, v)| k == "A" && v == Some(OsStr::new("1"))));
+    }
+
+    #[test]
+    fn a_descriptor_goes_to_the_program_on_the_host() {
+        let command = host_command_with_fd(Path::new("/app/files/bin/x"), 7);
+        assert_eq!(words(&command), ["flatpak-spawn", "--host", "--watch-bus", "--forward-fd=7", "/app/files/bin/x"]);
     }
 
     #[test]
