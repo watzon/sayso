@@ -36,6 +36,11 @@
 //! The file `hello-delay-ms` makes `hello` wait that many milliseconds. The file
 //! `exit-at-hello` makes the process end at `hello`, with no answer.
 //!
+//! The file `more-features` adds its words to the features of `hello`. The file `catalog.json`
+//! is the reply of `list_models` without `models`, as `{models, retired}`, after a `model_state`
+//! for each model. `transcribe` waits while the file `hold-transcribe` exists, and `download` while
+//! the file `hold-download` exists.
+//!
 //! It passes the core and ready levels of `sayso-engine-conformance`. It does
 //! not keep download or load state for `load`, `transcribe`, and
 //! `stream_start`, so it does not pass the model level.
@@ -250,7 +255,20 @@ fn handle(
             } else {
                 json!(["diarization", "keep_preview", "language_model", "prepare", "segments", "unload", "vad"])
             };
+            let mut features = features;
+            if let (Some(list), Ok(more)) = (features.as_array_mut(), fs::read_to_string(dir.join("more-features"))) {
+                list.extend(more.split_whitespace().map(|feature| json!(feature)));
+            }
             reply(out, request, "hello", json!({"version": "fake", "protocol": 1, "features": features}))
+        }
+        "list_models" if request.get("models").is_none() => {
+            let catalog: Value = fs::read_to_string(dir.join("catalog.json")).ok().and_then(|text| serde_json::from_str(&text).ok()).unwrap_or_else(|| json!({"models": [], "retired": []}));
+            for entry in catalog["models"].as_array().into_iter().flatten() {
+                let id = entry["id"].as_str().unwrap_or_default();
+                let state = if dir.join(format!("downloaded-{id}")).exists() { "downloaded" } else { "not_downloaded" };
+                reply(out, request, "model_state", json!({"model": id, "state": state}));
+            }
+            reply(out, request, "ok", catalog);
         }
         "list_models" => {
             for entry in request["models"].as_array().into_iter().flatten() {
@@ -280,6 +298,9 @@ fn handle(
                 with_state(&progress, "downloading"),
             );
             thread::sleep(Duration::from_millis(300));
+            while dir.join("hold-download").exists() {
+                thread::sleep(Duration::from_millis(5));
+            }
             if fail(out, dir, request, &model, "fail-download", "download stopped") {
                 return;
             }
@@ -344,6 +365,9 @@ fn handle(
             }
             if model.starts_with("never-") {
                 return;
+            }
+            while dir.join("hold-transcribe").exists() {
+                thread::sleep(Duration::from_millis(5));
             }
             let Some(bytes) = read_wav(out, request) else {
                 return;
