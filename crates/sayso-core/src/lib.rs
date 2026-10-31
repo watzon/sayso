@@ -18,6 +18,7 @@ pub mod hotkey;
 pub mod ink;
 pub mod languages;
 pub mod models;
+pub mod model_migration;
 pub mod model_store;
 pub mod models_onnx;
 pub mod paths;

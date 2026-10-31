@@ -4,9 +4,45 @@
 // `Diarization.finish` makes the turns of the protocol: whole milliseconds, speakers
 // numbered from 0 in the order in which they first speak, the turns of one speaker joined
 // where they touch or overlap, and the turns in order.
+import CoreML
+import FluidAudio
 import Foundation
 
 enum Diarization {
+    /// The models of an artifact in the model store. `OfflineDiarizerModels.load` can delete
+    /// the folder and download it again (docs/sdk.md, finding 3), so this reads the folder
+    /// only, with the compute units of that function.
+    static func loadStored(from folder: URL) throws -> OfflineDiarizerModels {
+        let start = Date()
+        func model(_ name: String, units: MLComputeUnits) throws -> MLModel {
+            let configuration = MLModelConfiguration()
+            configuration.computeUnits = units
+            return try MLModel(contentsOf: folder.appendingPathComponent(name), configuration: configuration)
+        }
+        let names = ModelNames.OfflineDiarizer.self
+        let segmentation = try model(names.segmentationPath, units: .all)
+        let embedding = try model(names.embeddingPath, units: .all)
+        let plda = try model(names.pldaRhoPath, units: .all)
+        let fbank = try model(names.fbankPath, units: .cpuOnly)
+        return OfflineDiarizerModels(
+            segmentationModel: segmentation, fbankModel: fbank, embeddingModel: embedding, pldaRhoModel: plda,
+            pldaPsi: try pldaPsi(in: folder), compilationDuration: Date().timeIntervalSince(start))
+    }
+
+    /// The tensor `psi` of the PLDA parameters: base64 of 32-bit floats.
+    private static func pldaPsi(in folder: URL) throws -> [Double] {
+        let data = try Data(contentsOf: folder.appendingPathComponent(ModelNames.OfflineDiarizer.pldaParameters))
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let tensors = root["tensors"] as? [String: Any], let psi = tensors["psi"] as? [String: Any],
+            let base64 = psi["data_base64"] as? String,
+            let decoded = Data(base64Encoded: base64, options: [.ignoreUnknownCharacters]),
+            decoded.count >= MemoryLayout<Float>.size
+        else { throw EngineError("the PLDA parameters have no psi tensor") }
+        var floats = [Float](repeating: 0, count: decoded.count / MemoryLayout<Float>.size)
+        _ = floats.withUnsafeMutableBytes { decoded.copyBytes(to: $0) }
+        return floats.map(Double.init)
+    }
+
     /// A turn as the model gives it. The speaker is the label of the model.
     struct RawTurn: Equatable {
         let start: Double

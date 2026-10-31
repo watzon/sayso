@@ -68,7 +68,8 @@ jobs:
         run: |
           swift build -c release --package-path native/macos/SaysoEngine
           cargo run -q -p sayso-engine-conformance -- native/macos/SaysoEngine/.build/release/SaysoEngine \
-            --model parakeet-tdt-v2 --engine-json '{"kind":"parakeet_tdt","version":"v2"}'
+            --model parakeet-tdt-v2 --engine-json '{"kind":"parakeet_tdt","version":"v2"}' \
+            --store silero-vad '{"kind":"fluid_vad"}'
 
   test-linux:
     name: Tests and clippy, Linux (manual)

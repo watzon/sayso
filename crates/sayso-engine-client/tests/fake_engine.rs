@@ -4,9 +4,10 @@ use crossbeam_channel::Receiver;
 use sayso_core::enhance::{EnhanceError, LanguageModel};
 use sayso_core::models::{ModelId, default_model};
 use sayso_core::stt::{Diarization, EngineEvent, EngineReason, ModelStatus, SessionOptions, Turn};
-use sayso_engine_client::{EngineClient, Options};
+use sayso_engine_client::{BeforeLaunch, EngineClient, Options};
 use sayso_platform::SttBackend;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
@@ -643,6 +644,54 @@ fn start_with_markers(markers: &[(&str, &str)], options: Options) -> (TempDir, T
         EngineClient::start_with(PathBuf::from(FAKE_ENGINE), models.path().to_path_buf(), cache.path().to_path_buf(), options)
             .expect("the fake engine runs");
     (models, cache, client, events)
+}
+
+fn slow_before_launch(wait: Duration) -> BeforeLaunch {
+    BeforeLaunch(Arc::new(move || {
+        thread::sleep(wait);
+        vec![("SAYSO_MODEL_STORE".to_string(), "/the/store".to_string())]
+    }))
+}
+
+#[test]
+fn before_launch_does_not_stop_the_start_and_its_environment_stays_for_a_restart() {
+    let options = Options { before_launch: Some(slow_before_launch(Duration::from_millis(600))), ..fast_options() };
+    let began = Instant::now();
+    let (models, _cache, client, events) = start_with_markers(&[], options);
+    assert!(began.elapsed() < Duration::from_millis(300), "start waited: {:?}", began.elapsed());
+    assert!(!models.path().join("pid").exists(), "the engine ran before before_launch ended");
+    wait_for(&events, "Started", |e| matches!(e, EngineEvent::Started).then_some(()));
+    assert!(began.elapsed() >= Duration::from_millis(600));
+
+    let _ = client.transcribe(&[0.0; 160], &options_for("crash-once"));
+    wait_for(&events, "Restarted", |e| matches!(e, EngineEvent::Restarted).then_some(()));
+    let log = std::fs::read_to_string(models.path().join("store.log")).unwrap();
+    assert_eq!(log, "/the/store\n/the/store\n");
+}
+
+#[test]
+fn before_launch_with_a_program_that_cannot_run_gives_start_failed() {
+    let models = TempDir::new().unwrap();
+    let cache = TempDir::new().unwrap();
+    let options = Options { before_launch: Some(slow_before_launch(Duration::ZERO)), ..fast_options() };
+    let (client, events) =
+        EngineClient::start_with(PathBuf::from("/no/such/engine"), models.path().to_path_buf(), cache.path().to_path_buf(), options).unwrap();
+    let message = wait_for(&events, "StartFailed", |e| match e {
+        EngineEvent::StartFailed { message } => Some(message.clone()),
+        _ => None,
+    });
+    assert!(message.contains("/no/such/engine"), "{message}");
+    assert!(client.load(&default_model()).is_err());
+}
+
+#[test]
+fn a_client_that_goes_during_before_launch_starts_no_engine() {
+    let options = Options { before_launch: Some(slow_before_launch(Duration::from_millis(100))), ..fast_options() };
+    let (models, _cache, client, events) = start_with_markers(&[], options);
+    drop(client);
+    drop(events);
+    thread::sleep(Duration::from_millis(400));
+    assert!(!models.path().join("pid").exists());
 }
 
 #[test]
