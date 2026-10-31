@@ -13,7 +13,8 @@
 //! tests kill processes, and they name a socket file.
 #![cfg(unix)]
 
-use crossbeam_channel::{Receiver, unbounded};
+use crossbeam_channel::{Receiver, Sender, unbounded};
+use parking_lot::Mutex;
 use sayso_core::config::{Config, Provider, ProviderKind, RoleChoice};
 use sayso_core::engine_catalog;
 use sayso_core::enhance::EnhanceError;
@@ -25,9 +26,11 @@ use sayso_engine_client::{EngineClient, Options as EngineClientOptions};
 use sayso_host::{ApprovalQuestion, DownloadQuestion, HostConfig, HostServices, StyleRequest};
 use sayso_platform::SttBackend;
 use sayso_sdk::protocol::{self, Capability, Enhance, ErrorCode, SessionStart, Source, TranscribeFile};
-use sayso_sdk::{ActiveMode, App, Engine, Event, Features, Mode, ModelChoices, Options, Speech, Timing};
+use sayso_sdk::capture::{AudioFeed, CapturedAudio, FeedItem, Microphone, OpenError, SourceEnd, SystemAudio};
+use sayso_sdk::{ActiveMode, App, CaptureSources, Engine, Event, Features, Mode, ModelChoices, Options, Speech, Timing};
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -44,6 +47,131 @@ const LONG: Duration = Duration::from_secs(120);
 const A_MOMENT: Duration = Duration::from_millis(150);
 const GRANTS: [&str; 8] = ["models.read", "models.download", "transcribe.file", "session.live", "audio.mic", "audio.system", "ai.enhance", "dictation.observe"];
 
+// --- Fake capture sources. No test does a real capture: a tap on macOS waits for a person. ---
+
+#[derive(Default)]
+struct SourceState {
+    feeds: HashMap<String, Sender<FeedItem>>,
+    /// The audio that each source has given, in ms.
+    clock: HashMap<String, u64>,
+    refuse: HashMap<String, OpenError>,
+    opening: usize,
+    block: bool,
+    app_pid: Option<u32>,
+}
+
+/// The microphone and the system audio, driven by the words of [`FakeSources::command`].
+#[derive(Clone)]
+struct FakeSources {
+    state: Arc<Mutex<SourceState>>,
+    excludes: Vec<String>,
+}
+
+impl FakeSources {
+    fn new(excludes: &[&str]) -> FakeSources {
+        FakeSources { state: Arc::default(), excludes: excludes.iter().map(|name| name.to_string()).collect() }
+    }
+
+    fn open(&self, source: &str, excludes: Vec<String>) -> Result<AudioFeed, OpenError> {
+        self.state.lock().opening += 1;
+        // As a question of the system: it waits outside each lock.
+        while self.state.lock().block {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let mut state = self.state.lock();
+        state.opening -= 1;
+        if let Some(error) = state.refuse.get(source) {
+            return Err(error.clone());
+        }
+        let (feed, items) = unbounded();
+        state.feeds.insert(source.to_string(), feed);
+        state.clock.insert(source.to_string(), 0);
+        Ok(AudioFeed { items, lease: Box::new(FeedLease { state: self.state.clone(), source: source.to_string() }), excludes })
+    }
+
+    fn feed(&self, source: &str, item: FeedItem) {
+        let state = self.state.lock();
+        let _ = state.feeds.get(source).unwrap_or_else(|| panic!("the source {source} is not open")).send(item);
+    }
+
+    /// Frames of 20 ms on one clock for each source of a test, so two sources can overlap.
+    fn audio(&self, source: &str, ms: u64, sample: impl Fn(u64) -> f32) {
+        for _ in 0..ms / 20 {
+            let at = {
+                let mut state = self.state.lock();
+                let clock = state.clock.entry(source.to_string()).or_default();
+                let at = *clock;
+                *clock += 20;
+                at
+            };
+            let samples = (0..320).map(|n| sample(at * 16 + n)).collect();
+            self.feed(source, FeedItem::Audio(CapturedAudio { samples, time: Some(Duration::from_secs(1000) + Duration::from_millis(at)) }));
+        }
+    }
+
+    fn command(&self, words: &[&str]) -> String {
+        match words {
+            ["tone", source, ms] => self.audio(source, ms.parse().unwrap(), speech_sample),
+            ["silence", source, ms] => self.audio(source, ms.parse().unwrap(), |_| 0.0),
+            ["gap", source, ms] => self.feed(source, FeedItem::Gap { ms: ms.parse().unwrap() }),
+            ["end", source, "permission"] => self.feed(source, FeedItem::Ended(SourceEnd::Permission)),
+            ["end", source, "failed"] => self.feed(source, FeedItem::Ended(SourceEnd::Failed("the device broke".into()))),
+            ["refuse", source] => {
+                self.state.lock().refuse.insert(source.to_string(), OpenError::Permission("the system refused it".into()));
+            }
+            ["allow", source] => {
+                self.state.lock().refuse.remove(*source);
+            }
+            ["block"] => self.state.lock().block = true,
+            ["unblock"] => self.state.lock().block = false,
+            ["opening"] => return self.state.lock().opening.to_string(),
+            ["app_pid"] => return format!("{:?}", self.state.lock().app_pid),
+            other => panic!("unknown source command {other:?}"),
+        }
+        "done".into()
+    }
+
+    fn capture(&self) -> CaptureSources {
+        CaptureSources { microphone: Arc::new(self.clone()), system_audio: Arc::new(FakeSystem(self.clone())) }
+    }
+}
+
+/// Something like speech for Basic VAD: a voice of 140 Hz with harmonics in syllables of 200 ms.
+fn speech_sample(n: u64) -> f32 {
+    let t = n as f32 / 16_000.0;
+    let voice: f32 = (1..=5).map(|h| (2.0 * std::f32::consts::PI * 140.0 * h as f32 * t).sin() / h as f32).sum();
+    let syllable = (t * 5.0).fract();
+    let envelope = if syllable < 0.85 { (std::f32::consts::PI * syllable / 0.85).sin().max(0.3) } else { 0.05 };
+    0.1 * voice * envelope
+}
+
+impl Microphone for FakeSources {
+    fn open(&self) -> Result<AudioFeed, OpenError> {
+        FakeSources::open(self, "mic", Vec::new())
+    }
+}
+
+/// As with a real capture: dropping it ends the feed, so the channel closes.
+struct FeedLease {
+    state: Arc<Mutex<SourceState>>,
+    source: String,
+}
+
+impl Drop for FeedLease {
+    fn drop(&mut self) {
+        self.state.lock().feeds.remove(&self.source);
+    }
+}
+
+struct FakeSystem(FakeSources);
+
+impl SystemAudio for FakeSystem {
+    fn open(&self, app_pid: Option<u32>) -> Result<AudioFeed, OpenError> {
+        self.0.state.lock().app_pid = app_pid;
+        self.0.open("system", self.0.excludes.clone())
+    }
+}
+
 // --- Sayso in a child process ---
 
 struct ProcessServices {
@@ -52,6 +180,7 @@ struct ProcessServices {
     answers: Receiver<bool>,
     questions: Arc<AtomicUsize>,
     styles: PathBuf,
+    sources: FakeSources,
 }
 
 impl ProcessServices {
@@ -79,6 +208,12 @@ impl HostServices for ProcessServices {
     }
     fn ask_approval(&self, _: &ApprovalQuestion, withdrawn: &dyn Fn() -> bool) -> Option<bool> {
         self.answer(withdrawn)
+    }
+    fn microphone(&self) -> Option<Arc<dyn sayso_host::live::Microphone>> {
+        Some(Arc::new(self.sources.clone()))
+    }
+    fn system_audio(&self) -> Option<Arc<dyn sayso_host::live::SystemAudio>> {
+        Some(Arc::new(FakeSystem(self.sources.clone())))
     }
     fn styles(&self) -> Option<StyleLibrary> {
         Some(StyleLibrary::load(&self.styles))
@@ -110,7 +245,8 @@ fn sayso_process() {
     config.ai.active_style = "polished".into();
     let (answer, answers) = unbounded();
     let questions = Arc::new(AtomicUsize::new(0));
-    let services = ProcessServices { engine: Arc::new(client), config, answers, questions: questions.clone(), styles: var("SDK_TEST_STYLES") };
+    let sources = FakeSources::new(&["sayso", "app"]);
+    let services = ProcessServices { engine: Arc::new(client), config, answers, questions: questions.clone(), styles: var("SDK_TEST_STYLES"), sources: sources.clone() };
     let host = sayso_host::Host::start(HostConfig::new(var("SDK_TEST_SOCKET"), var("SDK_TEST_APPS")), Arc::new(services)).unwrap();
     let say = |text: String| {
         let mut out = std::io::stdout().lock();
@@ -121,6 +257,10 @@ fn sayso_process() {
     for line in std::io::stdin().lock().lines().map_while(Result::ok) {
         let words: Vec<&str> = line.split_whitespace().collect();
         match words.as_slice() {
+            ["source", rest @ ..] => {
+                say(sources.command(rest));
+                continue;
+            }
             ["answer", yes] => answer.send(*yes == "yes").unwrap(),
             ["questions"] => {
                 say(questions.load(Ordering::SeqCst).to_string());
@@ -246,6 +386,8 @@ struct World {
     wav: PathBuf,
     pcm: Vec<i16>,
     timing: Timing,
+    /// The capture of local mode. Sayso has its own, in its process.
+    sources: FakeSources,
 }
 
 fn write_wav(path: &Path, samples: &[i16]) {
@@ -306,6 +448,7 @@ impl World {
             wav,
             pcm: Vec::new(),
             timing: Timing { watch: Duration::from_millis(5), start_wait: Duration::from_secs(30), ..Timing::default() },
+            sources: FakeSources::new(&["app"]),
             setup,
         }
     }
@@ -328,10 +471,11 @@ impl World {
     fn speech_options(&self, mode: Mode) -> Options {
         let vad = if self.flavor == Flavor::Real { "basic".to_string() } else { self.vad.clone() };
         Options::new(mode, App::new("Notetaker"))
-            .capabilities([Capability::ModelsRead, Capability::ModelsDownload, Capability::TranscribeFile, Capability::SessionLive, Capability::AudioMic, Capability::AiEnhance, Capability::DictationObserve])
+            .capabilities([Capability::ModelsRead, Capability::ModelsDownload, Capability::TranscribeFile, Capability::SessionLive, Capability::AudioMic, Capability::AudioSystem, Capability::AiEnhance, Capability::DictationObserve])
             .engine(Engine::from_program(&self.engine).store(&self.store).models_dir(&self.app_models))
             .socket(&self.setup.socket)
             .timing(self.timing)
+            .capture(self.sources.capture())
             .models(ModelChoices { final_model: Some(self.final_model.clone()), vad_model: Some(vad), ..ModelChoices::default() })
     }
 
@@ -550,7 +694,7 @@ fn file_job(run: &mut Run<'_>) -> Trace {
 }
 
 fn live_session(run: &mut Run<'_>) -> Trace {
-    let session = run.speech.start_session(run.world.session()).unwrap();
+    let session = run.speech.start_session(run.world.session()).unwrap().session;
     for chunk in run.world.pcm.chunks(16 * 320) {
         run.speech.session_audio(session, chunk).unwrap();
         // A real engine gives a partial while the audio comes, at 4 times real time here.
@@ -610,9 +754,7 @@ fn missing_features(run: &mut Run<'_>) {
     let features = run.speech.features();
     let enhance = run.speech.enhance(Enhance { text: Some("words".into()), ..Default::default() });
     let subscribe = run.speech.subscribe(&["dictation_done"]);
-    let system = run.speech.start_session(SessionStart { sources: vec![Source::System], ..Default::default() });
-    assert!(!features.system_audio, "step 13 brings it");
-    assert_eq!(system.unwrap_err().code, Some(ErrorCode::Unsupported), "the source system in both modes");
+    assert!(features.system_audio, "both modes have it");
     match run.mode {
         ActiveMode::Sayso => {
             assert!(features.enhance && features.subscribe && features.download_question, "{features:?}");
@@ -630,7 +772,7 @@ fn missing_features(run: &mut Run<'_>) {
 
 /// A grant that the user takes back. Local mode has no grants, so the work has its normal end.
 fn grant_taken_back(run: &mut Run<'_>) {
-    let session = run.speech.start_session(run.world.session()).unwrap();
+    let session = run.speech.start_session(run.world.session()).unwrap().session;
     run.speech.session_audio(session, &run.world.pcm[..run.world.pcm.len().min(16 * 320)]).unwrap();
     match run.sayso.as_mut() {
         Some(sayso) => {
@@ -735,7 +877,6 @@ fn both_modes_refuse_the_same_requests() {
     ];
     let sessions: Vec<SessionStart> = vec![
         SessionStart { sources: vec![], ..Default::default() },
-        SessionStart { sources: vec![Source::System], ..Default::default() },
         SessionStart { sources: vec![Source::Client], model: Some("no-such-model".into()), ..Default::default() },
         SessionStart { sources: vec![Source::Client], model: Some(vad.clone()), ..Default::default() },
         SessionStart { sources: vec![Source::Client], preview_model: Some(vad.clone()), ..Default::default() },
@@ -771,6 +912,214 @@ fn diarization_gives_the_same_messages_in_both_modes() {
     let (sayso, local) = in_both_modes(&world, scenario);
     assert_eq!(sayso, local);
     assert!(sayso.kinds().contains(&"speakers".to_string()), "{sayso:?}");
+}
+
+// --- The source `system`, with a fake capture ---
+
+impl Run<'_> {
+    /// Tell the fake capture of this mode what to do.
+    fn source(&mut self, command: &str) -> String {
+        match self.sayso.as_mut() {
+            Some(sayso) => sayso.tell(&format!("source {command}")),
+            None => self.world.sources.command(&command.split_whitespace().collect::<Vec<_>>()),
+        }
+    }
+
+    fn session_with(&self, sources: &[Source]) -> SessionStart {
+        SessionStart { sources: sources.to_vec(), vad_model: Some("basic".into()), ..Default::default() }
+    }
+}
+
+fn is_source_event(event: &Event) -> bool {
+    matches!(event, Event::Message(protocol::Event::SourceGap { .. } | protocol::Event::SourceEnded { .. }))
+}
+
+/// The segments of each source, without their times.
+fn texts_of(events: &[Event], source: &Source) -> Vec<String> {
+    events.iter().filter_map(|event| match event {
+        Event::Message(protocol::Event::Segment(segment)) if segment.source.as_ref() == Some(source) => Some(segment.segment.text.clone()),
+        _ => None,
+    }).collect()
+}
+
+fn system_messages(events: &[Event]) -> Vec<Value> {
+    events.iter().filter(|event| is_source_event(event)).map(|event| if let Event::Message(message) = event { normalized(message) } else { Value::Null }).collect()
+}
+
+#[test]
+fn a_gap_of_the_source_system_reaches_the_app_in_both_modes() {
+    let world = World::fake();
+    let scenario = |run: &mut Run<'_>| {
+        let started = run.speech.start_session(run.session_with(&[Source::System])).unwrap();
+        run.source("tone system 400");
+        run.source("gap system 240");
+        let seen = wait_for(&run.events, LONG, is_source_event);
+        assert!(seen.contains(&Event::Message(protocol::Event::SourceGap { session: started.session, source: Source::System, ms: 240 })), "{seen:?}");
+        // A gap is not an end: the session goes on, and ends once.
+        run.source("tone system 400");
+        run.source("silence system 1000");
+        run.speech.stop_session(started.session).unwrap();
+        std::thread::sleep(A_MOMENT);
+        let later: Vec<Event> = run.events.try_iter().collect();
+        assert!(!later.iter().any(|event| matches!(event, Event::Message(protocol::Event::SessionEnded { .. }))), "{later:?}");
+        system_messages(&seen)
+    };
+    let (sayso, local) = in_both_modes(&world, scenario);
+    assert_eq!(sayso, local);
+}
+
+#[test]
+fn a_source_that_ends_with_permission_leaves_the_mic_running_in_both_modes() {
+    let world = World::fake();
+    let scenario = |run: &mut Run<'_>| {
+        let started = run.speech.start_session(run.session_with(&[Source::Mic, Source::System])).unwrap();
+        run.source("end system permission");
+        let seen = wait_for(&run.events, LONG, is_source_event);
+        assert!(seen.contains(&Event::Message(protocol::Event::SourceEnded { session: started.session, source: Source::System, reason: protocol::SourceEndReason::Permission })), "{seen:?}");
+        assert!(!seen.iter().any(|event| matches!(event, Event::Message(protocol::Event::SessionEnded { .. }))), "the session goes on: {seen:?}");
+
+        run.source("tone mic 1000");
+        run.source("silence mic 1500");
+        let segment = wait_for(&run.events, LONG, |event| matches!(event, Event::Message(protocol::Event::Segment(segment)) if segment.source == Some(Source::Mic)));
+        assert!(!texts_of(&segment, &Source::Mic).is_empty(), "the mic goes on: {segment:?}");
+        let text = run.speech.stop_session(started.session).unwrap();
+        assert!(!text.is_empty());
+        std::thread::sleep(A_MOMENT);
+        let later: Vec<Event> = run.events.try_iter().collect();
+        assert!(!later.iter().any(|event| is_source_event(event) || matches!(event, Event::Message(protocol::Event::SessionEnded { .. }))), "one end for the source, one for the session: {later:?}");
+        assert_eq!(run.speech.stop_session(started.session).unwrap_err().code, Some(ErrorCode::BadRequest));
+        system_messages(&seen)
+    };
+    let (sayso, local) = in_both_modes(&world, scenario);
+    assert_eq!(sayso, local);
+}
+
+#[test]
+fn a_capture_that_fails_ends_the_source_with_the_reason_failed_in_both_modes() {
+    let world = World::fake();
+    let scenario = |run: &mut Run<'_>| {
+        let started = run.speech.start_session(run.session_with(&[Source::System])).unwrap();
+        run.source("end system failed");
+        let seen = wait_for(&run.events, LONG, is_source_event);
+        run.speech.stop_session(started.session).unwrap();
+        system_messages(&seen)
+    };
+    let (sayso, local) = in_both_modes(&world, scenario);
+    assert_eq!(sayso, local);
+    assert_eq!(sayso[0]["reason"], "failed");
+}
+
+#[test]
+fn a_refused_permission_at_the_start_gives_the_code_permission_in_both_modes() {
+    let world = World::fake();
+    let scenario = |run: &mut Run<'_>| {
+        run.source("refuse system");
+        let error = run.speech.start_session(run.session_with(&[Source::System])).unwrap_err();
+        assert_eq!(error.code, Some(ErrorCode::Permission), "{error:?}");
+        let also_with_a_mic = run.speech.start_session(run.session_with(&[Source::Mic, Source::System])).unwrap_err();
+        assert_eq!(also_with_a_mic.code, Some(ErrorCode::Permission));
+        // The refusal ended the request. No event and no open work stay, and the next start works.
+        std::thread::sleep(A_MOMENT);
+        let events: Vec<Event> = run.events.try_iter().collect();
+        assert!(!events.iter().any(|event| matches!(event, Event::Message(protocol::Event::SessionEnded { .. }))), "{events:?}");
+        run.source("allow system");
+        let started = run.speech.start_session(run.session_with(&[Source::System])).unwrap();
+        run.source("silence system 200");
+        run.speech.stop_session(started.session).unwrap();
+        error.code
+    };
+    let (sayso, local) = in_both_modes(&world, scenario);
+    assert_eq!(sayso, local);
+}
+
+#[test]
+fn excludes_come_in_the_ok_of_session_start() {
+    let world = World::fake();
+    {
+        let mut run = world.run(ActiveMode::Sayso);
+        let started = run.speech.start_session(run.session_with(&[Source::System])).unwrap();
+        assert_eq!(started.excludes, ["sayso", "app"]);
+        assert_eq!(run.source("app_pid"), format!("Some({})", std::process::id()), "Sayso leaves out the process of the app");
+        run.speech.stop_session(started.session).unwrap();
+        let client = run.speech.start_session(run.session_with(&[Source::Client])).unwrap();
+        assert!(client.excludes.is_empty(), "no source system");
+        run.speech.stop_session(client.session).unwrap();
+    }
+    let mut run = world.run(ActiveMode::Local);
+    let started = run.speech.start_session(run.session_with(&[Source::System])).unwrap();
+    assert_eq!(started.excludes, ["app"], "the app and the capture are one process");
+    assert_eq!(run.source("app_pid"), "None");
+    assert_ne!(started.session, 0);
+    run.speech.stop_session(started.session).unwrap();
+    let client = run.speech.start_session(run.session_with(&[Source::Client])).unwrap();
+    assert!(client.excludes.is_empty());
+}
+
+/// Without headphones the microphone hears the call. The same audio on both sources at one time
+/// gives one text, so the microphone segments go. A session with only `mic` proves that they
+/// are there without the rule.
+#[test]
+fn the_echo_rule_drops_the_mic_segments_in_both_modes() {
+    let world = World::fake();
+    // A short segment in a long text is a real reply by the rule, so both sources get a long one.
+    for folder in [&world.sayso_models, &world.app_models] {
+        std::fs::write(folder.join("one-segment"), "").unwrap();
+    }
+    let scenario = |run: &mut Run<'_>| {
+        let mic_only = run.speech.start_session(run.session_with(&[Source::Mic])).unwrap();
+        run.source("tone mic 1000");
+        run.source("silence mic 1500");
+        run.speech.stop_session(mic_only.session).unwrap();
+        std::thread::sleep(A_MOMENT);
+        let without_rule: Vec<Event> = run.events.try_iter().collect();
+        assert!(!texts_of(&without_rule, &Source::Mic).is_empty(), "{without_rule:?}");
+
+        let both = run.speech.start_session(run.session_with(&[Source::Mic, Source::System])).unwrap();
+        for source in ["system", "mic"] {
+            run.source(&format!("tone {source} 1000"));
+            run.source(&format!("silence {source} 1500"));
+        }
+        run.speech.stop_session(both.session).unwrap();
+        std::thread::sleep(A_MOMENT);
+        let events: Vec<Event> = run.events.try_iter().collect();
+        assert!(!texts_of(&events, &Source::System).is_empty(), "{events:?}");
+        assert!(texts_of(&events, &Source::Mic).is_empty(), "the echo goes: {events:?}");
+        (texts_of(&events, &Source::System), texts_of(&events, &Source::Mic))
+    };
+    let (sayso, local) = in_both_modes(&world, scenario);
+    assert_eq!(sayso, local);
+}
+
+/// A question of macOS can take minutes: the lock stays free, the app can work, and the
+/// question is active work.
+#[test]
+fn a_capture_that_waits_for_a_person_does_not_hold_the_lock_and_stops_a_change_of_mode() {
+    let world = World::fake();
+    let speech = Arc::new(world.speech(Mode::Auto));
+    let events = speech.events();
+    world.sources.command(&["block"]);
+    let starting = {
+        let (speech, request) = (speech.clone(), SessionStart { sources: vec![Source::System], vad_model: Some("basic".into()), ..Default::default() });
+        std::thread::spawn(move || speech.start_session(request))
+    };
+    eventually("the capture waits", || world.sources.command(&["opening"]) == "1");
+    assert_eq!(speech.mode(), ActiveMode::Local);
+    assert!(speech.features().system_audio);
+    speech.list_models(None).unwrap();
+
+    let mut sayso = world.start_sayso();
+    sayso.wait_count("connected", 1);
+    std::thread::sleep(A_MOMENT);
+    assert_eq!(speech.mode(), ActiveMode::Local, "the request has no reply yet");
+    assert!(modes_in(&events.try_iter().collect::<Vec<_>>()).is_empty());
+
+    world.sources.command(&["unblock"]);
+    let started = starting.join().unwrap().unwrap();
+    assert_eq!(started.excludes, ["app"]);
+    std::thread::sleep(A_MOMENT);
+    assert_eq!(speech.mode(), ActiveMode::Local, "the session runs");
+    speech.stop_session(started.session).unwrap();
+    wait_change(&events, ActiveMode::Sayso);
 }
 
 // --- What differs between modes ---
@@ -870,7 +1219,7 @@ fn queues_differ_sayso_is_for_all_apps_and_local_mode_is_for_this_app() {
         std::thread::sleep(A_MOMENT);
         assert!(!run.events.try_iter().any(|event| is_end_of(second, &event)), "it waits for the other app");
 
-        let session = other_app.start_session(world.session()).unwrap();
+        let session = other_app.start_session(world.session()).unwrap().session;
         let error = run.speech.start_session(world.session()).unwrap_err();
         assert_eq!(error.code, Some(ErrorCode::Busy), "one live session for all apps");
         other_app.stop_session(session).ok();
@@ -898,8 +1247,8 @@ fn queues_differ_sayso_is_for_all_apps_and_local_mode_is_for_this_app() {
     world.wait_requests(ActiveMode::Local, "transcribe", before + 1);
     let free = other_app.transcribe_file(world.job()).unwrap();
     until_end(&other_app.events(), LONG, free);
-    let session = other_app.start_session(world.session()).unwrap();
-    let mine = run.speech.start_session(world.session()).unwrap();
+    let session = other_app.start_session(world.session()).unwrap().session;
+    let mine = run.speech.start_session(world.session()).unwrap().session;
     other_app.stop_session(session).unwrap();
     run.speech.stop_session(mine).unwrap();
     assert!(!run.events.try_iter().any(|event| is_end_of(held, &event)), "the hold is still on");
@@ -925,7 +1274,7 @@ fn priority_differs_sayso_has_dictation_and_both_put_live_sessions_before_jobs()
         let run = world.run(mode);
         let hold = world.hold(mode);
         let before = world.requests(mode, "transcribe");
-        let session = run.speech.start_session(world.session()).unwrap();
+        let session = run.speech.start_session(world.session()).unwrap().session;
         for chunk in world.pcm.chunks(16 * 320) {
             run.speech.session_audio(session, chunk).unwrap();
         }
@@ -1036,7 +1385,7 @@ fn auto_does_not_move_during_a_live_session() {
     let world = World::fake();
     let speech = world.speech(Mode::Auto);
     let events = speech.events();
-    let session = speech.start_session(world.session()).unwrap();
+    let session = speech.start_session(world.session()).unwrap().session;
     speech.session_audio(session, &world.pcm[..16 * 320]).unwrap();
     let mut sayso = world.start_sayso();
     sayso.wait_count("connected", 1);
@@ -1113,7 +1462,7 @@ fn killing_sayso_during_a_job_gives_connection_lost_and_no_request_runs_twice() 
     assert_eq!(speech.mode(), ActiveMode::Sayso);
     let hold = world.hold(ActiveMode::Sayso);
     let job = speech.transcribe_file(world.job()).unwrap();
-    let session = speech.start_session(world.session()).unwrap();
+    let session = speech.start_session(world.session()).unwrap().session;
     world.wait_requests(ActiveMode::Sayso, "transcribe", 1);
     let sent = world.requests(ActiveMode::Sayso, "transcribe");
     sayso.kill();

@@ -12,7 +12,7 @@
 //! - **Generations.** Each connection and each local run has a number, and a message of an
 //!   older one is dropped. Also the reader of a connection that is not current drops all.
 
-use crate::local::LocalRun;
+use crate::local::{self, LocalRun};
 use crate::protocol::{self, Capability, ErrorCode, ErrorReply, Fields, HelloReply, PROTOCOL, Reply};
 use crate::transport::{self, SocketId};
 use crate::wire::{Incoming, Wire};
@@ -55,6 +55,8 @@ pub(crate) struct Shared {
     /// The connection whose `hello` runs, so a close can end the wait for the user.
     connecting: Mutex<Option<Arc<HostConnection>>>,
     closing: AtomicBool,
+    /// [`Features::system_audio`] of local mode, for a change of mode under the lock.
+    local_system_audio: AtomicBool,
 }
 
 struct State {
@@ -189,6 +191,8 @@ fn retarget(event: protocol::Event, job: impl Fn(u64) -> Option<u64>, session: i
             partial.session = session(partial.session)?;
             E::Partial(partial)
         }
+        E::SourceGap { session: id, source, ms } => E::SourceGap { session: session(id)?, source, ms },
+        E::SourceEnded { session: id, source, reason } => E::SourceEnded { session: session(id)?, source, reason },
         E::SessionEnded { session: id, text, code } => E::SessionEnded { session: session(id)?, text, code },
         other => other,
     })
@@ -203,7 +207,7 @@ impl Shared {
                     enhance: true,
                     subscribe: true,
                     download_question: true,
-                    system_audio: false,
+                    system_audio: hello.is_some_and(|hello| hello.capabilities.contains(&Capability::AudioSystem)),
                     capabilities: hello.map(|hello| hello.capabilities.clone()).unwrap_or_default(),
                     denied: hello.map(|hello| hello.denied.clone()).unwrap_or_default(),
                     host: hello.map(|hello| hello.features.clone()).unwrap_or_default(),
@@ -214,14 +218,20 @@ impl Shared {
                 enhance: false,
                 subscribe: false,
                 download_question: false,
-                system_audio: false,
-                capabilities: vec![Capability::ModelsRead, Capability::ModelsDownload, Capability::TranscribeFile, Capability::SessionLive, Capability::AudioMic],
+                system_audio: self.local_system_audio.load(Ordering::SeqCst),
+                capabilities: vec![Capability::ModelsRead, Capability::ModelsDownload, Capability::TranscribeFile, Capability::SessionLive, Capability::AudioMic, Capability::AudioSystem],
                 denied: Vec::new(),
                 host: Vec::new(),
                 engine: run.as_ref().map(|run| run.engine_features()),
             },
             Route::Gone => Features { enhance: false, subscribe: false, download_question: false, system_audio: false, capabilities: Vec::new(), denied: Vec::new(), host: Vec::new(), engine: None },
         }
+    }
+
+    /// Look at the permission of the system again. Without the lock: it asks a service of the system.
+    fn refresh_system_audio(&self) {
+        let usable = self.options.capture.is_some() || local::real_system_audio_usable();
+        self.local_system_audio.store(usable, Ordering::SeqCst);
     }
 
     fn send(&self, event: Event) {
@@ -299,8 +309,9 @@ impl Shared {
         match incoming {
             Incoming::Reply { id, reply } => self.host_reply(state, id, reply),
             Incoming::Event { event, .. } => {
-                let (jobs, sessions) = (&state.host_jobs, &state.host_sessions);
-                if let Some(event) = retarget(event, |job| jobs.get(&job).copied(), |session| sessions.get(&session).copied()) {
+                let job = |job| state.host_jobs.get(&job).copied().filter(|job| state.jobs.contains_key(job));
+                let session = |session| state.host_sessions.get(&session).copied().filter(|session| state.sessions.contains_key(session));
+                if let Some(event) = retarget(event, job, session) {
                     self.work_event(state, event);
                 }
             }
@@ -421,6 +432,9 @@ impl Shared {
         if !matches!(&state.route, Route::Local { generation: current, .. } if *current == generation) {
             return;
         }
+        // Nothing after the end of the work, as in Sayso mode.
+        let job = job.filter(|job| state.jobs.contains_key(job));
+        let session = session.filter(|session| state.sessions.contains_key(session));
         if let Some(event) = retarget(event, |_| job, |_| session) {
             self.work_event(&mut state, event);
         }
@@ -495,7 +509,7 @@ impl Shared {
         let engine = self.options.engine.as_ref().ok_or_else(|| error(ErrorCode::Unsupported, "local mode needs an engine; set Options::engine"))?;
         let shared = self.clone();
         let downloads = Arc::new(move |event| shared.local_event(generation, None, None, event));
-        let run = LocalRun::start(engine, &self.options.app.name, &self.options.timing, downloads)?;
+        let run = LocalRun::start(engine, &self.options.app.name, &self.options.timing, self.options.capture.as_ref(), downloads)?;
         let mut state = self.state.lock();
         if let Route::Local { run: slot, generation: current } = &mut state.route
             && *current == generation
@@ -678,7 +692,9 @@ impl Speech {
             local_start: Mutex::new(()),
             connecting: Mutex::new(None),
             closing: AtomicBool::new(false),
+            local_system_audio: AtomicBool::new(false),
         });
+        shared.refresh_system_audio();
         let speech = Speech { shared: shared.clone(), watcher: Mutex::new(None) };
         let local = || Route::Local { generation: shared.next_generation.fetch_add(1, Ordering::SeqCst), run: None };
         let route = match mode {
@@ -711,6 +727,7 @@ impl Speech {
 
     /// What the mode that the app has now can do. [`Event::ModeChanged`] says when that changes.
     pub fn features(&self) -> Features {
+        self.shared.refresh_system_audio();
         self.shared.features(&self.shared.state.lock().route)
     }
 
@@ -805,15 +822,20 @@ impl Speech {
         }
     }
 
-    /// Start a live session. It gives the id of the session. It ends with the reply of
-    /// [`Speech::stop_session`], or else with the event `session_ended`. A session
-    /// with the source `client` gets its audio from [`Speech::session_audio`].
-    pub fn start_session(&self, request: protocol::SessionStart) -> Result<u64, Error> {
+    /// Start a live session. It gives the id of the session, and what the capture of the
+    /// source `system` leaves out. It ends with the reply of [`Speech::stop_session`], or else
+    /// with the event `session_ended`. A session with the source `client` gets its audio from
+    /// [`Speech::session_audio`]. A refused capture gives the code `permission`.
+    ///
+    /// With the source `system` in local mode, this can wait for the answer of the user to a
+    /// question of macOS, so call it on a thread that can wait. While it waits, the session is
+    /// active work: other requests run, and [`Mode::Auto`] does not change mode.
+    pub fn start_session(&self, request: protocol::SessionStart) -> Result<protocol::SessionReply, Error> {
         let (_request, target) = self.shared.begin()?;
         match target {
             Target::Host(connection) => {
                 let fields = self.shared.host_call(&connection, "session_start", fields_of(&request), Awaited::Session)?;
-                Ok(parse::<protocol::SessionReply>(&fields, "session_start")?.session)
+                parse(&fields, "session_start")
             }
             Target::Local(generation) => {
                 let run = self.shared.local_run(generation)?;
@@ -826,11 +848,11 @@ impl Speech {
                     session
                 };
                 match run.start_session(&self.shared.options.app.name, spec, self.shared.local_sink(generation, None, Some(session))) {
-                    Ok(local) => {
+                    Ok(started) => {
                         if let Some(work) = self.shared.state.lock().sessions.get_mut(&session) {
-                            work.place = Place::Local(Some(local));
+                            work.place = Place::Local(Some(started.session));
                         }
-                        Ok(session)
+                        Ok(protocol::SessionReply { session, excludes: started.excludes })
                     }
                     Err(e) => {
                         self.shared.state.lock().sessions.remove(&session);

@@ -4,11 +4,12 @@
 use crate::local_engine::LocalEngine;
 use crate::local_models::LocalModels;
 use crate::protocol::{self, ErrorCode, ErrorReply, ModelState};
-use crate::{Engine, ModelChoices, Timing, paths};
-use sayso_capture::live::LiveMicrophone;
+use crate::{CaptureSources, Engine, ModelChoices, Timing, paths};
+use sayso_capture::live::{LiveMicrophone, LiveSystemAudio};
+use sayso_capture::system;
 use sayso_engine_sdk::{EngineOptions, Stderr};
 use sayso_speech::jobs::{DictationGate, JobQueue, JobRunner};
-use sayso_speech::live::{LiveDeps, LiveError, LiveSessions, Owner, RecordingFolder};
+use sayso_speech::live::{LiveDeps, LiveError, LiveSessions, Owner, RecordingFolder, Started};
 use sayso_speech::{EventSink, JobSpec, SessionSpec};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -36,7 +37,7 @@ fn recordings_folder() -> PathBuf {
 impl LocalRun {
     /// Start the engine. The engine SDK checks the protocol version in `hello`. It gives the
     /// store only to an engine that lists `store_v1`. Each request checks the features that it needs.
-    pub fn start(engine: &Engine, app: &str, timing: &Timing, downloads: Arc<dyn Fn(protocol::Event) + Send + Sync>) -> Result<Arc<LocalRun>, ErrorReply> {
+    pub fn start(engine: &Engine, app: &str, timing: &Timing, capture: Option<&CaptureSources>, downloads: Arc<dyn Fn(protocol::Event) + Send + Sync>) -> Result<Arc<LocalRun>, ErrorReply> {
         let program = engine.program().map_err(|e| ErrorReply { code: Some(ErrorCode::Unsupported), message: e.to_string(), capability: None, reason: None })?;
         let models_dir = engine.models_dir.clone().unwrap_or_else(|| paths::app_models(app));
         let store = engine.store.clone().unwrap_or_else(paths::model_store);
@@ -46,14 +47,12 @@ impl LocalRun {
         // No dictation here, so `begin` is never called, and live sessions still come before jobs.
         let gate = Arc::new(DictationGate::new());
         let jobs = JobQueue::start(Arc::new(JobRunner::new(adapter.clone(), adapter.clone())), gate.clone()).map_err(|e| failed(format!("cannot start a thread: {e}")))?;
-        // The source `system` (step 13 of `docs/sdk.md`): `sayso-capture` gets it in its module
-        // `system`, and its capture goes here beside the microphone. Until then, `LiveSessions`
-        // gives `unsupported` for it, as Sayso does.
+        let capture = capture.cloned().unwrap_or_else(real_capture);
         let recordings = recordings_folder();
         let live = LiveSessions::new(LiveDeps {
             engine: adapter.clone(),
-            microphone: Some(Arc::new(LiveMicrophone { device: None })),
-            system_audio: None,
+            microphone: Some(capture.microphone),
+            system_audio: Some(capture.system_audio),
             gate,
             models: adapter.clone(),
             recordings: Arc::new(RecordingFolder::new(recordings.clone())),
@@ -93,8 +92,10 @@ impl LocalRun {
         self.jobs.cancel(CONNECTION, job);
     }
 
-    pub fn start_session(&self, app: &str, spec: SessionSpec, sink: Arc<dyn EventSink>) -> Result<u64, LiveError> {
-        self.live.start(Owner { connection: CONNECTION, app_id: app.to_string(), pid: None }, spec, sink).map(|started| started.session)
+    /// Start a session. The capture of the source `system` can wait for the answer of the user,
+    /// so call this without the lock of the SDK.
+    pub fn start_session(&self, app: &str, spec: SessionSpec, sink: Arc<dyn EventSink>) -> Result<Started, LiveError> {
+        self.live.start(Owner { connection: CONNECTION, app_id: app.to_string(), pid: None }, spec, sink)
     }
 
     pub fn audio(&self, session: u64, pcm: &str) -> Result<(), LiveError> {
@@ -116,4 +117,30 @@ impl Drop for LocalRun {
 
 fn failed(message: String) -> ErrorReply {
     ErrorReply { code: None, message, capability: None, reason: None }
+}
+
+/// The real capture, in the process of the app. On macOS the system asks the user for the app,
+/// so it needs `NSMicrophoneUsageDescription` and `NSAudioCaptureUsageDescription`.
+fn real_capture() -> CaptureSources {
+    CaptureSources { microphone: Arc::new(LiveMicrophone { device: None }), system_audio: Arc::new(real_system_audio()) }
+}
+
+/// Local mode has one process, so the capture leaves out `app` (`excludes: ["app"]`).
+fn real_system_audio() -> LiveSystemAudio {
+    LiveSystemAudio { this_process: "app" }
+}
+
+/// The source `system` can start with the real capture. It never asks the user.
+pub(crate) fn real_system_audio_usable() -> bool {
+    system::supported() && system::access() != system::Access::Denied
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_mode_names_this_process_app() {
+        assert_eq!(real_system_audio().this_process, "app");
+    }
 }

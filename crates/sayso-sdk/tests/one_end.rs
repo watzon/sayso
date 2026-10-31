@@ -163,7 +163,7 @@ fn a_reply_to_a_stop_and_a_lost_connection_at_one_moment_give_one_end() {
         });
         let speech = sayso(&place);
         let events = speech.events();
-        let session = speech.start_session(Default::default()).unwrap();
+        let session = speech.start_session(Default::default()).unwrap().session;
         assert_eq!(speech.stop_session(session).unwrap(), "words");
         let seen = wait_for(&events, |event| matches!(event, Event::Disconnected { .. }));
         assert!(!seen.iter().any(|event| matches!(event, Event::Message(protocol::Event::SessionEnded { .. }))), "the stop was the end: {seen:?}");
@@ -181,9 +181,51 @@ fn a_session_end_that_passes_the_reply_of_the_stop_gives_the_stop_its_text() {
         while peer.read().is_some() {}
     });
     let speech = sayso(&place);
-    let session = speech.start_session(Default::default()).unwrap();
+    let session = speech.start_session(Default::default()).unwrap().session;
     assert_eq!(speech.stop_session(session).unwrap(), "words");
     assert!(speech.events().try_iter().next().is_none(), "the stop was the only end");
+}
+
+#[test]
+fn source_events_have_the_ids_of_the_sdk_and_stop_at_the_end_of_the_session() {
+    let place = place();
+    host(&place.socket, move |_, mut peer| {
+        let first = peer.next_request().unwrap();
+        peer.send(&[json!({"type": "ok", "id": first["id"], "session": 80})]);
+        let start = peer.next_request().unwrap();
+        peer.send(&[json!({"type": "ok", "id": start["id"], "session": 90, "excludes": ["sayso", "app"]}), json!({"type": "source_gap", "session": 90, "source": "system", "ms": 240}), json!({"type": "source_ended", "session": 90, "source": "system", "reason": "permission"}), json!({"type": "source_gap", "session": 91, "source": "system", "ms": 1})]);
+        let stop = peer.next_request().unwrap();
+        peer.send(&[json!({"type": "ok", "id": stop["id"], "text": "words"}), json!({"type": "source_gap", "session": 90, "source": "mic", "ms": 1})]);
+        while peer.read().is_some() {}
+    });
+    let speech = sayso(&place);
+    let events = speech.events();
+    speech.start_session(Default::default()).unwrap();
+    let started = speech.start_session(Default::default()).unwrap();
+    assert_eq!(started.excludes, ["sayso", "app"]);
+    assert_ne!(started.session, 90, "the id comes from the SDK");
+    let seen = wait_for(&events, |event| matches!(event, Event::Message(protocol::Event::SourceEnded { .. })));
+    assert_eq!(seen, [Event::Message(protocol::Event::SourceGap { session: started.session, source: protocol::Source::System, ms: 240 }), Event::Message(protocol::Event::SourceEnded { session: started.session, source: protocol::Source::System, reason: protocol::SourceEndReason::Permission })]);
+    assert_eq!(speech.stop_session(started.session).unwrap(), "words");
+    // This can only pass falsely on a slow machine, never fail falsely.
+    std::thread::sleep(Duration::from_millis(50));
+    assert!(events.try_iter().next().is_none(), "nothing after the end, and nothing for another session");
+}
+
+#[test]
+fn a_refused_capture_gives_the_code_permission_and_leaves_no_open_work() {
+    let place = place();
+    host(&place.socket, |_, mut peer| {
+        let start = peer.next_request().unwrap();
+        peer.send(&[json!({"type": "error", "id": start["id"], "code": "permission", "message": "the source system did not start"})]);
+        peer.close();
+    });
+    let speech = sayso(&place);
+    let events = speech.events();
+    let error = speech.start_session(Default::default()).unwrap_err();
+    assert_eq!(error.code, Some(ErrorCode::Permission));
+    let seen = wait_for(&events, |event| matches!(event, Event::Disconnected { .. }));
+    assert!(!seen.iter().any(|event| matches!(event, Event::Message(_))), "no session was open: {seen:?}");
 }
 
 #[test]
@@ -207,7 +249,7 @@ fn a_lost_connection_ends_each_piece_of_work_once_and_sends_nothing_again() {
     let speech = sayso(&place);
     let events = speech.events();
     let job = speech.transcribe_file(job_request()).unwrap();
-    let session = speech.start_session(Default::default()).unwrap();
+    let session = speech.start_session(Default::default()).unwrap().session;
     let error = speech.list_models(None).unwrap_err();
     assert_eq!(error.code, Some(ErrorCode::ConnectionLost));
     let seen = wait_for(&events, |event| matches!(event, Event::Disconnected { code: ErrorCode::ConnectionLost }));
@@ -231,7 +273,7 @@ fn a_stop_without_a_reply_gets_the_loss_as_its_end() {
     });
     let speech = sayso(&place);
     let events = speech.events();
-    let session = speech.start_session(Default::default()).unwrap();
+    let session = speech.start_session(Default::default()).unwrap().session;
     assert_eq!(speech.stop_session(session).unwrap_err().code, Some(ErrorCode::ConnectionLost));
     let seen = wait_for(&events, |event| matches!(event, Event::Disconnected { .. }));
     assert!(!seen.iter().any(|event| matches!(event, Event::Message(_))), "the reply was the end: {seen:?}");

@@ -57,6 +57,14 @@ pub fn access() -> Access {
     Access::Granted
 }
 
+/// This system can capture its audio. It asks nothing of the user.
+pub fn supported() -> bool {
+    #[cfg(target_os = "macos")]
+    return macos::supported();
+    #[cfg(not(target_os = "macos"))]
+    true
+}
+
 /// What a capture does.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Options {

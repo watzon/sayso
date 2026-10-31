@@ -36,6 +36,7 @@
 //! The file `hello-delay-ms` makes `hello` wait that many milliseconds. The file
 //! `exit-at-hello` makes the process end at `hello`, with no answer.
 //!
+//! The file `one-segment` makes `transcribe` with `segments: true` answer with one long sentence.
 //! The file `more-features` adds its words to the features of `hello`. The file `catalog.json`
 //! is the reply of `list_models` without `models`, as `{models, retired}`, after a `model_state`
 //! for each model. `transcribe` waits while the file `hold-transcribe` exists, and `download` while
@@ -375,14 +376,16 @@ fn handle(
             let mut body = json!({"text": format!("model={model} bytes={}", bytes.len()), "elapsed_ms": 5});
             if request["segments"] == true && !timing_off(dir) {
                 let d = audio_ms(&bytes);
-                body["segments"] = json!([
+                body["segments"] = if dir.join("one-segment").exists() {
+                    json!([{"start_ms": 0, "end_ms": d, "text": "The quick brown fox jumps over the lazy dog."}])
+                } else { json!([
                     {"start_ms": 0, "end_ms": d / 2, "text": "Hello there.", "words": [
                         {"start_ms": 0, "end_ms": d / 4, "text": "Hello"},
                         {"start_ms": d / 4, "end_ms": d / 2, "text": "there."},
                     ]},
                     {"start_ms": d / 2, "end_ms": d * 3 / 4, "text": "Bye.", "words": []},
                     {"start_ms": d * 3 / 4, "end_ms": d, "text": "Later"},
-                ]);
+                ]) };
             }
             reply(out, request, "final", body);
         }

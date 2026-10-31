@@ -43,6 +43,9 @@
 //! - [`Mode::Auto`] changes mode only when the app has no active work. A change never moves work.
 //! - The SDK never sends a request again by itself. After a lost connection, a request that
 //!   had no reply gets the code `connection_lost`.
+//! - [`Speech::start_session`] with the source `system` can wait for the answer of the user to a
+//!   question of macOS, in local mode. Call it on a thread that can wait. The app needs
+//!   `NSAudioCaptureUsageDescription` in its `Info.plist`.
 //! - [`Speech::connect`] waits for the answer of the user when Sayso asks about the app for
 //!   the first time. Call it on a thread that can wait.
 
@@ -60,6 +63,11 @@ pub use paths::model_store;
 pub use sayso_protocol as protocol;
 pub use sayso_protocol::Fields;
 pub use speech::Speech;
+
+/// The types of a source that an app gives itself, with [`Options::capture`].
+pub mod capture {
+    pub use sayso_speech::live::{AudioFeed, CapturedAudio, FeedItem, Microphone, OpenError, SourceEnd, SystemAudio};
+}
 
 use sayso_protocol::{Capability, ErrorReply};
 use std::io;
@@ -185,6 +193,13 @@ impl Default for Timing {
     }
 }
 
+/// The sources of local mode instead of the real capture: a test, or an app with its own capture.
+#[derive(Clone)]
+pub struct CaptureSources {
+    pub microphone: Arc<dyn capture::Microphone>,
+    pub system_audio: Arc<dyn capture::SystemAudio>,
+}
+
 /// What [`Speech::connect`] needs.
 #[derive(Clone)]
 pub struct Options {
@@ -200,11 +215,14 @@ pub struct Options {
     pub timing: Timing,
     /// How [`Mode::Sayso`] with `start` starts Sayso. The default is [`client::start_sayso`].
     pub start: Arc<dyn Fn() -> io::Result<()> + Send + Sync>,
+    /// None: the microphone and the system audio of `sayso-capture`, in the process of the app.
+    /// Sayso mode does not use this, because Sayso captures there.
+    pub capture: Option<CaptureSources>,
 }
 
 impl Options {
     pub fn new(mode: Mode, app: App) -> Options {
-        Options { mode, app, capabilities: Vec::new(), engine: None, models: ModelChoices::default(), socket: None, timing: Timing::default(), start: Arc::new(client::start_sayso) }
+        Options { mode, app, capabilities: Vec::new(), engine: None, models: ModelChoices::default(), socket: None, timing: Timing::default(), start: Arc::new(client::start_sayso), capture: None }
     }
 
     pub fn capabilities(mut self, capabilities: impl IntoIterator<Item = Capability>) -> Options {
@@ -227,6 +245,11 @@ impl Options {
         self
     }
 
+    pub fn capture(mut self, capture: CaptureSources) -> Options {
+        self.capture = Some(capture);
+        self
+    }
+
     pub fn timing(mut self, timing: Timing) -> Options {
         self.timing = timing;
         self
@@ -242,7 +265,9 @@ pub struct Features {
     pub subscribe: bool,
     /// The user answers a question before a download. In Sayso mode only.
     pub download_question: bool,
-    /// The source `system` of a live session. It comes with step 13 of `docs/sdk.md`.
+    /// The source `system` of a live session can start. In Sayso mode, the user granted
+    /// `audio.system`. In local mode, this system has it and did not refuse the app: the app
+    /// can still get `permission` at the start, when the system asks the user then.
     pub system_audio: bool,
     /// In Sayso mode, what the user granted. In local mode, what the SDK can do without a grant.
     pub capabilities: Vec<Capability>,
@@ -259,8 +284,8 @@ pub struct Features {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Event {
     /// A message of the Host API, with the ids of the SDK: `job_progress`, `segment`,
-    /// `speakers`, `job_done`, `job_failed`, `partial`, `session_ended`, `model_state`,
-    /// `download_progress`, or `dictation_done`.
+    /// `speakers`, `job_done`, `job_failed`, `partial`, `source_gap`, `source_ended`,
+    /// `session_ended`, `model_state`, `download_progress`, or `dictation_done`.
     Message(protocol::Event),
     /// The mode changed. No work of the app is active at this moment, except the work
     /// that the change ended just before this event.

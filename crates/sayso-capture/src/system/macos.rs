@@ -54,6 +54,12 @@ fn access_from(status: i32) -> Access {
 type Preflight = unsafe extern "C" fn(*const c_void, *const c_void) -> i32;
 type Request = unsafe extern "C" fn(*const c_void, *const c_void, *const c_void);
 
+/// This macOS can make a process tap. It asks nothing of the user.
+pub(super) fn supported() -> bool {
+    let NSOperatingSystemVersion { majorVersion, minorVersion, .. } = NSProcessInfo::processInfo().operatingSystemVersion();
+    tap_supported((majorVersion, minorVersion))
+}
+
 /// A symbol of the private TCC framework.
 fn tcc_symbol(name: &CStr) -> Option<*mut c_void> {
     const PATH: &CStr = c"/System/Library/PrivateFrameworks/TCC.framework/Versions/A/TCC";

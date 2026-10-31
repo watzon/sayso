@@ -9,6 +9,7 @@ license = "MIT"
 publish = true
 repository = "https://github.com/watzon/sayso"
 readme = "README.md"
+build = "build.rs"
 
 [dependencies]
 sayso-protocol.workspace = true
