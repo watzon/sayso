@@ -447,7 +447,9 @@ impl World {
             diarization: of_task(ModelTask::Diarization),
             wav,
             pcm: Vec::new(),
-            timing: Timing { watch: Duration::from_millis(5), start_wait: Duration::from_secs(30), ..Timing::default() },
+            // The identity check of a new connection can take longer than the real limit of hello
+            // here: each test program is large, and many of them connect at the same time.
+            timing: Timing { watch: Duration::from_millis(5), start_wait: Duration::from_secs(30), hello_limit: LONG, ..Timing::default() },
             sources: FakeSources::new(&["app"]),
             setup,
         }
