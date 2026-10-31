@@ -53,6 +53,9 @@ fn main() {
     let dir = PathBuf::from(std::env::var("SAYSO_MODELS_DIR").expect("SAYSO_MODELS_DIR is set"));
     let out = Arc::new(Mutex::new(std::io::stdout()));
     fs::write(dir.join("pid"), std::process::id().to_string()).ok();
+    if let (Ok(store), Ok(mut log)) = (std::env::var("SAYSO_MODEL_STORE"), OpenOptions::new().create(true).append(true).open(dir.join("store.log"))) {
+        let _ = writeln!(log, "{store}");
+    }
     send(
         &out,
         json!({"type": "log", "level": "info", "message": "fake engine ready"}),

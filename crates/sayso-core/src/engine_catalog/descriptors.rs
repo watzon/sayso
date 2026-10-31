@@ -402,7 +402,7 @@ fn whisperkit(variant: &str) -> Vec<WantedPart> {
 
 /// The tokenizer repository of a WhisperKit variant, as `ModelStore.whisperTokenizer`
 /// in the Swift engine finds it. Distil-Whisper large-v3 and turbo use the large-v3 tokenizer.
-fn whisper_tokenizer(variant: &str) -> String {
+pub(crate) fn whisper_tokenizer(variant: &str) -> String {
     let name = variant.to_lowercase();
     let size = ["large-v3", "large-v2", "medium", "small", "base", "tiny"]
         .into_iter()

@@ -1,4 +1,5 @@
 // Engine state: downloads, loaded models, streaming sessions, and transcription.
+import ArgmaxCore
 import AVFoundation
 import CoreML
 import FluidAudio
@@ -17,11 +18,14 @@ final class UnifiedModel: @unchecked Sendable {
     let stream: StreamerPool<Streamer>
     let vocabulary: KeyedParts<[String], VocabularyBooster>
     private let ctc: LazyPart<VocabularyBooster.CtcAssets>
+    /// The lazy parts read the files of the model in the model store after the load.
+    private let files: StoreUse?
 
     init(
-        batch: UnifiedAsrManager, config: UnifiedConfig, directory: URL, ctcDirectory: URL,
+        batch: UnifiedAsrManager, config: UnifiedConfig, directory: URL, ctcDirectory: URL, files: StoreUse?,
         ctcComplete: @escaping @Sendable () -> Bool, out: Output
     ) {
+        self.files = files
         let assets = LazyPart<VocabularyBooster.CtcAssets>(
             load: {
                 guard ctcComplete() else { throw EngineError("CTC helper model is not downloaded") }
@@ -209,6 +213,13 @@ enum Streamer: Sendable {
     }
 }
 
+/// A model in memory, and what keeps its files in the model store. A job or a stream that
+/// uses the model holds this too, so the files stay until it ends.
+struct HeldModel {
+    let model: LoadedModel
+    let files: StoreUse?
+}
+
 /// One live preview stream.
 private struct StreamSession {
     enum Phase {
@@ -224,12 +235,14 @@ private struct StreamSession {
     /// The manager of the stream, from `pool`. It goes back to the pool when the stream ends.
     let part: LazyPart<Streamer>
     let pool: StreamerPool<Streamer>
+    let files: StoreUse?
 }
 
 /// One VAD session. It is a stream: it shares the session ids and the limit of streams.
 private struct VadSession {
     let model: String
     let stream: VadStream
+    let files: StoreUse?
 }
 
 /// The `PreviewTail` of one stream. The partial callback and the end of the stream
@@ -314,9 +327,15 @@ final class DownloadReporter: @unchecked Sendable {
 
 actor Engine {
     private let store: ModelStore
+    /// `SAYSO_MODEL_STORE`: the model store. A model without a descriptor, and each model
+    /// without a store, stays in the models folder (`store`).
+    private let shared: StoreV1?
+    private let descriptors: StoreDescriptors
+    /// `SAYSO_HF_ENDPOINT`: where the files of a descriptor come from.
+    private let hfEndpoint: String
     private let out: Output
     private var registry: [String: EngineSpec] = [:]
-    private var loaded: [String: LoadedModel] = [:]
+    private var loaded: [String: HeldModel] = [:]
     private var busy: Set<String> = []
     private var sessions: [Int: StreamSession] = [:]
     private var vadSessions: [Int: VadSession] = [:]
@@ -328,23 +347,43 @@ actor Engine {
     /// protocol asks for at least 3: a dictation, and the two sources of a live session.
     static let maxStreams = 8
 
-    init(modelsDir: URL, out: Output) {
+    init(
+        modelsDir: URL, shared: StoreV1? = nil, descriptors: StoreDescriptors = StoreDescriptors(artifacts: [:], descriptors: []),
+        hfEndpoint: String = "https://huggingface.co", out: Output
+    ) {
         self.store = ModelStore(root: modelsDir)
+        self.shared = shared
+        self.descriptors = descriptors
+        self.hfEndpoint = hfEndpoint
         self.out = out
+    }
+
+    /// The store and the descriptor of a model in the model store. Nil for a model in the
+    /// models folder: without a store, or without a descriptor.
+    private func stored(_ model: String, _ spec: EngineSpec) -> (store: StoreV1, descriptor: StoreDescriptor)? {
+        guard let shared, let format = spec.storeFormat, let descriptor = descriptors.find(model: model, format: format)
+        else { return nil }
+        return (shared, descriptor)
     }
 
     // MARK: - Status
 
     private func state(of model: String, spec: EngineSpec) async -> String {
         if loaded[model] != nil { return "ready" }
-        return await onDisk(spec) ? "downloaded" : "not_downloaded"
+        return await onDisk(model, spec) ? "downloaded" : "not_downloaded"
     }
 
     /// "Downloaded", for the files Sayso stores and for the Apple Speech assets of macOS.
-    private func onDisk(_ spec: EngineSpec) async -> Bool {
+    private func onDisk(_ model: String, _ spec: EngineSpec) async -> Bool {
         if spec == .appleSpeech {
             if #available(macOS 26, *) { return await AppleSpeech.anyInstalled() }
             return false
+        }
+        if let (shared, descriptor) = stored(model, spec) {
+            do { return try await onStoreThread { try shared.onDisk(descriptor) } } catch {
+                out.log("warn", "\(model): cannot read the model store: \(error)")
+                return false
+            }
         }
         return store.isDownloaded(spec)
     }
@@ -369,13 +408,17 @@ actor Engine {
 
     func download(model: String, spec: EngineSpec, sizeBytes: Int64?, id: String?) async throws {
         registry[model] = spec
-        if await onDisk(spec) {
+        if await onDisk(model, spec) {
             out.send("model_state", id: id, ["model": model, "state": "downloaded"])
             out.ok(id: id)
             return
         }
         try acquire(model)
         defer { busy.remove(model) }
+        if let (shared, descriptor) = stored(model, spec) {
+            try await downloadStored(model: model, shared: shared, descriptor: descriptor, sizeBytes: sizeBytes, id: id)
+            return
+        }
 
         let reporter = DownloadReporter(
             out: out, id: id, model: model, totalBytes: sizeBytes ?? 0)
@@ -383,7 +426,7 @@ actor Engine {
         do {
             try await fetch(spec, reporter: reporter)
             try store.markDownloaded(spec)
-            guard await onDisk(spec) else {
+            guard await onDisk(model, spec) else {
                 throw EngineError(
                     "download finished but the files are incomplete", reason: "incomplete_download")
             }
@@ -394,6 +437,44 @@ actor Engine {
                     "model": model, "state": "failed", "message": "\(error)",
                     "reason": (error as? EngineError)?.reason ?? "download_failed",
                 ])
+            throw error
+        }
+        reporter.report(1, force: true)
+        out.send("model_state", id: id, ["model": model, "state": "downloaded"])
+        out.ok(id: id)
+    }
+
+    /// `download` of a model in the model store. The store has the rules. The files come from
+    /// the commit that the descriptor pins, not from a branch.
+    private func downloadStored(
+        model: String, shared: StoreV1, descriptor: StoreDescriptor, sizeBytes: Int64?, id: String?
+    ) async throws {
+        let data = descriptors
+        let endpoint = hfEndpoint
+        let parts = try data.parts(of: descriptor)
+        let total = max(1, parts.reduce(Int64(0)) { $0 + $1.artifact.size })
+        let reporter = DownloadReporter(out: out, id: id, model: model, totalBytes: sizeBytes ?? total)
+        reporter.report(0, force: true)
+        do {
+            try await onStoreThread {
+                var before: Int64 = 0
+                try shared.download(
+                    data, descriptor,
+                    fetch: { artifact, work, files in
+                        let base = before
+                        try StoreDownload.fetch(artifact, endpoint: endpoint, work: work, files: files) { bytes in
+                            reporter.report(min(0.99, Double(base + bytes) / Double(total)))
+                        }
+                        before += artifact.size
+                    },
+                    // Another engine downloads a part of this model.
+                    waiting: { reporter.report(0, force: true) })
+            }
+        } catch {
+            var reason = "download_failed"
+            if case StoreError.verify = error { reason = "incomplete_download" }
+            out.send(
+                "model_state", id: id, ["model": model, "state": "failed", "message": "\(error)", "reason": reason])
             throw error
         }
         reporter.report(1, force: true)
@@ -516,13 +597,21 @@ actor Engine {
     // MARK: - Delete
 
     func delete(model: String, spec: EngineSpec?, id: String?) async throws {
-        guard let spec = spec ?? registry[model] else {
+        let known = spec ?? registry[model]
+        let inStore = shared == nil ? [] : descriptors.descriptors.filter { $0.model == model && StoreFormat.all.contains($0.format) }
+        guard known != nil || !inStore.isEmpty else {
             throw EngineError("unknown model \(model): send list_models or an engine field first")
         }
         try acquire(model)
         defer { busy.remove(model) }
         try await unload(model)
-        try store.delete(spec)
+        if let shared, !inStore.isEmpty {
+            try await onStoreThread {
+                for descriptor in inStore { try shared.delete(model: model, format: descriptor.format) }
+            }
+        } else if let known {
+            try store.delete(known)
+        }
         out.send("model_state", id: id, ["model": model, "state": "not_downloaded"])
         out.ok(id: id)
     }
@@ -532,9 +621,20 @@ actor Engine {
         try acquire(model)
         defer { busy.remove(model) }
         if try await unload(model) {
-            out.send("model_state", id: id, ["model": model, "state": "downloaded"])
+            out.send("model_state", id: id, ["model": model, "state": stateAfterUnload(model)])
         }
         out.ok(id: id)
+    }
+
+    /// The state of a model after `unload`. In the model store, another engine can have
+    /// deleted it in the meantime. `unload` runs on the loop of the requests, so this does
+    /// not wait for a lock: when another engine has the lock now, it says `downloaded`, and
+    /// the next `list_models` knows.
+    private func stateAfterUnload(_ model: String) -> String {
+        guard let spec = registry[model], let (shared, descriptor) = stored(model, spec),
+            (try? shared.onDiskNow(descriptor)) == .some(.some(false))
+        else { return "downloaded" }
+        return "not_downloaded"
     }
 
     /// Returns false when the model was not in memory.
@@ -547,7 +647,7 @@ actor Engine {
         for (session, info) in vadSessions where info.model == model {
             vadSessions[session] = nil
         }
-        guard let entry = loaded.removeValue(forKey: model) else { return false }
+        guard let entry = loaded.removeValue(forKey: model)?.model else { return false }
         switch entry {
         case .parakeetUnified(let unified):
             await unified.cleanup()
@@ -571,17 +671,31 @@ actor Engine {
             out.ok(id: id)
             return
         }
-        guard spec == .appleSpeech ? await onDisk(spec) : store.isLoadable(spec) else {
-            throw EngineError("model \(model) is not downloaded")
+        let inStore = stored(model, spec)
+        if inStore == nil {
+            guard spec == .appleSpeech ? await onDisk(model, spec) : store.isLoadable(spec) else {
+                throw EngineError("model \(model) is not downloaded")
+            }
         }
         try acquire(model)
         defer { busy.remove(model) }
+        // The locks of "Load" in the model store. A load never writes in the store.
+        var files: StoreUse?
+        if let (shared, descriptor) = inStore {
+            guard let lease = try await onStoreThread({ try shared.load(descriptor) }) else {
+                out.send("model_state", id: id, ["model": model, "state": "not_downloaded"])
+                throw EngineError("model \(model) is not downloaded")
+            }
+            files = StoreUse(lease: lease, store: shared)
+        }
 
         // First load compiles the model for the Neural Engine and can take a minute.
         out.send("model_state", id: id, ["model": model, "state": "optimizing"])
         let start = nowMs()
         do {
-            loaded[model] = try await loadModel(spec)
+            let held = HeldModel(model: try await loadModel(spec, files: files), files: files)
+            if let files { try await onStoreThread { files.store.step("load.loaded") } }
+            loaded[model] = held
         } catch {
             out.send(
                 "model_state", id: id,
@@ -597,25 +711,41 @@ actor Engine {
         out.ok(id: id)
     }
 
-    private func loadModel(_ spec: EngineSpec) async throws -> LoadedModel {
+    private func loadModel(_ spec: EngineSpec, files: StoreUse?) async throws -> LoadedModel {
         switch spec {
         case .parakeetUnified(let tier):
             guard let config = ModelStore.unifiedConfig(tier: tier) else {
                 throw EngineError("bad streaming tier \(tier)")
             }
+            let dir = try files?.folder("model") ?? store.unifiedDir
+            let ctcDir = try files?.folder("ctc") ?? store.ctcDir
             let batch = UnifiedAsrManager()
-            try await batch.loadModels(from: store.unifiedDir)
+            try await batch.loadModels(from: dir)
+            // A manifest names only complete artifacts.
             return .parakeetUnified(UnifiedModel(
-                batch: batch, config: config, directory: store.unifiedDir, ctcDirectory: store.ctcDir,
-                ctcComplete: { [store] in store.ctcComplete() }, out: out))
+                batch: batch, config: config, directory: dir, ctcDirectory: ctcDir, files: files,
+                ctcComplete: { [store] in files != nil || store.ctcComplete() }, out: out))
         case .parakeetEou:
-            let dir = store.eouDir
-            return .parakeetEou(try await loadedPool {
+            let dir = try files?.folder("model") ?? store.eouDir
+            return .parakeetEou(try await loadedPool(keeping: files) {
                 let eou = StreamingEouAsrManager(chunkSize: .ms160)
                 try await eou.loadModels(from: dir)
                 return .standard(eou)
             })
         case .whisper(let variant):
+            if let files {
+                let tokenizer = try files.folder("tokenizer")
+                // WhisperKit goes to the Hub, and writes in the folder it has, when the local
+                // tokenizer does not load. So a tokenizer that does not load stops here.
+                do { _ = try await AutoTokenizerWrapper.from(modelFolder: tokenizer, hubApi: HubApiWrapper(downloadBase: tokenizer)) } catch {
+                    throw EngineError("the tokenizer of \(variant) does not load: \(error)")
+                }
+                let config = WhisperKitConfig(
+                    downloadBase: tokenizer, modelFolder: try files.folder("model").path,
+                    tokenizerFolder: tokenizer, verbose: false, logLevel: .none,
+                    load: true, download: false)
+                return .whisper(try await WhisperKit(config))
+            }
             let config = WhisperKitConfig(
                 downloadBase: store.root, modelFolder: store.whisperDir(variant).path,
                 tokenizerFolder: store.root, verbose: false, logLevel: .none,
@@ -624,9 +754,14 @@ actor Engine {
         case .parakeetTdt(.fluidMini):
             // `AsrModels.load` takes the files from FluidAudio's own repo folder and downloads
             // them there. `loadLocal` reads this folder only, and never uses the network.
-            let dir = try folder(spec)
-            try FluidSpeechMini.linkJointDecision(in: dir)
-            let models = try AsrModels.loadLocal(from: dir, version: TdtVersion.fluidMini.fluid)
+            let dir = try folder(spec, files)
+            let models: AsrModels
+            if files != nil {
+                models = try await onStoreThread { try FluidSpeechMini.loadStored(from: dir) }
+            } else {
+                try FluidSpeechMini.linkJointDecision(in: dir)
+                models = try AsrModels.loadLocal(from: dir, version: TdtVersion.fluidMini.fluid)
+            }
             let manager = AsrManager()
             try await manager.loadModels(models)
             return .parakeetTdt(manager)
@@ -639,35 +774,46 @@ actor Engine {
                 configuration = MLModelConfiguration()
                 configuration?.computeUnits = .cpuOnly
             }
-            let models = try await AsrModels.load(
-                from: try folder(spec), configuration: configuration, version: version.fluid)
+            let dir = try folder(spec, files)
+            let models: AsrModels
+            if files != nil {
+                // Only from this folder: `AsrModels.load` can delete the folder and download
+                // it again, and it can download a CTC head into another folder.
+                let local = configuration
+                models = try await onStoreThread {
+                    try AsrModels.loadLocal(from: dir, version: version.fluid, configuration: local)
+                }
+            } else {
+                models = try await AsrModels.load(from: dir, configuration: configuration, version: version.fluid)
+            }
             let manager = AsrManager()
             try await manager.loadModels(models)
             return .parakeetTdt(manager)
         case .nemotron:
-            let dir = try folder(spec)
-            return .nemotron(try await loadedPool {
+            let dir = try folder(spec, files)
+            return .nemotron(try await loadedPool(keeping: files) {
                 let manager = StreamingNemotronAsrManager()
                 try await manager.loadModels(from: dir)
                 return .standard(manager)
             })
         case .nemotronMultilingual:
-            let dir = try folder(spec)
-            return .nemotronMultilingual(try await loadedPool {
+            let dir = try folder(spec, files)
+            return .nemotronMultilingual(try await loadedPool(keeping: files) {
                 let manager = StreamingNemotronMultilingualAsrManager()
                 try await manager.loadModels(from: dir)
                 return .nemotronMultilingual(manager)
             })
         case .cohere:
-            let dir = try folder(spec)
-            let models = try await CoherePipeline.loadModels(encoderDir: dir, decoderDir: dir, vocabDir: dir)
+            let dir = try folder(spec, files)
+            let vocabulary = try files?.folder("vocabulary") ?? dir
+            let models = try await CoherePipeline.loadModels(encoderDir: dir, decoderDir: dir, vocabDir: vocabulary)
             return .cohere(CoherePipeline(), models)
         case .canary:
-            return .canary(CanaryManager(models: try CanaryModels.load(from: try folder(spec), precision: .int4)))
+            return .canary(CanaryManager(models: try CanaryModels.load(from: try folder(spec, files), precision: .int4)))
         case .senseVoice:
-            return .senseVoice(try SenseVoiceModels.load(from: try folder(spec), precision: SenseVoice.precision))
+            return .senseVoice(try SenseVoiceModels.load(from: try folder(spec, files), precision: SenseVoice.precision))
         case .paraformer:
-            return .paraformer(ParaformerManager(models: try ParaformerModels.load(from: try folder(spec))))
+            return .paraformer(ParaformerManager(models: try ParaformerModels.load(from: try folder(spec, files))))
         case .appleSpeech:
             return .appleSpeech
         case .fluidVad:
@@ -675,9 +821,13 @@ actor Engine {
             // missing. The model from this folder never uses the network.
             let configuration = MLModelConfiguration()
             configuration.computeUnits = VadConfig.default.computeUnits
-            let url = try folder(spec).appendingPathComponent(ModelNames.VAD.sileroVadFile, isDirectory: true)
+            let url = try folder(spec, files).appendingPathComponent(ModelNames.VAD.sileroVadFile, isDirectory: true)
             return .vad(VadManager(config: .default, vadModel: try MLModel(contentsOf: url, configuration: configuration)))
         case .fluidDiarization:
+            if let files {
+                let dir = try files.folder("model")
+                return .diarization(try await onStoreThread { try Diarization.loadStored(from: dir) })
+            }
             // FluidAudio finds the files in the repo folder under the models directory.
             return .diarization(try await OfflineDiarizerModels.load(from: store.root))
         }
@@ -685,24 +835,26 @@ actor Engine {
 
     /// The managers of a streaming model. The main manager loads now: the model does its
     /// final pass with it, and the final pass must not wait for a load.
-    private func loadedPool(_ load: @escaping @Sendable () async throws -> Streamer) async throws
+    private func loadedPool(keeping files: StoreUse?, _ load: @escaping @Sendable () async throws -> Streamer) async throws
         -> StreamerPool<Streamer>
     {
-        let pool = StreamerPool(load: load)
+        // The pool loads copies later, from the files of the model in the model store.
+        let pool = StreamerPool(load: { _ = files; return try await load() })
         _ = try await pool.main.get()
         return pool
     }
 
     /// A loaded model for a request of `task`. A model of another task gets an error.
-    private func loadedModel(_ model: String, for task: ModelTask) throws -> LoadedModel {
+    private func loadedModel(_ model: String, for task: ModelTask) throws -> HeldModel {
         guard let entry = loaded[model] else { throw EngineError("model \(model) is not loaded") }
-        guard entry.task == task else {
-            throw EngineError("model \(model) is a \(entry.task.name) model, not a \(task.name) model")
+        guard entry.model.task == task else {
+            throw EngineError("model \(model) is a \(entry.model.task.name) model, not a \(task.name) model")
         }
         return entry
     }
 
-    private func folder(_ spec: EngineSpec) throws -> URL {
+    private func folder(_ spec: EngineSpec, _ files: StoreUse?) throws -> URL {
+        if let files { return try files.folder("model") }
         guard let folder = store.ownFolder(spec) else { throw EngineError("the model has no folder") }
         return folder
     }
@@ -712,7 +864,10 @@ actor Engine {
     func transcribe(
         model: String, path: String, language: String, vocabulary: [String], segments: Bool, id: String?
     ) async throws {
-        let entry = try loadedModel(model, for: .speech)
+        let held = try loadedModel(model, for: .speech)
+        // The files stay until this job ends, also when an `unload` comes first.
+        defer { withExtendedLifetime(held.files) {} }
+        let entry = held.model
         let samples = try AudioConverter().resampleAudioFile(path: path)
         guard !samples.isEmpty else { throw EngineError("audio file has no samples") }
 
@@ -863,7 +1018,9 @@ actor Engine {
 
     /// Load optional parts before a dictation. Failure leaves lazy loading available.
     func prepare(model: String, preview: Bool, vocabulary: [String], id: String?) async throws {
-        let entry = try loadedModel(model, for: .speech)
+        let held = try loadedModel(model, for: .speech)
+        defer { withExtendedLifetime(held.files) {} }
+        let entry = held.model
         func report(_ part: String, _ state: String) {
             out.send("part_state", id: id, ["model": model, "part": part, "state": state])
         }
@@ -948,8 +1105,8 @@ actor Engine {
     /// Open a stream. Streams are independent (`concurrent_streams`): each stream has a
     /// manager of its own (see `StreamerPool`). A session id that is open already starts again.
     func streamStart(session: Int, model: String, language: String) async throws {
-        let entry = try loadedModel(model, for: .speech)
-        guard let pool = entry.streamers else { throw EngineError("model \(model) has no live preview") }
+        let held = try loadedModel(model, for: .speech)
+        guard let pool = held.model.streamers else { throw EngineError("model \(model) has no live preview") }
         try await reserve(session)
         let part = try await pool.take()
         let tracker = PartialTracker()
@@ -965,11 +1122,11 @@ actor Engine {
             phase = .running(streamer)
         }
         // The model may have been unloaded while the stream started.
-        guard loaded[model]?.streamers === pool else {
+        guard loaded[model]?.model.streamers === pool else {
             await pool.give(part)
             throw EngineError("model \(model) is not loaded")
         }
-        sessions[session] = StreamSession(phase: phase, model: model, tracker: tracker, part: part, pool: pool)
+        sessions[session] = StreamSession(phase: phase, model: model, tracker: tracker, part: part, pool: pool, files: held.files)
         // The first preview of a loaded model, or a second stream on it, loads a manager.
         // The load can take a minute after an update (Core ML compiles the model), and the
         // app waits for this reply while the user starts to speak. So reply now, and let
@@ -1112,7 +1269,9 @@ actor Engine {
     /// `vad`: the parts of a WAV file with speech. It uses a `VadStream` as a VAD session
     /// does, so a session that gets the same audio finds the same parts.
     func vad(model: String, path: String, id: String?) async throws {
-        guard case .vad(let manager) = try loadedModel(model, for: .vad) else {
+        let held = try loadedModel(model, for: .vad)
+        defer { withExtendedLifetime(held.files) {} }
+        guard case .vad(let manager) = held.model else {
             throw EngineError("model \(model) is not a VAD model")
         }
         let samples = try AudioConverter().resampleAudioFile(path: path)
@@ -1125,14 +1284,15 @@ actor Engine {
 
     /// `vad_start`: open a VAD session. Its audio comes with `stream_audio`.
     func vadStart(session: Int, model: String) async throws {
-        guard case .vad(let manager) = try loadedModel(model, for: .vad) else {
+        let held = try loadedModel(model, for: .vad)
+        guard case .vad(let manager) = held.model else {
             throw EngineError("model \(model) is not a VAD model")
         }
         try await reserve(session)
         let stream = await VadStream.silero(manager)
         // The model may have been unloaded while the session started.
         guard loaded[model] != nil else { throw EngineError("model \(model) is not loaded") }
-        vadSessions[session] = VadSession(model: model, stream: stream)
+        vadSessions[session] = VadSession(model: model, stream: stream, files: held.files)
     }
 
     /// End a VAD session: send `speech_end` for speech that has not ended. False when
@@ -1158,7 +1318,9 @@ actor Engine {
     /// the client knows it. The clustering of FluidAudio then makes exactly that many
     /// clusters, or fewer when the audio has fewer speech embeddings.
     func diarize(model: String, path: String, speakers: Int?, id: String?) async throws {
-        guard case .diarization(let models) = try loadedModel(model, for: .diarization) else {
+        let held = try loadedModel(model, for: .diarization)
+        defer { withExtendedLifetime(held.files) {} }
+        guard case .diarization(let models) = held.model else {
             throw EngineError("model \(model) is not a diarization model")
         }
         let samples = try AudioConverter().resampleAudioFile(path: path)

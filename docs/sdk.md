@@ -257,6 +257,7 @@ v1/
   locks/<digest>.get                  exclusive while one engine downloads the artifact
   staging/<digest>.<pid>.<random>/    a download in progress: an `owner` file first, then `work/` and `files/`
   trash/<digest>.<random>/            artifacts that wait to be deleted
+  migrating/<digest>/                 a stage of the migration, which the cleanup of an engine does not touch
   migration.json                      the journal of the migration
   cache/<key>/                        caches that the engines control, each with its own lock
 ```
@@ -305,18 +306,22 @@ An engine also runs a cleanup after the last holder of a loaded model lets it go
 
 ### Migration and downgrade
 
-Sayso moves its models from the old folders into `v1` once. Only one Sayso runs for each data folder (an instance lock on each system), and the migration runs before Sayso starts its engine, so no engine of Sayso writes the old folders while it runs. An app that points an engine of an older SDK at the models folder of Sayso is not supported: `sayso-engine-sdk` already says that two engines must not use one folder.
+Sayso moves its models from the old folders into `v1` once. Only one Sayso runs for each data folder (an instance lock on each system), and the migration runs before Sayso starts its engine, so no engine of Sayso writes the old folders while it runs. It runs on the thread that starts the engine, because the hash check takes seconds and the tray and the overlay must not wait for it. An engine that the user chose (the setting `engine_path` or `SAYSO_ENGINE_PATH`) can be older than the store, so Sayso does not migrate for it and does not give it the store. An app that points an engine of an older SDK at the models folder of Sayso is not supported: `sayso-engine-sdk` already says that two engines must not use one folder.
 
 1. Take `meta` exclusive for the whole migration. Write the plan into `migration.json`: each model, its descriptor, and its old files.
-2. For each artifact of a model: make hard links of the old files in a staging folder, then hash the linked files and compare them with the descriptor. A hard link takes no space and leaves the old folder as it was. On a volume without hard links, copy the files instead.
-3. When every artifact of a model matches, publish them and the manifest as in "Download", and mark the model as done in `migration.json`. When a file is missing or does not match, the model is not migrated, and the user downloads it again.
-4. When every model is done, delete the old folders, then `migration.json`.
+2. For each artifact of a model: make hard links of the old files in `migrating/<digest>/`, then hash the linked files and compare them with the descriptor. A hard link takes no space and leaves the old folder as it was. On a volume without hard links, copy the files instead.
+3. When every artifact of a model matches, publish them and the manifest as in "Download", and mark the model as done in `migration.json`. When a file is missing, cannot be read, or does not match, the model is not migrated and is marked as kept, with the reason, and the user downloads it again. Its old files stay until then.
+4. When every model is done, mark `migration.json` as removing, then delete the old folders of the models that moved, and mark `migration.json` as finished. The file stays with the kept models, so the next start does not hash them again. When a kept model is in the store, the next start deletes its old folders.
 
 After a crash, the next start reads `migration.json` and does each step again. Each step can run twice with the same result. Models that were done stay done.
 
+When the migration fails before it marks `migration.json` as removing, each old folder is still there, so the engine runs on them without the store for this start. The next start looks at the old folders again, also for a model that was kept, because the user can have downloaded a model in between. After the mark, the engine uses the store, also when the migration fails. A Parakeet Unified folder without its CTC helper is kept, and the user downloads it again. A kept model has no delete button, because it is not on disk for the engine: its old files go when the user downloads it.
+
 After a downgrade, the older Sayso does not see `v1`, and the user downloads the models again. The release notes of the version with `store_v1` say this.
 
-The engine of an older app in local mode, without `store_v1`, uses its own folder (`SAYSO_MODELS_DIR`) as today. The SDK passes the store only to an engine that lists `store_v1`.
+The engine of an older app in local mode, without `store_v1`, uses its own folder (`SAYSO_MODELS_DIR`) as today. The SDK passes the store only to an engine that lists `store_v1`: it starts the engine without the variable, reads `hello`, and when the feature is there, it starts the engine again with the variable.
+
+Core ML keeps its compiled models by path. So after the migration, the first load of each model on macOS optimizes it again, and takes as long as the first load after a download (9 to 22 s for Parakeet Unified and Nemotron on the Mac of the check).
 
 ### Caches outside the store
 
@@ -515,4 +520,4 @@ Chris answered these on 2026-10-29.
 | Step | State | Notes |
 |---|---|---|
 | 10. MIT core | Done | `sayso-speech` (MIT): jobs and live sessions from `sayso-host` (the plan of chunks, the final pass of each part, the speakers, the queue, `DictationGate`), Basic VAD and the resampler from `sayso-core`, and the file decoder (`symphonia`). Its own types (`ModelId`, `Timestamps`, `Turn`, `EngineEvent`, `EngineError`, `Refusal`, `JobSpec`, `SessionSpec`); the events are the messages of `sayso-protocol`. The traits `SpeechEngine`, `ModelResolver`, `ModelRetention`, `Gate`, `EventSink`, and `Recordings`. `sayso-capture` (MIT): the microphone with `cpal`, from `sayso-platform-common/src/audio.rs`; the place for the system audio of step 13 is the module `system`. `sayso-host` gives the adapters: `BackendEngine` (`SttBackend` and the bus), `SaysoModels` (the choices of the user and the catalog), `ModelUse`, and `RecordingFolder`. `sayso-core` re-exports `basic_vad` and `resample` and converts its types. The shared microphone stays in `sayso-app/src/mic.rs`. Every author of the moved files is Chris (`git log --follow`, 2026-10-29). Checked: `cargo test --workspace`, clippy, `scripts/check-deps.sh`, `cargo tree` of both crates (no GPL crate), and `cargo package` of both crates with `workspace-hack` removed. The dictation benchmark (`docs/benchmark.md`) showed no regression in two pairs of runs, on the record in #64. |
-| 11. Model store | In progress | Done: the write inventory and the descriptors (#65), the rules in `sayso_core::model_store`, `store_v1` in the Rust engine, and the store level of the conformance suite. Open: `store_v1` in the Swift engine, the migration in Sayso, and the checks of a real 0.13 models folder and of the engine of the last release beside a new one. A stalled download holds its `get` lock until the limit of 6 hours for one file, because `ureq` has no limit for the time between two reads. sherpa-onnx ends the process on a broken VAD model, so that load gives no `failed` reply; the store stays as it was. |
+| 11. Model store | In progress | Done: the write inventory and the descriptors (#65), the rules in `sayso_core::model_store`, `store_v1` in both engines, the store level of the conformance suite, the migration in Sayso (`sayso_core::model_migration`), and the store option of `sayso-engine-sdk`. A real 0.13 models folder of macOS moved without a download: a clone of it moved `parakeet-unified-en` and `nemotron-en` in 3.7 s, and both load and transcribe with the network blocked. Open: the check of a real models folder on Windows and Linux, the check of the engine of the last release beside a new one, and the sentence about a downgrade in the release notes (`release-notes.toml` has no place for notes before a release, so it goes in with the entry of the release). A stalled download holds its `get` lock until the limit of 6 hours for one file, because `ureq` has no limit for the time between two reads. sherpa-onnx ends the process on a broken VAD model, so that load gives no `failed` reply; the store stays as it was. |

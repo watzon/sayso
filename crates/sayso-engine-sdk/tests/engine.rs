@@ -22,6 +22,48 @@ fn hello_gives_the_version_and_the_features() {
 }
 
 #[test]
+fn an_engine_with_store_v1_gets_the_model_store() {
+    let folder = tempfile::tempdir().unwrap();
+    let store = folder.path().join("store");
+    let options = EngineOptions::new(engine_program(), folder.path().join("models")).model_store(&store);
+    let engine = Engine::start(options).unwrap();
+    assert!(engine.has_feature("store_v1"), "this test needs an engine with the store: {:?}", engine.features());
+    assert_eq!(engine.model_store(), Some(store.as_path()));
+    assert!(store.join("artifacts").is_dir(), "the engine did not open the store");
+}
+
+/// An engine of an older app does not get the variable, and stays the only process.
+#[cfg(unix)]
+#[test]
+fn an_engine_without_store_v1_does_not_get_the_model_store() {
+    use std::os::unix::fs::PermissionsExt;
+    let folder = tempfile::tempdir().unwrap();
+    let program = folder.path().join("old-engine");
+    let starts = folder.path().join("starts");
+    let script = format!(
+        r#"#!/bin/sh
+echo "[$SAYSO_MODEL_STORE]" >> "{}"
+while read -r line; do
+  id=$(printf '%s' "$line" | sed -E 's/.*"id":"([^"]*)".*/\1/')
+  case "$line" in
+    *'"hello"'*) printf '{{"type":"hello","id":"%s","version":"0.12.0","protocol":1,"features":[]}}\n' "$id" ;;
+    *) printf '{{"type":"ok","id":"%s"}}\n' "$id"; exit 0 ;;
+  esac
+done
+"#,
+        starts.display()
+    );
+    std::fs::write(&program, script).unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let engine = Engine::start(EngineOptions::new(&program, folder.path()).model_store(folder.path().join("store"))).unwrap();
+
+    assert_eq!(engine.version(), "0.12.0");
+    assert_eq!(engine.model_store(), None);
+    assert_eq!(std::fs::read_to_string(&starts).unwrap(), "[]\n");
+}
+
+#[test]
 fn list_models_gives_the_built_in_catalog_and_a_state_for_each_model() {
     let (engine, _models) = start_empty();
     let catalog = engine.list_models().unwrap();

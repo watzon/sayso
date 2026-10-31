@@ -82,7 +82,7 @@ An engine that sends no `features` is older than this spec. A client can still s
 | `diarization` | The request `diarize` (see "Diarization"). | yes | yes |
 | `catalog` | The built-in catalog: `list_models` without `models`, and requests without `engine` (see "Models"). | yes | yes |
 | `detected_language` | The field `language` of `final`, and `detects_language` in the catalog (see "Detected language"). | yes | yes |
-| `store_v1` | The model store of `SAYSO_MODEL_STORE` (see "Model store"). | no | yes |
+| `store_v1` | The model store of `SAYSO_MODEL_STORE` (see "Model store"). | yes | yes |
 
 The Rust engine replies `ok` to `prepare` and does nothing, so it does not list `prepare`.
 
@@ -342,7 +342,7 @@ Where it runs:
 
 - `cargo test -p sayso-engine` runs the core and model levels against the Rust engine, on Linux and Windows. CI also runs its ignored test, the store level.
 - `cargo test -p sayso-engine-client` runs the core and ready levels against `sayso-fake-engine`. The fake engine keeps no download or load state, so it does not run the model level.
-- The macOS job of CI builds the Swift engine and runs the core and model levels against it.
+- The macOS job of CI builds the Swift engine and runs the core, model, and store levels against it.
 
 A feature is in this spec only when each engine passes its tests, or each engine that does not pass leaves the feature out of `features`.
 
