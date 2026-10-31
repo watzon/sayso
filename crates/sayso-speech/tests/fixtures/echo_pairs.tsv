@@ -1,0 +1,1174 @@
+# Test data of the echo rule (docs/sdk.md, "System audio"). Synthetic: scripts in the history of this step wrote it.
+# echo: the microphone text is the system text after the errors of a second transcript (10 to 30 % of the words wrong, missing, or added), sometimes with the first or last words cut.
+# other: the microphone text is what the user says, and the system text is what the call says at that time. They share common words.
+# kind	microphone	system
+echo	ship the release on friday if the tests pass	we should ship the release on friday if the tests pass
+echo	we should ship the release on maybe friday if the tests pass	we should ship the release on friday if the tests pass
+echo	we should ship the release on friday if the tests pass	we should ship the release on friday if the tests pass
+echo	we should thing the release on sort friday if the tests way	we should ship the release on friday if the tests pass
+echo	we should ship a release on friday if the thing	we should ship the release on friday if the tests pass
+echo	should ship the release on friday if the tests pass	we should ship the release on friday if the tests pass
+echo	we should ship the release on then friday if the test pass	we should ship the release on friday if the tests pass
+echo	we ship the friday the tests so pass	we should ship the release on friday if the tests pass
+echo	we ship a release in friday like if the test	we should ship the release on friday if the tests pass
+echo	everyone see my screen right now	can everyone see my screen right now
+echo	can everyone see my screen write	can everyone see my screen right now
+echo	can everyone see my screen right now way	can everyone see my screen right now
+echo	can everyone my like right now	can everyone see my screen right now
+echo	can't everyone see my right	can everyone see my screen right now
+echo	can everyone my screen right now	can everyone see my screen right now
+echo	can't everyone see my now	can everyone see my screen right now
+echo	can everyone see kind my sort	can everyone see my screen right now
+echo	see my screen right now like	can everyone see my screen right now
+echo	the budget numbers came than we expected this quarter	the budget numbers came in lower than we expected this quarter
+echo	the budget numbers came in lower than we expected this	the budget numbers came in lower than we expected this quarter
+echo	the budget numbers in lower way than we good quarter	the budget numbers came in lower than we expected this quarter
+echo	the budget numbers came in lower than we quarter	the budget numbers came in lower than we expected this quarter
+echo	numbers came in lower than we expected quarter	the budget numbers came in lower than we expected this quarter
+echo	the budget numbers came in lower then we this quarter	the budget numbers came in lower than we expected this quarter
+echo	the budget numbers came in lower than we expected this quarter	the budget numbers came in lower than we expected this quarter
+echo	the budget numbers in lower than we expected this quarter	the budget numbers came in lower than we expected this quarter
+echo	the number came in lower than we expected quarter	the budget numbers came in lower than we expected this quarter
+echo	move the design review to next tuesday afternoon	let's move the design review to next tuesday afternoon
+echo	let's move the design review to like tuesday afternoon	let's move the design review to next tuesday afternoon
+echo	let's move the design review to next tuesday	let's move the design review to next tuesday afternoon
+echo	really to way tuesday good	let's move the design review to next tuesday afternoon
+echo	let's move design too next tuesday well	let's move the design review to next tuesday afternoon
+echo	sort good design review to then tuesday afternoon	let's move the design review to next tuesday afternoon
+echo	let's move the design review to next tuesday	let's move the design review to next tuesday afternoon
+echo	let's move the really design review to next tuesday afternoon	let's move the design review to next tuesday afternoon
+echo	the design review to really tuesday	let's move the design review to next tuesday afternoon
+echo	i talked to the customer and they want the export feature first	i talked to the customer and they want the export feature first
+echo	i the customer and they want the export feature first	i talked to the customer and they want the export feature first
+echo	i yeah talked the customer and they the export feature first	i talked to the customer and they want the export feature first
+echo	talked to the um and they the export feature first	i talked to the customer and they want the export feature first
+echo	i talked to the so and they want like the export feature first	i talked to the customer and they want the export feature first
+echo	i talked to the customer and they want the export feature first	i talked to the customer and they want the export feature first
+echo	i talked to the customer and well want a export thing feature first	i talked to the customer and they want the export feature first
+echo	i talked to the customer they want export	i talked to the customer and they want the export feature first
+echo	talked the and they want the export feature	i talked to the customer and they want the export feature first
+echo	does anyone have questions about the migration plan	does anyone have questions about the migration plan
+echo	have kind about the migration plan	does anyone have questions about the migration plan
+echo	does thing have questions about the	does anyone have questions about the migration plan
+echo	of the migration plan	does anyone have questions about the migration plan
+echo	sort have questions about the migration	does anyone have questions about the migration plan
+echo	does anyone have questions about the migration	does anyone have questions about the migration plan
+echo	does anyone so have questions the migration plan	does anyone have questions about the migration plan
+echo	does good anyone really have about of plans	does anyone have questions about the migration plan
+echo	does anyone yeah have about the migration	does anyone have questions about the migration plan
+echo	the server went down twice last well because of the disk	the server went down twice last night because of the disk
+echo	the server went down twice last night because of the disk	the server went down twice last night because of the disk
+echo	the server went down twice last night because of the disk	the server went down twice last night because of the disk
+echo	the server went down twice last of night because of the disk	the server went down twice last night because of the disk
+echo	the server went down twice very last night because the disk really	the server went down twice last night because of the disk
+echo	the really down just twice last night of good of a	the server went down twice last night because of the disk
+echo	the server went uh down twice last night because of the disk	the server went down twice last night because of the disk
+echo	the server went down twice last um night because the disk	the server went down twice last night because of the disk
+echo	the server went down twice like night because of the	the server went down twice last night because of the disk
+echo	sarah will send the notes like after this meeting ends	sarah will send the notes after this meeting ends
+echo	will send notes after this	sarah will send the notes after this meeting ends
+echo	will send the this meeting ends	sarah will send the notes after this meeting ends
+echo	sarah will send notes after this	sarah will send the notes after this meeting ends
+echo	will send a notes after this meeting ends	sarah will send the notes after this meeting ends
+echo	sarah will the notes after this meeting	sarah will send the notes after this meeting ends
+echo	sarah will very the good notes after that meeting ends yeah	sarah will send the notes after this meeting ends
+echo	will the notes after meeting ends	sarah will send the notes after this meeting ends
+echo	sarah will send a notes after this meeting like ends	sarah will send the notes after this meeting ends
+echo	we need two way people on the mobile team by march	we need two more people on the mobile team by march
+echo	we need two people on the mobile team by march	we need two more people on the mobile team by march
+echo	he need two more people on the mobile team by march	we need two more people on the mobile team by march
+echo	we need two very more of people on the mobile team by march	we need two more people on the mobile team by march
+echo	we need two people the mobile team by	we need two more people on the mobile team by march
+echo	we need two more on the mobile team by march	we need two more people on the mobile team by march
+echo	need to more people on the team	we need two more people on the mobile team by march
+echo	he need on the uh mobile yeah by march	we need two more people on the mobile team by march
+echo	we more like people on the team march	we need two more people on the mobile team by march
+echo	i think the new onboarding is much easier to	i think the new onboarding flow is much easier to follow
+echo	i think the maybe new onboarding flow is much easier to follow	i think the new onboarding flow is much easier to follow
+echo	the uh new onboarding flow as much easier to follow	i think the new onboarding flow is much easier to follow
+echo	i think the new flow is much easier to follow	i think the new onboarding flow is much easier to follow
+echo	new onboarding just flow as much easier to follow	i think the new onboarding flow is much easier to follow
+echo	i think the new onboarding flow as to follow	i think the new onboarding flow is much easier to follow
+echo	i think a new onboarding uh is much easier to follow	i think the new onboarding flow is much easier to follow
+echo	very the new onboarding flow is much easier too follow	i think the new onboarding flow is much easier to follow
+echo	think the new so onboarding um is much maybe easier to follow	i think the new onboarding flow is much easier to follow
+echo	please update the ticket when you finish the first draft	please update the ticket when you finish the first draft
+echo	please update the ticket when you finish the first	please update the ticket when you finish the first draft
+echo	please update the then when you finish the like draft	please update the ticket when you finish the first draft
+echo	the when very you finish very the first draft	please update the ticket when you finish the first draft
+echo	the ticket when you kind the first draft	please update the ticket when you finish the first draft
+echo	update very the ticket yeah when you finish the first draft	please update the ticket when you finish the first draft
+echo	please update the when you finish the first draft	please update the ticket when you finish the first draft
+echo	update the ticket you finish the first draft	please update the ticket when you finish the first draft
+echo	please update a ticket when you good the	please update the ticket when you finish the first draft
+echo	the contract has to be signed before the end of thing the month	the contract has to be signed before the end of the month
+echo	a contract has to be signed before the end like yeah the month	the contract has to be signed before the end of the month
+echo	the contract has to really be signed before the end of the	the contract has to be signed before the end of the month
+echo	the contract has to be signed really before end of the month	the contract has to be signed before the end of the month
+echo	has to be signed before the end really the month	the contract has to be signed before the end of the month
+echo	the contract has to sort be thing the really of the month	the contract has to be signed before the end of the month
+echo	the has to be signed before a	the contract has to be signed before the end of the month
+echo	the contract to be signed before the end of the month	the contract has to be signed before the end of the month
+echo	the has to be signed before end	the contract has to be signed before the end of the month
+echo	yes	yes
+echo	yes	yes
+echo	yes	yes
+echo	yes	yes
+echo	yes	yes
+echo	yes	yes
+echo	well	yes
+echo	yes	yes
+echo	yes	yes
+echo	good sounds good	okay sounds good
+echo	okay sounds good	okay sounds good
+echo	okay um good	okay sounds good
+echo	okay sounds good	okay sounds good
+echo	okay sounds kind	okay sounds good
+echo	okay sounds good	okay sounds good
+echo	okay sounds good	okay sounds good
+echo	okay sounds good	okay sounds good
+echo	okay sounds good	okay sounds good
+echo	thanks everyone	thanks everyone
+echo	thanks everyone	thanks everyone
+echo	thanks everyone	thanks everyone
+echo	thanks everyone	thanks everyone
+echo	thanks everyone	thanks everyone
+echo	thanks everyone	thanks everyone
+echo	good everyone	thanks everyone
+echo	thanks everyone	thanks everyone
+echo	thanks good everyone	thanks everyone
+echo	can you hear me	can you hear me
+echo	can you hear just	can you hear me
+echo	can you hear me	can you hear me
+echo	can you hear me	can you hear me
+echo	can you hear me	can you hear me
+echo	can you hear me	can you hear me
+echo	can hear me	can you hear me
+echo	can you hear me	can you hear me
+echo	can kind hear me	can you hear me
+echo	i'm good i was on mute	i'm sorry i was on mute
+echo	i'm sorry i was on	i'm sorry i was on mute
+echo	sorry i was on mute	i'm sorry i was on mute
+echo	i'm sorry i was on mute	i'm sorry i was on mute
+echo	i'm i was on mute	i'm sorry i was on mute
+echo	i'm sorry i was uh on sort mute	i'm sorry i was on mute
+echo	i'm i was on	i'm sorry i was on mute
+echo	i'm sorry really i um on mute	i'm sorry i was on mute
+echo	sort i thing on mute maybe	i'm sorry i was on mute
+echo	the latency is about two hundred milliseconds on the new model	the latency is about two hundred milliseconds on the new model
+echo	the latency is two hundred milliseconds on the	the latency is about two hundred milliseconds on the new model
+echo	the latency is about two hundred milliseconds on the new model	the latency is about two hundred milliseconds on the new model
+echo	the latency is about two very hundred yeah thing on kind the yeah	the latency is about two hundred milliseconds on the new model
+echo	is about two hundred milliseconds on the of good	the latency is about two hundred milliseconds on the new model
+echo	the latency is about of two just milliseconds in the	the latency is about two hundred milliseconds on the new model
+echo	the is about two um hundred milliseconds in the new model	the latency is about two hundred milliseconds on the new model
+echo	the is about two hundred milliseconds on the new model	the latency is about two hundred milliseconds on the new model
+echo	the latency is about two hundred milliseconds on the model	the latency is about two hundred milliseconds on the new model
+echo	in germany asked for a translated help well page	our users in germany asked for a translated help page
+echo	our users in germany asked for a translated help	our users in germany asked for a translated help page
+echo	our in germany for a help page	our users in germany asked for a translated help page
+echo	our way in yeah asked like for a translated like page	our users in germany asked for a translated help page
+echo	our users in germany asked well for maybe a translated	our users in germany asked for a translated help page
+echo	our users in germany asked for a translated help	our users in germany asked for a translated help page
+echo	users just germany asked four a translated yeah help page	our users in germany asked for a translated help page
+echo	users um kind for a translated help page	our users in germany asked for a translated help page
+echo	users germany sort asked for a translated help page	our users in germany asked for a translated help page
+echo	we can talk pricing at the next call	we can talk about pricing at the next call
+echo	we can talk about pricing at the next call	we can talk about pricing at the next call
+echo	can like about pricing at the next call	we can talk about pricing at the next call
+echo	we can talk about pricing at the next call	we can talk about pricing at the next call
+echo	we can talk about pricing at thing the next call	we can talk about pricing at the next call
+echo	we can talk pricing at the next	we can talk about pricing at the next call
+echo	he can't talk well pricing at the next call	we can talk about pricing at the next call
+echo	we can talk about pricing at the next	we can talk about pricing at the next call
+echo	can talk pricing at the	we can talk about pricing at the next call
+echo	could you share the to that document in the kind	could you share the link to that document in the chat
+echo	share the link to that document in the chat	could you share the link to that document in the chat
+echo	could you share the link to that document the	could you share the link to that document in the chat
+echo	really you share the link to that document in	could you share the link to that document in the chat
+echo	could you share thing the link to the chat	could you share the link to that document in the chat
+echo	you share link to that document in chat	could you share the link to that document in the chat
+echo	could of the link um to that then in a chat	could you share the link to that document in the chat
+echo	could share a to document in the	could you share the link to that document in the chat
+echo	you the way link to that then chat	could you share the link to that document in the chat
+echo	marketing team wants a kind like for the launch	the marketing team wants a short video for the launch
+echo	the marketing team wants a short for the launch	the marketing team wants a short video for the launch
+echo	the marketing team wants a short video for the launch	the marketing team wants a short video for the launch
+echo	the marketing team wants a short video for the launch	the marketing team wants a short video for the launch
+echo	the marketing team wants short video for	the marketing team wants a short video for the launch
+echo	the marketing wants a short video for the	the marketing team wants a short video for the launch
+echo	the marketing team wants of a short for a launch	the marketing team wants a short video for the launch
+echo	the team wants a short video for the launch	the marketing team wants a short video for the launch
+echo	marketing team wants short video maybe the	the marketing team wants a short video for the launch
+echo	don't think that estimate includes the testing work	i don't think that estimate includes the testing work
+echo	i don't think that estimate includes the testing work	i don't think that estimate includes the testing work
+echo	i don't think that estimate includes the testing	i don't think that estimate includes the testing work
+echo	i like think that estimate includes the kind testing work	i don't think that estimate includes the testing work
+echo	i don't think that estimate includes testing work	i don't think that estimate includes the testing work
+echo	just includes the testing work	i don't think that estimate includes the testing work
+echo	don't think that estimate includes the testing work	i don't think that estimate includes the testing work
+echo	i don't think that estimate the work	i don't think that estimate includes the testing work
+echo	i don't that estimate includes very the testing work	i don't think that estimate includes the testing work
+echo	the first quarter was strong but the second one	the first quarter was strong but the second one looks weak
+echo	quarter was strong well but the good kind looks weak	the first quarter was strong but the second one looks weak
+echo	the first quarter was strong but the second one looks weak	the first quarter was strong but the second one looks weak
+echo	quarter was strong the one looks weak	the first quarter was strong but the second one looks weak
+echo	a quarter was strong but the second one looks	the first quarter was strong but the second one looks weak
+echo	the first quarter was strong but the second one looks weak	the first quarter was strong but the second one looks weak
+echo	the first quarter good but the second well of weak	the first quarter was strong but the second one looks weak
+echo	thing was strong but the second one weak	the first quarter was strong but the second one looks weak
+echo	first quarter was strong the second one looks weak	the first quarter was strong but the second one looks weak
+echo	let me pull up the dashboard and walk through the graph	let me pull up the dashboard and walk through the graph
+echo	me thing pull up the dashboard and through the graph	let me pull up the dashboard and walk through the graph
+echo	me pull up the dashboard and walk through the graph	let me pull up the dashboard and walk through the graph
+echo	me pull good the dashboard and walk like through thing the graph	let me pull up the dashboard and walk through the graph
+echo	up the way and walk through the graph	let me pull up the dashboard and walk through the graph
+echo	me pull up the dashboard um and walk the graph	let me pull up the dashboard and walk through the graph
+echo	really pull up the dashboard and walk the graph	let me pull up the dashboard and walk through the graph
+echo	let me up the dashboard walk through a graph	let me pull up the dashboard and walk through the graph
+echo	let me pull up dashboard and through graph	let me pull up the dashboard and walk through the graph
+echo	we way lost about ten um of the traffic after redesign	we lost about ten percent of the traffic after the redesign
+echo	we lost about ten kind of the traffic	we lost about ten percent of the traffic after the redesign
+echo	we lost about ten percent of the traffic after the redesign	we lost about ten percent of the traffic after the redesign
+echo	lost about of the traffic after the redesign	we lost about ten percent of the traffic after the redesign
+echo	lost about ten percent of the traffic after the redesign thing	we lost about ten percent of the traffic after the redesign
+echo	we lost thing percent kind of	we lost about ten percent of the traffic after the redesign
+echo	about ten percent way then the traffic then after the redesign	we lost about ten percent of the traffic after the redesign
+echo	ten percent of the traffic after the redesign	we lost about ten percent of the traffic after the redesign
+echo	about so ten percent of the after the sort	we lost about ten percent of the traffic after the redesign
+echo	said the vendor can deliver the hardware in	he said the vendor can deliver the hardware in six weeks
+echo	he said the vendor can deliver the hardware in six weeks	he said the vendor can deliver the hardware in six weeks
+echo	he said the vendor can deliver the hardware in weeks	he said the vendor can deliver the hardware in six weeks
+echo	he the vendor can deliver the thing hardware in six weeks	he said the vendor can deliver the hardware in six weeks
+echo	um a vendor can deliver the hardware in six weeks	he said the vendor can deliver the hardware in six weeks
+echo	he said the deliver a hardware in six weeks	he said the vendor can deliver the hardware in six weeks
+echo	he said the can deliver the hardware like weeks	he said the vendor can deliver the hardware in six weeks
+echo	he said the vendor can deliver the hardware in just six weeks	he said the vendor can deliver the hardware in six weeks
+echo	he sort a can deliver the really in six like	he said the vendor can deliver the hardware in six weeks
+echo	that's a good point and we should write it down	that's a good point and we should write it down
+echo	that's a good point and we should write its down	that's a good point and we should write it down
+echo	that's a good point and we should write it down	that's a good point and we should write it down
+echo	that's a good point and we should	that's a good point and we should write it down
+echo	a good point uh we should write it down	that's a good point and we should write it down
+echo	that's a good point in we should uh write it down	that's a good point and we should write it down
+echo	yeah good point and we should write it	that's a good point and we should write it down
+echo	that's a good and he should like write it down	that's a good point and we should write it down
+echo	that's a good point in we um should just it	that's a good point and we should write it down
+echo	the security audit found three small issues and one large one	the security audit found three small issues and one large one
+echo	the security audit found three small issues and one large one	the security audit found three small issues and one large one
+echo	security audit found three small yeah and one large one	the security audit found three small issues and one large one
+echo	the security audit found three yeah small issues and one large	the security audit found three small issues and one large one
+echo	a security small issues and one large one	the security audit found three small issues and one large one
+echo	the security audit found three small issues sort and one uh large very	the security audit found three small issues and one large one
+echo	a security audit found um three small issues um large	the security audit found three small issues and one large one
+echo	the security audit found three small issues and one large one	the security audit found three small issues and one large one
+echo	the security found small issues and one large one	the security audit found three small issues and one large one
+echo	let's take a five minute break good back at	let's take a five minute break and come back at ten
+echo	let's take a five minute break and come back at	let's take a five minute break and come back at ten
+echo	a five minute break and come back at ten	let's take a five minute break and come back at ten
+echo	let's way take um five minute break and come back at ten	let's take a five minute break and come back at ten
+echo	let's take a five minute break and very come back at ten	let's take a five minute break and come back at ten
+echo	really take well five minute break and come back at ten	let's take a five minute break and come back at ten
+echo	let's take thing five minute break and come back at yeah really	let's take a five minute break and come back at ten
+echo	very take a five minute break and come back at ten	let's take a five minute break and come back at ten
+echo	let's take like five minute break and back at ten	let's take a five minute break and come back at ten
+other	yes i can take that one	we should ship the release on friday if the tests pass
+other	yes i can take that one	can everyone see my screen right now
+other	yes i can take that one	the budget numbers came in lower than we expected this quarter
+other	yes i can take that one	let's move the design review to next tuesday afternoon
+other	yes i can take that one	i talked to the customer and they want the export feature first
+other	yes i can take that one	does anyone have questions about the migration plan
+other	yes i can take that one	the server went down twice last night because of the disk
+other	yes i can take that one	sarah will send the notes after this meeting ends
+other	yes i can take that one	we need two more people on the mobile team by march
+other	yes i can take that one	i think the new onboarding flow is much easier to follow
+other	yes i can take that one	please update the ticket when you finish the first draft
+other	yes i can take that one	the contract has to be signed before the end of the month
+other	yes i can take that one	yes
+other	yes i can take that one	okay sounds good
+other	yes i can take that one	thanks everyone
+other	yes i can take that one	can you hear me
+other	yes i can take that one	i'm sorry i was on mute
+other	yes i can take that one	the latency is about two hundred milliseconds on the new model
+other	yes i can take that one	our users in germany asked for a translated help page
+other	yes i can take that one	we can talk about pricing at the next call
+other	yes i can take that one	could you share the link to that document in the chat
+other	yes i can take that one	the marketing team wants a short video for the launch
+other	yes i can take that one	i don't think that estimate includes the testing work
+other	yes i can take that one	the first quarter was strong but the second one looks weak
+other	yes i can take that one	let me pull up the dashboard and walk through the graph
+other	yes i can take that one	we lost about ten percent of the traffic after the redesign
+other	yes i can take that one	he said the vendor can deliver the hardware in six weeks
+other	yes i can take that one	that's a good point and we should write it down
+other	yes i can take that one	the security audit found three small issues and one large one
+other	yes i can take that one	let's take a five minute break and come back at ten
+other	no i haven't looked at it yet	we should ship the release on friday if the tests pass
+other	no i haven't looked at it yet	can everyone see my screen right now
+other	no i haven't looked at it yet	the budget numbers came in lower than we expected this quarter
+other	no i haven't looked at it yet	let's move the design review to next tuesday afternoon
+other	no i haven't looked at it yet	i talked to the customer and they want the export feature first
+other	no i haven't looked at it yet	does anyone have questions about the migration plan
+other	no i haven't looked at it yet	the server went down twice last night because of the disk
+other	no i haven't looked at it yet	sarah will send the notes after this meeting ends
+other	no i haven't looked at it yet	we need two more people on the mobile team by march
+other	no i haven't looked at it yet	i think the new onboarding flow is much easier to follow
+other	no i haven't looked at it yet	please update the ticket when you finish the first draft
+other	no i haven't looked at it yet	the contract has to be signed before the end of the month
+other	no i haven't looked at it yet	yes
+other	no i haven't looked at it yet	okay sounds good
+other	no i haven't looked at it yet	thanks everyone
+other	no i haven't looked at it yet	can you hear me
+other	no i haven't looked at it yet	i'm sorry i was on mute
+other	no i haven't looked at it yet	the latency is about two hundred milliseconds on the new model
+other	no i haven't looked at it yet	our users in germany asked for a translated help page
+other	no i haven't looked at it yet	we can talk about pricing at the next call
+other	no i haven't looked at it yet	could you share the link to that document in the chat
+other	no i haven't looked at it yet	the marketing team wants a short video for the launch
+other	no i haven't looked at it yet	i don't think that estimate includes the testing work
+other	no i haven't looked at it yet	the first quarter was strong but the second one looks weak
+other	no i haven't looked at it yet	let me pull up the dashboard and walk through the graph
+other	no i haven't looked at it yet	we lost about ten percent of the traffic after the redesign
+other	no i haven't looked at it yet	he said the vendor can deliver the hardware in six weeks
+other	no i haven't looked at it yet	that's a good point and we should write it down
+other	no i haven't looked at it yet	the security audit found three small issues and one large one
+other	no i haven't looked at it yet	let's take a five minute break and come back at ten
+other	i think we should wait for the test results first	we should ship the release on friday if the tests pass
+other	i think we should wait for the test results first	can everyone see my screen right now
+other	i think we should wait for the test results first	the budget numbers came in lower than we expected this quarter
+other	i think we should wait for the test results first	let's move the design review to next tuesday afternoon
+other	i think we should wait for the test results first	i talked to the customer and they want the export feature first
+other	i think we should wait for the test results first	does anyone have questions about the migration plan
+other	i think we should wait for the test results first	the server went down twice last night because of the disk
+other	i think we should wait for the test results first	sarah will send the notes after this meeting ends
+other	i think we should wait for the test results first	we need two more people on the mobile team by march
+other	i think we should wait for the test results first	i think the new onboarding flow is much easier to follow
+other	i think we should wait for the test results first	please update the ticket when you finish the first draft
+other	i think we should wait for the test results first	the contract has to be signed before the end of the month
+other	i think we should wait for the test results first	yes
+other	i think we should wait for the test results first	okay sounds good
+other	i think we should wait for the test results first	thanks everyone
+other	i think we should wait for the test results first	can you hear me
+other	i think we should wait for the test results first	i'm sorry i was on mute
+other	i think we should wait for the test results first	the latency is about two hundred milliseconds on the new model
+other	i think we should wait for the test results first	our users in germany asked for a translated help page
+other	i think we should wait for the test results first	we can talk about pricing at the next call
+other	i think we should wait for the test results first	could you share the link to that document in the chat
+other	i think we should wait for the test results first	the marketing team wants a short video for the launch
+other	i think we should wait for the test results first	i don't think that estimate includes the testing work
+other	i think we should wait for the test results first	the first quarter was strong but the second one looks weak
+other	i think we should wait for the test results first	let me pull up the dashboard and walk through the graph
+other	i think we should wait for the test results first	we lost about ten percent of the traffic after the redesign
+other	i think we should wait for the test results first	he said the vendor can deliver the hardware in six weeks
+other	i think we should wait for the test results first	that's a good point and we should write it down
+other	i think we should wait for the test results first	the security audit found three small issues and one large one
+other	i think we should wait for the test results first	let's take a five minute break and come back at ten
+other	my internet was slow this morning so i missed that part	we should ship the release on friday if the tests pass
+other	my internet was slow this morning so i missed that part	can everyone see my screen right now
+other	my internet was slow this morning so i missed that part	the budget numbers came in lower than we expected this quarter
+other	my internet was slow this morning so i missed that part	let's move the design review to next tuesday afternoon
+other	my internet was slow this morning so i missed that part	i talked to the customer and they want the export feature first
+other	my internet was slow this morning so i missed that part	does anyone have questions about the migration plan
+other	my internet was slow this morning so i missed that part	the server went down twice last night because of the disk
+other	my internet was slow this morning so i missed that part	sarah will send the notes after this meeting ends
+other	my internet was slow this morning so i missed that part	we need two more people on the mobile team by march
+other	my internet was slow this morning so i missed that part	i think the new onboarding flow is much easier to follow
+other	my internet was slow this morning so i missed that part	please update the ticket when you finish the first draft
+other	my internet was slow this morning so i missed that part	the contract has to be signed before the end of the month
+other	my internet was slow this morning so i missed that part	yes
+other	my internet was slow this morning so i missed that part	okay sounds good
+other	my internet was slow this morning so i missed that part	thanks everyone
+other	my internet was slow this morning so i missed that part	can you hear me
+other	my internet was slow this morning so i missed that part	i'm sorry i was on mute
+other	my internet was slow this morning so i missed that part	the latency is about two hundred milliseconds on the new model
+other	my internet was slow this morning so i missed that part	our users in germany asked for a translated help page
+other	my internet was slow this morning so i missed that part	we can talk about pricing at the next call
+other	my internet was slow this morning so i missed that part	could you share the link to that document in the chat
+other	my internet was slow this morning so i missed that part	the marketing team wants a short video for the launch
+other	my internet was slow this morning so i missed that part	i don't think that estimate includes the testing work
+other	my internet was slow this morning so i missed that part	the first quarter was strong but the second one looks weak
+other	my internet was slow this morning so i missed that part	let me pull up the dashboard and walk through the graph
+other	my internet was slow this morning so i missed that part	we lost about ten percent of the traffic after the redesign
+other	my internet was slow this morning so i missed that part	he said the vendor can deliver the hardware in six weeks
+other	my internet was slow this morning so i missed that part	that's a good point and we should write it down
+other	my internet was slow this morning so i missed that part	the security audit found three small issues and one large one
+other	my internet was slow this morning so i missed that part	let's take a five minute break and come back at ten
+other	i'll send you the file when i get back to my desk	we should ship the release on friday if the tests pass
+other	i'll send you the file when i get back to my desk	can everyone see my screen right now
+other	i'll send you the file when i get back to my desk	the budget numbers came in lower than we expected this quarter
+other	i'll send you the file when i get back to my desk	let's move the design review to next tuesday afternoon
+other	i'll send you the file when i get back to my desk	i talked to the customer and they want the export feature first
+other	i'll send you the file when i get back to my desk	does anyone have questions about the migration plan
+other	i'll send you the file when i get back to my desk	the server went down twice last night because of the disk
+other	i'll send you the file when i get back to my desk	sarah will send the notes after this meeting ends
+other	i'll send you the file when i get back to my desk	we need two more people on the mobile team by march
+other	i'll send you the file when i get back to my desk	i think the new onboarding flow is much easier to follow
+other	i'll send you the file when i get back to my desk	please update the ticket when you finish the first draft
+other	i'll send you the file when i get back to my desk	the contract has to be signed before the end of the month
+other	i'll send you the file when i get back to my desk	yes
+other	i'll send you the file when i get back to my desk	okay sounds good
+other	i'll send you the file when i get back to my desk	thanks everyone
+other	i'll send you the file when i get back to my desk	can you hear me
+other	i'll send you the file when i get back to my desk	i'm sorry i was on mute
+other	i'll send you the file when i get back to my desk	the latency is about two hundred milliseconds on the new model
+other	i'll send you the file when i get back to my desk	our users in germany asked for a translated help page
+other	i'll send you the file when i get back to my desk	we can talk about pricing at the next call
+other	i'll send you the file when i get back to my desk	could you share the link to that document in the chat
+other	i'll send you the file when i get back to my desk	the marketing team wants a short video for the launch
+other	i'll send you the file when i get back to my desk	i don't think that estimate includes the testing work
+other	i'll send you the file when i get back to my desk	the first quarter was strong but the second one looks weak
+other	i'll send you the file when i get back to my desk	let me pull up the dashboard and walk through the graph
+other	i'll send you the file when i get back to my desk	we lost about ten percent of the traffic after the redesign
+other	i'll send you the file when i get back to my desk	he said the vendor can deliver the hardware in six weeks
+other	i'll send you the file when i get back to my desk	that's a good point and we should write it down
+other	i'll send you the file when i get back to my desk	the security audit found three small issues and one large one
+other	i'll send you the file when i get back to my desk	let's take a five minute break and come back at ten
+other	that works for me on tuesday	we should ship the release on friday if the tests pass
+other	that works for me on tuesday	can everyone see my screen right now
+other	that works for me on tuesday	the budget numbers came in lower than we expected this quarter
+other	that works for me on tuesday	let's move the design review to next tuesday afternoon
+other	that works for me on tuesday	i talked to the customer and they want the export feature first
+other	that works for me on tuesday	does anyone have questions about the migration plan
+other	that works for me on tuesday	the server went down twice last night because of the disk
+other	that works for me on tuesday	sarah will send the notes after this meeting ends
+other	that works for me on tuesday	we need two more people on the mobile team by march
+other	that works for me on tuesday	i think the new onboarding flow is much easier to follow
+other	that works for me on tuesday	please update the ticket when you finish the first draft
+other	that works for me on tuesday	the contract has to be signed before the end of the month
+other	that works for me on tuesday	yes
+other	that works for me on tuesday	okay sounds good
+other	that works for me on tuesday	thanks everyone
+other	that works for me on tuesday	can you hear me
+other	that works for me on tuesday	i'm sorry i was on mute
+other	that works for me on tuesday	the latency is about two hundred milliseconds on the new model
+other	that works for me on tuesday	our users in germany asked for a translated help page
+other	that works for me on tuesday	we can talk about pricing at the next call
+other	that works for me on tuesday	could you share the link to that document in the chat
+other	that works for me on tuesday	the marketing team wants a short video for the launch
+other	that works for me on tuesday	i don't think that estimate includes the testing work
+other	that works for me on tuesday	the first quarter was strong but the second one looks weak
+other	that works for me on tuesday	let me pull up the dashboard and walk through the graph
+other	that works for me on tuesday	we lost about ten percent of the traffic after the redesign
+other	that works for me on tuesday	he said the vendor can deliver the hardware in six weeks
+other	that works for me on tuesday	that's a good point and we should write it down
+other	that works for me on tuesday	the security audit found three small issues and one large one
+other	that works for me on tuesday	let's take a five minute break and come back at ten
+other	can we talk about the budget after lunch	we should ship the release on friday if the tests pass
+other	can we talk about the budget after lunch	can everyone see my screen right now
+other	can we talk about the budget after lunch	the budget numbers came in lower than we expected this quarter
+other	can we talk about the budget after lunch	let's move the design review to next tuesday afternoon
+other	can we talk about the budget after lunch	i talked to the customer and they want the export feature first
+other	can we talk about the budget after lunch	does anyone have questions about the migration plan
+other	can we talk about the budget after lunch	the server went down twice last night because of the disk
+other	can we talk about the budget after lunch	sarah will send the notes after this meeting ends
+other	can we talk about the budget after lunch	we need two more people on the mobile team by march
+other	can we talk about the budget after lunch	i think the new onboarding flow is much easier to follow
+other	can we talk about the budget after lunch	please update the ticket when you finish the first draft
+other	can we talk about the budget after lunch	the contract has to be signed before the end of the month
+other	can we talk about the budget after lunch	yes
+other	can we talk about the budget after lunch	okay sounds good
+other	can we talk about the budget after lunch	thanks everyone
+other	can we talk about the budget after lunch	can you hear me
+other	can we talk about the budget after lunch	i'm sorry i was on mute
+other	can we talk about the budget after lunch	the latency is about two hundred milliseconds on the new model
+other	can we talk about the budget after lunch	our users in germany asked for a translated help page
+other	can we talk about the budget after lunch	we can talk about pricing at the next call
+other	can we talk about the budget after lunch	could you share the link to that document in the chat
+other	can we talk about the budget after lunch	the marketing team wants a short video for the launch
+other	can we talk about the budget after lunch	i don't think that estimate includes the testing work
+other	can we talk about the budget after lunch	the first quarter was strong but the second one looks weak
+other	can we talk about the budget after lunch	let me pull up the dashboard and walk through the graph
+other	can we talk about the budget after lunch	we lost about ten percent of the traffic after the redesign
+other	can we talk about the budget after lunch	he said the vendor can deliver the hardware in six weeks
+other	can we talk about the budget after lunch	that's a good point and we should write it down
+other	can we talk about the budget after lunch	the security audit found three small issues and one large one
+other	can we talk about the budget after lunch	let's take a five minute break and come back at ten
+other	i agree with what you said about the customer	we should ship the release on friday if the tests pass
+other	i agree with what you said about the customer	can everyone see my screen right now
+other	i agree with what you said about the customer	the budget numbers came in lower than we expected this quarter
+other	i agree with what you said about the customer	let's move the design review to next tuesday afternoon
+other	i agree with what you said about the customer	i talked to the customer and they want the export feature first
+other	i agree with what you said about the customer	does anyone have questions about the migration plan
+other	i agree with what you said about the customer	the server went down twice last night because of the disk
+other	i agree with what you said about the customer	sarah will send the notes after this meeting ends
+other	i agree with what you said about the customer	we need two more people on the mobile team by march
+other	i agree with what you said about the customer	i think the new onboarding flow is much easier to follow
+other	i agree with what you said about the customer	please update the ticket when you finish the first draft
+other	i agree with what you said about the customer	the contract has to be signed before the end of the month
+other	i agree with what you said about the customer	yes
+other	i agree with what you said about the customer	okay sounds good
+other	i agree with what you said about the customer	thanks everyone
+other	i agree with what you said about the customer	can you hear me
+other	i agree with what you said about the customer	i'm sorry i was on mute
+other	i agree with what you said about the customer	the latency is about two hundred milliseconds on the new model
+other	i agree with what you said about the customer	our users in germany asked for a translated help page
+other	i agree with what you said about the customer	we can talk about pricing at the next call
+other	i agree with what you said about the customer	could you share the link to that document in the chat
+other	i agree with what you said about the customer	the marketing team wants a short video for the launch
+other	i agree with what you said about the customer	i don't think that estimate includes the testing work
+other	i agree with what you said about the customer	the first quarter was strong but the second one looks weak
+other	i agree with what you said about the customer	let me pull up the dashboard and walk through the graph
+other	i agree with what you said about the customer	we lost about ten percent of the traffic after the redesign
+other	i agree with what you said about the customer	he said the vendor can deliver the hardware in six weeks
+other	i agree with what you said about the customer	that's a good point and we should write it down
+other	i agree with what you said about the customer	the security audit found three small issues and one large one
+other	i agree with what you said about the customer	let's take a five minute break and come back at ten
+other	what time is the meeting tomorrow	we should ship the release on friday if the tests pass
+other	what time is the meeting tomorrow	can everyone see my screen right now
+other	what time is the meeting tomorrow	the budget numbers came in lower than we expected this quarter
+other	what time is the meeting tomorrow	let's move the design review to next tuesday afternoon
+other	what time is the meeting tomorrow	i talked to the customer and they want the export feature first
+other	what time is the meeting tomorrow	does anyone have questions about the migration plan
+other	what time is the meeting tomorrow	the server went down twice last night because of the disk
+other	what time is the meeting tomorrow	sarah will send the notes after this meeting ends
+other	what time is the meeting tomorrow	we need two more people on the mobile team by march
+other	what time is the meeting tomorrow	i think the new onboarding flow is much easier to follow
+other	what time is the meeting tomorrow	please update the ticket when you finish the first draft
+other	what time is the meeting tomorrow	the contract has to be signed before the end of the month
+other	what time is the meeting tomorrow	yes
+other	what time is the meeting tomorrow	okay sounds good
+other	what time is the meeting tomorrow	thanks everyone
+other	what time is the meeting tomorrow	can you hear me
+other	what time is the meeting tomorrow	i'm sorry i was on mute
+other	what time is the meeting tomorrow	the latency is about two hundred milliseconds on the new model
+other	what time is the meeting tomorrow	our users in germany asked for a translated help page
+other	what time is the meeting tomorrow	we can talk about pricing at the next call
+other	what time is the meeting tomorrow	could you share the link to that document in the chat
+other	what time is the meeting tomorrow	the marketing team wants a short video for the launch
+other	what time is the meeting tomorrow	i don't think that estimate includes the testing work
+other	what time is the meeting tomorrow	the first quarter was strong but the second one looks weak
+other	what time is the meeting tomorrow	let me pull up the dashboard and walk through the graph
+other	what time is the meeting tomorrow	we lost about ten percent of the traffic after the redesign
+other	what time is the meeting tomorrow	he said the vendor can deliver the hardware in six weeks
+other	what time is the meeting tomorrow	that's a good point and we should write it down
+other	what time is the meeting tomorrow	the security audit found three small issues and one large one
+other	what time is the meeting tomorrow	let's take a five minute break and come back at ten
+other	i don't have the numbers in front of me right now	we should ship the release on friday if the tests pass
+other	i don't have the numbers in front of me right now	can everyone see my screen right now
+other	i don't have the numbers in front of me right now	the budget numbers came in lower than we expected this quarter
+other	i don't have the numbers in front of me right now	let's move the design review to next tuesday afternoon
+other	i don't have the numbers in front of me right now	i talked to the customer and they want the export feature first
+other	i don't have the numbers in front of me right now	does anyone have questions about the migration plan
+other	i don't have the numbers in front of me right now	the server went down twice last night because of the disk
+other	i don't have the numbers in front of me right now	sarah will send the notes after this meeting ends
+other	i don't have the numbers in front of me right now	we need two more people on the mobile team by march
+other	i don't have the numbers in front of me right now	i think the new onboarding flow is much easier to follow
+other	i don't have the numbers in front of me right now	please update the ticket when you finish the first draft
+other	i don't have the numbers in front of me right now	the contract has to be signed before the end of the month
+other	i don't have the numbers in front of me right now	yes
+other	i don't have the numbers in front of me right now	okay sounds good
+other	i don't have the numbers in front of me right now	thanks everyone
+other	i don't have the numbers in front of me right now	can you hear me
+other	i don't have the numbers in front of me right now	i'm sorry i was on mute
+other	i don't have the numbers in front of me right now	the latency is about two hundred milliseconds on the new model
+other	i don't have the numbers in front of me right now	our users in germany asked for a translated help page
+other	i don't have the numbers in front of me right now	we can talk about pricing at the next call
+other	i don't have the numbers in front of me right now	could you share the link to that document in the chat
+other	i don't have the numbers in front of me right now	the marketing team wants a short video for the launch
+other	i don't have the numbers in front of me right now	i don't think that estimate includes the testing work
+other	i don't have the numbers in front of me right now	the first quarter was strong but the second one looks weak
+other	i don't have the numbers in front of me right now	let me pull up the dashboard and walk through the graph
+other	i don't have the numbers in front of me right now	we lost about ten percent of the traffic after the redesign
+other	i don't have the numbers in front of me right now	he said the vendor can deliver the hardware in six weeks
+other	i don't have the numbers in front of me right now	that's a good point and we should write it down
+other	i don't have the numbers in front of me right now	the security audit found three small issues and one large one
+other	i don't have the numbers in front of me right now	let's take a five minute break and come back at ten
+other	let me check with my manager and get back to you	we should ship the release on friday if the tests pass
+other	let me check with my manager and get back to you	can everyone see my screen right now
+other	let me check with my manager and get back to you	the budget numbers came in lower than we expected this quarter
+other	let me check with my manager and get back to you	let's move the design review to next tuesday afternoon
+other	let me check with my manager and get back to you	i talked to the customer and they want the export feature first
+other	let me check with my manager and get back to you	does anyone have questions about the migration plan
+other	let me check with my manager and get back to you	the server went down twice last night because of the disk
+other	let me check with my manager and get back to you	sarah will send the notes after this meeting ends
+other	let me check with my manager and get back to you	we need two more people on the mobile team by march
+other	let me check with my manager and get back to you	i think the new onboarding flow is much easier to follow
+other	let me check with my manager and get back to you	please update the ticket when you finish the first draft
+other	let me check with my manager and get back to you	the contract has to be signed before the end of the month
+other	let me check with my manager and get back to you	yes
+other	let me check with my manager and get back to you	okay sounds good
+other	let me check with my manager and get back to you	thanks everyone
+other	let me check with my manager and get back to you	can you hear me
+other	let me check with my manager and get back to you	i'm sorry i was on mute
+other	let me check with my manager and get back to you	the latency is about two hundred milliseconds on the new model
+other	let me check with my manager and get back to you	our users in germany asked for a translated help page
+other	let me check with my manager and get back to you	we can talk about pricing at the next call
+other	let me check with my manager and get back to you	could you share the link to that document in the chat
+other	let me check with my manager and get back to you	the marketing team wants a short video for the launch
+other	let me check with my manager and get back to you	i don't think that estimate includes the testing work
+other	let me check with my manager and get back to you	the first quarter was strong but the second one looks weak
+other	let me check with my manager and get back to you	let me pull up the dashboard and walk through the graph
+other	let me check with my manager and get back to you	we lost about ten percent of the traffic after the redesign
+other	let me check with my manager and get back to you	he said the vendor can deliver the hardware in six weeks
+other	let me check with my manager and get back to you	that's a good point and we should write it down
+other	let me check with my manager and get back to you	the security audit found three small issues and one large one
+other	let me check with my manager and get back to you	let's take a five minute break and come back at ten
+other	we had the same problem with the server last year	we should ship the release on friday if the tests pass
+other	we had the same problem with the server last year	can everyone see my screen right now
+other	we had the same problem with the server last year	the budget numbers came in lower than we expected this quarter
+other	we had the same problem with the server last year	let's move the design review to next tuesday afternoon
+other	we had the same problem with the server last year	i talked to the customer and they want the export feature first
+other	we had the same problem with the server last year	does anyone have questions about the migration plan
+other	we had the same problem with the server last year	the server went down twice last night because of the disk
+other	we had the same problem with the server last year	sarah will send the notes after this meeting ends
+other	we had the same problem with the server last year	we need two more people on the mobile team by march
+other	we had the same problem with the server last year	i think the new onboarding flow is much easier to follow
+other	we had the same problem with the server last year	please update the ticket when you finish the first draft
+other	we had the same problem with the server last year	the contract has to be signed before the end of the month
+other	we had the same problem with the server last year	yes
+other	we had the same problem with the server last year	okay sounds good
+other	we had the same problem with the server last year	thanks everyone
+other	we had the same problem with the server last year	can you hear me
+other	we had the same problem with the server last year	i'm sorry i was on mute
+other	we had the same problem with the server last year	the latency is about two hundred milliseconds on the new model
+other	we had the same problem with the server last year	our users in germany asked for a translated help page
+other	we had the same problem with the server last year	we can talk about pricing at the next call
+other	we had the same problem with the server last year	could you share the link to that document in the chat
+other	we had the same problem with the server last year	the marketing team wants a short video for the launch
+other	we had the same problem with the server last year	i don't think that estimate includes the testing work
+other	we had the same problem with the server last year	the first quarter was strong but the second one looks weak
+other	we had the same problem with the server last year	let me pull up the dashboard and walk through the graph
+other	we had the same problem with the server last year	we lost about ten percent of the traffic after the redesign
+other	we had the same problem with the server last year	he said the vendor can deliver the hardware in six weeks
+other	we had the same problem with the server last year	that's a good point and we should write it down
+other	we had the same problem with the server last year	the security audit found three small issues and one large one
+other	we had the same problem with the server last year	let's take a five minute break and come back at ten
+other	sure	we should ship the release on friday if the tests pass
+other	sure	can everyone see my screen right now
+other	sure	the budget numbers came in lower than we expected this quarter
+other	sure	let's move the design review to next tuesday afternoon
+other	sure	i talked to the customer and they want the export feature first
+other	sure	does anyone have questions about the migration plan
+other	sure	the server went down twice last night because of the disk
+other	sure	sarah will send the notes after this meeting ends
+other	sure	we need two more people on the mobile team by march
+other	sure	i think the new onboarding flow is much easier to follow
+other	sure	please update the ticket when you finish the first draft
+other	sure	the contract has to be signed before the end of the month
+other	sure	yes
+other	sure	okay sounds good
+other	sure	thanks everyone
+other	sure	can you hear me
+other	sure	i'm sorry i was on mute
+other	sure	the latency is about two hundred milliseconds on the new model
+other	sure	our users in germany asked for a translated help page
+other	sure	we can talk about pricing at the next call
+other	sure	could you share the link to that document in the chat
+other	sure	the marketing team wants a short video for the launch
+other	sure	i don't think that estimate includes the testing work
+other	sure	the first quarter was strong but the second one looks weak
+other	sure	let me pull up the dashboard and walk through the graph
+other	sure	we lost about ten percent of the traffic after the redesign
+other	sure	he said the vendor can deliver the hardware in six weeks
+other	sure	that's a good point and we should write it down
+other	sure	the security audit found three small issues and one large one
+other	sure	let's take a five minute break and come back at ten
+other	no thanks	we should ship the release on friday if the tests pass
+other	no thanks	can everyone see my screen right now
+other	no thanks	the budget numbers came in lower than we expected this quarter
+other	no thanks	let's move the design review to next tuesday afternoon
+other	no thanks	i talked to the customer and they want the export feature first
+other	no thanks	does anyone have questions about the migration plan
+other	no thanks	the server went down twice last night because of the disk
+other	no thanks	sarah will send the notes after this meeting ends
+other	no thanks	we need two more people on the mobile team by march
+other	no thanks	i think the new onboarding flow is much easier to follow
+other	no thanks	please update the ticket when you finish the first draft
+other	no thanks	the contract has to be signed before the end of the month
+other	no thanks	yes
+other	no thanks	okay sounds good
+other	no thanks	thanks everyone
+other	no thanks	can you hear me
+other	no thanks	i'm sorry i was on mute
+other	no thanks	the latency is about two hundred milliseconds on the new model
+other	no thanks	our users in germany asked for a translated help page
+other	no thanks	we can talk about pricing at the next call
+other	no thanks	could you share the link to that document in the chat
+other	no thanks	the marketing team wants a short video for the launch
+other	no thanks	i don't think that estimate includes the testing work
+other	no thanks	the first quarter was strong but the second one looks weak
+other	no thanks	let me pull up the dashboard and walk through the graph
+other	no thanks	we lost about ten percent of the traffic after the redesign
+other	no thanks	he said the vendor can deliver the hardware in six weeks
+other	no thanks	that's a good point and we should write it down
+other	no thanks	the security audit found three small issues and one large one
+other	no thanks	let's take a five minute break and come back at ten
+other	right	we should ship the release on friday if the tests pass
+other	right	can everyone see my screen right now
+other	right	the budget numbers came in lower than we expected this quarter
+other	right	let's move the design review to next tuesday afternoon
+other	right	i talked to the customer and they want the export feature first
+other	right	does anyone have questions about the migration plan
+other	right	the server went down twice last night because of the disk
+other	right	sarah will send the notes after this meeting ends
+other	right	we need two more people on the mobile team by march
+other	right	i think the new onboarding flow is much easier to follow
+other	right	please update the ticket when you finish the first draft
+other	right	the contract has to be signed before the end of the month
+other	right	yes
+other	right	okay sounds good
+other	right	thanks everyone
+other	right	can you hear me
+other	right	i'm sorry i was on mute
+other	right	the latency is about two hundred milliseconds on the new model
+other	right	our users in germany asked for a translated help page
+other	right	we can talk about pricing at the next call
+other	right	could you share the link to that document in the chat
+other	right	the marketing team wants a short video for the launch
+other	right	i don't think that estimate includes the testing work
+other	right	the first quarter was strong but the second one looks weak
+other	right	let me pull up the dashboard and walk through the graph
+other	right	we lost about ten percent of the traffic after the redesign
+other	right	he said the vendor can deliver the hardware in six weeks
+other	right	that's a good point and we should write it down
+other	right	the security audit found three small issues and one large one
+other	right	let's take a five minute break and come back at ten
+other	i think so	we should ship the release on friday if the tests pass
+other	i think so	can everyone see my screen right now
+other	i think so	the budget numbers came in lower than we expected this quarter
+other	i think so	let's move the design review to next tuesday afternoon
+other	i think so	i talked to the customer and they want the export feature first
+other	i think so	does anyone have questions about the migration plan
+other	i think so	the server went down twice last night because of the disk
+other	i think so	sarah will send the notes after this meeting ends
+other	i think so	we need two more people on the mobile team by march
+other	i think so	i think the new onboarding flow is much easier to follow
+other	i think so	please update the ticket when you finish the first draft
+other	i think so	the contract has to be signed before the end of the month
+other	i think so	yes
+other	i think so	okay sounds good
+other	i think so	thanks everyone
+other	i think so	can you hear me
+other	i think so	i'm sorry i was on mute
+other	i think so	the latency is about two hundred milliseconds on the new model
+other	i think so	our users in germany asked for a translated help page
+other	i think so	we can talk about pricing at the next call
+other	i think so	could you share the link to that document in the chat
+other	i think so	the marketing team wants a short video for the launch
+other	i think so	i don't think that estimate includes the testing work
+other	i think so	the first quarter was strong but the second one looks weak
+other	i think so	let me pull up the dashboard and walk through the graph
+other	i think so	we lost about ten percent of the traffic after the redesign
+other	i think so	he said the vendor can deliver the hardware in six weeks
+other	i think so	that's a good point and we should write it down
+other	i think so	the security audit found three small issues and one large one
+other	i think so	let's take a five minute break and come back at ten
+other	i'm not sure about that	we should ship the release on friday if the tests pass
+other	i'm not sure about that	can everyone see my screen right now
+other	i'm not sure about that	the budget numbers came in lower than we expected this quarter
+other	i'm not sure about that	let's move the design review to next tuesday afternoon
+other	i'm not sure about that	i talked to the customer and they want the export feature first
+other	i'm not sure about that	does anyone have questions about the migration plan
+other	i'm not sure about that	the server went down twice last night because of the disk
+other	i'm not sure about that	sarah will send the notes after this meeting ends
+other	i'm not sure about that	we need two more people on the mobile team by march
+other	i'm not sure about that	i think the new onboarding flow is much easier to follow
+other	i'm not sure about that	please update the ticket when you finish the first draft
+other	i'm not sure about that	the contract has to be signed before the end of the month
+other	i'm not sure about that	yes
+other	i'm not sure about that	okay sounds good
+other	i'm not sure about that	thanks everyone
+other	i'm not sure about that	can you hear me
+other	i'm not sure about that	i'm sorry i was on mute
+other	i'm not sure about that	the latency is about two hundred milliseconds on the new model
+other	i'm not sure about that	our users in germany asked for a translated help page
+other	i'm not sure about that	we can talk about pricing at the next call
+other	i'm not sure about that	could you share the link to that document in the chat
+other	i'm not sure about that	the marketing team wants a short video for the launch
+other	i'm not sure about that	i don't think that estimate includes the testing work
+other	i'm not sure about that	the first quarter was strong but the second one looks weak
+other	i'm not sure about that	let me pull up the dashboard and walk through the graph
+other	i'm not sure about that	we lost about ten percent of the traffic after the redesign
+other	i'm not sure about that	he said the vendor can deliver the hardware in six weeks
+other	i'm not sure about that	that's a good point and we should write it down
+other	i'm not sure about that	the security audit found three small issues and one large one
+other	i'm not sure about that	let's take a five minute break and come back at ten
+other	the release can wait until we know more	we should ship the release on friday if the tests pass
+other	the release can wait until we know more	can everyone see my screen right now
+other	the release can wait until we know more	the budget numbers came in lower than we expected this quarter
+other	the release can wait until we know more	let's move the design review to next tuesday afternoon
+other	the release can wait until we know more	i talked to the customer and they want the export feature first
+other	the release can wait until we know more	does anyone have questions about the migration plan
+other	the release can wait until we know more	the server went down twice last night because of the disk
+other	the release can wait until we know more	sarah will send the notes after this meeting ends
+other	the release can wait until we know more	we need two more people on the mobile team by march
+other	the release can wait until we know more	i think the new onboarding flow is much easier to follow
+other	the release can wait until we know more	please update the ticket when you finish the first draft
+other	the release can wait until we know more	the contract has to be signed before the end of the month
+other	the release can wait until we know more	yes
+other	the release can wait until we know more	okay sounds good
+other	the release can wait until we know more	thanks everyone
+other	the release can wait until we know more	can you hear me
+other	the release can wait until we know more	i'm sorry i was on mute
+other	the release can wait until we know more	the latency is about two hundred milliseconds on the new model
+other	the release can wait until we know more	our users in germany asked for a translated help page
+other	the release can wait until we know more	we can talk about pricing at the next call
+other	the release can wait until we know more	could you share the link to that document in the chat
+other	the release can wait until we know more	the marketing team wants a short video for the launch
+other	the release can wait until we know more	i don't think that estimate includes the testing work
+other	the release can wait until we know more	the first quarter was strong but the second one looks weak
+other	the release can wait until we know more	let me pull up the dashboard and walk through the graph
+other	the release can wait until we know more	we lost about ten percent of the traffic after the redesign
+other	the release can wait until we know more	he said the vendor can deliver the hardware in six weeks
+other	the release can wait until we know more	that's a good point and we should write it down
+other	the release can wait until we know more	the security audit found three small issues and one large one
+other	the release can wait until we know more	let's take a five minute break and come back at ten
+other	hold on my dog is barking	we should ship the release on friday if the tests pass
+other	hold on my dog is barking	can everyone see my screen right now
+other	hold on my dog is barking	the budget numbers came in lower than we expected this quarter
+other	hold on my dog is barking	let's move the design review to next tuesday afternoon
+other	hold on my dog is barking	i talked to the customer and they want the export feature first
+other	hold on my dog is barking	does anyone have questions about the migration plan
+other	hold on my dog is barking	the server went down twice last night because of the disk
+other	hold on my dog is barking	sarah will send the notes after this meeting ends
+other	hold on my dog is barking	we need two more people on the mobile team by march
+other	hold on my dog is barking	i think the new onboarding flow is much easier to follow
+other	hold on my dog is barking	please update the ticket when you finish the first draft
+other	hold on my dog is barking	the contract has to be signed before the end of the month
+other	hold on my dog is barking	yes
+other	hold on my dog is barking	okay sounds good
+other	hold on my dog is barking	thanks everyone
+other	hold on my dog is barking	can you hear me
+other	hold on my dog is barking	i'm sorry i was on mute
+other	hold on my dog is barking	the latency is about two hundred milliseconds on the new model
+other	hold on my dog is barking	our users in germany asked for a translated help page
+other	hold on my dog is barking	we can talk about pricing at the next call
+other	hold on my dog is barking	could you share the link to that document in the chat
+other	hold on my dog is barking	the marketing team wants a short video for the launch
+other	hold on my dog is barking	i don't think that estimate includes the testing work
+other	hold on my dog is barking	the first quarter was strong but the second one looks weak
+other	hold on my dog is barking	let me pull up the dashboard and walk through the graph
+other	hold on my dog is barking	we lost about ten percent of the traffic after the redesign
+other	hold on my dog is barking	he said the vendor can deliver the hardware in six weeks
+other	hold on my dog is barking	that's a good point and we should write it down
+other	hold on my dog is barking	the security audit found three small issues and one large one
+other	hold on my dog is barking	let's take a five minute break and come back at ten
+other	we should talk to sarah about the notes	we should ship the release on friday if the tests pass
+other	we should talk to sarah about the notes	can everyone see my screen right now
+other	we should talk to sarah about the notes	the budget numbers came in lower than we expected this quarter
+other	we should talk to sarah about the notes	let's move the design review to next tuesday afternoon
+other	we should talk to sarah about the notes	i talked to the customer and they want the export feature first
+other	we should talk to sarah about the notes	does anyone have questions about the migration plan
+other	we should talk to sarah about the notes	the server went down twice last night because of the disk
+other	we should talk to sarah about the notes	sarah will send the notes after this meeting ends
+other	we should talk to sarah about the notes	we need two more people on the mobile team by march
+other	we should talk to sarah about the notes	i think the new onboarding flow is much easier to follow
+other	we should talk to sarah about the notes	please update the ticket when you finish the first draft
+other	we should talk to sarah about the notes	the contract has to be signed before the end of the month
+other	we should talk to sarah about the notes	yes
+other	we should talk to sarah about the notes	okay sounds good
+other	we should talk to sarah about the notes	thanks everyone
+other	we should talk to sarah about the notes	can you hear me
+other	we should talk to sarah about the notes	i'm sorry i was on mute
+other	we should talk to sarah about the notes	the latency is about two hundred milliseconds on the new model
+other	we should talk to sarah about the notes	our users in germany asked for a translated help page
+other	we should talk to sarah about the notes	we can talk about pricing at the next call
+other	we should talk to sarah about the notes	could you share the link to that document in the chat
+other	we should talk to sarah about the notes	the marketing team wants a short video for the launch
+other	we should talk to sarah about the notes	i don't think that estimate includes the testing work
+other	we should talk to sarah about the notes	the first quarter was strong but the second one looks weak
+other	we should talk to sarah about the notes	let me pull up the dashboard and walk through the graph
+other	we should talk to sarah about the notes	we lost about ten percent of the traffic after the redesign
+other	we should talk to sarah about the notes	he said the vendor can deliver the hardware in six weeks
+other	we should talk to sarah about the notes	that's a good point and we should write it down
+other	we should talk to sarah about the notes	the security audit found three small issues and one large one
+other	we should talk to sarah about the notes	let's take a five minute break and come back at ten
+other	can you repeat the last part of that please	we should ship the release on friday if the tests pass
+other	can you repeat the last part of that please	can everyone see my screen right now
+other	can you repeat the last part of that please	the budget numbers came in lower than we expected this quarter
+other	can you repeat the last part of that please	let's move the design review to next tuesday afternoon
+other	can you repeat the last part of that please	i talked to the customer and they want the export feature first
+other	can you repeat the last part of that please	does anyone have questions about the migration plan
+other	can you repeat the last part of that please	the server went down twice last night because of the disk
+other	can you repeat the last part of that please	sarah will send the notes after this meeting ends
+other	can you repeat the last part of that please	we need two more people on the mobile team by march
+other	can you repeat the last part of that please	i think the new onboarding flow is much easier to follow
+other	can you repeat the last part of that please	please update the ticket when you finish the first draft
+other	can you repeat the last part of that please	the contract has to be signed before the end of the month
+other	can you repeat the last part of that please	yes
+other	can you repeat the last part of that please	okay sounds good
+other	can you repeat the last part of that please	thanks everyone
+other	can you repeat the last part of that please	can you hear me
+other	can you repeat the last part of that please	i'm sorry i was on mute
+other	can you repeat the last part of that please	the latency is about two hundred milliseconds on the new model
+other	can you repeat the last part of that please	our users in germany asked for a translated help page
+other	can you repeat the last part of that please	we can talk about pricing at the next call
+other	can you repeat the last part of that please	could you share the link to that document in the chat
+other	can you repeat the last part of that please	the marketing team wants a short video for the launch
+other	can you repeat the last part of that please	i don't think that estimate includes the testing work
+other	can you repeat the last part of that please	the first quarter was strong but the second one looks weak
+other	can you repeat the last part of that please	let me pull up the dashboard and walk through the graph
+other	can you repeat the last part of that please	we lost about ten percent of the traffic after the redesign
+other	can you repeat the last part of that please	he said the vendor can deliver the hardware in six weeks
+other	can you repeat the last part of that please	that's a good point and we should write it down
+other	can you repeat the last part of that please	the security audit found three small issues and one large one
+other	can you repeat the last part of that please	let's take a five minute break and come back at ten
+other	i was going to say the same thing	we should ship the release on friday if the tests pass
+other	i was going to say the same thing	can everyone see my screen right now
+other	i was going to say the same thing	the budget numbers came in lower than we expected this quarter
+other	i was going to say the same thing	let's move the design review to next tuesday afternoon
+other	i was going to say the same thing	i talked to the customer and they want the export feature first
+other	i was going to say the same thing	does anyone have questions about the migration plan
+other	i was going to say the same thing	the server went down twice last night because of the disk
+other	i was going to say the same thing	sarah will send the notes after this meeting ends
+other	i was going to say the same thing	we need two more people on the mobile team by march
+other	i was going to say the same thing	i think the new onboarding flow is much easier to follow
+other	i was going to say the same thing	please update the ticket when you finish the first draft
+other	i was going to say the same thing	the contract has to be signed before the end of the month
+other	i was going to say the same thing	yes
+other	i was going to say the same thing	okay sounds good
+other	i was going to say the same thing	thanks everyone
+other	i was going to say the same thing	can you hear me
+other	i was going to say the same thing	i'm sorry i was on mute
+other	i was going to say the same thing	the latency is about two hundred milliseconds on the new model
+other	i was going to say the same thing	our users in germany asked for a translated help page
+other	i was going to say the same thing	we can talk about pricing at the next call
+other	i was going to say the same thing	could you share the link to that document in the chat
+other	i was going to say the same thing	the marketing team wants a short video for the launch
+other	i was going to say the same thing	i don't think that estimate includes the testing work
+other	i was going to say the same thing	the first quarter was strong but the second one looks weak
+other	i was going to say the same thing	let me pull up the dashboard and walk through the graph
+other	i was going to say the same thing	we lost about ten percent of the traffic after the redesign
+other	i was going to say the same thing	he said the vendor can deliver the hardware in six weeks
+other	i was going to say the same thing	that's a good point and we should write it down
+other	i was going to say the same thing	the security audit found three small issues and one large one
+other	i was going to say the same thing	let's take a five minute break and come back at ten
+other	it depends on how much testing we need to do	we should ship the release on friday if the tests pass
+other	it depends on how much testing we need to do	can everyone see my screen right now
+other	it depends on how much testing we need to do	the budget numbers came in lower than we expected this quarter
+other	it depends on how much testing we need to do	let's move the design review to next tuesday afternoon
+other	it depends on how much testing we need to do	i talked to the customer and they want the export feature first
+other	it depends on how much testing we need to do	does anyone have questions about the migration plan
+other	it depends on how much testing we need to do	the server went down twice last night because of the disk
+other	it depends on how much testing we need to do	sarah will send the notes after this meeting ends
+other	it depends on how much testing we need to do	we need two more people on the mobile team by march
+other	it depends on how much testing we need to do	i think the new onboarding flow is much easier to follow
+other	it depends on how much testing we need to do	please update the ticket when you finish the first draft
+other	it depends on how much testing we need to do	the contract has to be signed before the end of the month
+other	it depends on how much testing we need to do	yes
+other	it depends on how much testing we need to do	okay sounds good
+other	it depends on how much testing we need to do	thanks everyone
+other	it depends on how much testing we need to do	can you hear me
+other	it depends on how much testing we need to do	i'm sorry i was on mute
+other	it depends on how much testing we need to do	the latency is about two hundred milliseconds on the new model
+other	it depends on how much testing we need to do	our users in germany asked for a translated help page
+other	it depends on how much testing we need to do	we can talk about pricing at the next call
+other	it depends on how much testing we need to do	could you share the link to that document in the chat
+other	it depends on how much testing we need to do	the marketing team wants a short video for the launch
+other	it depends on how much testing we need to do	i don't think that estimate includes the testing work
+other	it depends on how much testing we need to do	the first quarter was strong but the second one looks weak
+other	it depends on how much testing we need to do	let me pull up the dashboard and walk through the graph
+other	it depends on how much testing we need to do	we lost about ten percent of the traffic after the redesign
+other	it depends on how much testing we need to do	he said the vendor can deliver the hardware in six weeks
+other	it depends on how much testing we need to do	that's a good point and we should write it down
+other	it depends on how much testing we need to do	the security audit found three small issues and one large one
+other	it depends on how much testing we need to do	let's take a five minute break and come back at ten
+other	i wrote the first draft yesterday and it needs work	we should ship the release on friday if the tests pass
+other	i wrote the first draft yesterday and it needs work	can everyone see my screen right now
+other	i wrote the first draft yesterday and it needs work	the budget numbers came in lower than we expected this quarter
+other	i wrote the first draft yesterday and it needs work	let's move the design review to next tuesday afternoon
+other	i wrote the first draft yesterday and it needs work	i talked to the customer and they want the export feature first
+other	i wrote the first draft yesterday and it needs work	does anyone have questions about the migration plan
+other	i wrote the first draft yesterday and it needs work	the server went down twice last night because of the disk
+other	i wrote the first draft yesterday and it needs work	sarah will send the notes after this meeting ends
+other	i wrote the first draft yesterday and it needs work	we need two more people on the mobile team by march
+other	i wrote the first draft yesterday and it needs work	i think the new onboarding flow is much easier to follow
+other	i wrote the first draft yesterday and it needs work	please update the ticket when you finish the first draft
+other	i wrote the first draft yesterday and it needs work	the contract has to be signed before the end of the month
+other	i wrote the first draft yesterday and it needs work	yes
+other	i wrote the first draft yesterday and it needs work	okay sounds good
+other	i wrote the first draft yesterday and it needs work	thanks everyone
+other	i wrote the first draft yesterday and it needs work	can you hear me
+other	i wrote the first draft yesterday and it needs work	i'm sorry i was on mute
+other	i wrote the first draft yesterday and it needs work	the latency is about two hundred milliseconds on the new model
+other	i wrote the first draft yesterday and it needs work	our users in germany asked for a translated help page
+other	i wrote the first draft yesterday and it needs work	we can talk about pricing at the next call
+other	i wrote the first draft yesterday and it needs work	could you share the link to that document in the chat
+other	i wrote the first draft yesterday and it needs work	the marketing team wants a short video for the launch
+other	i wrote the first draft yesterday and it needs work	i don't think that estimate includes the testing work
+other	i wrote the first draft yesterday and it needs work	the first quarter was strong but the second one looks weak
+other	i wrote the first draft yesterday and it needs work	let me pull up the dashboard and walk through the graph
+other	i wrote the first draft yesterday and it needs work	we lost about ten percent of the traffic after the redesign
+other	i wrote the first draft yesterday and it needs work	he said the vendor can deliver the hardware in six weeks
+other	i wrote the first draft yesterday and it needs work	that's a good point and we should write it down
+other	i wrote the first draft yesterday and it needs work	the security audit found three small issues and one large one
+other	i wrote the first draft yesterday and it needs work	let's take a five minute break and come back at ten
+other	give me one second to find the link	we should ship the release on friday if the tests pass
+other	give me one second to find the link	can everyone see my screen right now
+other	give me one second to find the link	the budget numbers came in lower than we expected this quarter
+other	give me one second to find the link	let's move the design review to next tuesday afternoon
+other	give me one second to find the link	i talked to the customer and they want the export feature first
+other	give me one second to find the link	does anyone have questions about the migration plan
+other	give me one second to find the link	the server went down twice last night because of the disk
+other	give me one second to find the link	sarah will send the notes after this meeting ends
+other	give me one second to find the link	we need two more people on the mobile team by march
+other	give me one second to find the link	i think the new onboarding flow is much easier to follow
+other	give me one second to find the link	please update the ticket when you finish the first draft
+other	give me one second to find the link	the contract has to be signed before the end of the month
+other	give me one second to find the link	yes
+other	give me one second to find the link	okay sounds good
+other	give me one second to find the link	thanks everyone
+other	give me one second to find the link	can you hear me
+other	give me one second to find the link	i'm sorry i was on mute
+other	give me one second to find the link	the latency is about two hundred milliseconds on the new model
+other	give me one second to find the link	our users in germany asked for a translated help page
+other	give me one second to find the link	we can talk about pricing at the next call
+other	give me one second to find the link	could you share the link to that document in the chat
+other	give me one second to find the link	the marketing team wants a short video for the launch
+other	give me one second to find the link	i don't think that estimate includes the testing work
+other	give me one second to find the link	the first quarter was strong but the second one looks weak
+other	give me one second to find the link	let me pull up the dashboard and walk through the graph
+other	give me one second to find the link	we lost about ten percent of the traffic after the redesign
+other	give me one second to find the link	he said the vendor can deliver the hardware in six weeks
+other	give me one second to find the link	that's a good point and we should write it down
+other	give me one second to find the link	the security audit found three small issues and one large one
+other	give me one second to find the link	let's take a five minute break and come back at ten
+other	that's what i said in the last call too	we should ship the release on friday if the tests pass
+other	that's what i said in the last call too	can everyone see my screen right now
+other	that's what i said in the last call too	the budget numbers came in lower than we expected this quarter
+other	that's what i said in the last call too	let's move the design review to next tuesday afternoon
+other	that's what i said in the last call too	i talked to the customer and they want the export feature first
+other	that's what i said in the last call too	does anyone have questions about the migration plan
+other	that's what i said in the last call too	the server went down twice last night because of the disk
+other	that's what i said in the last call too	sarah will send the notes after this meeting ends
+other	that's what i said in the last call too	we need two more people on the mobile team by march
+other	that's what i said in the last call too	i think the new onboarding flow is much easier to follow
+other	that's what i said in the last call too	please update the ticket when you finish the first draft
+other	that's what i said in the last call too	the contract has to be signed before the end of the month
+other	that's what i said in the last call too	yes
+other	that's what i said in the last call too	okay sounds good
+other	that's what i said in the last call too	thanks everyone
+other	that's what i said in the last call too	can you hear me
+other	that's what i said in the last call too	i'm sorry i was on mute
+other	that's what i said in the last call too	the latency is about two hundred milliseconds on the new model
+other	that's what i said in the last call too	our users in germany asked for a translated help page
+other	that's what i said in the last call too	we can talk about pricing at the next call
+other	that's what i said in the last call too	could you share the link to that document in the chat
+other	that's what i said in the last call too	the marketing team wants a short video for the launch
+other	that's what i said in the last call too	i don't think that estimate includes the testing work
+other	that's what i said in the last call too	the first quarter was strong but the second one looks weak
+other	that's what i said in the last call too	let me pull up the dashboard and walk through the graph
+other	that's what i said in the last call too	we lost about ten percent of the traffic after the redesign
+other	that's what i said in the last call too	he said the vendor can deliver the hardware in six weeks
+other	that's what i said in the last call too	that's a good point and we should write it down
+other	that's what i said in the last call too	the security audit found three small issues and one large one
+other	that's what i said in the last call too	let's take a five minute break and come back at ten
+other	i'm going to mute myself for a moment	we should ship the release on friday if the tests pass
+other	i'm going to mute myself for a moment	can everyone see my screen right now
+other	i'm going to mute myself for a moment	the budget numbers came in lower than we expected this quarter
+other	i'm going to mute myself for a moment	let's move the design review to next tuesday afternoon
+other	i'm going to mute myself for a moment	i talked to the customer and they want the export feature first
+other	i'm going to mute myself for a moment	does anyone have questions about the migration plan
+other	i'm going to mute myself for a moment	the server went down twice last night because of the disk
+other	i'm going to mute myself for a moment	sarah will send the notes after this meeting ends
+other	i'm going to mute myself for a moment	we need two more people on the mobile team by march
+other	i'm going to mute myself for a moment	i think the new onboarding flow is much easier to follow
+other	i'm going to mute myself for a moment	please update the ticket when you finish the first draft
+other	i'm going to mute myself for a moment	the contract has to be signed before the end of the month
+other	i'm going to mute myself for a moment	yes
+other	i'm going to mute myself for a moment	okay sounds good
+other	i'm going to mute myself for a moment	thanks everyone
+other	i'm going to mute myself for a moment	can you hear me
+other	i'm going to mute myself for a moment	i'm sorry i was on mute
+other	i'm going to mute myself for a moment	the latency is about two hundred milliseconds on the new model
+other	i'm going to mute myself for a moment	our users in germany asked for a translated help page
+other	i'm going to mute myself for a moment	we can talk about pricing at the next call
+other	i'm going to mute myself for a moment	could you share the link to that document in the chat
+other	i'm going to mute myself for a moment	the marketing team wants a short video for the launch
+other	i'm going to mute myself for a moment	i don't think that estimate includes the testing work
+other	i'm going to mute myself for a moment	the first quarter was strong but the second one looks weak
+other	i'm going to mute myself for a moment	let me pull up the dashboard and walk through the graph
+other	i'm going to mute myself for a moment	we lost about ten percent of the traffic after the redesign
+other	i'm going to mute myself for a moment	he said the vendor can deliver the hardware in six weeks
+other	i'm going to mute myself for a moment	that's a good point and we should write it down
+other	i'm going to mute myself for a moment	the security audit found three small issues and one large one
+other	i'm going to mute myself for a moment	let's take a five minute break and come back at ten
+other	we can do that but not this month	we should ship the release on friday if the tests pass
+other	we can do that but not this month	can everyone see my screen right now
+other	we can do that but not this month	the budget numbers came in lower than we expected this quarter
+other	we can do that but not this month	let's move the design review to next tuesday afternoon
+other	we can do that but not this month	i talked to the customer and they want the export feature first
+other	we can do that but not this month	does anyone have questions about the migration plan
+other	we can do that but not this month	the server went down twice last night because of the disk
+other	we can do that but not this month	sarah will send the notes after this meeting ends
+other	we can do that but not this month	we need two more people on the mobile team by march
+other	we can do that but not this month	i think the new onboarding flow is much easier to follow
+other	we can do that but not this month	please update the ticket when you finish the first draft
+other	we can do that but not this month	the contract has to be signed before the end of the month
+other	we can do that but not this month	yes
+other	we can do that but not this month	okay sounds good
+other	we can do that but not this month	thanks everyone
+other	we can do that but not this month	can you hear me
+other	we can do that but not this month	i'm sorry i was on mute
+other	we can do that but not this month	the latency is about two hundred milliseconds on the new model
+other	we can do that but not this month	our users in germany asked for a translated help page
+other	we can do that but not this month	we can talk about pricing at the next call
+other	we can do that but not this month	could you share the link to that document in the chat
+other	we can do that but not this month	the marketing team wants a short video for the launch
+other	we can do that but not this month	i don't think that estimate includes the testing work
+other	we can do that but not this month	the first quarter was strong but the second one looks weak
+other	we can do that but not this month	let me pull up the dashboard and walk through the graph
+other	we can do that but not this month	we lost about ten percent of the traffic after the redesign
+other	we can do that but not this month	he said the vendor can deliver the hardware in six weeks
+other	we can do that but not this month	that's a good point and we should write it down
+other	we can do that but not this month	the security audit found three small issues and one large one
+other	we can do that but not this month	let's take a five minute break and come back at ten
+other	the team in germany told me something else	we should ship the release on friday if the tests pass
+other	the team in germany told me something else	can everyone see my screen right now
+other	the team in germany told me something else	the budget numbers came in lower than we expected this quarter
+other	the team in germany told me something else	let's move the design review to next tuesday afternoon
+other	the team in germany told me something else	i talked to the customer and they want the export feature first
+other	the team in germany told me something else	does anyone have questions about the migration plan
+other	the team in germany told me something else	the server went down twice last night because of the disk
+other	the team in germany told me something else	sarah will send the notes after this meeting ends
+other	the team in germany told me something else	we need two more people on the mobile team by march
+other	the team in germany told me something else	i think the new onboarding flow is much easier to follow
+other	the team in germany told me something else	please update the ticket when you finish the first draft
+other	the team in germany told me something else	the contract has to be signed before the end of the month
+other	the team in germany told me something else	yes
+other	the team in germany told me something else	okay sounds good
+other	the team in germany told me something else	thanks everyone
+other	the team in germany told me something else	can you hear me
+other	the team in germany told me something else	i'm sorry i was on mute
+other	the team in germany told me something else	the latency is about two hundred milliseconds on the new model
+other	the team in germany told me something else	our users in germany asked for a translated help page
+other	the team in germany told me something else	we can talk about pricing at the next call
+other	the team in germany told me something else	could you share the link to that document in the chat
+other	the team in germany told me something else	the marketing team wants a short video for the launch
+other	the team in germany told me something else	i don't think that estimate includes the testing work
+other	the team in germany told me something else	the first quarter was strong but the second one looks weak
+other	the team in germany told me something else	let me pull up the dashboard and walk through the graph
+other	the team in germany told me something else	we lost about ten percent of the traffic after the redesign
+other	the team in germany told me something else	he said the vendor can deliver the hardware in six weeks
+other	the team in germany told me something else	that's a good point and we should write it down
+other	the team in germany told me something else	the security audit found three small issues and one large one
+other	the team in germany told me something else	let's take a five minute break and come back at ten
+other	ten percent sounds high to me	we should ship the release on friday if the tests pass
+other	ten percent sounds high to me	can everyone see my screen right now
+other	ten percent sounds high to me	the budget numbers came in lower than we expected this quarter
+other	ten percent sounds high to me	let's move the design review to next tuesday afternoon
+other	ten percent sounds high to me	i talked to the customer and they want the export feature first
+other	ten percent sounds high to me	does anyone have questions about the migration plan
+other	ten percent sounds high to me	the server went down twice last night because of the disk
+other	ten percent sounds high to me	sarah will send the notes after this meeting ends
+other	ten percent sounds high to me	we need two more people on the mobile team by march
+other	ten percent sounds high to me	i think the new onboarding flow is much easier to follow
+other	ten percent sounds high to me	please update the ticket when you finish the first draft
+other	ten percent sounds high to me	the contract has to be signed before the end of the month
+other	ten percent sounds high to me	yes
+other	ten percent sounds high to me	okay sounds good
+other	ten percent sounds high to me	thanks everyone
+other	ten percent sounds high to me	can you hear me
+other	ten percent sounds high to me	i'm sorry i was on mute
+other	ten percent sounds high to me	the latency is about two hundred milliseconds on the new model
+other	ten percent sounds high to me	our users in germany asked for a translated help page
+other	ten percent sounds high to me	we can talk about pricing at the next call
+other	ten percent sounds high to me	could you share the link to that document in the chat
+other	ten percent sounds high to me	the marketing team wants a short video for the launch
+other	ten percent sounds high to me	i don't think that estimate includes the testing work
+other	ten percent sounds high to me	the first quarter was strong but the second one looks weak
+other	ten percent sounds high to me	let me pull up the dashboard and walk through the graph
+other	ten percent sounds high to me	we lost about ten percent of the traffic after the redesign
+other	ten percent sounds high to me	he said the vendor can deliver the hardware in six weeks
+other	ten percent sounds high to me	that's a good point and we should write it down
+other	ten percent sounds high to me	the security audit found three small issues and one large one
+other	ten percent sounds high to me	let's take a five minute break and come back at ten
