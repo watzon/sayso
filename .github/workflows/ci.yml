@@ -47,6 +47,9 @@ jobs:
       # The translated system files must match the system catalogs.
       - name: Check the translated system files
         run: python3 scripts/i18n-system-files.py --check
+      # The Rust code in docs/sdk-guide must be the code of the examples that CI compiles.
+      - name: Check the code of the SDK guide
+        run: python3 scripts/check-sdk-guide.py
 
   test:
     name: Tests and clippy (manual)
