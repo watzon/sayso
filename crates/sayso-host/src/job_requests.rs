@@ -1,4 +1,4 @@
-//! `transcribe_file` and `cancel_job` (`docs/extensions.md`, "Requests").
+//! `transcribe_file` and `cancel_job` (`docs/apps.md`, "Requests").
 //!
 //! Both answer on the reader thread: the checks read the settings and the
 //! state of the engine, and do not wait. The job then runs on the thread of
@@ -34,6 +34,8 @@ pub(crate) fn transcribe_file(shared: &Shared, connection: u64, owned: &Mutex<Ha
     // the host, the dropped responder replies with an error.
     if let Some(id) = queue.submit(connection, job, sink, move |job| responder.reply(Reply::ok_with(&JobReply { job }))) {
         owned.lock().insert(id);
+        // The user can have taken the grant back during the checks.
+        shared.stop_work_without_grant();
     }
 }
 

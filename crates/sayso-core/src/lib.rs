@@ -12,7 +12,6 @@ pub mod dictation;
 pub mod dictionary;
 pub mod engine_catalog;
 pub mod enhance;
-pub mod extensions;
 pub mod flatpak;
 pub mod history;
 pub mod hotkey;

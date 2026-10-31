@@ -150,9 +150,9 @@ models:
     use_preview: "%{name} für die Live-Vorschau nutzen"
   roles:
     vad_title: "Sprachaktivität"
-    vad_note: "Findet die Sprache in langen Aufnahmen für deine Erweiterungen. Das Diktat nutzt sie nicht."
+    vad_note: "Findet die Sprache in langen Aufnahmen für deine verbundenen Apps. Das Diktat nutzt sie nicht."
     speakers_title: "Sprecher"
-    speakers_note: "Findet, wer wann in einer Aufnahme spricht, für deine Erweiterungen."
+    speakers_note: "Findet, wer wann in einer Aufnahme spricht, für deine verbundenen Apps."
     automatic_uses: "Nutzt jetzt %{name}"
     automatic_none: "Kein Sprechermodell ist geladen. Lade unten eines herunter."
     basic: "Einfach"

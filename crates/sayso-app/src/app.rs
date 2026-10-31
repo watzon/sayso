@@ -73,7 +73,7 @@ pub fn run() {
 
         apply_language(&loaded.config);
         let services = start_services(&paths, &loaded.config, updates);
-        // Extensions connect from now on. When Sayso quits, each one gets `host_closing`.
+        // Apps connect from now on. When Sayso quits, each one gets `host_closing`.
         // The OS can end Sayso (log out, shut down) without the quit question:
         // `host_closing` still goes out.
         let started = crate::host::start(&paths, &services);
@@ -85,9 +85,9 @@ pub fn run() {
             })
             .detach();
         }
-        let (host, questions, host_jobs) = match started {
-            Some(s) => (Some(s.host), Some(s.questions), Some(s.jobs)),
-            None => (None, None, None),
+        let (host, questions, approvals, host_jobs) = match started {
+            Some(s) => (Some(s.host), Some(s.questions), Some(s.approvals), Some(s.jobs)),
+            None => (None, None, None, None),
         };
         apply_theme(&loaded.config, &services, cx);
         cx.set_global(Windows::default());
@@ -99,11 +99,27 @@ pub fn run() {
             let mut model = AppModel::new(p, config, issues, services, cx);
             model.host_jobs = host_jobs;
             model.host = host.clone();
+            if let Some(host) = &host {
+                // One value for the host and for Settings.
+                model.apps_file = host.apps();
+            }
             model
         });
-        // A live session or a job of an extension starts or ends: the update
-        // that waits for it, and the views of the model.
+        // A live session or a job of an app starts or ends: the update that
+        // waits for it, and the views of the model.
         if let Some(host) = &host {
+            let (changed, changes) = async_channel::bounded::<()>(1);
+            host.apps().set_observer(Arc::new(move || {
+                let _ = changed.try_send(());
+            }));
+            let m = model.clone();
+            cx.spawn(async move |cx| {
+                while changes.recv().await.is_ok() {
+                    cx.update(|cx| m.update(cx, |m, cx| m.apps_changed(cx)));
+                }
+            })
+            .detach();
+
             let (changed, changes) = async_channel::bounded::<()>(1);
             host.set_holds_observer(Arc::new(move || {
                 let _ = changed.try_send(());
@@ -127,9 +143,15 @@ pub fn run() {
         })
         .detach();
 
-        // The questions of extensions come from threads of the host, and show as windows.
+        // The questions of apps come from threads of the host, and show as windows.
         if let Some(questions) = questions {
             crate::download_ask::listen(&model, questions, cx);
+        }
+        if let Some(approvals) = approvals {
+            crate::approval_ask::listen(&model, approvals, cx);
+        }
+        if crate::dev::arg("ask-approval").is_some() || crate::dev::flag("ask-approval") {
+            crate::approval_ask::open_sample(&model, cx);
         }
         if crate::dev::flag("ask-download") {
             crate::download_ask::open_sample(&model, cx);

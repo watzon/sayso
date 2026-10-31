@@ -3,6 +3,7 @@
 mod advanced;
 mod appearance;
 mod audio;
+mod connected_apps;
 mod dictation;
 pub mod ext;
 pub(crate) mod general;
@@ -27,6 +28,7 @@ pub struct SettingsView {
     appearance: Entity<appearance::AppearanceSettings>,
     history: Entity<history_privacy::HistorySettings>,
     permissions: Entity<permissions::PermissionSettings>,
+    connected_apps: Entity<connected_apps::ConnectedAppsSettings>,
     advanced: Entity<advanced::AdvancedSettings>,
     _observe: Subscription,
 }
@@ -43,6 +45,7 @@ impl SettingsView {
             appearance: cx.new(|cx| appearance::AppearanceSettings::new(model.clone(), window, cx)),
             history: cx.new(|cx| history_privacy::HistorySettings::new(model.clone(), window, cx)),
             permissions: cx.new(|cx| permissions::PermissionSettings::new(model.clone(), window, cx)),
+            connected_apps: cx.new(|cx| connected_apps::ConnectedAppsSettings::new(model.clone(), window, cx)),
             advanced: cx.new(|cx| advanced::AdvancedSettings::new(model.clone(), window, cx)),
             model,
             _observe: observe,
@@ -62,6 +65,7 @@ impl Render for SettingsView {
             SettingsPage::Appearance => self.appearance.clone().into_any_element(),
             SettingsPage::HistoryPrivacy => self.history.clone().into_any_element(),
             SettingsPage::Permissions => self.permissions.clone().into_any_element(),
+            SettingsPage::ConnectedApps => self.connected_apps.clone().into_any_element(),
             SettingsPage::Advanced => self.advanced.clone().into_any_element(),
         }
     }

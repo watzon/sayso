@@ -23,7 +23,7 @@ mod tests;
 pub use model_use::{ModelHold, ModelUse};
 pub use resolve::{EngineView, Refusal, SaysoModels, UserChoices, resolve};
 pub use sayso_speech::EventSink;
-pub use sayso_speech::jobs::{CANCELLED, DictationGate, JobQueue, JobRun, JobSpec, LivePart, RunJob, STALE_AFTER, TRANSCRIPTION_SHARE, VadRun, audio, plan, speakers};
+pub use sayso_speech::jobs::{CANCELLED, DictationGate, GRANT_GONE, JobQueue, JobRun, JobSpec, LivePart, RunJob, STALE_AFTER, TRANSCRIPTION_SHARE, VadRun, audio, plan, speakers};
 
 use crate::backend::BackendEngine;
 use sayso_platform::SttBackend;

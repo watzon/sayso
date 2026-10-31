@@ -5,21 +5,21 @@
 //! cargo run -p sayso-extension --example sayso-ext -- hello
 //! ```
 //!
-//! Sayso accepts a program only when it is an installed extension: a record
-//! in `state.toml` must have the folder of this program (`target/debug/examples`)
-//! and the capabilities of the commands (`docs/extensions.md`, "Code").
+//! The program can run from any folder. At the first connection, Sayso asks
+//! the user whether this program may use it (`docs/sdk.md`, "The question"),
+//! and this program waits for the answer.
 //!
 //! Each message from Sayso is one JSON line on stdout, as it is on the
 //! socket: the events of a request, then its reply. A reply `error` ends the
 //! program with the exit code 1. Wrong arguments end it with 2.
 
 use sayso_extension::protocol::{self, Event as HostEvent, Reply as WireReply, pcm};
-use sayso_extension::{Client, Error, Event, Fields, Reply};
+use sayso_extension::{AppHello, Client, Error, Event, Fields, Reply};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-const USAGE: &str = "usage: sayso-ext [--start] <command> [options]
+const USAGE: &str = "usage: sayso-ext [--start] [--app-name N] [--capability C]... <command> [options]
 
 Commands:
   hello
@@ -33,20 +33,29 @@ Commands:
 
 Session options: --model M, --preview-model M, --vad-model M, --language L, --diarize, --record-to <folder>.
 --speed 1 sends the file in real time (the default), 4 sends it four times faster, and 0 as fast as possible.
---start starts Sayso when it does not run, and waits up to 10 s for it.";
+--start starts Sayso when it does not run, and waits up to 10 s for it.
+--app-name gives the name that the app claims in hello. --capability asks for a capability in hello.";
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let start = take_flag(&mut args, "--start");
+    let mut app = AppHello::default();
+    while let Some(name) = take_value(&mut args, "--app-name") {
+        app.name = Some(name);
+    }
+    while let Some(capability) = take_value(&mut args, "--capability") {
+        app.capabilities.push(protocol::Capability::parse(&capability));
+    }
     if args.is_empty() || args[0] == "--help" || args[0] == "-h" {
         println!("{USAGE}");
         return;
     }
     let command = args.remove(0);
-    let connected = if start { Client::connect_or_start() } else { Client::connect() };
+    let connected = protocol::socket::host_socket_path().map_err(Error::from).and_then(|socket| if start { Client::connect_or_start_as(&socket, &app, sayso_extension::START_WAIT, sayso_extension::start_sayso) } else { Client::connect_as(&socket, &app) });
     let client = match connected {
         Ok(client) => client,
-        Err(e) => fail(&e),
+        // No reply of a command is on stdout yet.
+        Err(e) => fail_with(&e.to_string()),
     };
     let result = match command.as_str() {
         "hello" => {

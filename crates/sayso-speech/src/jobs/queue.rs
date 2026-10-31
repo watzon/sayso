@@ -8,13 +8,15 @@
 //! A job ends with one event: `job_done` or `job_failed`. A cancelled job
 //! gets `job_failed` with the message [`CANCELLED`] at once, and no event
 //! after it. A running job stops its work after the engine call that runs.
+//! A job of an app that lost its grant ends the same way, with [`GRANT_GONE`]
+//! and the code `capability`.
 
 use super::JobSpec;
 use super::gate::Gate;
 use super::plan::Stopped;
 use crate::EventSink;
 use parking_lot::{Condvar, Mutex};
-use sayso_protocol::Event;
+use sayso_protocol::{ErrorCode, Event};
 use std::collections::VecDeque;
 use std::io;
 use std::sync::Arc;
@@ -23,6 +25,25 @@ use std::thread::JoinHandle;
 
 /// The message of `job_failed` for a cancelled job.
 pub const CANCELLED: &str = "The job was cancelled.";
+
+/// The message of `job_failed` for a job of an app that lost its grant.
+pub const GRANT_GONE: &str = "The user took back the grant for this job.";
+
+/// How a job that stops early ends.
+#[derive(Clone, Copy)]
+enum Ending {
+    Cancelled,
+    GrantGone,
+}
+
+impl Ending {
+    fn event(self, job: u64) -> Event {
+        match self {
+            Ending::Cancelled => Event::JobFailed { job, message: CANCELLED.into(), code: None },
+            Ending::GrantGone => Event::JobFailed { job, message: GRANT_GONE.into(), code: Some(ErrorCode::Capability) },
+        }
+    }
+}
 
 /// Runs one job and sends its events, the last one `job_done` or `job_failed`.
 pub trait RunJob: Send + Sync {
@@ -60,11 +81,11 @@ impl Events {
     }
 
     /// Cancel: `job_failed` now. False when the job was already cancelled.
-    fn cancel(&self, job: u64) -> bool {
+    fn cancel(&self, job: u64, ending: Ending) -> bool {
         if self.cancel.swap(true, Ordering::SeqCst) {
             return false;
         }
-        self.send(Event::JobFailed { job, message: CANCELLED.into(), code: None });
+        self.send(ending.event(job));
         true
     }
 }
@@ -191,12 +212,18 @@ impl JobQueue {
     /// a running job stops its work after its engine call. False when `connection` has
     /// no such job (it ended, it is not its job, or it is already cancelled).
     pub fn cancel(&self, connection: u64, job: u64) -> bool {
-        self.cancel_where(|id, c| c == connection && id == job) > 0
+        self.cancel_where(Ending::Cancelled, |id, c| c == connection && id == job) > 0
     }
 
     /// Cancel every job of `connection`, for example when it closes.
     pub fn cancel_connection(&self, connection: u64) {
-        self.cancel_where(|_, c| c == connection);
+        self.cancel_where(Ending::Cancelled, |_, c| c == connection);
+    }
+
+    /// End every job of `connection`, because its app lost the grant for jobs.
+    /// Each one gets `job_failed` with the code `capability` at once.
+    pub fn grant_gone(&self, connection: u64) {
+        self.cancel_where(Ending::GrantGone, |_, c| c == connection);
     }
 
     /// True while `connection` has a job that waits or runs.
@@ -215,14 +242,14 @@ impl JobQueue {
             let mut state = self.shared.state.lock();
             state.closed = true;
         }
-        self.cancel_where(|_, _| true);
+        self.cancel_where(Ending::Cancelled, |_, _| true);
         self.shared.wake.notify_all();
         drop(self.worker.lock().take());
     }
 
     /// Cancel the jobs for which `matches(job, connection)` is true. Gives how
     /// many were cancelled now.
-    fn cancel_where(&self, matches: impl Fn(u64, u64) -> bool) -> usize {
+    fn cancel_where(&self, ending: Ending, matches: impl Fn(u64, u64) -> bool) -> usize {
         let (removed, running) = {
             let mut state = self.shared.state.lock();
             let (removed, kept): (Vec<Queued>, Vec<Queued>) =
@@ -231,13 +258,13 @@ impl JobQueue {
             let running = state.running.as_ref().filter(|r| matches(r.id, r.connection)).map(|r| (r.id, r.events.clone()));
             (removed, running)
         };
-        let running = running.is_some_and(|(id, events)| events.cancel(id));
+        let running = running.is_some_and(|(id, events)| events.cancel(id, ending));
         if running {
             // A job that waits for a dictation stops at once.
             self.shared.gate.wake();
         }
         for queued in &removed {
-            queued.sink.event(Event::JobFailed { job: queued.id, message: CANCELLED.into(), code: None });
+            queued.sink.event(ending.event(queued.id));
         }
         if !removed.is_empty() {
             self.shared.changed();

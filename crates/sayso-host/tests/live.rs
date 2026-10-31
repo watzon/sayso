@@ -48,6 +48,8 @@ struct LiveEngine {
     /// The engine refuses a stream or a VAD session when this many are open.
     max_streams: usize,
     transcriptions: AtomicUsize,
+    /// A load waits for one message here, when it is set. It says first that it runs.
+    load_gate: Mutex<Option<(Sender<()>, Receiver<()>)>>,
 }
 
 impl LiveEngine {
@@ -61,6 +63,7 @@ impl LiveEngine {
             vads: Mutex::default(),
             max_streams: 8,
             transcriptions: AtomicUsize::new(0),
+            load_gate: Mutex::default(),
         }
     }
 
@@ -125,6 +128,10 @@ impl SttBackend for LiveEngine {
         Ok(())
     }
     fn load(&self, model: &ModelId) -> Result<()> {
+        if let Some((started, release)) = self.load_gate.lock().take() {
+            let _ = started.send(());
+            let _ = release.recv();
+        }
         self.loaded.lock().insert(model.clone());
         Ok(())
     }
@@ -262,6 +269,9 @@ impl HostServices for Services {
     fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
     }
+    fn ask_approval(&self, _: &sayso_host::ApprovalQuestion, _: &dyn Fn() -> bool) -> Option<bool> {
+        None
+    }
     fn microphone(&self) -> Option<Arc<dyn Microphone>> {
         self.mic.clone().map(|mic| mic as Arc<dyn Microphone>)
     }
@@ -301,7 +311,7 @@ struct World {
 
 fn world(granted: &[&str], engine: LiveEngine) -> World {
     let setup = setup();
-    write_state(&setup.state, &here(), granted, None);
+    write_apps(&setup.apps, granted);
     let engine = Arc::new(engine);
     let mic = Arc::new(FakeMic::default());
     let mut config = Config::default();
@@ -381,7 +391,7 @@ fn a_client_session_gives_partials_segments_speakers_and_its_text() {
     let (client, events) = world.client();
     let record_to = world.setup.dir.path().join("meeting");
     let session = session_of(start(&client, json!({"sources": ["client"], "diarize": true, "record_to": record_to})));
-    let running = LiveInfo { session, extension_id: ID.into(), sources: vec![Source::Client], captures_mic: false, stopping: false };
+    let running = LiveInfo { session, app_id: id(), sources: vec![Source::Client], captures_mic: false, stopping: false };
     assert_eq!(world.host.live_session(), Some(running.clone()));
     assert_eq!(world.engine.open_streams(), 2, "a preview stream and a VAD session");
 
@@ -448,30 +458,21 @@ fn a_session_without_audio_stops_with_no_text() {
 }
 
 #[test]
-fn one_session_runs_at_a_time_across_extensions() {
+fn one_session_runs_at_a_time_across_connections() {
     let world = world(LIVE, LiveEngine::new());
     let (first, _) = world.client();
     let session = session_of(start(&first, json!({"sources": ["client"]})));
 
-    // A second extension: a deeper folder wins, so the next connection is it.
-    let other = "dev.example.other";
-    let state = format!(
-        "[[extensions]]\nid = \"{ID}\"\nversion = \"0.1.0\"\npath = '{}'\nsideloaded = true\ngranted = [\"session.live\"]\n\n[[extensions]]\nid = \"{other}\"\nversion = \"0.1.0\"\npath = '{}'\nsideloaded = true\ngranted = [\"session.live\"]\n",
-        here().parent().unwrap().display(),
-        here().display()
-    );
-    std::fs::write(&world.setup.state, state).unwrap();
     let (second, _) = world.client();
-    assert_eq!(second.hello().extension_id, other);
     let busy = refused(start(&second, json!({"sources": ["client"]})));
     assert_eq!(busy.code, Some(ErrorCode::Busy));
-    // The other extension cannot stop or feed a session that it did not start.
+    // The other connection cannot stop or feed a session that it did not start.
     assert_eq!(refused(second.request("session_stop", fields(json!({"session": session})))).code, Some(ErrorCode::BadRequest));
-    assert_eq!(world.host.live_session().map(|l| l.extension_id), Some(ID.to_string()));
+    assert_eq!(world.host.live_session().map(|l| l.app_id), Some(id()));
 
     stop(&first, session);
     let session = session_of(start(&second, json!({"sources": ["client"]})));
-    assert_eq!(world.host.live_session().map(|l| l.extension_id), Some(other.to_string()));
+    assert_eq!(world.host.live_session().map(|l| l.app_id), Some(id()));
     stop(&second, session);
 }
 
@@ -481,8 +482,10 @@ fn a_session_needs_its_capabilities() {
     let (client, _) = world.client();
     let error = refused(start(&client, json!({"sources": ["client"]})));
     assert_eq!((error.code, error.capability), (Some(ErrorCode::Capability), Some(Capability::SessionLive)));
-    let error = refused(client.request("session_stop", fields(json!({"session": 1}))));
+    let error = refused(client.request("session_audio", fields(json!({"session": 1, "pcm": ""}))));
     assert_eq!(error.capability, Some(Capability::SessionLive));
+    // An app can always stop its own session, so this needs no grant.
+    assert_eq!(refused(client.request("session_stop", fields(json!({"session": 1})))).code, Some(ErrorCode::BadRequest));
 
     let world = self::world(LIVE, LiveEngine::new());
     let (client, _) = world.client();
@@ -605,7 +608,7 @@ fn a_live_session_holds_sayso_open_until_it_ends() {
     world.host.set_live_observer(observer.clone());
     let (client, _events) = world.client();
     let session = session_of(start(&client, json!({"sources": ["mic"]})));
-    let hold = sayso_host::Hold { extension_id: ID.into(), name: ID.into(), work: sayso_host::Work::LiveSession };
+    let hold = sayso_host::Hold { app_id: id(), name: "Test".into(), work: sayso_host::Work::LiveSession };
     assert_eq!(world.host.holds(), vec![hold]);
     assert_eq!(changes.load(Ordering::SeqCst), 1);
     stop(&client, session);
@@ -618,4 +621,93 @@ fn a_live_session_holds_sayso_open_until_it_ends() {
     assert_eq!(world.host.holds().len(), 1);
     drop(client);
     eventually("the session of a closed connection ends", || world.host.holds().is_empty());
+}
+
+fn wait_for_end(events: &Receiver<Event>, session: u64) -> String {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        match events.recv_timeout(left) {
+            Ok(Event::Host { event: HostEvent::SessionEnded { session: ended, text }, .. }) if ended == session => return text,
+            Ok(_) => {}
+            Err(_) => panic!("no session_ended for session {session}"),
+        }
+    }
+}
+
+#[test]
+fn stop_in_sayso_ends_the_session_and_tells_the_app() {
+    let world = world(LIVE, LiveEngine::new());
+    let (client, events) = world.client();
+    let session = session_of(start(&client, json!({"sources": ["client"]})));
+    assert!(world.host.stop_live_session(session));
+    assert!(!world.host.stop_live_session(session), "it stops once");
+    wait_for_end(&events, session);
+    eventually("the slot is free", || world.host.live_session().is_none());
+    assert_eq!(refused(client.request("session_stop", fields(json!({"session": session})))).code, Some(ErrorCode::BadRequest), "the session is gone");
+    let next = session_of(start(&client, json!({"sources": ["client"]})));
+    assert_ne!(next, session);
+    stop(&client, next);
+}
+
+#[test]
+fn a_session_ends_when_the_user_takes_its_grant_back() {
+    let world = world(LIVE, LiveEngine::new());
+    let (client, events) = world.client();
+    let session = session_of(start(&client, json!({"sources": ["client"]})));
+    world.host.stop_work_without_grant();
+    assert!(world.host.live_session().is_some_and(|live| !live.stopping), "the grant is still there");
+    world.host.apps().set_grant(&id(), &Capability::SessionLive, false).unwrap();
+    world.host.stop_work_without_grant();
+    wait_for_end(&events, session);
+    eventually("the slot is free", || world.host.live_session().is_none());
+}
+
+#[test]
+fn a_grant_that_goes_during_the_load_stops_the_session_when_it_runs() {
+    let engine = LiveEngine::new();
+    let (started, load_started) = crossbeam_channel::bounded(1);
+    let (release, released) = crossbeam_channel::bounded(1);
+    *engine.load_gate.lock() = Some((started, released));
+    let world = world(&["session.live", "audio.mic"], engine);
+    let (client, events) = world.client();
+    let starting = std::thread::spawn(move || {
+        let answer = start(&client, json!({"sources": ["mic"]}));
+        (client, answer)
+    });
+    load_started.recv_timeout(Duration::from_secs(5)).unwrap();
+
+    world.host.apps().set_grant(&id(), &Capability::AudioMic, false).unwrap();
+    world.host.stop_work_without_grant();
+    assert_eq!(world.mic.open_feeds(), 0, "the session does not run yet");
+    release.send(()).unwrap();
+
+    let (_client, answer) = starting.join().unwrap();
+    wait_for_end(&events, session_of(answer));
+    eventually("the slot is free", || world.host.live_session().is_none());
+    eventually("the microphone is off", || world.mic.open_feeds() == 0);
+}
+
+#[test]
+fn a_mic_session_ends_when_session_live_goes() {
+    let world = world(&["session.live", "audio.mic"], LiveEngine::new());
+    let (client, events) = world.client();
+    let session = session_of(start(&client, json!({"sources": ["mic"]})));
+    assert_eq!(world.mic.open_feeds(), 1);
+    world.host.apps().set_grant(&id(), &Capability::SessionLive, false).unwrap();
+    world.host.stop_work_without_grant();
+    wait_for_end(&events, session);
+    eventually("the microphone is off", || world.mic.open_feeds() == 0);
+}
+
+#[test]
+fn an_app_can_stop_its_own_session_after_a_grant_goes() {
+    let world = world(LIVE, LiveEngine::new());
+    let (client, _events) = world.client();
+    let session = session_of(start(&client, json!({"sources": ["client"]})));
+    world.host.apps().set_grant(&id(), &Capability::SessionLive, false).unwrap();
+    let audio = fields(json!({"session": session, "pcm": ""}));
+    assert_eq!(refused(client.request("session_audio", audio)).code, Some(ErrorCode::Capability), "no new audio");
+    stop(&client, session);
+    eventually("the slot is free", || world.host.live_session().is_none());
 }

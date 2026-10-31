@@ -36,11 +36,12 @@ pub enum SettingsPage {
     Appearance,
     HistoryPrivacy,
     Permissions,
+    ConnectedApps,
     Advanced,
 }
 
 impl SettingsPage {
-    pub const ALL: [SettingsPage; 9] = [
+    pub const ALL: [SettingsPage; 10] = [
         SettingsPage::General,
         SettingsPage::Dictation,
         SettingsPage::Providers,
@@ -49,6 +50,7 @@ impl SettingsPage {
         SettingsPage::Appearance,
         SettingsPage::HistoryPrivacy,
         SettingsPage::Permissions,
+        SettingsPage::ConnectedApps,
         SettingsPage::Advanced,
     ];
 }

@@ -1,0 +1,68 @@
+_version: 1
+
+# The question that an app asks before it downloads a model.
+apps:
+  download_ask:
+    window_title: "モデルをダウンロード"
+    title: "%{app} がモデルのダウンロードを求めています"
+    body: "許可すると、Sayso は %{model}（%{size}）をこのコンピュータにダウンロードします。"
+    reason_label: "%{app} からの理由"
+    download: "ダウンロード"
+    cancel: "キャンセル"
+  # The question before Sayso quits while an app records or transcribes.
+  quit_ask:
+    window_title: "Sayso を終了"
+    recording: "%{app} が録音中です。終了しますか？"
+    transcribing: "%{app} がファイルを文字起こし中です。終了しますか？"
+    body: "終了すると、この作業は止まり、アプリは完了できません。"
+    others_label: "ほかに作業中のアプリ"
+    cancel: "キャンセル"
+    quit: "終了"
+  # The approval question: an app asks to use Sayso.
+  approval:
+    window_title: "アプリを許可"
+    title: "%{app} が Sayso の使用を求めています"
+    title_more: "%{app} が追加の許可を求めています"
+    body: "Sayso の実行中、このアプリは音声モデルを使い、Sayso を通して録音できます。信頼できるアプリだけを許可してください。"
+    body_more: "このアプリは許可済みです。拒否すると、今ある権限だけが残ります。"
+    signed_by: "%{org} が署名"
+    signed: "署名済み"
+    not_signed: "署名なし"
+    interpreter: "これはスクリプトインタープリタです。許可すると、実行するすべてのスクリプトに同じアクセス権が与えられます。"
+    claimed: "アプリは自身を「%{name}」と名乗っています。"
+    asks_to: "求めている内容"
+    allow: "許可"
+    dont_allow: "許可しない"
+  # What an app can do, in plain words.
+  capability:
+    models_read: "音声モデルの一覧を見る"
+    audio_mic: "マイクから録音する"
+    audio_system: "ほかのアプリや通話の音声を録音する"
+    transcribe_file: "ファイルを文字起こしする"
+    session_live: "ライブ音声を文字にする"
+    models_download: "音声モデルのダウンロードを求める"
+    ai_enhance: "AI プロバイダでテキストを改善する"
+    dictation_observe: "挿入後の音声入力をすべて見る"
+  # Settings, Connected apps.
+  settings:
+    title: "接続したアプリ"
+    subtitle: "Sayso の音声モデルとマイクを使うアプリです。どのアプリも先に確認を求めました。"
+    empty: "アプリはまだありません。Sayso の使用を求めたアプリがここに表示されます。"
+    recording: "録音中"
+    remove: "削除"
+    not_allowed: "許可していないアプリ"
+    allow: "許可"
+    forget: "忘れる"
+    said_no: "%{date} に拒否しました"
+    said_no_undated: "拒否しました"
+    no_capabilities: "このアプリはこれ以上何も求めていません。音声モデルの一覧を見ることができます。"
+    broken: "Sayso は %{path} を読み取れないため、アプリを接続できません。ファイルを修正または削除してから、アプリをもう一度接続してください。"
+    save_failed: "Sayso はこの変更を %{path} に保存できませんでした。Sayso がフォルダに書き込めることを確認して、もう一度お試しください。"
+    show_app: "%{app} を表示"
+  # The menu bar and the popover while an app records.
+  recording:
+    row: "%{app} が録音中"
+    mic: "マイク"
+    system: "システム音声"
+    both: "マイクとシステム音声"
+    stop: "停止"

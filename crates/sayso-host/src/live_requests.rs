@@ -1,4 +1,4 @@
-//! `session_start`, `session_audio`, and `session_stop` (`docs/extensions.md`,
+//! `session_start`, `session_audio`, and `session_stop` (`docs/apps.md`,
 //! "Requests"). The sessions themselves are in [`crate::live`].
 //!
 //! `session_start` and `session_stop` take time (a load, the last parts,
@@ -21,7 +21,7 @@ fn no_engine() -> Reply {
 }
 
 /// Check the models, start the session, and reply `ok {session}`. Runs on a worker.
-pub(crate) fn session_start(shared: &Shared, connection: u64, extension_id: &str, request: &SessionStart, responder: Responder) {
+pub(crate) fn session_start(shared: &Shared, connection: u64, app_id: &str, request: &SessionStart, responder: Responder) {
     let (Some(engine), Some(live)) = (&shared.engine, &shared.live) else {
         responder.reply(no_engine());
         return;
@@ -34,12 +34,14 @@ pub(crate) fn session_start(shared: &Shared, connection: u64, extension_id: &str
             return;
         }
     };
-    // The events of the session wait until the extension has its id.
+    // The events of the session wait until the app has its id.
     let sink = Arc::new(AfterReply::new(responder.notifier()));
-    match live.start(Owner { connection, extension_id: extension_id.to_string() }, spec, sink.clone()) {
+    match live.start(Owner { connection, app_id: app_id.to_string() }, spec, sink.clone()) {
         Ok(session) => {
             responder.reply(Reply::ok_with(&SessionReply { session }));
             sink.release();
+            // The user can have taken a grant back during the load.
+            shared.stop_work_without_grant();
         }
         Err(e) => responder.reply(e.reply()),
     }

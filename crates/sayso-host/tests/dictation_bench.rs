@@ -61,6 +61,9 @@ impl HostServices for Services {
     fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
     }
+    fn ask_approval(&self, _: &sayso_host::ApprovalQuestion, _: &dyn Fn() -> bool) -> Option<bool> {
+        None
+    }
 }
 
 fn read_pcm(path: &Path) -> Vec<i16> {
@@ -238,7 +241,7 @@ fn dictation_while_an_extension_works() {
     let mut config = Config::default();
     config.dictation.model = ModelId::new(FINAL_MODEL);
     config.models.vad = RoleChoice::Model(ModelId::new("silero-vad"));
-    write_state(&setup.state, &here(), &["transcribe.file", "session.live"], None);
+    write_apps(&setup.apps, &["transcribe.file", "session.live"]);
     let host = start_with(&setup, Arc::new(Services { engine: engine.clone(), config }));
     let gate = host.dictation_gate();
 

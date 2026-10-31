@@ -41,7 +41,12 @@ impl Notifier {
         let _ = self.outgoing.send(Outgoing::Line(encode(None, event)));
     }
 
-    /// False after the extension closed the connection. Long work stops then.
+    /// Close the connection after the messages that are in the channel now.
+    pub fn close(&self) {
+        let _ = self.outgoing.send(Outgoing::Close);
+    }
+
+    /// False after the app closed the connection. Long work stops then.
     pub fn is_open(&self) -> bool {
         self.open.load(Ordering::SeqCst)
     }
@@ -58,7 +63,7 @@ impl crate::jobs::EventSink for Notifier {
 /// The answer to one request: events with its id, then one reply.
 ///
 /// A responder that goes away without a reply sends `error`, so a worker that
-/// returns early or panics does not leave the extension waiting.
+/// returns early or panics does not leave the app waiting.
 pub(crate) struct Responder {
     id: Option<String>,
     notifier: Notifier,

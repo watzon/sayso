@@ -301,7 +301,7 @@ fn fixture() -> Fixture {
 }
 
 fn owner(connection: u64) -> Owner {
-    Owner { connection, extension_id: "dev.example.notetaker".into() }
+    Owner { connection, app_id: "dev.example.notetaker".into() }
 }
 
 fn spec(sources: &[Source]) -> SessionSpec {
@@ -368,7 +368,7 @@ fn a_client_session_gives_partials_segments_a_recording_and_speakers() {
     f.sessions.set_observer(observed.clone());
     let spec = SessionSpec { diarization: Some(ModelId::new("speaker-diarization")), record_to: Some(record_to.clone()), ..spec(&[Source::Client]) };
     let session = f.sessions.start(owner(1), spec, sink.clone()).unwrap();
-    assert_eq!(f.sessions.current().map(|l| (l.session, l.extension_id, l.captures_mic)), Some((session, "dev.example.notetaker".to_string(), false)));
+    assert_eq!(f.sessions.current().map(|l| (l.session, l.app_id, l.captures_mic)), Some((session, "dev.example.notetaker".to_string(), false)));
 
     let audio = pcm(&[silence(1000), speech(2000), silence(1000), speech(1500), silence(1000)].concat());
     send_client(&f.sessions, 1, session, &audio);

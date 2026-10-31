@@ -104,7 +104,7 @@ Notes:
 What the question shows:
 
 - The name from the system (the bundle name on macOS, else the file name), and the identity (team and identifier, or the path).
-- The name that the app gave, marked as "The app calls itself …". The host removes control characters and characters that change the direction of text, and cuts the name to 40 characters.
+- The name that the app gave, marked as "The app calls itself …". The host removes control characters and characters that change the direction of text or that show as nothing, and cuts the name to 40 characters. A path shows these characters as `�`, and the identity keeps the real path.
 - Each capability in plain words ("Record from your microphone", "Record the sound of other apps and calls", "See each dictation after it is inserted").
 
 The answers:
@@ -117,9 +117,10 @@ The answers:
 Limits, so an app cannot fill the screen with questions:
 
 - One approval question is on the screen at a time, for all apps.
-- At most four connections wait for an approval question. A fifth gets `error {code: "busy"}` at once.
-- A connection that closes while it waits takes back its question.
-- Questions of the same identity count as one.
+- Questions of the same identity count as one. At most four connections of one identity wait for it. A fifth gets `error {code: "busy"}` at once.
+- At most four identities wait for an approval question, which includes the one on the screen. A fifth gets `error {code: "busy"}` at once. So one app with many connections does not block other apps.
+- A connection that closes while it waits takes back its question. When the last one closes, the window closes, and the identity gets `busy` with no question for 30 seconds. So an app that connects and closes in a loop does not take the focus each time.
+- **Allow** is inactive for 500 ms after the window shows, because the window takes the focus. A click that was meant for another window does not answer yes. The download question has the same delay. Nothing moves when the delay ends, so reduced motion changes nothing.
 
 The system permissions stay separate. Sayso asks the system for the system audio permission the first time a live session in Sayso mode asks for the source `system`.
 
@@ -130,6 +131,7 @@ The system permissions stay separate. Sayso asks the system for the system audio
 name = "Notetaker"            # The name from the system, which Sayso shows.
 team_id = "ABCDE12345"        # macOS, signed apps.
 identifier = "app.justsayso.notetaker"
+signer = "Example LLC"        # The organization on the certificate, which Sayso shows.
 # path = "/opt/notetaker/bin/notetaker"   # Other identities.
 allowed = true
 granted = ["session.live", "audio.mic", "audio.system", "transcribe.file"]
@@ -445,6 +447,11 @@ Step 9a tests each direction in real sandboxes before the rest of step 9. When t
 - **Sayso does not say that an app is safe.** No person reviews connected apps. The approval question says what the app asks for and what the system knows about it.
 - **An approved app is a native program with the rights of the user.** Approval controls only what Sayso gives it.
 - **A path identity trusts the file at that path.** A program that replaces the file gets the grants. Malware that runs as the user can do that and more, which is outside what Sayso can protect against, as in `extensions.md`.
+- **The identity is of the process that writes, not of the process that connected.** A program can connect, give the socket to a child, and then start an approved program. So the host identifies the process that wrote the first line, and closes the connection when a later line comes from another process.
+  - macOS: the host reads the audit token after each line. The token follows the last writer. It must have the pid and the pid version of the first line, and the version changes with an exec. A line from before an exec gets no identity, because its token no longer names a running program.
+  - Linux: each read gives the pid of its writer through `SCM_CREDENTIALS`. `SO_PEERCRED` is not used, because it says only who connected. `/proc/<pid>/exe` must be the same device and inode as the file at its path, so a bind mount in a private mount namespace does not pass. The process must be in the PID namespace of the host, because a process with a capability in its own namespace can write another pid in its credentials.
+  - Windows: there is no exec, and the pipe keeps the pid of the process that connected. Only pid reuse applies: the process that connected ends, a child keeps the pipe, and an approved program gets the same pid before the first line. The code does not check for this.
+- **Lines from before an exec stay open on Linux.** A process can write `hello` and requests, and start an approved program before the host reads them. The pid is the same, so the host runs them as the approved program, and a child that keeps the socket reads the replies. Nothing on Linux tells the host that an exec came after the write. On macOS, the token keeps only the last writer, so a line of a child counts as a line of its parent when the parent writes before the host reads it. For this, the parent has to write to the socket that it inherited.
 - **The name that an app gives is not checked.** The question shows the name from the system first, and the name of the app only as a quote.
 - **An app cannot borrow the permissions of Sayso in local mode.** It captures in its own process, so the system asks the user for the app.
 - **In Sayso mode, Sayso records for the app.** The menu bar shows it, and **Stop** ends it.
@@ -519,5 +526,6 @@ Chris answered these on 2026-10-29.
 
 | Step | State | Notes |
 |---|---|---|
+| 9. Approval | In progress | Chris approved the designs on 2026-10-30. 9b is built: the identity rules, `apps.toml`, `hello` with `app` and `capabilities`, the question and its limits, `not_approved`, Settings › Connected apps, the recording state, and the removal of the extension code. A review found that a process could take the identity of an approved app through a shared socket, and that grants did not stop all work. Both are fixed, and "Security" says what stays open. Checked on macOS, with automated tests and in the real app, and with the tests of the host in a Linux container, with bind mounts and PID namespaces. On Windows the code compiles, and its tests run only in CI. Open: 9a. |
 | 10. MIT core | Done | `sayso-speech` (MIT): jobs and live sessions from `sayso-host` (the plan of chunks, the final pass of each part, the speakers, the queue, `DictationGate`), Basic VAD and the resampler from `sayso-core`, and the file decoder (`symphonia`). Its own types (`ModelId`, `Timestamps`, `Turn`, `EngineEvent`, `EngineError`, `Refusal`, `JobSpec`, `SessionSpec`); the events are the messages of `sayso-protocol`. The traits `SpeechEngine`, `ModelResolver`, `ModelRetention`, `Gate`, `EventSink`, and `Recordings`. `sayso-capture` (MIT): the microphone with `cpal`, from `sayso-platform-common/src/audio.rs`; the place for the system audio of step 13 is the module `system`. `sayso-host` gives the adapters: `BackendEngine` (`SttBackend` and the bus), `SaysoModels` (the choices of the user and the catalog), `ModelUse`, and `RecordingFolder`. `sayso-core` re-exports `basic_vad` and `resample` and converts its types. The shared microphone stays in `sayso-app/src/mic.rs`. Every author of the moved files is Chris (`git log --follow`, 2026-10-29). Checked: `cargo test --workspace`, clippy, `scripts/check-deps.sh`, `cargo tree` of both crates (no GPL crate), and `cargo package` of both crates with `workspace-hack` removed. The dictation benchmark (`docs/benchmark.md`) showed no regression in two pairs of runs, on the record in #64. |
 | 11. Model store | In progress | Done: the write inventory and the descriptors (#65), the rules in `sayso_core::model_store`, `store_v1` in both engines, the store level of the conformance suite, the migration in Sayso (`sayso_core::model_migration`), and the store option of `sayso-engine-sdk`. A real 0.13 models folder of macOS moved without a download: a clone of it moved `parakeet-unified-en` and `nemotron-en` in 3.7 s, and both load and transcribe with the network blocked. Open: the check of a real models folder on Windows and Linux, the check of the engine of the last release beside a new one, and the sentence about a downgrade in the release notes (`release-notes.toml` has no place for notes before a release, so it goes in with the entry of the release). A stalled download holds its `get` lock until the limit of 6 hours for one file, because `ureq` has no limit for the time between two reads. sherpa-onnx ends the process on a broken VAD model, so that load gives no `failed` reply; the store stays as it was. |

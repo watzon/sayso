@@ -7211,6 +7211,7 @@ dependencies = [
  "sayso-platform-linux",
  "sayso-platform-macos",
  "sayso-platform-windows",
+ "sayso-protocol",
  "sayso-store",
  "sayso-transcribe",
  "sayso-ui",
@@ -7378,6 +7379,7 @@ dependencies = [
 name = "sayso-host"
 version = "0.13.0"
 dependencies = [
+ "chrono",
  "core-foundation 0.10.1",
  "crossbeam-channel",
  "libc",

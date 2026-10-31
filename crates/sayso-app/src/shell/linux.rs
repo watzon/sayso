@@ -315,6 +315,8 @@ pub struct Tray {
     icon: sayso_platform_linux::tray::Tray,
     /// The last click, in X11 pixels.
     last_click: std::sync::Arc<parking_lot::Mutex<Option<(i32, i32)>>>,
+    /// Incognito, and the app that records: what the image shows.
+    look: std::sync::Mutex<(bool, Option<super::TrayRecording>)>,
 }
 
 impl Tray {
@@ -322,7 +324,7 @@ impl Tray {
     pub fn install(on_event: impl Fn(TrayEvent) + Send + Sync + 'static) -> Option<Tray> {
         let last_click = std::sync::Arc::new(parking_lot::Mutex::new(None));
         let clicks = last_click.clone();
-        let icon = sayso_platform_linux::tray::Tray::install(tray_image(false), tray_labels(), move |event| {
+        let icon = sayso_platform_linux::tray::Tray::install(tray_image(false, None), tray_labels(), move |event| {
             use sayso_platform_linux::tray::TrayEvent as E;
             match event {
                 E::Click { x, y } => {
@@ -334,12 +336,25 @@ impl Tray {
                 E::Quit => on_event(TrayEvent::Quit),
             }
         })?;
-        Some(Tray { icon, last_click })
+        Some(Tray { icon, last_click, look: Default::default() })
     }
 
     /// Gray out the icon while incognito is on.
     pub fn set_incognito(&self, on: bool) {
-        self.icon.set_image(tray_image(on));
+        let recording = self.look.lock().map_or(None, |mut look| {
+            look.0 = on;
+            look.1.clone()
+        });
+        self.icon.set_image(tray_image(on, recording.as_ref()));
+    }
+
+    /// The dot on the icon while an app records.
+    pub fn set_recording(&self, recording: Option<&super::TrayRecording>) {
+        let incognito = self.look.lock().is_ok_and(|mut look| {
+            look.1 = recording.cloned();
+            look.0
+        });
+        self.icon.set_image(tray_image(incognito, recording));
     }
 
     /// Show the menu labels again, in the current interface language.
@@ -370,11 +385,14 @@ fn tray_labels() -> sayso_platform_linux::tray::TrayLabels {
 
 /// The colored app icon: a template image like the macOS one would vanish on
 /// a dark panel.
-fn tray_image(incognito: bool) -> Option<(Vec<u8>, u32, u32)> {
+fn tray_image(incognito: bool, recording: Option<&super::TrayRecording>) -> Option<(Vec<u8>, u32, u32)> {
     let bytes = crate::app_assets::bytes("icon-64.png").or_else(|| crate::app_assets::bytes("tray.png"))?;
     let mut img = image::load_from_memory(&bytes).ok()?.into_rgba8();
     if incognito {
         super::dim_icon(&mut img);
+    }
+    if let Some(recording) = recording {
+        super::draw_recording_dot(&mut img, recording.dot, recording.ring);
     }
     let (w, h) = img.dimensions();
     Some((img.into_raw(), w, h))

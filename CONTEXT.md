@@ -83,7 +83,7 @@ A local model that can give the live preview. Every streaming model can also do 
 What a local model does: speech (the final pass or the live preview), VAD, or diarization. The engines check it: a request for one task needs a model of that task. The list of speech models (`models::catalog`) has only speech models, so no surface of dictation can offer a VAD or diarization model. The engine catalog has all of them (`models::local_models`).
 
 **VAD model**
-A local model that finds the parts of audio that contain speech. VAD means voice activity detection. The jobs and live sessions of extensions use it to cut long audio at pauses. Dictation does not use VAD. The user chooses it on the Models page (`models.vad`): "auto" (the first VAD model on disk, Silero VAD first, else Basic VAD), "basic", or a model id. A chosen model that is not on disk gives Basic VAD.
+A local model that finds the parts of audio that contain speech. VAD means voice activity detection. The jobs and live sessions of connected apps use it to cut long audio at pauses. Dictation does not use VAD. The user chooses it on the Models page (`models.vad`): "auto" (the first VAD model on disk, Silero VAD first, else Basic VAD), "basic", or a model id. A chosen model that is not on disk gives Basic VAD.
 
 **Basic VAD**
 The VAD of the host (`sayso_speech::basic_vad`). It finds speech by its sound level, a margin above the noise floor of the last 5 seconds, so a constant noise is not speech. It follows the same rules as the engines: speech under 250 ms is left out, a pause under 500 ms does not end speech, and a part is at most 30 s. It needs no download, so a new install has it. Its id is `basic`.
@@ -91,17 +91,21 @@ The VAD of the host (`sayso_speech::basic_vad`). It finds speech by its sound le
 **Diarization model**
 A local model that finds who speaks when in a recording. It can have more than one file (on Linux and Windows, a segmentation model and a speaker embedding model), but it is one model with one id. The user chooses it on the Models page (`models.diarization`): "auto" (the diarization model on disk, else none) or a model id. There is no built-in fallback.
 
-**Extension**
-A separate app that uses the speech features of Sayso through the Host API (`docs/extensions.md`). Sayso installs it in `<data dir>/extensions/<id>/<version>/`. While at least one is installed, the Models page also shows the VAD and diarization models.
+**Connected app**
+A separate app that uses Sayso through the Host API (`docs/sdk.md`). The user approved it. Sayso does not install it, start it, or update it. While at least one is approved, the Models page also shows the VAD and diarization models.
+_Avoid_: extension, plug-in, add-on, client (in UI text).
+
+**Approval**
+The answer of the user to the first connection of an app: **Allow** with the capabilities that the app asked for, or **Don't allow**. Sayso keeps it in `<data dir>/apps.toml`. The host knows the app by the identity of its executable: the team and the identifier of its code signature on macOS, else its path. A program with a signature that is not valid gets no question. The user can change the answer in Settings › Connected apps.
 
 **Host**
-Sayso, when it serves extensions (`sayso-host`). It knows an extension by its executable and the record of the extension in `<data dir>/extensions/state.toml`.
+Sayso, when it serves connected apps (`sayso-host`). It knows an app by the identity of its executable and the record of the app in `apps.toml`.
 
 **Host API**
-The protocol between the host and an extension, over a local socket (a named pipe on Windows). It uses the message shapes of the engine protocol. The types are in `sayso-protocol`, and the client is `sayso-extension` (both MIT).
+The protocol between the host and a connected app, over a local socket (a named pipe on Windows). It uses the message shapes of the engine protocol. The types are in `sayso-protocol`, and the client is `sayso-extension` (both MIT).
 
 **Capability**
-A permission that an extension declares in its manifest and the user grants at install, for example `audio.mic`. The host refuses a request whose capability the user did not grant. `models.read` is always granted.
+A permission that an app asks for in `hello` and the user grants in the approval question, for example `audio.mic`. The host refuses a request whose capability the user did not grant. `models.read` is always granted.
 
 **Dictation language**
 The language the user speaks: a language code, or "auto" to let the model detect it. Each model gets the nearest value that it supports.

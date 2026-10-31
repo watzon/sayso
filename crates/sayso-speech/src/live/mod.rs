@@ -60,7 +60,7 @@ pub struct MicFeed {
     pub lease: Box<dyn Send>,
 }
 
-/// Tells the app which live session runs, for the menu bar (step 8).
+/// Tells the app which live session runs, for the menu bar.
 pub trait LiveObserver: Send + Sync {
     /// A session started (`Some`) or ended (`None`).
     fn changed(&self, live: Option<&LiveInfo>);
@@ -70,7 +70,7 @@ pub trait LiveObserver: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LiveInfo {
     pub session: u64,
-    pub extension_id: String,
+    pub app_id: String,
     pub sources: Vec<Source>,
     /// True while it captures the microphone. Sayso shows that it records.
     pub captures_mic: bool,
@@ -114,7 +114,7 @@ impl SessionSpec {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Owner {
     pub connection: u64,
-    pub extension_id: String,
+    pub app_id: String,
 }
 
 /// What the sessions need from the app.
@@ -292,7 +292,7 @@ impl LiveSessions {
             Ok(running) => {
                 let info = running.info.clone();
                 *self.inner.slot.lock() = Slot::Running(Box::new(running));
-                log::info!("host: live session {session} of {} started with {:?}", owner.extension_id, spec.sources);
+                log::info!("host: live session {session} of {} started with {:?}", owner.app_id, spec.sources);
                 self.notify(Some(&info));
                 Ok(session)
             }
@@ -368,7 +368,7 @@ impl LiveSessions {
         let captures_mic = spec.sources.contains(&Source::Mic);
         let kept = opened.keep();
         Ok(Running {
-            info: LiveInfo { session, extension_id: owner.extension_id.clone(), sources: spec.sources.clone(), captures_mic, stopping: false },
+            info: LiveInfo { session, app_id: owner.app_id.clone(), sources: spec.sources.clone(), captures_mic, stopping: false },
             owner: owner.clone(),
             client: kept.client,
             stopper: Some(Stopper { sources: kept.sources, leases: kept.leases, cancel, sink, diarization: spec.diarization.clone(), temporary: kept.temporary, _models: held }),
@@ -415,6 +415,41 @@ impl LiveSessions {
         let result = self.finish(session, stopper, false);
         self.free(session);
         result
+    }
+
+    /// The user stopped the session in the app: **Stop** in the popover, or a
+    /// grant that the user took back. It ends as [`LiveSessions::stop`] does,
+    /// with no reply to wait for: `Event::SessionEnded` is its end on the sink.
+    /// Returns at once. False when `session` no longer runs or stops already.
+    pub fn stop_for_user(&self, session: u64) -> bool {
+        let stopper = {
+            let mut slot = self.inner.slot.lock();
+            let Slot::Running(running) = &mut *slot else { return false };
+            if running.info.session != session {
+                return false;
+            }
+            let Some(stopper) = running.stopper.take() else { return false };
+            running.client = None;
+            running.info.stopping = true;
+            stopper
+        };
+        if let Some(info) = self.current() {
+            self.notify(Some(&info));
+        }
+        let sink = stopper.sink.clone();
+        let sessions = self.clone();
+        let spawned = std::thread::Builder::new().name("sayso-host-live-stop".into()).spawn(move || {
+            let text = sessions.finish(session, stopper, false).unwrap_or_else(|e| {
+                log::warn!("host: the stop of live session {session} failed: {}", e.message);
+                String::new()
+            });
+            sessions.free(session);
+            sink.event(Event::SessionEnded { session, text });
+        });
+        if let Err(e) = spawned {
+            log::warn!("host: cannot stop live session {session}: {e}");
+        }
+        true
     }
 
     /// The connection closed: stop its session without diarization, and

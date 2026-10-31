@@ -1,7 +1,8 @@
-//! The host of extensions (`sayso-host`, `docs/extensions.md`). It starts
+//! The host of connected apps (`sayso-host`, `docs/extensions.md`). It starts
 //! after the services and closes when Sayso quits.
 
 use crate::download_ask::Ask;
+use crate::approval_ask;
 use crate::mic::SharedMic;
 use crate::services::Services;
 use crate::style_step::{CleanupContext, StyleStep, style_timeout};
@@ -12,7 +13,7 @@ use sayso_core::paths::Paths;
 use sayso_core::pipeline::PipelineOutput;
 use sayso_core::style::StyleLibrary;
 use sayso_enhance::SecretStore;
-use sayso_host::{DownloadQuestion, Hold, StyleRequest, Work};
+use sayso_host::{ApprovalQuestion, DownloadQuestion, Hold, StyleRequest, Work};
 use sayso_host::live::{MicFeed, Microphone};
 use sayso_platform::SttBackend;
 use sayso_store::Store;
@@ -28,6 +29,8 @@ struct AppHostServices {
     mic: Arc<SharedMic>,
     /// The questions go to the thread of the windows (`download_ask`).
     questions: async_channel::Sender<Ask>,
+    /// The approval questions go the same way (`approval_ask`).
+    approvals: async_channel::Sender<approval_ask::Ask>,
     styles_dir: PathBuf,
     secrets: Arc<dyn SecretStore>,
     language_model: Option<Arc<dyn LanguageModel>>,
@@ -67,7 +70,7 @@ impl sayso_host::HostServices for AppHostServices {
         Some(Arc::new(HostMic { mic: self.mic.clone(), config_file: self.config_file.clone() }))
     }
 
-    /// When the extension disconnects or Sayso closes the host, the window
+    /// When the app disconnects or Sayso closes the host, the window
     /// closes, and that counts as Cancel.
     fn ask_download(&self, question: &DownloadQuestion, withdrawn: &dyn Fn() -> bool) -> bool {
         let (answer, answered) = crossbeam_channel::bounded(1);
@@ -90,6 +93,27 @@ impl sayso_host::HostServices for AppHostServices {
         }
     }
 
+    /// When each connection of the app closes or Sayso closes the host, the
+    /// window closes, and the host keeps no answer.
+    fn ask_approval(&self, question: &ApprovalQuestion, withdrawn: &dyn Fn() -> bool) -> Option<bool> {
+        let (answer, answered) = crossbeam_channel::bounded(1);
+        let (close, closed) = async_channel::bounded(1);
+        self.approvals.send_blocking(approval_ask::Ask { question: question.clone(), answer, withdraw: closed }).ok()?;
+        loop {
+            match answered.recv_timeout(WITHDRAWN_CHECK) {
+                Ok(allow) => return Some(allow),
+                // The window closed with Sayso, without an answer.
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => return None,
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    if withdrawn() {
+                        let _ = close.try_send(());
+                        return None;
+                    }
+                }
+            }
+        }
+    }
+
     /// The styles of the user, read again for each request: the files can
     /// change while Sayso runs.
     fn styles(&self) -> Option<StyleLibrary> {
@@ -101,7 +125,7 @@ impl sayso_host::HostServices for AppHostServices {
         let config = self.config();
         let vocabulary = self.store.as_ref().and_then(|store| store.list_words().ok()).unwrap_or_default().into_iter().map(|word| word.text).collect();
         // A cleanup model reads the language of a dictation. Text from an
-        // extension has the language setting of dictation.
+        // app has the language setting of dictation.
         let cleanup = CleanupContext::for_provider(&self.cleaner, &config.speech, request.provider, None, None, config.dictation.language.clone(), &config.dictation.model);
         let step = StyleStep {
             timeout: style_timeout(&config.ai, request.provider),
@@ -136,10 +160,11 @@ impl Microphone for HostMic {
 pub struct Started {
     pub host: Arc<sayso_host::Host>,
     pub questions: async_channel::Receiver<Ask>,
+    pub approvals: async_channel::Receiver<approval_ask::Ask>,
     pub jobs: HostJobs,
 }
 
-/// What the dictation and the memory policy tell the jobs of extensions.
+/// What the dictation and the memory policy tell the jobs of apps.
 #[derive(Clone)]
 pub struct HostJobs {
     /// `begin` while a dictation records or is processed, `end` after.
@@ -148,14 +173,16 @@ pub struct HostJobs {
     pub model_use: Arc<sayso_host::jobs::ModelUse>,
 }
 
-/// Start the host. When that fails, Sayso runs without extensions.
+/// Start the host. When that fails, Sayso runs without connected apps.
 pub fn start(paths: &Paths, services: &Services) -> Option<Started> {
     let (questions, asked) = async_channel::unbounded();
+    let (approvals, approvals_asked) = async_channel::unbounded();
     let host_services = AppHostServices {
         engine: services.engine.clone(),
         config_file: paths.config_file(),
         mic: services.mic.clone(),
         questions,
+        approvals,
         styles_dir: paths.styles_dir(),
         secrets: services.secrets.clone(),
         language_model: services.language_model.clone(),
@@ -169,8 +196,8 @@ pub fn start(paths: &Paths, services: &Services) -> Option<Started> {
     started
         .map(|host| {
             let jobs = HostJobs { gate: host.dictation_gate(), model_use: host.model_use() };
-            Started { host: Arc::new(host), questions: asked, jobs }
-        }).map_err(|e| log::warn!("extensions cannot connect: {e}")).ok()
+            Started { host: Arc::new(host), questions: asked, approvals: approvals_asked, jobs }
+        }).map_err(|e| log::warn!("apps cannot connect: {e}")).ok()
 }
 
 /// What "Restart to update" does now.
@@ -178,13 +205,13 @@ pub fn start(paths: &Paths, services: &Services) -> Option<Started> {
 pub enum UpdateRestart {
     /// Install the update and restart.
     Now,
-    /// Wait: this extension (the first one) has a live session or a job.
+    /// Wait: this app (the first one) has a live session or a job.
     WaitFor(String),
     /// Not now: a dictation runs. The button is off then.
     NotNow,
 }
 
-/// Sayso does not install an update while an extension has a live session
+/// Sayso does not install an update while an app has a live session
 /// or a job (`docs/extensions.md`, "Lifecycle"). `idle`: no dictation runs.
 pub fn update_restart(idle: bool, holds: &[Hold]) -> UpdateRestart {
     match holds.first() {
@@ -194,14 +221,13 @@ pub fn update_restart(idle: bool, holds: &[Hold]) -> UpdateRestart {
     }
 }
 
-/// The question before Sayso quits while extensions work: "Notetaker is
-/// recording. Quit anyway?". None when no extension works: Sayso quits
-/// without a question.
+/// The question before Sayso quits while apps work: "Notetaker is recording.
+/// Quit anyway?". None when no app works: Sayso quits without a question.
 pub fn quit_question(holds: &[Hold]) -> Option<String> {
     let first = holds.first()?;
     Some(match first.work {
-        Work::LiveSession => sayso_i18n::t!("extensions.quit_ask.recording", extension = first.name),
-        Work::Job => sayso_i18n::t!("extensions.quit_ask.transcribing", extension = first.name),
+        Work::LiveSession => sayso_i18n::t!("apps.quit_ask.recording", app = first.name),
+        Work::Job => sayso_i18n::t!("apps.quit_ask.transcribing", app = first.name),
     })
 }
 
@@ -210,11 +236,11 @@ mod tests {
     use super::*;
 
     fn hold(name: &str, work: Work) -> Hold {
-        Hold { extension_id: format!("dev.example.{}", name.to_lowercase()), name: name.into(), work }
+        Hold { app_id: format!("dev.example.{}", name.to_lowercase()), name: name.into(), work }
     }
 
     #[test]
-    fn an_update_waits_for_the_work_of_extensions() {
+    fn an_update_waits_for_the_work_of_apps() {
         assert_eq!(update_restart(true, &[]), UpdateRestart::Now);
         assert_eq!(update_restart(false, &[]), UpdateRestart::NotNow, "a dictation runs");
         let holds = [hold("Notetaker", Work::LiveSession), hold("Media", Work::Job)];
@@ -223,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn sayso_asks_before_it_quits_only_while_an_extension_works() {
+    fn sayso_asks_before_it_quits_only_while_an_app_works() {
         sayso_i18n::set_locale("en");
         assert_eq!(quit_question(&[]), None);
         assert_eq!(quit_question(&[hold("Notetaker", Work::LiveSession)]).as_deref(), Some("Notetaker is recording. Quit anyway?"));

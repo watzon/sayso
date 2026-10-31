@@ -150,9 +150,9 @@ models:
     use_preview: "Usar %{name} para la vista previa"
   roles:
     vad_title: "Detección de voz"
-    vad_note: "Encuentra el habla en grabaciones largas para tus extensiones. El dictado no la usa."
+    vad_note: "Encuentra el habla en grabaciones largas para tus apps conectadas. El dictado no la usa."
     speakers_title: "Hablantes"
-    speakers_note: "Encuentra quién habla y cuándo en una grabación, para tus extensiones."
+    speakers_note: "Encuentra quién habla y cuándo en una grabación, para tus apps conectadas."
     automatic_uses: "Usa %{name} ahora"
     automatic_none: "No hay ningún modelo de hablantes descargado. Descarga uno abajo."
     basic: "Básico"

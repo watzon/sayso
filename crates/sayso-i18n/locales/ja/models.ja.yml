@@ -150,9 +150,9 @@ models:
     use_preview: "%{name} をライブプレビューに使う"
   roles:
     vad_title: "音声検出"
-    vad_note: "拡張機能のために、長い録音の中の発話を見つけます。音声入力では使いません。"
+    vad_note: "接続したアプリのために、長い録音の中の発話を見つけます。音声入力では使いません。"
     speakers_title: "話者"
-    speakers_note: "拡張機能のために、録音の中で誰がいつ話しているかを見つけます。"
+    speakers_note: "接続したアプリのために、録音の中で誰がいつ話しているかを見つけます。"
     automatic_uses: "現在は %{name} を使用"
     automatic_none: "話者モデルがダウンロードされていません。下からダウンロードしてください。"
     basic: "ベーシック"

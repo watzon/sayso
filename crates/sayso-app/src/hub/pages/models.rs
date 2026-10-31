@@ -1690,9 +1690,9 @@ impl Render for ModelsPage {
         }
         let pad = crate::layout::page_pad(window, &self.model.read(cx).config);
         self.narrow = crate::layout::page_narrow(window, &self.model.read(cx).config);
-        let (catalog, roles, used, dir, engine_down, extensions) = {
+        let (catalog, roles, used, dir, engine_down, apps_approved) = {
             let m = self.model.read(cx);
-            (m.catalog(), Roles::of(m), m.models_disk_bytes(), m.models_dir_display(), m.services.engine.is_none(), m.extensions_installed)
+            (m.catalog(), Roles::of(m), m.models_disk_bytes(), m.models_dir_display(), m.services.engine.is_none(), m.any_app_approved())
         };
         let model = self.model.clone();
         let used_label = if used == 0 { t!("models.page.nothing_downloaded") } else { t!("models.page.used", size = format_size(used)) };
@@ -1721,8 +1721,8 @@ impl Render for ModelsPage {
             list
         };
         let (non_streaming, streaming) = (list(false), list(true));
-        // The VAD and diarization models matter only to extensions. A user who only dictates does not see them.
-        let (vad, speakers) = match extensions {
+        // The VAD and diarization models matter only to apps. A user who only dictates does not see them.
+        let (vad, speakers) = match apps_approved {
             true => (self.role_section(ModelTask::Vad, &query, cx), self.role_section(ModelTask::Diarization, &query, cx)),
             false => (None, None),
         };

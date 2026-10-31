@@ -1,6 +1,6 @@
 //! The test extension (`sayso-extension/examples/sayso-ext.rs`) against a
 //! host on a real socket. The test builds the program with cargo, and the
-//! record of `state.toml` has its folder, so the identity check is the real one.
+//! record of `apps.toml` has its path, so the identity check is the real one.
 
 use sayso_core::config::{Provider, ProviderKind};
 use sayso_core::style::StyleLibrary;
@@ -44,7 +44,7 @@ struct World {
 fn world(granted: &[&str]) -> World {
     let program = program();
     let setup = setup();
-    write_state(&setup.state, program.parent().unwrap(), granted, None);
+    write_app(&setup.apps, &canonical(program), granted);
     let services = FakeServices::new(Some(FakeEngine::new()));
     {
         let mut config = services.config.lock();
@@ -92,7 +92,7 @@ fn hello_list_models_and_enhance() {
     let world = world(&["ai.enhance"]);
     let (output, found) = world.run(&["hello"]);
     assert!(output.status.success(), "{output:?}");
-    assert_eq!(ok_fields(&found)["extension_id"], ID);
+    assert!(ok_fields(&found)["capabilities"].as_array().unwrap().contains(&"ai.enhance".into()));
 
     let (output, found) = world.run(&["list-models", "--role", "vad"]);
     assert!(output.status.success(), "{output:?}");
