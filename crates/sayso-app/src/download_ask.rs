@@ -63,6 +63,7 @@ fn texts(q: &DownloadQuestion) -> Texts {
         cancel: t!("apps.download_ask.cancel"),
         confirm: t!("apps.download_ask.download"),
         danger: false,
+        guarded: true,
     }
 }
 

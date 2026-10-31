@@ -43,7 +43,7 @@ pub fn open_sample(model: &Entity<AppModel>, cx: &mut App) {
     let (answer, answered) = crossbeam_channel::bounded(1);
     let question = if crate::dev::arg("ask-approval").as_deref() == Some("interpreter") {
         ApprovalQuestion {
-            app_id: "/usr/local/bin/python3".into(),
+            app_id: Identity::Path("/usr/local/bin/python3".into()).id(),
             identity: Identity::Path("/usr/local/bin/python3".into()),
             name: "python3".into(),
             signer: None,
@@ -54,7 +54,7 @@ pub fn open_sample(model: &Entity<AppModel>, cx: &mut App) {
         }
     } else {
         ApprovalQuestion {
-            app_id: "MB5789APU7/app.justsayso.notes".into(),
+            app_id: Identity::Signed { team_id: "MB5789APU7".into(), identifier: "app.justsayso.notes".into() }.id(),
             identity: Identity::Signed { team_id: "MB5789APU7".into(), identifier: "app.justsayso.notes".into() },
             name: "Sayso Notes".into(),
             signer: Some("Watzon Ventures LLC".into()),
@@ -107,7 +107,7 @@ fn capability_icon(capability: &Capability) -> Icon {
 pub fn identity_text(identity: &Identity) -> String {
     match identity {
         Identity::Signed { team_id, identifier } => format!("{identifier} · {team_id}"),
-        Identity::Path(path) => path.display().to_string(),
+        Identity::Path(path) => sayso_host::visible_path(path),
     }
 }
 
@@ -178,6 +178,7 @@ fn texts(q: &ApprovalQuestion) -> Texts {
         cancel: t!("apps.approval.dont_allow"),
         confirm: t!("apps.approval.allow"),
         danger: false,
+        guarded: true,
     }
 }
 
@@ -230,7 +231,7 @@ fn open(model: &Entity<AppModel>, ask: Ask, cx: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{ApprovalQuestion, Capability, Identity, capability_text, ordered, texts, window_height};
+    use super::{ApprovalQuestion, Capability, Identity, capability_text, identity_text, ordered, texts, window_height};
 
     fn signed(capabilities: Vec<Capability>) -> ApprovalQuestion {
         ApprovalQuestion {
@@ -252,6 +253,13 @@ mod tests {
         assert_eq!(capability_text(&Capability::AudioSystem), "Record the sound of other apps and calls");
         assert_eq!(capability_text(&Capability::DictationObserve), "See each dictation after it is inserted");
         assert_eq!(ordered(&[Capability::DictationObserve, Capability::ModelsRead, Capability::AudioMic]), vec![Capability::AudioMic, Capability::DictationObserve]);
+    }
+
+    #[test]
+    fn the_path_shows_each_character_that_can_mislead_and_the_identity_keeps_it() {
+        let identity = Identity::Path("/opt/ev\u{202E}il\nname".into());
+        assert_eq!(identity_text(&identity), "/opt/ev\u{FFFD}il\u{FFFD}name");
+        assert_eq!(identity, Identity::Path("/opt/ev\u{202E}il\nname".into()));
     }
 
     #[test]

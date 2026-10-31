@@ -2,7 +2,7 @@
 //! (`docs/sdk.md`, "The question"), and the changes of Settings. It replaces
 //! `extensions/state.toml`.
 
-use crate::identity::{Caller, Identity};
+use crate::identity::{Caller, Identity, clean_name};
 use parking_lot::Mutex;
 use sayso_protocol::Capability;
 use serde::{Deserialize, Serialize};
@@ -62,12 +62,19 @@ impl AppRecord {
         self.identity().map(|identity| identity.id())
     }
 
+    /// The name to show. It comes from a file that the user can edit, so it
+    /// gets the same cleaning as the name from the system.
+    pub fn shown_name(&self) -> String {
+        clean_name(&self.name).unwrap_or_else(|| "?".into())
+    }
+
     /// The capabilities that the app has now. `models.read` needs no grant.
-    /// Unknown names are left out.
+    /// Unknown names are left out. A capability that is also in `denied` is denied.
     pub fn capabilities(&self) -> Vec<Capability> {
         let mut capabilities = vec![Capability::ModelsRead];
+        let denied = self.denied_capabilities();
         for capability in known(&self.granted) {
-            if !capabilities.contains(&capability) {
+            if !capabilities.contains(&capability) && !denied.contains(&capability) {
                 capabilities.push(capability);
             }
         }
@@ -136,6 +143,8 @@ struct Cache {
     bytes: Option<Vec<u8>>,
     apps: Arc<Apps>,
     broken: bool,
+    /// The last read failed, so `bytes` says nothing about the file.
+    unread: bool,
 }
 
 /// `apps.toml` on disk. [`AppsFile::current`] reads it again when its bytes
@@ -151,7 +160,7 @@ pub struct AppsFile {
 
 impl AppsFile {
     pub fn new(path: PathBuf) -> AppsFile {
-        AppsFile { path, cache: Mutex::new(Cache { bytes: None, apps: Arc::new(Apps::default()), broken: false }), write: Mutex::new(()), observer: Mutex::new(None) }
+        AppsFile { path, cache: Mutex::new(Cache { bytes: None, apps: Arc::new(Apps::default()), broken: false, unread: false }), write: Mutex::new(()), observer: Mutex::new(None) }
     }
 
     pub fn path(&self) -> &Path {
@@ -178,12 +187,12 @@ impl AppsFile {
             Err(e) => {
                 log::warn!("host: cannot read {}: {e}", self.path.display());
                 let mut cache = self.cache.lock();
-                *cache = Cache { bytes: None, apps: Arc::new(Apps::default()), broken: true };
+                *cache = Cache { bytes: None, apps: Arc::new(Apps::default()), broken: true, unread: true };
                 return (cache.apps.clone(), true);
             }
         };
         let mut cache = self.cache.lock();
-        if cache.bytes == bytes {
+        if cache.bytes == bytes && !cache.unread {
             return (cache.apps.clone(), cache.broken);
         }
         let (apps, broken) = match &bytes {
@@ -196,7 +205,7 @@ impl AppsFile {
                 }
             },
         };
-        *cache = Cache { bytes, apps: Arc::new(apps), broken };
+        *cache = Cache { bytes, apps: Arc::new(apps), broken, unread: false };
         (cache.apps.clone(), broken)
     }
 
@@ -222,11 +231,15 @@ impl AppsFile {
                 std::fs::create_dir_all(folder)?;
             }
             let temporary = self.path.with_extension(format!("toml.{}.tmp", std::process::id()));
-            std::fs::write(&temporary, text)?;
-            if let Err(e) = std::fs::rename(&temporary, &self.path) {
+            // On the disk before the rename, and the rename on the disk before
+            // the answer counts: a crash must not leave an empty file, which
+            // means no answers and forgets each refusal.
+            let written = write_synced(&temporary, text.as_bytes()).and_then(|()| std::fs::rename(&temporary, &self.path));
+            if let Err(e) = written {
                 let _ = std::fs::remove_file(&temporary);
                 return Err(e);
             }
+            sync_folder(self.path.parent())?;
         }
         let observer = self.observer.lock().clone();
         if let Some(observer) = observer {
@@ -300,6 +313,23 @@ impl AppsFile {
     pub fn remove(&self, id: &str) -> io::Result<()> {
         self.update(|apps| apps.apps.retain(|record| record.id().as_deref() != Some(id)))
     }
+}
+
+fn write_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut file = std::fs::File::create(path)?;
+    io::Write::write_all(&mut file, bytes)?;
+    file.sync_all()
+}
+
+/// Windows cannot open a folder as a file, and its rename needs no such step.
+fn sync_folder(folder: Option<&Path>) -> io::Result<()> {
+    #[cfg(unix)]
+    if let Some(folder) = folder {
+        std::fs::File::open(folder)?.sync_all()?;
+    }
+    #[cfg(not(unix))]
+    let _ = folder;
+    Ok(())
 }
 
 /// The time now, for `first_seen`.
@@ -394,6 +424,49 @@ denied = ["transcribe.file"]
         assert!(file.is_broken());
         std::fs::remove_file(&path).unwrap();
         assert!(!file.is_broken());
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_is_broken_until_it_is_gone() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("apps.toml");
+        // A folder at the path: the read fails with another error than "not found".
+        std::fs::create_dir(&path).unwrap();
+        let file = AppsFile::new(path.clone());
+        assert!(file.is_broken());
+        std::fs::remove_dir(&path).unwrap();
+        assert!(!file.is_broken(), "no file means no answers yet");
+    }
+
+    #[test]
+    fn a_capability_in_both_lists_is_denied() {
+        let apps = Apps::parse("[[apps]]\nname = \"x\"\npath = \"/x\"\nallowed = true\ngranted = [\"audio.mic\", \"ai.enhance\"]\ndenied = [\"audio.mic\"]\n").unwrap();
+        assert_eq!(apps.apps[0].capabilities(), vec![Capability::ModelsRead, Capability::AiEnhance]);
+        assert_eq!(apps.apps[0].denied_capabilities(), vec![Capability::AudioMic]);
+    }
+
+    #[test]
+    fn a_path_in_the_file_does_not_match_a_signed_identity() {
+        let apps = Apps::parse("[[apps]]\nname = \"x\"\npath = \"ABCDE12345/app.justsayso.notetaker\"\nallowed = true\n").unwrap();
+        assert!(apps.find(&signed()).is_none());
+    }
+
+    #[test]
+    fn a_name_in_the_file_is_cleaned_when_it_shows() {
+        let apps = Apps::parse("[[apps]]\nname = \"No\\u202Etes\\n\"\npath = \"/x\"\n\n[[apps]]\nname = \"\\u200B\"\npath = \"/y\"\n").unwrap();
+        assert_eq!(apps.apps[0].shown_name(), "Notes");
+        assert_eq!(apps.apps[1].shown_name(), "?");
+    }
+
+    #[test]
+    fn a_write_leaves_the_whole_file_and_no_temporary_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("apps.toml");
+        let file = AppsFile::new(path.clone());
+        file.answer_first(&caller("/opt/App"), &[Capability::AudioMic], false).unwrap();
+        assert!(AppsFile::new(path).current().find(&Identity::Path("/opt/App".into())).is_some());
+        let names: Vec<_> = std::fs::read_dir(dir.path()).unwrap().map(|entry| entry.unwrap().file_name()).collect();
+        assert_eq!(names, ["apps.toml"]);
     }
 
     #[test]

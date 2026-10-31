@@ -539,7 +539,7 @@ impl AppModel {
         let live = live.filter(|live| !live.stopping && live.sources.iter().any(|source| matches!(source, Source::Mic | Source::System)));
         self.recording_app = live.map(|live| {
             let since = self.recording_app.as_ref().filter(|known| known.session == live.session).map_or_else(Instant::now, |known| known.since);
-            let name = self.apps.record(&live.app_id).map_or_else(|| live.app_id.clone(), |record| record.name.clone());
+            let name = self.apps.record(&live.app_id).map_or_else(|| sayso_host::visible_text(&live.app_id), |record| record.shown_name());
             RecordingApp { session: live.session, name, mic: live.sources.contains(&Source::Mic), system: live.sources.contains(&Source::System), app_id: live.app_id, since }
         });
     }

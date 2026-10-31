@@ -60,5 +60,6 @@ fn texts(holds: &[Hold]) -> Texts {
         cancel: t!("apps.quit_ask.cancel"),
         confirm: t!("apps.quit_ask.quit"),
         danger: true,
+        guarded: false,
     }
 }

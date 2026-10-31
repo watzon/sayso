@@ -16,6 +16,7 @@ use sayso_ui::texture::{Grain, grain};
 use sayso_ui::{ActivePaper, text};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 /// The text of a question. The window reads it at each render, so it follows
 /// a change of language.
@@ -32,6 +33,19 @@ pub struct Texts {
     pub confirm: String,
     /// The confirm button stops work of the user: it shows as a danger.
     pub danger: bool,
+    /// An app opened this question while the user does something else, and
+    /// the window takes the focus. The confirm button waits for [`CONFIRM_DELAY`], so
+    /// a click that was meant for another window does not answer yes.
+    pub guarded: bool,
+}
+
+/// How long the confirm button of a guarded question is inactive. Nothing
+/// moves when it ends, so reduced motion changes nothing here.
+const CONFIRM_DELAY: Duration = Duration::from_millis(500);
+
+/// True when a question that opened at `opened` takes a yes at `now`.
+fn takes_yes(guarded: bool, opened: Instant, now: Instant) -> bool {
+    !guarded || now.saturating_duration_since(opened) >= CONFIRM_DELAY
 }
 
 pub type Details = Box<dyn FnOnce(&Colors) -> AnyElement>;
@@ -54,6 +68,7 @@ pub struct QuestionView {
     id: &'static str,
     texts: Box<dyn Fn() -> Texts>,
     answer: Answer,
+    opened: Instant,
 }
 
 /// Open the window of a question. `answer` gets true for the confirm
@@ -90,7 +105,16 @@ pub fn open(
                 on_close.give(false, cx);
                 true
             });
-            cx.new(|_| QuestionView { id, texts: Box::new(texts), answer })
+            cx.new(|cx| {
+                if texts().guarded {
+                    cx.spawn(async move |view, cx| {
+                        cx.background_executor().timer(CONFIRM_DELAY).await;
+                        let _ = view.update(cx, |_, cx| cx.notify());
+                    })
+                    .detach();
+                }
+                QuestionView { id, texts: Box::new(texts), answer, opened: Instant::now() }
+            })
         },
     )?;
     crate::app::appkit_later(cx, crate::shell::show_app_and_activate);
@@ -99,6 +123,9 @@ pub fn open(
 
 impl QuestionView {
     fn respond(&self, yes: bool, window: &mut Window, cx: &mut App) {
+        if yes && !takes_yes((self.texts)().guarded, self.opened, Instant::now()) {
+            return;
+        }
         self.answer.give(yes, cx);
         window.remove_window();
     }
@@ -149,6 +176,7 @@ impl Render for QuestionView {
         });
         let confirm = Button::new(SharedString::from(format!("{}-confirm", self.id)), texts.confirm).large();
         let confirm = if texts.danger { confirm.danger() } else { confirm.primary() };
+        let confirm = confirm.disabled(!takes_yes(texts.guarded, self.opened, Instant::now()));
         let footer = div()
             .flex()
             .flex_none()
@@ -196,5 +224,21 @@ impl Render for QuestionView {
                     .child(footer),
             )
             .children(crate::caption::caption_bar(false, cx))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CONFIRM_DELAY, takes_yes};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_guarded_question_takes_a_yes_after_the_delay() {
+        assert_eq!(CONFIRM_DELAY, Duration::from_millis(500));
+        let opened = Instant::now();
+        assert!(!takes_yes(true, opened, opened));
+        assert!(!takes_yes(true, opened, opened + Duration::from_millis(499)));
+        assert!(takes_yes(true, opened, opened + CONFIRM_DELAY));
+        assert!(takes_yes(false, opened, opened), "the quit question comes from the user");
     }
 }

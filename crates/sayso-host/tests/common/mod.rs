@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 /// The key of the test program in the host.
 pub fn id() -> String {
-    this_program().display().to_string()
+    sayso_host::Identity::Path(this_program()).id()
 }
 
 pub struct Setup {
@@ -75,6 +75,13 @@ pub fn start_with(setup: &Setup, services: Arc<dyn HostServices>) -> Host {
 pub fn start_as(setup: &Setup, callers: Vec<std::result::Result<Caller, String>>, services: Arc<dyn HostServices>) -> Host {
     let mut config = HostConfig::new(setup.socket.clone(), setup.apps.clone());
     config.identify = Arc::new(FakeIdentify { callers: Mutex::new(callers.into()) });
+    Host::start(config, services).unwrap()
+}
+
+/// A host with another cooldown after a question that an app took back.
+pub fn start_cooling(setup: &Setup, cooldown: Duration, services: Arc<dyn HostServices>) -> Host {
+    let mut config = HostConfig::new(setup.socket.clone(), setup.apps.clone());
+    config.approval_cooldown = cooldown;
     Host::start(config, services).unwrap()
 }
 

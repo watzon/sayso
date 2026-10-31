@@ -211,7 +211,7 @@ fn a_request_without_hello_gets_not_approved_and_no_question() {
 fn a_question_goes_away_when_the_app_closes_and_keeps_no_answer() {
     let setup = setup();
     let services = FakeServices::new(None);
-    let _host = start_with(&setup, services.clone());
+    let _host = start_cooling(&setup, Duration::from_millis(800), services.clone());
     #[cfg(unix)]
     {
         use std::io::Write;
@@ -221,9 +221,38 @@ fn a_question_goes_away_when_the_app_closes_and_keeps_no_answer() {
         drop(stream);
         eventually("the host takes the question back", || services.approvals_withdrawn.load(Ordering::SeqCst) == 1);
         assert!(!setup.apps.exists(), "no answer: {:?}", std::fs::read_to_string(&setup.apps));
-        // The next connection is asked again.
+
+        // In the cooldown: `busy`, and no question that takes the focus.
+        assert_eq!(code_of(Client::connect_as(&setup.socket, &asking(&[]))), Some(ErrorCode::Busy));
+        assert_eq!(services.approvals.lock().len(), 1);
+
+        // After it, the next connection is asked again.
+        std::thread::sleep(Duration::from_millis(900));
         let waiting = connect(&setup, &asking(&[]));
         services.wait_for_approvals(2);
+        services.answer(true);
+        waiting.join().unwrap().unwrap();
+    }
+}
+
+#[test]
+fn the_cooldown_is_30_seconds_and_only_for_that_identity() {
+    assert_eq!(sayso_host::HostConfig::new("/s".into(), "/a".into()).approval_cooldown, Duration::from_secs(30));
+    let setup = setup();
+    let services = FakeServices::new(None);
+    let _host = start_as(&setup, vec![Ok(path("loop")), Ok(path("loop")), Ok(path("other"))], services.clone());
+    #[cfg(unix)]
+    {
+        use std::io::Write;
+        let mut stream = std::os::unix::net::UnixStream::connect(&setup.socket).unwrap();
+        stream.write_all(b"{\"v\":1,\"type\":\"hello\",\"id\":\"h1\",\"protocol\":1}\n").unwrap();
+        services.wait_for_approvals(1);
+        drop(stream);
+        eventually("the host takes the question back", || services.approvals_withdrawn.load(Ordering::SeqCst) == 1);
+        assert_eq!(code_of(Client::connect_as(&setup.socket, &asking(&[]))), Some(ErrorCode::Busy), "the same identity");
+        let waiting = connect(&setup, &asking(&[]));
+        services.wait_for_approvals(2);
+        assert_eq!(services.approvals.lock()[1].name, "other");
         services.answer(true);
         waiting.join().unwrap().unwrap();
     }
@@ -263,6 +292,31 @@ fn five_connections_of_one_identity_get_one_question_and_one_busy() {
         thread.join().unwrap().unwrap();
     }
     assert_eq!(services.approvals.lock().len(), 1);
+}
+
+#[test]
+fn an_app_with_four_waiting_connections_does_not_block_another_app() {
+    let setup = setup();
+    let services = FakeServices::new(None);
+    let mut callers: Vec<_> = (0..5).map(|_| Ok(path("many"))).collect();
+    callers.push(Ok(path("other")));
+    let _host = start_as(&setup, callers, services.clone());
+    let many: Vec<_> = (0..4).map(|_| connect(&setup, &asking(&[]))).collect();
+    services.wait_for_approvals(1);
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(code_of(Client::connect_as(&setup.socket, &asking(&[]))), Some(ErrorCode::Busy), "a fifth of the same identity");
+
+    let other = connect(&setup, &asking(&[]));
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!other.is_finished(), "another identity waits for its turn");
+    services.answer(true);
+    for thread in many {
+        thread.join().unwrap().unwrap();
+    }
+    services.wait_for_approvals(2);
+    assert_eq!(services.approvals.lock()[1].name, "other");
+    services.answer(true);
+    other.join().unwrap().unwrap();
 }
 
 #[test]
@@ -360,7 +414,7 @@ fn a_signed_app_keeps_one_record_through_an_update() {
     let waiting = connect(&setup, &asking(&[Capability::AudioMic]));
     services.wait_for_approvals(1);
     let question = services.approvals.lock()[0].clone();
-    assert_eq!(question.app_id, "ABCDE12345/app.example.notes");
+    assert_eq!(question.app_id, signed("app.example.notes").identity.id());
     assert_eq!(question.signer.as_deref(), Some("Example LLC"));
     services.answer(true);
     waiting.join().unwrap().unwrap();

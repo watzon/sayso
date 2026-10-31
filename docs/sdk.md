@@ -104,7 +104,7 @@ Notes:
 What the question shows:
 
 - The name from the system (the bundle name on macOS, else the file name), and the identity (team and identifier, or the path).
-- The name that the app gave, marked as "The app calls itself …". The host removes control characters and characters that change the direction of text, and cuts the name to 40 characters.
+- The name that the app gave, marked as "The app calls itself …". The host removes control characters and characters that change the direction of text or that show as nothing, and cuts the name to 40 characters. A path shows these characters as `�`, and the identity keeps the real path.
 - Each capability in plain words ("Record from your microphone", "Record the sound of other apps and calls", "See each dictation after it is inserted").
 
 The answers:
@@ -117,9 +117,10 @@ The answers:
 Limits, so an app cannot fill the screen with questions:
 
 - One approval question is on the screen at a time, for all apps.
-- At most four connections wait for an approval question. A fifth gets `error {code: "busy"}` at once.
-- A connection that closes while it waits takes back its question.
-- Questions of the same identity count as one.
+- Questions of the same identity count as one. At most four connections of one identity wait for it. A fifth gets `error {code: "busy"}` at once.
+- At most four identities wait for an approval question, which includes the one on the screen. A fifth gets `error {code: "busy"}` at once. So one app with many connections does not block other apps.
+- A connection that closes while it waits takes back its question. When the last one closes, the window closes, and the identity gets `busy` with no question for 30 seconds. So an app that connects and closes in a loop does not take the focus each time.
+- **Allow** is inactive for 500 ms after the window shows, because the window takes the focus. A click that was meant for another window does not answer yes. The download question has the same delay. Nothing moves when the delay ends, so reduced motion changes nothing.
 
 The system permissions stay separate. Sayso asks the system for the system audio permission the first time a live session in Sayso mode asks for the source `system`.
 

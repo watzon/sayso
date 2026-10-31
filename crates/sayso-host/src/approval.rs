@@ -6,9 +6,13 @@
 //! The limits, so an app cannot fill the screen with questions:
 //!
 //! - One question is on the screen at a time, for all apps.
-//! - At most four connections wait, which includes those of the question on
-//!   the screen. A fifth gets `busy` at once.
-//! - The connections of one identity share one question.
+//! - The connections of one identity share one question. At most four of them
+//!   wait, and a fifth gets `busy` at once.
+//! - At most four identities wait, which includes the one on the screen. A
+//!   fifth gets `busy` at once, so one app cannot block the others.
+//! - After a question that its app took back, the identity gets `busy` with no
+//!   question for 30 seconds: an app that connects and closes in a loop does
+//!   not take the focus each time.
 
 use crate::apps::{AppRecord, askable, unanswered};
 use crate::identity::{Caller, Identity};
@@ -16,13 +20,19 @@ use crate::responder::Responder;
 use crate::Shared;
 use parking_lot::{Condvar, Mutex};
 use sayso_protocol::{Capability, ErrorCode, Hello, HelloReply, PROTOCOL, Reply};
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// The most connections that wait for a question.
-const MAX_WAITING: usize = 4;
+/// The most connections of one identity that wait for a question.
+const MAX_CONNECTIONS: usize = 4;
+
+/// The most identities that wait for a question.
+const MAX_IDENTITIES: usize = 4;
+
+/// How long an identity gets no new question after it took one back.
+pub(crate) const COOLDOWN: Duration = Duration::from_secs(30);
 
 /// How often a connection that waits looks whether it is still open.
 const LOOK: Duration = Duration::from_millis(50);
@@ -71,14 +81,16 @@ struct Queue {
     entries: VecDeque<Entry>,
     /// A question is on the screen.
     showing: bool,
+    /// The identities that took a question back, and when they can ask again.
+    cooling: HashMap<String, Instant>,
 }
 
 /// The connections that wait for an answer, in the order of their questions.
-#[derive(Default)]
 pub(crate) struct Approvals {
     queue: Mutex<Queue>,
     changed: Condvar,
     next: AtomicU64,
+    cooldown: Duration,
 }
 
 enum Wait {
@@ -88,19 +100,28 @@ enum Wait {
 }
 
 impl Approvals {
+    pub fn new(cooldown: Duration) -> Approvals {
+        Approvals { queue: Mutex::default(), changed: Condvar::new(), next: AtomicU64::new(0), cooldown }
+    }
+
     /// Wait until the identity of `question` has an answer. One waiter shows
     /// the question, on its own thread, and writes the answer.
     fn wait(&self, shared: &Shared, caller: &Caller, question: &ApprovalQuestion, open: &Arc<AtomicBool>) -> Wait {
         let mut queue = self.queue.lock();
-        let waiting: usize = queue.entries.iter().filter(|entry| entry.done.is_none()).map(|entry| entry.waiters.iter().filter(|flag| flag.load(Ordering::SeqCst)).count()).sum();
-        if waiting >= MAX_WAITING {
+        let now = Instant::now();
+        queue.cooling.retain(|_, until| *until > now);
+        if queue.cooling.contains_key(&question.app_id) {
             return Wait::Busy;
         }
+        let live = |entry: &Entry| entry.waiters.iter().filter(|flag| flag.load(Ordering::SeqCst)).count();
+        let identities = queue.entries.iter().filter(|entry| entry.done.is_none() && live(entry) > 0).count();
         let number = match queue.entries.iter_mut().find(|entry| entry.done.is_none() && entry.app_id == question.app_id) {
+            Some(entry) if live(entry) >= MAX_CONNECTIONS => return Wait::Busy,
             Some(entry) => {
                 entry.waiters.push(open.clone());
                 entry.number
             }
+            None if identities >= MAX_IDENTITIES => return Wait::Busy,
             None => {
                 let number = self.next.fetch_add(1, Ordering::SeqCst);
                 queue.entries.push_back(Entry { number, app_id: question.app_id.clone(), waiters: vec![open.clone()], done: None });
@@ -147,7 +168,12 @@ impl Approvals {
             let queue = self.queue.lock();
             shared.is_closing() || queue.entries.iter().find(|entry| entry.number == number).is_none_or(|entry| entry.waiters.iter().all(|flag| !flag.load(Ordering::SeqCst)))
         };
-        let Some(allow) = shared.services.ask_approval(question, &withdrawn) else { return Done::NoAnswer };
+        let Some(allow) = shared.services.ask_approval(question, &withdrawn) else {
+            if !shared.is_closing() && withdrawn() {
+                self.queue.lock().cooling.insert(question.app_id.clone(), Instant::now() + self.cooldown);
+            }
+            return Done::NoAnswer;
+        };
         log::info!("host: the user said {} to {}", if allow { "allow" } else { "don't allow" }, question.name);
         let written = if question.approved { shared.apps.answer_new(&question.app_id, &question.capabilities, allow) } else { shared.apps.answer_first(caller, &question.capabilities, allow) };
         match written {
@@ -230,7 +256,7 @@ pub(crate) fn ask_and_reply(shared: &Shared, caller: &Caller, request: &Hello, m
                 let approved = question.approved;
                 let notifier = responder.notifier();
                 asking.store(false, Ordering::SeqCst);
-                responder.reply(Reply::error(Some(ErrorCode::Busy), "too many connections wait for an approval question; try again later"));
+                responder.reply(Reply::error(Some(ErrorCode::Busy), "Sayso cannot ask about this app now; try again later"));
                 // An approved app keeps its connection and its old grants.
                 if !approved {
                     notifier.close();

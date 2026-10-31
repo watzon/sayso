@@ -109,7 +109,7 @@ fn ask_and_start<'a>(
     if !responder.is_open() {
         return Err(Reply::error(None, "the connection is closed"));
     }
-    let app_name = shared.apps.current().record(app_id).map_or_else(|| app_id.to_string(), |record| record.name.clone());
+    let app_name = shared.apps.current().record(app_id).map_or_else(|| crate::visible_text(app_id), |record| record.shown_name());
     let question = DownloadQuestion {
         app_id: app_id.to_string(),
         app_name,
@@ -188,7 +188,9 @@ fn look_with(engine: &Arc<dyn SttBackend>, id: &ModelId, starting: &HashSet<Mode
     }
 }
 
+/// The reason to show: on one line, with nothing that can mislead, and cut.
 fn short(reason: &str) -> String {
+    let reason = crate::identity::without_hidden(&reason.replace(['\n', '\r', '\t'], " "));
     let reason = reason.trim();
     if reason.chars().count() <= MAX_REASON_CHARS {
         return reason.to_string();
@@ -293,5 +295,17 @@ impl Progress<'_> {
             }
             ModelStatus::NotDownloaded => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::short;
+
+    #[test]
+    fn a_reason_loses_what_can_mislead_and_is_cut() {
+        assert_eq!(short("  Needs\na model\u{202E} for\u{E0041} notes "), "Needs a model for notes");
+        let long = short(&"x".repeat(400));
+        assert!(long.ends_with("...") && long.chars().count() < 400, "{long}");
     }
 }

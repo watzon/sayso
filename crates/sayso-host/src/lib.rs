@@ -31,7 +31,7 @@ pub use enhance::StyleRequest;
 pub use holds::{Hold, Work};
 pub use approval::ApprovalQuestion;
 pub use apps::{AppRecord, Apps, AppsFile};
-pub use identity::{Caller, Identify, Identity, Peer, SystemIdentify, clean_name};
+pub use identity::{Caller, Identify, Identity, Peer, SystemIdentify, clean_name, visible_path, visible_text};
 /// The event of [`Host::dictation_done`], for the app.
 pub use sayso_protocol::DictationDone;
 
@@ -143,11 +143,13 @@ pub struct HostConfig {
     /// The version of Sayso, for the `hello` reply.
     pub host_version: String,
     pub identify: Arc<dyn Identify>,
+    /// How long an identity gets no new question after it took one back.
+    pub approval_cooldown: std::time::Duration,
 }
 
 impl HostConfig {
     pub fn new(socket: PathBuf, apps_file: PathBuf) -> HostConfig {
-        HostConfig { socket, apps: Arc::new(AppsFile::new(apps_file)), host_version: env!("CARGO_PKG_VERSION").into(), identify: Arc::new(SystemIdentify) }
+        HostConfig { socket, apps: Arc::new(AppsFile::new(apps_file)), host_version: env!("CARGO_PKG_VERSION").into(), identify: Arc::new(SystemIdentify), approval_cooldown: approval::COOLDOWN }
     }
 
     /// The socket of `sayso_protocol::socket`, and `apps.toml` in the data folder.
@@ -272,7 +274,7 @@ impl Host {
             host_version: config.host_version,
             identify: config.identify,
             apps: config.apps,
-            approvals: approval::Approvals::default(),
+            approvals: approval::Approvals::new(config.approval_cooldown),
             bus,
             engine,
             services,

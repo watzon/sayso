@@ -48,7 +48,7 @@ pub(crate) fn holds(shared: &Shared) -> Vec<Hold> {
             continue;
         }
         // A record that the user removed during the work: the key still names the app.
-        let name = apps.record(&app_id).map_or_else(|| app_id.clone(), |record| record.name.clone());
+        let name = apps.record(&app_id).map_or_else(|| crate::visible_text(&app_id), |record| record.shown_name());
         holds.push(Hold { app_id, name, work });
     }
     holds

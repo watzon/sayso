@@ -54,12 +54,17 @@ pub enum Identity {
 }
 
 impl Identity {
-    /// The key of the app in the host. Paths are compared without case on Windows.
+    /// The key of the app in the host. It has the kind, so a path can never
+    /// be the key of a signed app. Paths are compared without case on Windows.
+    /// A path that is not UTF-8 keeps its bytes, so two such paths have two keys.
     pub fn id(&self) -> String {
         match self {
-            Identity::Signed { team_id, identifier } => format!("{team_id}/{identifier}"),
-            Identity::Path(path) if cfg!(windows) => path.display().to_string().to_lowercase(),
-            Identity::Path(path) => path.display().to_string(),
+            Identity::Signed { team_id, identifier } => format!("signed:{team_id}/{identifier}"),
+            Identity::Path(path) => match path.to_str() {
+                Some(text) if cfg!(windows) => format!("path:{}", text.to_lowercase()),
+                Some(text) => format!("path:{text}"),
+                None => format!("bytes:{}", path.as_os_str().as_encoded_bytes().escape_ascii()),
+            },
         }
     }
 }
@@ -104,15 +109,46 @@ impl Identify for SystemIdentify {
 /// The longest name that Sayso shows from an app or from a file.
 const MAX_NAME: usize = 40;
 
+/// True for a character that a person cannot see or that changes the text
+/// around it: control characters, the format characters of Unicode (`Cf`), the
+/// line and paragraph separators, and letters and marks that show as nothing.
+fn hidden(c: char) -> bool {
+    c.is_control()
+        || matches!(c,
+            // Format characters, with the direction marks and the tag characters.
+            '\u{00AD}' | '\u{0600}'..='\u{0605}' | '\u{061C}' | '\u{06DD}' | '\u{070F}' | '\u{0890}'..='\u{0891}' | '\u{08E2}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}'
+            | '\u{110BD}' | '\u{110CD}' | '\u{13430}'..='\u{1343F}' | '\u{1BCA0}'..='\u{1BCA3}' | '\u{1D173}'..='\u{1D17A}' | '\u{E0001}' | '\u{E0020}'..='\u{E007F}'
+            // The line and paragraph separators.
+            | '\u{2028}' | '\u{2029}'
+            // Letters and marks that show as nothing.
+            | '\u{034F}' | '\u{115F}' | '\u{1160}' | '\u{17B4}' | '\u{17B5}' | '\u{180B}'..='\u{180D}' | '\u{180F}' | '\u{2800}' | '\u{3164}' | '\u{FE00}'..='\u{FE0F}' | '\u{FFA0}' | '\u{E0100}'..='\u{E01EF}')
+}
+
+/// `text` without the characters that can mislead.
+pub(crate) fn without_hidden(text: &str) -> String {
+    text.chars().filter(|c| !hidden(*c)).collect()
+}
+
 /// A name that is safe to show: no control characters, no characters that
 /// change the direction of text or hide in it, and at most 40 characters.
 /// None when nothing is left.
 pub fn clean_name(name: &str) -> Option<String> {
-    let invisible = |c: char| c.is_control() || matches!(c, '\u{00AD}' | '\u{061C}' | '\u{200B}'..='\u{200F}' | '\u{2028}'..='\u{202E}' | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}');
-    let cleaned: String = name.chars().filter(|c| !invisible(*c)).collect();
+    let cleaned = without_hidden(name);
     let cleaned: String = cleaned.trim().chars().take(MAX_NAME).collect();
     let cleaned = cleaned.trim_end();
     (!cleaned.is_empty()).then(|| cleaned.to_string())
+}
+
+/// Text from a file name or a file, to show in one line. Each character that
+/// can mislead shows as U+FFFD, so the person sees that this text has one.
+/// The identity keeps the real text.
+pub fn visible_text(text: &str) -> String {
+    text.chars().map(|c| if hidden(c) { '\u{FFFD}' } else { c }).collect()
+}
+
+/// A path to show, as [`visible_text`].
+pub fn visible_path(path: &Path) -> String {
+    visible_text(&path.to_string_lossy())
 }
 
 /// The name from the system.
@@ -132,9 +168,15 @@ fn file_name(executable: &Path) -> String {
 /// True for the file name of a known interpreter, also with a version in it
 /// (`python3.12`) and without case (`Python`, `node.exe`).
 fn is_interpreter(executable: &Path) -> bool {
-    const KNOWN: [&str; 28] = ["awk", "bash", "bun", "cmd", "cscript", "dash", "deno", "dotnet", "fish", "java", "julia", "ksh", "lua", "node", "osascript", "perl", "php", "powershell", "pwsh", "python", "pythonw", "r", "rscript", "ruby", "sh", "tclsh", "wscript", "zsh"];
+    const KNOWN: [&str; 35] = ["awk", "bash", "bun", "busybox", "cmd", "cscript", "dash", "deno", "dotnet", "fish", "gawk", "java", "javaw", "julia", "ksh", "lua", "mawk", "node", "nodejs", "osascript", "perl", "php", "powershell", "pwsh", "pypy", "python", "pythonw", "r", "rscript", "ruby", "sh", "tclsh", "wish", "wscript", "zsh"];
     let Some(stem) = executable.file_name().map(|name| name.to_string_lossy().to_lowercase()) else { return false };
+    // The loader of Linux runs any program: `ld-linux-x86-64.so.2 ./app`.
+    if stem.starts_with("ld-linux") || stem.starts_with("ld-musl") || stem == "ld.so" {
+        return true;
+    }
     let stem = stem.strip_suffix(".exe").unwrap_or(&stem);
+    // The builds of python.org: `python3-intel64`.
+    let stem = stem.strip_suffix("-intel64").unwrap_or(stem);
     let stem = stem.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.' || c == '-');
     KNOWN.contains(&stem)
 }
@@ -431,6 +473,8 @@ mod tests {
         // U+202E turns the text around: "exe.txt" would read as "txt.exe".
         assert_eq!(clean_name("ev\u{202E}il\u{2066}\u{200F}").as_deref(), Some("evil"));
         assert_eq!(clean_name("\u{200B}\u{FEFF} "), None);
+        // Tag characters, format characters, and letters that show as nothing.
+        assert_eq!(clean_name("No\u{E0041}\u{E0067}tes\u{180E}\u{0600}\u{3164}\u{FFA0}\u{2028}").as_deref(), Some("Notes"));
         assert_eq!(clean_name(&"é".repeat(50)).unwrap().chars().count(), 40);
         // The cut does not leave a space at the end.
         assert_eq!(clean_name(&format!("{} x", "a".repeat(39))).unwrap().chars().count(), 39);
@@ -438,10 +482,10 @@ mod tests {
 
     #[test]
     fn known_interpreters_are_found_by_their_file_name() {
-        for name in ["python3", "python3.12", "Python", "node", "node.exe", "bash", "zsh", "ruby", "perl5.34", "pwsh", "osascript", "pythonw.exe"] {
+        for name in ["python3", "python3.12", "Python", "node", "node.exe", "bash", "zsh", "ruby", "perl5.34", "pwsh", "osascript", "pythonw.exe", "javaw.exe", "nodejs", "pypy3", "gawk", "mawk", "python3-intel64", "python3.12-intel64", "busybox", "wish", "wish8.6", "ld-linux-x86-64.so.2", "ld-linux-aarch64.so.1", "ld-musl-x86_64.so.1", "ld.so"] {
             assert!(is_interpreter(Path::new(name)), "{name}");
         }
-        for name in ["notes", "transcribe", "pythonista", "sayso-ext", "node-gyp-helper"] {
+        for name in ["notes", "transcribe", "pythonista", "sayso-ext", "node-gyp-helper", "ldd", "wishlist"] {
             assert!(!is_interpreter(Path::new(name)), "{name}");
         }
     }
@@ -462,8 +506,36 @@ mod tests {
     #[test]
     fn an_identity_gives_one_key() {
         let signed = Identity::Signed { team_id: "ABCDE12345".into(), identifier: "app.example".into() };
-        assert_eq!(signed.id(), "ABCDE12345/app.example");
+        assert_eq!(signed.id(), "signed:ABCDE12345/app.example");
         let lower = Identity::Path("/opt/App".into()).id();
-        assert_eq!(lower, if cfg!(windows) { "/opt/app" } else { "/opt/App" });
+        assert_eq!(lower, if cfg!(windows) { "path:/opt/app" } else { "path:/opt/App" });
+    }
+
+    #[test]
+    fn a_path_is_never_the_key_of_a_signed_app() {
+        let signed = Identity::Signed { team_id: "TEAM".into(), identifier: "app.x".into() };
+        assert_ne!(Identity::Path("TEAM/app.x".into()).id(), signed.id());
+        assert_ne!(Identity::Path("signed:TEAM/app.x".into()).id(), signed.id());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn paths_that_are_not_utf8_keep_two_keys() {
+        use std::os::unix::ffi::OsStrExt;
+        let path = |byte: u8| Identity::Path(PathBuf::from(std::ffi::OsStr::from_bytes(&[b'/', b'x', byte])));
+        assert_ne!(path(0xFE).id(), path(0xFF).id());
+        assert_ne!(path(0xFF).id(), Identity::Path("/x\u{FFFD}".into()).id(), "not the text that shows");
+    }
+
+    #[test]
+    fn a_path_shows_each_character_that_can_mislead() {
+        let path = Path::new("/opt/ev\u{202E}il\nname\u{E0041}");
+        assert_eq!(visible_path(path), "/opt/ev\u{FFFD}il\u{FFFD}name\u{FFFD}");
+        assert_eq!(visible_path(Path::new("/opt/My App/é")), "/opt/My App/é");
+    }
+
+    #[test]
+    fn the_name_from_the_file_name_has_nothing_hidden() {
+        assert_eq!(file_name(Path::new("/opt/ev\u{202E}il\nname")), "evilname");
     }
 }

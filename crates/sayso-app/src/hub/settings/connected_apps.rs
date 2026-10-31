@@ -8,7 +8,7 @@ use crate::approval_ask::{capability_text, ordered};
 use crate::model::AppModel;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use sayso_host::{AppRecord, Identity};
+use sayso_host::{AppRecord, Identity, visible_path, visible_text};
 use sayso_i18n::t;
 use sayso_protocol::Capability;
 use sayso_ui::ActivePaper;
@@ -30,8 +30,8 @@ pub struct ConnectedAppsSettings {
 /// The team (or the path) and the identifier, under the name of an app.
 fn id_line(record: &AppRecord, details: &str) -> String {
     match (&record.signer, &record.team_id, &record.identifier, &record.path) {
-        (Some(signer), _, Some(identifier), _) => format!("{signer} · {identifier}"),
-        (None, Some(team), Some(identifier), _) => format!("{team} · {identifier}"),
+        (Some(signer), _, Some(identifier), _) => visible_text(&format!("{signer} · {identifier}")),
+        (None, Some(team), Some(identifier), _) => visible_text(&format!("{team} · {identifier}")),
         (_, _, _, Some(path)) if details.is_empty() => short_path(path),
         (_, _, _, Some(path)) => format!("{} · {details}", short_path(path)),
         _ => String::new(),
@@ -40,9 +40,9 @@ fn id_line(record: &AppRecord, details: &str) -> String {
 
 /// A path in the home folder starts with `~`.
 fn short_path(path: &std::path::Path) -> String {
-    match dirs_home().and_then(|home| path.strip_prefix(home).ok().map(|rest| rest.display().to_string())) {
+    match dirs_home().and_then(|home| path.strip_prefix(home).ok().map(visible_path)) {
         Some(rest) => format!("~/{rest}"),
-        None => path.display().to_string(),
+        None => visible_path(path),
     }
 }
 
@@ -127,7 +127,7 @@ impl ConnectedAppsSettings {
             .flex_1()
             .min_w_0()
             .gap(px(3.))
-            .child(div().flex().items_center().gap(px(10.)).child(text::ui(record.name.clone(), 17., FontWeight::SEMIBOLD, c.ink).line_height(px(20.))).children(pill))
+            .child(div().flex().items_center().gap(px(10.)).child(text::ui(record.shown_name(), 17., FontWeight::SEMIBOLD, c.ink).line_height(px(20.))).children(pill))
             .child(text::mono(id_line(record, details), 12., c.graphite).line_height(px(16.)))
     }
 
@@ -135,7 +135,7 @@ impl ConnectedAppsSettings {
         let c = cx.paper().colors;
         let remove_id = id.to_string();
         let remove = Pressable::new(("app-remove", index))
-            .label(format!("{}, {}", t!("apps.settings.remove"), record.name))
+            .label(format!("{}, {}", t!("apps.settings.remove"), record.shown_name()))
             .flex_none()
             .py(px(8.))
             .px(px(4.))
@@ -184,7 +184,7 @@ impl ConnectedAppsSettings {
         let c = cx.paper().colors;
         let id = id.to_string();
         let details = switchable(record).into_iter().filter(|(_, on)| *on).map(|(capability, _)| capability_text(&capability)).collect::<Vec<_>>().join(", ");
-        let show = t!("apps.settings.show_app", app = record.name);
+        let show = t!("apps.settings.show_app", app = record.shown_name());
         Pressable::new(("app-show", index))
             .label(show)
             .w_full()
@@ -221,7 +221,7 @@ impl ConnectedAppsSettings {
             this.change(cx, |file| file.allow(&id));
         }));
         let forget = Pressable::new(("app-forget", index))
-            .label(format!("{}, {}", t!("apps.settings.forget"), record.name))
+            .label(format!("{}, {}", t!("apps.settings.forget"), record.shown_name()))
             .flex_none()
             .py(px(8.))
             .px(px(4.))
@@ -246,7 +246,7 @@ impl ConnectedAppsSettings {
                     .flex_1()
                     .min_w_0()
                     .gap(px(2.))
-                    .child(text::ui(record.name.clone(), 15., FontWeight::SEMIBOLD, c.ink).line_height(px(18.)))
+                    .child(text::ui(record.shown_name(), 15., FontWeight::SEMIBOLD, c.ink).line_height(px(18.)))
                     .child(text::mono(format!("{identity} · {}", said_no(record)), 12., c.graphite).line_height(px(16.))),
             )
             .child(div().flex().flex_none().items_center().gap(px(12.)).child(allow).child(forget))
@@ -309,6 +309,12 @@ mod tests {
     fn a_card_switches_what_the_app_asked_for_in_order() {
         let record = record("[[apps]]\nname = \"N\"\npath = \"/x\"\nallowed = true\ngranted = [\"transcribe.file\", \"audio.mic\"]\ndenied = [\"audio.system\"]\n");
         assert_eq!(switchable(&record), vec![(Capability::AudioMic, true), (Capability::AudioSystem, false), (Capability::TranscribeFile, true)]);
+    }
+
+    #[test]
+    fn the_id_line_shows_each_character_that_can_mislead() {
+        let record = AppRecord { name: "x".into(), team_id: None, identifier: None, signer: None, path: Some("/opt/ev\u{202E}il\nname".into()), allowed: true, granted: vec![], denied: vec![], first_seen: None };
+        assert_eq!(id_line(&record, ""), "/opt/ev\u{FFFD}il\u{FFFD}name");
     }
 
     #[test]
