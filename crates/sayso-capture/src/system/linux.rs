@@ -68,7 +68,7 @@ fn map_error(err: ClientError) -> Error {
 /// The samples of the stream: little-endian `f32`.
 fn samples(bytes: &[u8], out: &mut Vec<f32>) {
     out.clear();
-    out.extend(bytes.chunks_exact(4).map(|sample| f32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]])));
+    out.extend(bytes.as_chunks::<4>().0.iter().map(|sample| f32::from_le_bytes(*sample)));
 }
 
 fn open(mut sink: FrameSink) -> Result<MonitorStream, Error> {
