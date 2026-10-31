@@ -148,8 +148,12 @@ mod shared_socket {
             }
             libc::waitpid(child, std::ptr::null_mut(), 0);
         }
-        assert!(lines.next().is_none(), "no reply, and the host closes");
+        // First wait, and read after that. On macOS a read of this process makes it the
+        // last owner of the socket again, and the host can see that instead of the child
+        // (docs/sdk.md, "Security").
         eventually("the host forgets the connection", || host.connected_apps().is_empty());
+        let next = lines.next();
+        assert!(next.is_none(), "no reply, and the host closes: {next:?}");
     }
 
     /// Needs the right to make namespaces, so it runs in a Linux container

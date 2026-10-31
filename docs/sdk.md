@@ -525,6 +525,7 @@ The result of step 9a before this change, with 0.14.0: only the last row worked.
 
 ## Security
 
+- **The check of the writer on macOS has a limit.** macOS gives the last owner of a socket, not the writer of each message, and a read of the client also makes it the owner. So an approved app that gives its socket to another process, and reads at the right moment, can have a line of that process accepted. Such an app can also relay the requests itself, so this gives it nothing new. Linux checks each message with `SCM_CREDENTIALS`. On Windows the host knows only the process that connected, with the same result for such an app.
 - **A program without approval has limits.** The host and the bridge keep 64 connections at most, close a connection that sends no line in 5 seconds, and read 64 KiB at most before they know the writer. One connection keeps 16 waiting jobs with an open file at most, and gets `busy` after that.
 - **Sayso does not say that an app is safe.** No person reviews connected apps. The approval question says what the app asks for and what the system knows about it.
 - **An approved app is a native program with the rights of the user.** Approval controls only what Sayso gives it.

@@ -272,7 +272,10 @@ pub(crate) mod system {
         fn proc_pidpath_audittoken(token: *mut AuditToken, buffer: *mut c_void, size: u32) -> libc::c_int;
     }
 
-    /// The process that wrote to `stream` last.
+    /// The process that used `stream` last. macOS has no writer for each message:
+    /// this token is the last owner of the socket, and a read of the client makes it
+    /// the owner too. So a program that shares its socket can hide a line of another
+    /// process with a read at the right moment. It could also relay that line itself.
     pub fn last_writer(stream: &UnixStream) -> Result<Peer, String> {
         let mut token: AuditToken = [0; 8];
         let mut len = std::mem::size_of::<AuditToken>() as libc::socklen_t;
