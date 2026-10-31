@@ -18,8 +18,9 @@ use std::sync::Arc;
 /// audio of the same time. `docs/sdk.md`, "System audio", says how the test
 /// data in `tests/fixtures/echo_pairs.tsv` chose it.
 pub const ECHO_LIMIT: f32 = 0.6;
-/// A microphone segment with fewer words is an echo only when it is also most
-/// of the system words of its time. "Yes" in a long sentence is a real reply.
+/// A microphone segment with this many words or fewer is an echo only when it
+/// is also most of the system words of its time. "Yes" or "I think so" in a long
+/// sentence is a real reply.
 const SHORT_WORDS: usize = 3;
 const SHORT_LIMIT: f32 = 0.5;
 /// How far the times of the two sources can differ: the path through the room
@@ -99,7 +100,7 @@ pub(crate) fn words_echo(mic: &[String], system: &[String], limit: f32) -> bool 
         return false;
     }
     let common = common_words(mic, system) as f32;
-    common / mic.len() as f32 >= limit && (mic.len() >= SHORT_WORDS || common / system.len() as f32 >= SHORT_LIMIT)
+    common / mic.len() as f32 >= limit && (mic.len() > SHORT_WORDS || common / system.len() as f32 >= SHORT_LIMIT)
 }
 
 /// A system segment, with times on the capture clock.
@@ -285,6 +286,16 @@ mod tests {
     fn a_short_segment_must_be_most_of_the_system_words() {
         assert!(words_echo(&w("Yes."), &w("yes"), ECHO_LIMIT));
         assert!(!words_echo(&w("Yes."), &w("yes we should ship the release on Friday"), ECHO_LIMIT));
+    }
+
+    #[test]
+    fn a_reply_of_three_words_stays_when_it_is_a_small_part_of_the_system_words() {
+        assert!(!words_echo(&w("I think so"), &w("I think we should ship it"), ECHO_LIMIT));
+        assert!(!words_echo(&w("I think so"), &w("I think so and we should ship it on Friday"), ECHO_LIMIT));
+        assert!(words_echo(&w("I think so"), &w("I think so"), ECHO_LIMIT));
+        assert!(words_echo(&w("I think so"), &w("yes I think so too"), ECHO_LIMIT));
+        // Four words: only the limit of the words of the microphone counts.
+        assert!(words_echo(&w("I think so too"), &w("I think so too and we should ship it on Friday"), ECHO_LIMIT));
     }
 
     #[test]

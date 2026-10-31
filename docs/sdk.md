@@ -447,16 +447,16 @@ The permission on macOS has no public API. `system::access()` reads it with `TCC
 
 Each source of a live session is a separate stream, as in "Capture" of `extensions.md`.
 
-The echo rule is in `sayso-speech` (`live/echo.rs`), so both modes have it. In a session with `mic` and `system`, a microphone segment is dropped when a system segment covers at least half of its time (with 1 s of slack, for the way through the room and the speech detection) and at least 60% of its words. Words are compared in order (longest common subsequence), without case or punctuation, and a word of 4 letters or more can differ by one letter. For 3 words or fewer the limit is 50%, because one wrong word is too much of a short text. A microphone segment waits until the system source has passed its time, at most 60 s, so with both sources the microphone segments can come later than the system segments. When the system source ends, nothing waits. Partials are not filtered: only `segment` and the final text.
+The echo rule is in `sayso-speech` (`live/echo.rs`), so both modes have it. In a session with `mic` and `system`, a microphone segment is dropped when a system segment covers at least half of its time (with 1 s of slack, for the way through the room and the speech detection) and at least 60% of its words. Words are compared in order (longest common subsequence), without case or punctuation, and a word of 4 letters or more can differ by one letter. A segment of 3 words or fewer must also be at least 50% of the system words of its time, so "I think so" stays when the call says "I think we should ship it". A microphone segment waits until the system source has passed its time, at most 60 s, so with both sources the microphone segments can come later than the system segments. When the system source ends, nothing waits. Partials are not filtered: only `segment` and the final text.
 
 **The limit of 60%.** It comes from `crates/sayso-speech/tests/fixtures/echo_pairs.tsv`, 1170 synthetic text pairs that `echo_pairs.py` makes with a fixed seed: 270 pairs of one sentence as a system transcript and with the errors that a second transcript through a room has, and 900 pairs of real text on the same topic, which share common words but are not an echo. They are not recordings. A real call must confirm the limit (the check of step 13).
 
 | Limit | Echoes dropped | Real text dropped |
 |---|---|---|
-| 30% | 99.6% | 3.8% |
-| 40% | 99.6% | 0.9% |
-| 50% | 99.3% | 0.7% |
-| **60%** | **98.1%** | **0.2%** |
+| 30% | 99.6% | 3.3% |
+| 40% | 99.6% | 0.7% |
+| 50% | 99.3% | 0.4% |
+| **60%** | **98.1%** | **0.0%** |
 | 70% | 92.6% | 0.0% |
 | 80% | 81.5% | 0.0% |
 | 90% | 58.1% | 0.0% |
