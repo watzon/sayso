@@ -54,6 +54,8 @@ flatpak run dev.sayso.Sayso
 
 The install gets the runtime from Flathub, so your system must have the Flathub remote.
 
+A connected app does not reach Sayso across the Flatpak sandbox, in either direction: the app uses its own engine ([sdk.md](sdk.md), "Flatpak").
+
 Sayso must send keys to other apps, read the keyboard, and start tools of your system. So its Flatpak has wide permissions, and the sandbox protects little:
 
 | Permission | Why |

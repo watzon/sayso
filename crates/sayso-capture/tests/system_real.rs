@@ -8,6 +8,10 @@
 //! On a Mac the first capture of a program can wait for the answer of a person
 //! to a question of the system, and the capture does not end until then, so
 //! `finds_a_quiet_tone` looks like it hangs. Look at `permission_state` first.
+//!
+//! On a slow Windows computer PowerShell can start after the 3 s of
+//! `finds_a_quiet_tone`, so every frame is silent. Play a sound from another
+//! process during the test.
 
 use sayso_capture::mic::{FRAME_SAMPLES, TARGET_RATE};
 use sayso_capture::system::{self, End, Event, Exclude, Options};
