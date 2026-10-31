@@ -880,7 +880,7 @@ fn a_start_whose_connection_closes_ends_when_the_question_ends_and_frees_the_slo
     f.system.hold.store(false, Ordering::SeqCst);
     let error = start.join().unwrap().unwrap_err();
     assert!(error.message.contains("closed"), "{error:?}");
-    assert_eq!(f.system.feed.lock().is_some(), false, "the capture closed");
+    assert!(f.system.feed.lock().is_none(), "the capture closed");
     assert_eq!(f.mic.opened.load(Ordering::SeqCst), 0, "the microphone did not open");
     assert_eq!(f.engine.open_now(), 0);
     assert_eq!(f.sessions.current(), None);
