@@ -313,9 +313,9 @@ jobs:
           workspaces: |
             .
             native/cleanup
-      - name: Install CMake
+      - name: Install CMake and Inno Setup
         run: |
-          choco install cmake --no-progress -y
+          choco install cmake innosetup --no-progress -y
           "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       # Same as the test jobs above: the cache can keep the folders of the
       # sherpa-onnx library without its files.
@@ -328,9 +328,15 @@ jobs:
             cargo clean -p sherpa-onnx-sys
             cargo clean -p sherpa-onnx-sys --release
           fi
-      # No SAYSO_SIGN_CERT, so nothing is signed. No -Installer: the folder is enough.
-      - name: Build the app folder, not signed
-        run: scripts\bundle-windows.ps1
+      # No SAYSO_SIGN_CERT, so nothing is signed. The installer is for tests on a VM.
+      - name: Build the app folder and the installer, not signed
+        run: scripts\bundle-windows.ps1 -Installer
+      - name: Keep the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-windows-installer
+          path: dist/Sayso-*-windows-x64-setup.exe
+          if-no-files-found: error
       - name: Make the engine release file
         run: scripts\package-engine.ps1
       - name: Keep the engine release file
