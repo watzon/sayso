@@ -20,6 +20,20 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.14.0"
+title = "Connect your own apps to Sayso"
+
+[[release.item]]
+icon = "shield"
+title = "Connected apps"
+text = "Other apps can now use Sayso for speech, once you allow them. Sayso asks one time for each app, and you can take the permission back in Settings › Connected apps."
+
+[[release.item]]
+icon = "download"
+title = "A new place for your models"
+text = "Sayso moves your models to a new folder at the first start, with no download. If you go back to an older version, it downloads the models again."
+
+[[release]]
 version = "0.12.0"
 title = "One speech engine for Windows and Linux"
 

@@ -17,6 +17,7 @@ hub:
     appearance: "모양"
     history_privacy: "기록 및 개인정보 보호"
     permissions: "권한"
+    connected_apps: "연결된 앱"
     advanced: "고급"
   sidebar:
     expand: "사이드바 펼치기"

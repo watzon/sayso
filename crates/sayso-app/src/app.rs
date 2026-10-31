@@ -73,7 +73,7 @@ pub fn run() {
 
         apply_language(&loaded.config);
         let services = start_services(&paths, &loaded.config, updates);
-        // Extensions connect from now on. When Sayso quits, each one gets `host_closing`.
+        // Apps connect from now on. When Sayso quits, each one gets `host_closing`.
         // The OS can end Sayso (log out, shut down) without the quit question:
         // `host_closing` still goes out.
         let started = crate::host::start(&paths, &services);
@@ -85,9 +85,9 @@ pub fn run() {
             })
             .detach();
         }
-        let (host, questions, host_jobs) = match started {
-            Some(s) => (Some(s.host), Some(s.questions), Some(s.jobs)),
-            None => (None, None, None),
+        let (host, questions, approvals, host_jobs) = match started {
+            Some(s) => (Some(s.host), Some(s.questions), Some(s.approvals), Some(s.jobs)),
+            None => (None, None, None, None),
         };
         apply_theme(&loaded.config, &services, cx);
         cx.set_global(Windows::default());
@@ -99,11 +99,27 @@ pub fn run() {
             let mut model = AppModel::new(p, config, issues, services, cx);
             model.host_jobs = host_jobs;
             model.host = host.clone();
+            if let Some(host) = &host {
+                // One value for the host and for Settings.
+                model.apps_file = host.apps();
+            }
             model
         });
-        // A live session or a job of an extension starts or ends: the update
-        // that waits for it, and the views of the model.
+        // A live session or a job of an app starts or ends: the update that
+        // waits for it, and the views of the model.
         if let Some(host) = &host {
+            let (changed, changes) = async_channel::bounded::<()>(1);
+            host.apps().set_observer(Arc::new(move || {
+                let _ = changed.try_send(());
+            }));
+            let m = model.clone();
+            cx.spawn(async move |cx| {
+                while changes.recv().await.is_ok() {
+                    cx.update(|cx| m.update(cx, |m, cx| m.apps_changed(cx)));
+                }
+            })
+            .detach();
+
             let (changed, changes) = async_channel::bounded::<()>(1);
             host.set_holds_observer(Arc::new(move || {
                 let _ = changed.try_send(());
@@ -127,9 +143,15 @@ pub fn run() {
         })
         .detach();
 
-        // The questions of extensions come from threads of the host, and show as windows.
+        // The questions of apps come from threads of the host, and show as windows.
         if let Some(questions) = questions {
             crate::download_ask::listen(&model, questions, cx);
+        }
+        if let Some(approvals) = approvals {
+            crate::approval_ask::listen(&model, approvals, cx);
+        }
+        if crate::dev::arg("ask-approval").is_some() || crate::dev::flag("ask-approval") {
+            crate::approval_ask::open_sample(&model, cx);
         }
         if crate::dev::flag("ask-download") {
             crate::download_ask::open_sample(&model, cx);
@@ -211,7 +233,14 @@ fn start_services(paths: &Paths, config: &Config, updates: Option<(sayso_update:
         .unwrap_or_else(sayso_engine_client::EngineClient::default_engine_path);
     // The engine answers on a thread of its own, so the tray and the overlay
     // do not wait for it. `AppModel` hears `Started` or `StartFailed`.
-    let options = sayso_engine_client::Options { env: crate::shell::engine_env(), ..Default::default() };
+    // The migration can hash gigabytes, so it runs on that thread too. An engine
+    // that the user chose can be older than the store, so it keeps its folders.
+    let chosen_engine = config.advanced.engine_path.is_some() || std::env::var_os("SAYSO_ENGINE_PATH").is_some_and(|path| !path.is_empty());
+    let before_launch = (!chosen_engine).then(|| {
+        let models_dir = paths.models_dir();
+        sayso_engine_client::BeforeLaunch(Arc::new(move || model_store_env(&models_dir)))
+    });
+    let options = sayso_engine_client::Options { env: crate::shell::engine_env(), before_launch, ..Default::default() };
     let (client, engine_events) = match sayso_engine_client::EngineClient::start_with(engine_path.clone(), paths.models_dir(), paths.cache_dir.clone(), options) {
         Ok((e, events)) => (Some(e), Some(events)),
         Err(e) => {
@@ -383,8 +412,53 @@ pub fn finish_onboarding(model: &Entity<AppModel>, window: &mut Window, cx: &mut
     open_hub(model, Route::Home, cx);
 }
 
+/// Move the models from the old folders into the model store, and give the
+/// environment that tells the engine to use the store. After an error, the engine
+/// runs on the old folders for this start when they are all still there, and the
+/// next start goes on with the migration.
+fn model_store_env(models_dir: &std::path::Path) -> Vec<(String, String)> {
+    let Some(store) = models_dir.join(sayso_core::model_store::FOLDER).to_str().map(str::to_string) else {
+        log::warn!("the models folder {} is not UTF-8, so Sayso does not use the model store", models_dir.display());
+        return Vec::new();
+    };
+    let store_env = vec![("SAYSO_MODEL_STORE".to_string(), store)];
+    // A panic here must not leave the app waiting for an engine that never starts.
+    let result = std::panic::catch_unwind(|| sayso_core::model_migration::run(models_dir));
+    match result {
+        Ok(Ok(report)) => {
+            if !report.moved.is_empty() {
+                log::info!("moved to the model store: {}", report.moved.join(", "));
+            }
+            for (model, reason) in &report.kept {
+                log::info!("{model} is not in the model store, so its old files stay: {reason}");
+            }
+            store_env
+        }
+        failed => {
+            match failed {
+                Ok(Err(e)) => log::error!("the migration of the models failed: {e}"),
+                _ => log::error!("the migration of the models panicked"),
+            }
+            if sayso_core::model_migration::store_in_use(models_dir) { store_env } else { Vec::new() }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_engine_gets_the_store_only_after_the_migration_ran() {
+        let models = tempfile::tempdir().unwrap();
+        let store = models.path().join("v1");
+        assert_eq!(super::model_store_env(models.path()), [("SAYSO_MODEL_STORE".to_string(), store.to_str().unwrap().to_string())]);
+        assert!(store.join("migration.json").is_file());
+
+        // A store that cannot open: the engine uses its folder for this start.
+        let models = tempfile::tempdir().unwrap();
+        std::fs::write(models.path().join("v1"), "").unwrap();
+        assert_eq!(super::model_store_env(models.path()), []);
+    }
+
     /// `sayso-ui` asks for its texts by key at run time, so the catalog test of
     /// `sayso-i18n` does not see them. Each key must be in `en.yml`, with the
     /// text that `sayso-ui` has built in.

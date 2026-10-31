@@ -1,0 +1,36 @@
+[package]
+name = "sayso-sdk"
+description = "Use the speech features of Sayso from your own app. The app calls one API: with Sayso when it runs, and with its own engine when it does not. Blocking calls, no async runtime."
+version.workspace = true
+edition.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
+# It starts the engine as a separate program and never links it.
+license = "MIT"
+publish = true
+repository = "https://github.com/watzon/sayso"
+readme = "README.md"
+build = "build.rs"
+
+[dependencies]
+sayso-protocol.workspace = true
+sayso-engine-sdk.workspace = true
+sayso-speech.workspace = true
+sayso-capture.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+tempfile.workspace = true
+log.workspace = true
+workspace-hack.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+

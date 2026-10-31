@@ -12,6 +12,7 @@ sayso-platform.workspace = true
 workspace-hack.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+sayso-capture.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true

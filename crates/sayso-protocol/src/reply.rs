@@ -76,11 +76,13 @@ pub struct HelloReply {
     /// The optional parts of the Host API that this host serves.
     #[serde(default)]
     pub features: Vec<String>,
-    /// The id of the extension that the host found for this client.
-    pub extension_id: String,
     /// The capabilities that the user granted.
     #[serde(default)]
     pub capabilities: Vec<Capability>,
+    /// The capabilities that the app asked for and does not have: the user
+    /// refused them, or this version of Sayso does not know them.
+    #[serde(default)]
+    pub denied: Vec<Capability>,
 }
 
 /// `ok` to `list_models`.
@@ -99,6 +101,10 @@ pub struct JobReply {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionReply {
     pub session: u64,
+    /// What the capture of the source `system` leaves out: `sayso`, `app`, or
+    /// both. Empty when the system does not allow it, or without that source.
+    #[serde(default)]
+    pub excludes: Vec<String>,
 }
 
 /// `ok` to `session_stop`.

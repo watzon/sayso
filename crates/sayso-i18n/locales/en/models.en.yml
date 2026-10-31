@@ -150,9 +150,9 @@ models:
     use_preview: "Use %{name} for live preview"
   roles:
     vad_title: "Voice detection"
-    vad_note: "Finds the speech in long recordings for your extensions. Dictation does not use it."
+    vad_note: "Finds the speech in long recordings for your connected apps. Dictation does not use it."
     speakers_title: "Speakers"
-    speakers_note: "Finds who speaks when in a recording, for your extensions."
+    speakers_note: "Finds who speaks when in a recording, for your connected apps."
     automatic_uses: "Uses %{name} now"
     automatic_none: "No speaker model is downloaded. Download one below."
     basic: "Basic"

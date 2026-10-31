@@ -4,7 +4,7 @@ Run a Sayso speech engine from your own app. You do not need Sayso.
 
 The engine is a separate program. It turns audio into text on the computer of the user. This crate starts the engine, sends it requests with the [engine protocol](https://github.com/watzon/sayso/blob/main/docs/engine-protocol.md), and gives you the replies and events. The calls block and the events come on a channel, so you need no async runtime. One `Engine` works from many threads.
 
-The engine is `SaysoEngine` on macOS and `sayso-engine` on Linux and Windows. It has the GPL-3.0-only license. This crate has the MIT license and only starts the engine as a program, so your app is not a derived work of the engine.
+The program of the engine is `sayso-engine` in each release file (`sayso-engine.exe` on Windows), and `find_engine` looks for that name. It has the GPL-3.0-only license. This crate has the MIT license and only starts the engine as a program, so your app is not a derived work of the engine.
 
 ## Get the engine
 

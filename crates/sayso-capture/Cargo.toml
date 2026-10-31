@@ -1,6 +1,6 @@
 [package]
 name = "sayso-capture"
-description = "Capture the microphone as 16 kHz mono frames for a Sayso speech engine, with cpal."
+description = "Capture the microphone and the system audio as 16 kHz mono frames with capture times, for a Sayso speech engine."
 version.workspace = true
 edition.workspace = true
 # The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
@@ -10,6 +10,7 @@ repository = "https://github.com/watzon/sayso"
 readme = "README.md"
 
 [dependencies]
+parking_lot.workspace = true
 # The resampler.
 sayso-speech.workspace = true
 crossbeam-channel.workspace = true
@@ -17,5 +18,20 @@ log.workspace = true
 cpal = "0.18.2"
 workspace-hack.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# The Core Audio process tap.
+objc2 = "0.6"
+objc2-core-audio = "0.3.2"
+objc2-core-audio-types = "0.3.2"
+objc2-core-foundation = "0.3.2"
+objc2-foundation = "0.3"
+block2 = "0.6"
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# The native protocol of PulseAudio, which PipeWire also serves. MIT, in pure
+# Rust: no system library at build or run time.
+pulseaudio = "0.3.2"
+futures = { version = "0.3", default-features = false, features = ["executor"] }
+
 [dev-dependencies]
-parking_lot.workspace = true

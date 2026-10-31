@@ -5,6 +5,7 @@ _version: 1
 # scripts/i18n-system-files.py writes these files from this catalog.
 system:
   microphone_usage: "Sayso は音声入力中だけマイクを使用します。音声はこの Mac 上で文字起こしされます。"
+  system_audio_usage: "Sayso は、許可したアプリが録音している間だけ、そのアプリのためにほかのアプリや通話の音声を録音します。"
   generic_name: "音声入力"
   comment: "話すと、使用中のアプリに Sayso がテキストを書き込みます"
   # Search words, separated by ";", with a ";" at the end. Keep "whisper"

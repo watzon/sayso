@@ -4,8 +4,9 @@
 use crossbeam_channel::Receiver;
 use sayso_core::models::{self, ModelId, ModelTask};
 use sayso_core::stt::{EngineEvent, EngineReason, ModelStatus};
-use sayso_extension::protocol::{self, ErrorCode, ListModelsReply, ModelState, Role};
-use sayso_extension::{Client, Event, Fields};
+use sayso_sdk::protocol::{self, ErrorCode, ListModelsReply, ModelState, Role};
+use sayso_sdk::Fields;
+use sayso_sdk::client::{Client, Event};
 use sayso_platform::EngineStart;
 use serde_json::json;
 use std::sync::Arc;
@@ -31,7 +32,7 @@ fn world(granted: &[&str]) -> World {
 
 fn world_with(granted: &[&str], services_engine: Option<Arc<FakeEngine>>, engine: Arc<FakeEngine>) -> World {
     let setup = setup();
-    write_state(&setup.state, &here(), granted, None);
+    write_apps(&setup.apps, granted);
     let services = FakeServices::new(services_engine);
     let host = start_with(&setup, services.clone());
     let client = Client::connect_to(&setup.socket).unwrap();
@@ -200,7 +201,7 @@ fn an_accepted_download_sends_its_progress_before_ok() {
     assert_eq!(world.engine.downloads.lock().clone(), vec![model.clone()]);
     let asked = world.services.asked.lock().clone();
     assert_eq!(asked.len(), 1);
-    assert_eq!((asked[0].extension_id.as_str(), asked[0].model_id.as_str(), asked[0].size_bytes), (ID, model.as_str(), info.size_bytes));
+    assert_eq!((asked[0].app_id.as_str(), asked[0].model_id.as_str(), asked[0].size_bytes), (common::id().as_str(), model.as_str(), info.size_bytes));
     assert_eq!((asked[0].model_name.as_str(), asked[0].reason.as_str()), (info.name.as_str(), "To write your meeting notes"));
 
     let ids = ids_and_events(&world.events);
@@ -373,7 +374,7 @@ fn a_closed_connection_closes_the_question_and_starts_no_download() {
     assert_eq!(world.services.withdrawn.load(std::sync::atomic::Ordering::SeqCst), 0);
     drop(stream);
     eventually("the host withdraws the question", || world.services.withdrawn.load(std::sync::atomic::Ordering::SeqCst) == 1);
-    eventually("the host sees the closed connection", || world._host.connected_extensions().len() == 1);
+    eventually("the host sees the closed connection", || world._host.connected_apps().len() == 1);
     std::thread::sleep(Duration::from_millis(300));
     assert!(world.engine.downloads.lock().is_empty());
 }

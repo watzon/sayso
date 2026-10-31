@@ -10,19 +10,25 @@
 //!   `segment` event for each segment, with times from the start of the
 //!   session. Before each part it waits while a dictation runs ([`Gate`]).
 //!
-//! The source stops when its audio channel closes: the intake hears the rest
-//! of the audio, closes the preview stream and the VAD session, cuts the last
-//! part, and waits for the final thread.
+//! The source stops when its audio channel closes, or when its capture says
+//! that it ended: the intake hears the rest of the audio, closes the preview
+//! stream and the VAD session, cuts the last part, and waits for the final thread.
+//!
+//! The times of all sources are from the start of the session. A source that
+//! starts late or loses audio gets silence there, so its recording and its
+//! times stay on the time of the other sources.
 
+use super::echo::EchoGate;
 use super::wav::WavWriter;
+use super::{CapturedAudio, FeedItem, SourceEnd};
 use crate::basic_vad::BasicVad;
 use crate::jobs::Gate;
 use crate::{EngineEvent, EventSink, ModelId, SpeechEngine};
 use crossbeam_channel::{Receiver, Sender, never, select, unbounded};
-use sayso_protocol::{Event, PartialEvent, Segment, SegmentEvent, Source};
+use sayso_protocol::{Event, PartialEvent, Segment, SegmentEvent, Source, SourceEndReason};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -33,6 +39,40 @@ pub(crate) const PAD_MS: u64 = 200;
 /// While nobody speaks, the intake keeps this much audio, for a speech start
 /// that the engine reports late.
 const LOOKBACK_MS: u64 = 10_000;
+/// A source that starts late or loses audio gets at most this much silence, so
+/// a computer that slept for hours does not write hours of it. The clock of the
+/// echo rule stays right after a longer gap, and the times of the source are
+/// then behind by the rest.
+const MAX_SILENCE_MS: u64 = 60_000;
+/// How long after the audio a VAD can report the start of a speech. The echo
+/// rule treats older audio without an open speech as done.
+const ECHO_VAD_LAG_MS: u64 = 1_000;
+/// How often the system source tells the echo rule how far it is.
+const ECHO_MARK: Duration = Duration::from_millis(250);
+
+/// The time of the first audio of a session on the capture clock, which all
+/// its sources share.
+pub(crate) struct SessionClock(AtomicI64);
+
+impl SessionClock {
+    pub fn new() -> SessionClock {
+        SessionClock(AtomicI64::new(i64::MAX))
+    }
+
+    /// The first audio of a source has the time `ms`. Gives how late it is
+    /// after the first audio of the session.
+    fn first_audio(&self, ms: i64) -> u64 {
+        let origin = self.0.fetch_min(ms, Ordering::SeqCst).min(ms);
+        (ms - origin) as u64
+    }
+}
+
+/// The part of a source in the echo rule.
+#[derive(Clone)]
+pub(crate) enum EchoRole {
+    Mic(Arc<EchoGate>),
+    System(Arc<EchoGate>),
+}
 
 /// How a source finds speech.
 pub(crate) enum SourceVad {
@@ -52,6 +92,9 @@ pub(crate) struct SourcePlan {
     pub preview: Option<u64>,
     pub vad: SourceVad,
     pub wav: WavWriter,
+    pub clock: Arc<SessionClock>,
+    /// None: the session does not have both `mic` and `system`.
+    pub echo: Option<EchoRole>,
 }
 
 /// What a source gives when it ends.
@@ -71,10 +114,10 @@ pub(crate) struct SourceRun {
 impl SourceRun {
     /// Start the threads. `events` must exist before the engine sessions
     /// opened, so no event is lost. `cancel` stops the final passes that wait.
-    pub fn start(plan: SourcePlan, audio: Receiver<Vec<f32>>, events: Receiver<EngineEvent>, engine: Arc<dyn SpeechEngine>, sink: Arc<dyn EventSink>, gate: Arc<dyn Gate>, cancel: Arc<AtomicBool>) -> std::io::Result<SourceRun> {
-        let (parts, waiting) = unbounded::<PartAudio>();
+    pub fn start(plan: SourcePlan, audio: Receiver<FeedItem>, events: Receiver<EngineEvent>, engine: Arc<dyn SpeechEngine>, sink: Arc<dyn EventSink>, gate: Arc<dyn Gate>, cancel: Arc<AtomicBool>) -> std::io::Result<SourceRun> {
+        let (parts, waiting) = unbounded::<PartMessage>();
         let final_pass = {
-            let worker = FinalPass { session: plan.session, source: plan.source.clone(), model: plan.final_model.clone(), language: plan.language.clone(), engine: engine.clone(), sink: sink.clone(), gate, cancel };
+            let worker = FinalPass { session: plan.session, source: plan.source.clone(), model: plan.final_model.clone(), language: plan.language.clone(), engine: engine.clone(), sink: sink.clone(), gate, cancel, echo: plan.echo.clone() };
             std::thread::Builder::new().name("sayso-host-live-final".into()).spawn(move || worker.run(&waiting))?
         };
         let intake = Intake::new(plan, engine, sink, parts);
@@ -93,6 +136,15 @@ struct PartAudio {
     /// The time of the first sample, from the start of the session.
     offset_ms: u64,
     samples: Vec<f32>,
+    /// From a time of the session to the capture clock.
+    clock_offset: i64,
+}
+
+/// What the intake sends to the final pass, in order.
+enum PartMessage {
+    Part(PartAudio),
+    /// The system source: all speech before this time on the capture clock is in the parts before this message.
+    DoneUntil(i64),
 }
 
 struct Intake {
@@ -112,7 +164,14 @@ struct Intake {
     heard: u64,
     /// The end of the last part, in ms.
     last_end_ms: u64,
-    parts: Sender<PartAudio>,
+    parts: Sender<PartMessage>,
+    clock: Arc<SessionClock>,
+    /// True after the first audio with a capture time.
+    timed: bool,
+    /// From a time of the session to the capture clock.
+    clock_offset: i64,
+    /// The system source tells the echo rule how far it is.
+    echo: Option<Arc<EchoGate>>,
 }
 
 enum VadState {
@@ -122,7 +181,7 @@ enum VadState {
 }
 
 impl Intake {
-    fn new(plan: SourcePlan, engine: Arc<dyn SpeechEngine>, sink: Arc<dyn EventSink>, parts: Sender<PartAudio>) -> Intake {
+    fn new(plan: SourcePlan, engine: Arc<dyn SpeechEngine>, sink: Arc<dyn EventSink>, parts: Sender<PartMessage>) -> Intake {
         let vad = match plan.vad {
             SourceVad::Basic => VadState::Basic(Box::new(BasicVad::new())),
             SourceVad::Engine { session } => VadState::Engine { session, open: None },
@@ -142,16 +201,30 @@ impl Intake {
             heard: 0,
             last_end_ms: 0,
             parts,
+            clock: plan.clock,
+            timed: false,
+            clock_offset: 0,
+            echo: match plan.echo {
+                Some(EchoRole::System(gate)) => Some(gate),
+                _ => None,
+            },
         }
     }
 
-    fn run(mut self, audio: &Receiver<Vec<f32>>, events: Receiver<EngineEvent>, final_pass: JoinHandle<Vec<Segment>>) -> SourceResult {
+    fn run(mut self, audio: &Receiver<FeedItem>, events: Receiver<EngineEvent>, final_pass: JoinHandle<Vec<Segment>>) -> SourceResult {
         let mut events = events;
         let mut last_trim = Instant::now();
+        let mut last_mark = Instant::now();
+        let mut ended = None;
         loop {
             select! {
-                recv(audio) -> samples => match samples {
-                    Ok(samples) => self.hear(&samples),
+                recv(audio) -> item => match item {
+                    Ok(FeedItem::Audio(captured)) => self.captured(captured),
+                    Ok(FeedItem::Gap { ms }) => self.gap(ms),
+                    Ok(FeedItem::Ended(end)) => {
+                        ended = Some(end);
+                        break;
+                    }
                     Err(_) => break,
                 },
                 recv(events) -> event => match event {
@@ -163,13 +236,71 @@ impl Intake {
                 self.trim_idle();
                 last_trim = Instant::now();
             }
+            if self.echo.is_some() && last_mark.elapsed() >= ECHO_MARK {
+                self.echo_mark();
+                last_mark = Instant::now();
+            }
         }
         self.finish(&events);
         // The final thread ends when the last part is done.
-        let Intake { source, wav_path, wav_error, parts, .. } = self;
+        let Intake { session, source, wav_path, wav_error, parts, sink, .. } = self;
         drop(parts);
         let segments = final_pass.join().unwrap_or_default();
+        if let Some(end) = ended {
+            let reason = match end {
+                SourceEnd::Permission => SourceEndReason::Permission,
+                SourceEnd::Failed(message) => {
+                    log::warn!("host: live session {session}: the source {source} ended: {message}");
+                    SourceEndReason::Failed
+                }
+            };
+            sink.event(Event::SourceEnded { session, source: source.clone(), reason });
+        }
         SourceResult { source, segments, wav: wav_path, wav_error }
+    }
+
+    fn heard_ms(&self) -> u64 {
+        self.heard * 1000 / RATE
+    }
+
+    fn captured(&mut self, captured: CapturedAudio) {
+        if let Some(time) = captured.time {
+            let ms = i64::try_from(time.as_millis()).unwrap_or(i64::MAX);
+            if !self.timed {
+                self.timed = true;
+                self.silence(self.clock.first_audio(ms));
+            }
+            self.clock_offset = ms - self.heard_ms() as i64;
+        }
+        self.hear(&captured.samples);
+    }
+
+    /// The capture lost `ms` of audio: silence goes there, in the recording and for the VAD.
+    fn gap(&mut self, ms: u64) {
+        self.silence(ms);
+        self.sink.event(Event::SourceGap { session: self.session, source: self.source.clone(), ms });
+    }
+
+    fn silence(&mut self, ms: u64) {
+        let zeros = [0.0; (RATE / 50) as usize];
+        for _ in 0..ms.min(MAX_SILENCE_MS) / 20 {
+            self.hear(&zeros);
+        }
+    }
+
+    /// Tell the echo rule how far the system source is. The message goes
+    /// through the queue of parts, so the parts before it are done when it arrives.
+    fn echo_mark(&mut self) {
+        let Some(gate) = &self.echo else { return };
+        let now = self.heard_ms() as i64 + self.clock_offset;
+        gate.system_heard(now);
+        let speaking = match &self.vad {
+            VadState::Basic(vad) => vad.speaking(),
+            VadState::Engine { open, .. } => open.is_some(),
+        };
+        if !speaking {
+            let _ = self.parts.send(PartMessage::DoneUntil(now - ECHO_VAD_LAG_MS as i64));
+        }
     }
 
     fn hear(&mut self, samples: &[f32]) {
@@ -245,7 +376,7 @@ impl Intake {
         self.last_end_ms = end_ms;
         // A later part starts at the end of this one or after it.
         self.drop_before(sample_at(end_ms));
-        let _ = self.parts.send(PartAudio { offset_ms: from * 1000 / RATE, samples });
+        let _ = self.parts.send(PartMessage::Part(PartAudio { offset_ms: from * 1000 / RATE, samples, clock_offset: self.clock_offset }));
     }
 
     /// While nobody speaks, forget the audio older than [`LOOKBACK_MS`].
@@ -320,12 +451,22 @@ struct FinalPass {
     sink: Arc<dyn EventSink>,
     gate: Arc<dyn Gate>,
     cancel: Arc<AtomicBool>,
+    echo: Option<EchoRole>,
 }
 
 impl FinalPass {
-    fn run(self, parts: &Receiver<PartAudio>) -> Vec<Segment> {
+    fn run(self, parts: &Receiver<PartMessage>) -> Vec<Segment> {
         let mut all = Vec::new();
-        for part in parts.iter() {
+        for message in parts.iter() {
+            let part = match message {
+                PartMessage::Part(part) => part,
+                PartMessage::DoneUntil(clock_ms) => {
+                    if let Some(EchoRole::System(gate)) = &self.echo {
+                        gate.system_done_until(clock_ms);
+                    }
+                    continue;
+                }
+            };
             let cancelled = || self.cancel.load(Ordering::SeqCst);
             if cancelled() || !self.gate.wait_idle(&cancelled) {
                 continue;
@@ -345,9 +486,20 @@ impl FinalPass {
                 if segment.text.trim().is_empty() {
                     continue;
                 }
+                if let Some(EchoRole::Mic(gate)) = &self.echo {
+                    // The gate sends it when the system source has caught up, unless it is an echo.
+                    gate.mic_segment(segment, part.clock_offset);
+                    continue;
+                }
                 self.sink.event(Event::Segment(SegmentEvent { job: None, session: Some(self.session), source: Some(self.source.clone()), segment: segment.clone() }));
+                if let Some(EchoRole::System(gate)) = &self.echo {
+                    gate.system_segment(&segment, part.clock_offset);
+                }
                 all.push(segment);
             }
+        }
+        if let Some(EchoRole::System(gate)) = &self.echo {
+            gate.system_ended();
         }
         all
     }

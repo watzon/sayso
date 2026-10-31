@@ -5,7 +5,7 @@
 //! outside it, a second icon click, or Esc closes it.
 
 use crate::hub::Route;
-use crate::model::AppModel;
+use crate::model::{AppModel, RecordingApp};
 use gpui_kit::*;
 use sayso_i18n::t;
 use crate::shell::{self as mac, TrayEvent, native as ns_window};
@@ -114,6 +114,26 @@ pub fn install(model: &Entity<AppModel>, cx: &mut App) {
                     icon.set_incognito(incognito);
                 }
             });
+        }
+    })
+    .detach();
+
+    // A dot on the icon while an app records.
+    let mut shown_recording: Option<crate::shell::TrayRecording> = None;
+    cx.observe(model, move |model, cx| {
+        let colors = cx.paper().colors;
+        let rgb = |color: Hsla| {
+            let color = Rgba::from(color);
+            [(color.r * 255.) as u8, (color.g * 255.) as u8, (color.b * 255.) as u8]
+        };
+        let recording = model.read(cx).recording_app().map(|recording| crate::shell::TrayRecording { label: format!("Sayso, {}", t!("apps.recording.row", app = recording.name)), dot: rgb(colors.accent), ring: rgb(colors.sheet) });
+        if recording != shown_recording {
+            TRAY.with(|t| {
+                if let Some(icon) = t.borrow().as_ref().and_then(|t| t.icon.as_ref()) {
+                    icon.set_recording(recording.as_ref());
+                }
+            });
+            shown_recording = recording;
         }
     })
     .detach();
@@ -332,6 +352,8 @@ pub struct PopoverView {
     focus: FocusHandle,
     _observe: Subscription,
     _activation: Subscription,
+    /// Moves the clock of the recording row each second while the row shows.
+    recording_clock: Option<Task<()>>,
 }
 
 impl PopoverView {
@@ -359,7 +381,7 @@ impl PopoverView {
             }
         })
         .detach();
-        Self { model, submenu: None, focus: cx.focus_handle(), _observe: observe, _activation: activation }
+        Self { model, submenu: None, focus: cx.focus_handle(), _observe: observe, _activation: activation, recording_clock: None }
     }
 
     /// Put the focus in the panel, then on its first control. The second step
@@ -553,12 +575,93 @@ impl PopoverView {
     }
 }
 
+/// The time since `since`, as `12:04`, or `1:12:04` after an hour.
+fn clock(seconds: u64) -> String {
+    let (hours, minutes, seconds) = (seconds / 3600, seconds / 60 % 60, seconds % 60);
+    if hours > 0 { format!("{hours}:{minutes:02}:{seconds:02}") } else { format!("{minutes}:{seconds:02}") }
+}
+
+impl PopoverView {
+    /// The row while an app records. Between the status and the big button, so
+    /// the user sees who records before anything else.
+    fn recording_row(&mut self, recording: &RecordingApp, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        // The row reads the time at each render. Only this view renders each second, and only while the row shows.
+        if self.recording_clock.is_none() {
+            self.recording_clock = Some(cx.spawn(async move |this, cx| {
+                loop {
+                    cx.background_executor().timer(std::time::Duration::from_secs(1)).await;
+                    let going = this.update(cx, |this, cx| {
+                        let going = this.model.read(cx).recording_app().is_some();
+                        if going {
+                            cx.notify();
+                        } else {
+                            this.recording_clock = None;
+                        }
+                        going
+                    });
+                    if !matches!(going, Ok(true)) {
+                        break;
+                    }
+                }
+            }));
+        }
+        let title = t!("apps.recording.row", app = recording.name);
+        let sources = match (recording.mic, recording.system) {
+            (true, true) => t!("apps.recording.both"),
+            (false, true) => t!("apps.recording.system"),
+            _ => t!("apps.recording.mic"),
+        };
+        let stop = t!("apps.recording.stop");
+        div()
+            .flex()
+            .items_center()
+            .gap(px(12.))
+            .py(px(10.))
+            .pl(px(14.))
+            .pr(px(10.))
+            .rounded(px(12.))
+            .bg(c.accent_wash)
+            .child(crate::hub::settings::kit::halo_dot(8., c.accent, 3., 0.2))
+            .child(
+                // Read once when it starts, not at each tick of the clock.
+                LiveStatus::new("popover-recording", title.clone())
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .gap(px(2.))
+                    .child(text::ui(title.clone(), 14., FontWeight::SEMIBOLD, c.ink).line_height(px(18.)))
+                    .child(text::ui(format!("{} · {sources}", clock(recording.since.elapsed().as_secs())), 12., FontWeight::NORMAL, c.graphite).line_height(px(16.))),
+            )
+            .child(
+                Pressable::new("popover-recording-stop")
+                    .label(format!("{stop}, {title}"))
+                    .flex()
+                    .flex_none()
+                    .items_center()
+                    .gap(px(6.))
+                    .h(px(30.))
+                    .px(px(12.))
+                    .rounded(px(8.))
+                    .bg(c.sheet_raised)
+                    .raised_small(&c)
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| this.model.update(cx, |m, cx| m.stop_recording_app(cx))))
+                    .child(div().size(px(9.)).rounded(px(2.)).bg(c.ink))
+                    .child(text::ui(stop, 13., FontWeight::SEMIBOLD, c.ink).line_height(px(16.))),
+            )
+            .into_any_element()
+    }
+}
+
 impl Render for PopoverView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let c = cx.paper().colors;
         let m = self.model.read(cx);
         let (status, _detail, dot) = m.engine_summary();
         let recording = matches!(m.state(), State::Recording { .. });
+        let recording_app = m.recording_app().cloned();
         let toggle_caps = m.config.hotkeys.toggle.map(|h| h.keycaps()).unwrap_or_default();
         let toggle_keys = sayso_ui::a11y::spoken_keys(&toggle_caps);
         let history_on = m.config.history.enabled;
@@ -651,6 +754,8 @@ impl Render for PopoverView {
                     .child(text::ui(status, 14., FontWeight::SEMIBOLD, c.ink).flex_1())
                     .child(text::ui(today, 12., FontWeight::NORMAL, c.graphite)),
             )
+            // An app that records, with its clock and Stop.
+            .children(recording_app.map(|recording| self.recording_row(&recording, cx)))
             // The big ink button.
             .child(
                 Pressable::new("dictate")

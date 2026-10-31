@@ -24,7 +24,7 @@ pub mod speakers;
 
 pub use gate::{DictationGate, Gate, LivePart, NoGate, STALE_AFTER};
 pub use plan::VadRun;
-pub use queue::{CANCELLED, JobQueue, JobRun, RunJob};
+pub use queue::{CANCELLED, GRANT_GONE, JobQueue, JobRun, RunJob};
 pub use runner::{JobRunner, TRANSCRIPTION_SHARE};
 
 use crate::{ModelId, Timestamps};

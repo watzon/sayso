@@ -1,6 +1,6 @@
 //! A small window that asks the user one question with two buttons: the
-//! download question of an extension (`download_ask`) and the quit question
-//! (`quit`). It is a window of its own, like "What is new": it does not need
+//! download question of an app (`download_ask`), the approval question
+//! (`approval_ask`), and the quit question (`quit`). It is a window of its own, like "What is new": it does not need
 //! the Hub, so it shows also when the Hub is closed.
 //!
 //! Each answer comes once. Cancel, Esc, and the close button of the window
@@ -11,10 +11,12 @@ use gpui_kit::*;
 use sayso_ui::fonts::{Face, LocaleFonts as _};
 use sayso_ui::components::*;
 use sayso_ui::paper::PaperStyled;
+use sayso_ui::theme::Colors;
 use sayso_ui::texture::{Grain, grain};
 use sayso_ui::{ActivePaper, text};
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 /// The text of a question. The window reads it at each render, so it follows
 /// a change of language.
@@ -22,14 +24,31 @@ pub struct Texts {
     pub window_title: String,
     pub title: String,
     pub body: String,
+    /// More of the question, under its text: the identity of an app and what it asks for.
+    pub details: Option<Details>,
     /// Text that the question quotes, with a label above it: for example the
-    /// reason that an extension gives.
+    /// reason that an app gives.
     pub quote: Option<(String, String)>,
     pub cancel: String,
     pub confirm: String,
     /// The confirm button stops work of the user: it shows as a danger.
     pub danger: bool,
+    /// An app opened this question while the user does something else, and
+    /// the window takes the focus. The confirm button waits for [`CONFIRM_DELAY`], so
+    /// a click that was meant for another window does not answer yes.
+    pub guarded: bool,
 }
+
+/// How long the confirm button of a guarded question is inactive. Nothing
+/// moves when it ends, so reduced motion changes nothing here.
+const CONFIRM_DELAY: Duration = Duration::from_millis(500);
+
+/// True when a question that opened at `opened` takes a yes at `now`.
+fn takes_yes(guarded: bool, opened: Instant, now: Instant) -> bool {
+    !guarded || now.saturating_duration_since(opened) >= CONFIRM_DELAY
+}
+
+pub type Details = Box<dyn FnOnce(&Colors) -> AnyElement>;
 
 type AnswerFn = Box<dyn FnOnce(bool, &mut App)>;
 
@@ -49,6 +68,7 @@ pub struct QuestionView {
     id: &'static str,
     texts: Box<dyn Fn() -> Texts>,
     answer: Answer,
+    opened: Instant,
 }
 
 /// Open the window of a question. `answer` gets true for the confirm
@@ -85,7 +105,16 @@ pub fn open(
                 on_close.give(false, cx);
                 true
             });
-            cx.new(|_| QuestionView { id, texts: Box::new(texts), answer })
+            cx.new(|cx| {
+                if texts().guarded {
+                    cx.spawn(async move |view, cx| {
+                        cx.background_executor().timer(CONFIRM_DELAY).await;
+                        let _ = view.update(cx, |_, cx| cx.notify());
+                    })
+                    .detach();
+                }
+                QuestionView { id, texts: Box::new(texts), answer, opened: Instant::now() }
+            })
         },
     )?;
     crate::app::appkit_later(cx, crate::shell::show_app_and_activate);
@@ -94,6 +123,9 @@ pub fn open(
 
 impl QuestionView {
     fn respond(&self, yes: bool, window: &mut Window, cx: &mut App) {
+        if yes && !takes_yes((self.texts)().guarded, self.opened, Instant::now()) {
+            return;
+        }
         self.answer.give(yes, cx);
         window.remove_window();
     }
@@ -126,6 +158,7 @@ impl Render for QuestionView {
             .gap(px(10.))
             .child(text::title(texts.title, 28., &c).line_height(px(34.)))
             .child(text::ui(texts.body, 15., FontWeight::NORMAL, c.graphite).line_height(px(22.)));
+        let details = texts.details.map(|details| details(&c));
         let quote = texts.quote.map(|(label, quoted)| {
             div()
                 .flex()
@@ -143,6 +176,7 @@ impl Render for QuestionView {
         });
         let confirm = Button::new(SharedString::from(format!("{}-confirm", self.id)), texts.confirm).large();
         let confirm = if texts.danger { confirm.danger() } else { confirm.primary() };
+        let confirm = confirm.disabled(!takes_yes(texts.guarded, self.opened, Instant::now()));
         let footer = div()
             .flex()
             .flex_none()
@@ -186,9 +220,25 @@ impl Render for QuestionView {
                     .shadow(sayso_ui::paper::sheet(&c))
                     .child(grain(Grain::Sheet, px(12.), cx))
                     .child(self.top_bar(window, cx))
-                    .child(div().flex().flex_col().flex_1().min_h_0().gap(px(20.)).px(px(44.)).pt(px(8.)).pb(px(24.)).child(heading).children(quote))
+                    .child(div().id(SharedString::from(format!("{}-content", self.id))).flex().flex_col().flex_1().min_h_0().gap(px(20.)).px(px(44.)).pt(px(8.)).pb(px(24.)).overflow_y_scroll().child(heading).children(details).children(quote))
                     .child(footer),
             )
             .children(crate::caption::caption_bar(false, cx))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CONFIRM_DELAY, takes_yes};
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn a_guarded_question_takes_a_yes_after_the_delay() {
+        assert_eq!(CONFIRM_DELAY, Duration::from_millis(500));
+        let opened = Instant::now();
+        assert!(!takes_yes(true, opened, opened));
+        assert!(!takes_yes(true, opened, opened + Duration::from_millis(499)));
+        assert!(takes_yes(true, opened, opened + CONFIRM_DELAY));
+        assert!(takes_yes(false, opened, opened), "the quit question comes from the user");
     }
 }

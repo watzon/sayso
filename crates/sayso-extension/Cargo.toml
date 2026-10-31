@@ -1,6 +1,6 @@
 [package]
 name = "sayso-extension"
-description = "The client of the Sayso Host API: connect to Sayso, send requests, and get events. Blocking calls, no async runtime."
+description = "Moved to sayso-sdk. The client of the Sayso Host API: connect to Sayso, send requests, and get events."
 version.workspace = true
 edition.workspace = true
 # The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).

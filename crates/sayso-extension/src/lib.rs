@@ -7,7 +7,7 @@
 //! ```no_run
 //! // Starts Sayso first when it does not run, and waits up to 10 s for it.
 //! let client = sayso_extension::Client::connect_or_start()?;
-//! println!("connected as {}", client.hello().extension_id);
+//! println!("Sayso {}", client.hello().host_version);
 //! let reply = client.request("list_models", sayso_extension::Fields::new());
 //! # Ok::<(), sayso_extension::Error>(())
 //! ```
@@ -102,9 +102,20 @@ impl From<io::Error> for Error {
     }
 }
 
+/// What an app tells Sayso in `hello`, for the approval question
+/// (`docs/sdk.md`, "The question").
+#[derive(Debug, Clone, Default)]
+pub struct AppHello {
+    /// A name that the app gives. Sayso shows it only as a claim of the app.
+    pub name: Option<String>,
+    /// What the app wants to use. The question lists them.
+    pub capabilities: Vec<protocol::Capability>,
+}
+
 /// A connection to Sayso.
 pub struct Client {
     path: PathBuf,
+    app: AppHello,
     connection: Connection,
     hello: HelloReply,
     next_id: AtomicU64,
@@ -129,15 +140,20 @@ impl Client {
     /// [`Client::connect_or_start`] with the socket at `path`, a time to
     /// wait, and a way to start Sayso.
     pub fn connect_or_start_with(path: impl AsRef<Path>, wait: Duration, start: impl FnOnce() -> io::Result<()>) -> Result<Client, Error> {
+        Client::connect_or_start_as(path, &AppHello::default(), wait, start)
+    }
+
+    /// [`Client::connect_or_start_with`] with what the app tells Sayso.
+    pub fn connect_or_start_as(path: impl AsRef<Path>, app: &AppHello, wait: Duration, start: impl FnOnce() -> io::Result<()>) -> Result<Client, Error> {
         let path = path.as_ref();
-        match Client::connect_to(path) {
+        match Client::connect_as(path, app) {
             Err(Error::Io(e)) if not_running(&e) => {}
             other => return other,
         }
         start()?;
         let deadline = Instant::now() + wait;
         loop {
-            match Client::connect_to(path) {
+            match Client::connect_as(path, app) {
                 Err(Error::Io(e)) if not_running(&e) && Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
                 Err(Error::Io(e)) if not_running(&e) => {
                     return Err(Error::Io(io::Error::new(io::ErrorKind::TimedOut, format!("Sayso did not start in {} s: {e}", wait.as_secs()))));
@@ -149,16 +165,22 @@ impl Client {
 
     /// Connect to the socket (the pipe on Windows) at `path` and send `hello`.
     pub fn connect_to(path: impl AsRef<Path>) -> Result<Client, Error> {
+        Client::connect_as(path, &AppHello::default())
+    }
+
+    /// [`Client::connect_to`] with what the app tells Sayso. When Sayso has no
+    /// answer yet, this waits until the user answers the approval question.
+    pub fn connect_as(path: impl AsRef<Path>, app: &AppHello) -> Result<Client, Error> {
         let (events_out, events) = unbounded();
         let path = path.as_ref().to_path_buf();
         let connection = Connection::open(&path, events_out.clone())?;
         let next_id = AtomicU64::new(1);
-        let hello = send_hello(&connection, &next_id)?;
-        Ok(Client { path, connection, hello, next_id, events_out, events })
+        let hello = send_hello(&connection, &next_id, app)?;
+        Ok(Client { path, app: app.clone(), connection, hello, next_id, events_out, events })
     }
 
-    /// The reply of the host to `hello`: its version, the id of this
-    /// extension, and the granted capabilities.
+    /// The reply of the host to `hello`: its version, the granted
+    /// capabilities, and the capabilities that the user refused.
     pub fn hello(&self) -> &HelloReply {
         &self.hello
     }
@@ -186,7 +208,7 @@ impl Client {
     pub fn reconnect(&mut self) -> Result<&HelloReply, Error> {
         self.connection.close();
         self.connection = Connection::open(&self.path, self.events_out.clone())?;
-        self.hello = send_hello(&self.connection, &self.next_id)?;
+        self.hello = send_hello(&self.connection, &self.next_id, &self.app)?;
         Ok(&self.hello)
     }
 
@@ -203,11 +225,17 @@ fn not_running(error: &io::Error) -> bool {
     matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused)
 }
 
-fn send_hello(connection: &Connection, next_id: &AtomicU64) -> Result<HelloReply, Error> {
+fn send_hello(connection: &Connection, next_id: &AtomicU64, app: &AppHello) -> Result<HelloReply, Error> {
     let mut fields = Fields::new();
     fields.insert("sdk".into(), SDK.into());
     fields.insert("protocol".into(), PROTOCOL.into());
     fields.insert("features".into(), Value::Array(vec![]));
+    if let Some(name) = &app.name {
+        fields.insert("app".into(), serde_json::json!({ "name": name }));
+    }
+    if !app.capabilities.is_empty() {
+        fields.insert("capabilities".into(), serde_json::to_value(&app.capabilities).map_err(|e| Error::Protocol(e.to_string()))?);
+    }
     let hello: HelloReply = connection.request(next_id, "hello", fields)?.parse()?;
     if hello.protocol != PROTOCOL {
         return Err(Error::Protocol(format!("Sayso speaks protocol {}, and this SDK speaks {PROTOCOL}", hello.protocol)));

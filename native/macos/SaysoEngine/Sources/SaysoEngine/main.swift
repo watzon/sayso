@@ -28,7 +28,32 @@ do {
     exit(2)
 }
 
-let engine = Engine(modelsDir: modelsDir, out: out)
+// With `SAYSO_MODEL_STORE`, the models that have a descriptor are in that store, and a
+// cleanup runs now (docs/sdk.md, "Clean up"). `SAYSO_STORE_TEST_HOOK` and
+// `SAYSO_STORE_TEST_DESCRIPTORS` are for tests.
+let environment = ProcessInfo.processInfo.environment
+func setting(_ name: String) -> String? { environment[name].flatMap { $0.isEmpty ? nil : $0 } }
+var sharedStore: StoreV1?
+let storeDescriptors: StoreDescriptors
+do {
+    storeDescriptors = try StoreDescriptors.load(path: setting("SAYSO_STORE_TEST_DESCRIPTORS"))
+    if let root = setting("SAYSO_MODEL_STORE") {
+        let store = try StoreV1(
+            root: URL(fileURLWithPath: root, isDirectory: true),
+            hook: setting("SAYSO_STORE_TEST_HOOK").map { URL(fileURLWithPath: $0, isDirectory: true) })
+        sharedStore = store
+        Thread.detachNewThread {
+            do { try store.cleanup() } catch { out.log("warn", "the cleanup of the model store failed: \(error)") }
+        }
+    }
+} catch {
+    out.error("cannot open the model store: \(error)")
+    exit(2)
+}
+
+let engine = Engine(
+    modelsDir: modelsDir, shared: sharedStore, descriptors: storeDescriptors,
+    hfEndpoint: setting("SAYSO_HF_ENDPOINT") ?? "https://huggingface.co", out: out)
 out.log("info", "SaysoEngine \(engineVersion) ready, models in \(modelsDir.path), pid \(getpid())")
 
 /// Handle one request that has a single terminal response (`ok`, `final`, `hello`, or `error`).

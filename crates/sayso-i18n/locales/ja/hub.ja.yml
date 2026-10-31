@@ -17,6 +17,7 @@ hub:
     appearance: "外観"
     history_privacy: "履歴とプライバシー"
     permissions: "アクセス許可"
+    connected_apps: "接続したアプリ"
     advanced: "詳細"
   sidebar:
     expand: "サイドバーを展開"

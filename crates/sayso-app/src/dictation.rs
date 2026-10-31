@@ -86,7 +86,7 @@ impl AppModel {
         for fx in effects {
             self.run_effect(fx, cx);
         }
-        // Jobs of extensions wait between their parts while a dictation
+        // Jobs of apps wait between their parts while a dictation
         // records or is processed (`docs/extensions.md`, "Scheduling"). Every
         // way out of a dictation goes through here, so a lost end is not possible.
         if let Some(jobs) = &self.host_jobs {
@@ -96,7 +96,7 @@ impl AppModel {
                 jobs.gate.end();
             }
         }
-        // An update that waits for extensions also waits for the dictation.
+        // An update that waits for apps also waits for the dictation.
         // The delay lets the history entry of the dictation reach the disk.
         if self.update_waits && !was_idle && matches!(self.machine.state, State::Idle) {
             cx.spawn(async move |this, cx| {
@@ -618,7 +618,7 @@ impl AppModel {
                     });
                     s.diagnostics.insert = Some(timings);
                     s.diagnostics.stop_to_insert_ms = s.stopped.map(|t| t.elapsed().as_millis() as u64);
-                    m.tell_extensions(session);
+                    m.tell_apps(session);
                     m.dispatch(Event::Inserted { session }, cx);
                 }
                 Err(e) => {
@@ -637,10 +637,10 @@ impl AppModel {
         .detach();
     }
 
-    /// `dictation_done` to the extensions that observe dictation
+    /// `dictation_done` to the apps that observe dictation
     /// (`docs/extensions.md`, "Events"). The host sends nothing when
     /// incognito was on at the start or now: the rule of history.
-    fn tell_extensions(&mut self, session: SessionId) {
+    fn tell_apps(&mut self, session: SessionId) {
         let Some(host) = self.host.clone() else { return };
         let incognito_now = self.incognito;
         let s = self.session(session);
@@ -919,14 +919,10 @@ impl AppModel {
         cx.notify();
     }
 
-    /// Re-read config.toml, the styles folder, and the extensions folder when
-    /// they change on disk.
+    /// Re-read config.toml, the styles folder, and `apps.toml` when they change
+    /// on disk.
     fn check_files(&mut self, cx: &mut Context<Self>) {
-        let extensions = sayso_core::extensions::any_installed(&self.paths.extensions_dir());
-        if extensions != self.extensions_installed {
-            self.extensions_installed = extensions;
-            cx.notify();
-        }
+        self.apps_changed(cx);
         let path = self.paths.config_file();
         let mtime = std::fs::metadata(&path).and_then(|m| m.modified()).ok();
         if mtime != self.config_mtime {

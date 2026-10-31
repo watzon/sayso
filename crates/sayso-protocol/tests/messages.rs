@@ -22,7 +22,17 @@ fn requests() -> Vec<(&'static str, Request)> {
     vec![
         (
             r#"{"v":1,"type":"hello","id":"h1","sdk":"sayso-extension 0.11.0","protocol":1,"features":[]}"#,
-            Request::Hello(Hello { sdk: Some("sayso-extension 0.11.0".into()), protocol: 1, features: vec![] }),
+            Request::Hello(Hello { sdk: Some("sayso-extension 0.11.0".into()), protocol: 1, features: vec![], app: None, capabilities: vec![] }),
+        ),
+        (
+            r#"{"v":1,"type":"hello","id":"h2","sdk":"sayso-sdk 0.1.0","protocol":1,"features":[],"app":{"name":"Meeting Recorder"},"capabilities":["session.live","audio.mic","camera.read"]}"#,
+            Request::Hello(Hello {
+                sdk: Some("sayso-sdk 0.1.0".into()),
+                protocol: 1,
+                features: vec![],
+                app: Some(AppName { name: "Meeting Recorder".into() }),
+                capabilities: vec![Capability::SessionLive, Capability::AudioMic, Capability::Other("camera.read".into())],
+            }),
         ),
         (r#"{"v":1,"type":"list_models","id":"r1","role":"vad"}"#, Request::ListModels(ListModels { role: Some(Role::Vad) })),
         (
@@ -67,13 +77,13 @@ fn replies() -> Vec<(&'static str, Reply)> {
     vec![
         (r#"{"v":1,"type":"ok","id":"r9"}"#, Reply::ok()),
         (
-            r#"{"v":1,"type":"ok","id":"h1","host_version":"0.11.0","protocol":1,"features":[],"extension_id":"dev.example.notetaker","capabilities":["models.read","audio.mic"]}"#,
+            r#"{"v":1,"type":"ok","id":"h1","host_version":"0.11.0","protocol":1,"features":[],"capabilities":["models.read","audio.mic"],"denied":["audio.system"]}"#,
             Reply::ok_with(&HelloReply {
                 host_version: "0.11.0".into(),
                 protocol: 1,
                 features: vec![],
-                extension_id: "dev.example.notetaker".into(),
                 capabilities: vec![Capability::ModelsRead, Capability::AudioMic],
+                denied: vec![Capability::AudioSystem],
             }),
         ),
         (
@@ -156,7 +166,10 @@ fn events() -> Vec<(&'static str, Event)> {
             }),
         ),
         (r#"{"v":1,"type":"host_closing"}"#, Event::HostClosing),
-        (r#"{"v":1,"type":"command","command":"new-note"}"#, Event::Command { command: "new-note".into() }),
+        (r#"{"v":1,"type":"approval_waiting"}"#, Event::ApprovalWaiting),
+        (r#"{"v":1,"type":"session_ended","session":7,"text":"Hello there."}"#, Event::SessionEnded { session: 7, text: "Hello there.".into(), code: None }),
+        (r#"{"v":1,"type":"source_gap","session":7,"source":"system","ms":240}"#, Event::SourceGap { session: 7, source: Source::System, ms: 240 }),
+        (r#"{"v":1,"type":"source_ended","session":7,"source":"system","reason":"permission"}"#, Event::SourceEnded { session: 7, source: Source::System, reason: SourceEndReason::Permission }),
     ]
 }
 
@@ -217,7 +230,7 @@ fn the_typed_ok_bodies_read_from_ok_fields() {
     let job: JobReply = parse_ok(&Reply::ok_with(&JobReply { job: 7 }).ok_fields()).unwrap();
     assert_eq!(job.job, 7);
     for (body, expected) in [
-        (Reply::ok_with(&SessionReply { session: 3 }), json!({"session": 3})),
+        (Reply::ok_with(&SessionReply { session: 3, excludes: vec!["sayso".into(), "app".into()] }), json!({"session": 3, "excludes": ["sayso", "app"]})),
         (Reply::ok_with(&TextReply { text: "Hi.".into() }), json!({"text": "Hi."})),
         (Reply::ok_with(&EnhanceReply { text: "Hi.".into(), provider: "openai".into(), model: "gpt".into() }), json!({"text": "Hi.", "provider": "openai", "model": "gpt"})),
         (Reply::ok_with(&SubscribeReply { events: vec!["dictation_done".into()] }), json!({"events": ["dictation_done"]})),
@@ -262,7 +275,7 @@ fn a_newer_peer_does_not_break_the_reader() {
         }))
     );
     let Decoded::Known(message) = decode::<HostMessage>(
-        r#"{"v":1,"type":"ok","id":"h1","host_version":"0.12.0","protocol":1,"features":["jobs"],"extension_id":"x","capabilities":["models.read","camera.read"],"motd":"hi"}"#,
+        r#"{"v":1,"type":"ok","id":"h1","host_version":"0.12.0","protocol":1,"features":["jobs"],"capabilities":["models.read","camera.read"],"motd":"hi"}"#,
     )
     .unwrap() else {
         panic!("ok is known")
@@ -307,7 +320,9 @@ fn requests_need_the_capabilities_of_the_table() {
     assert_eq!(needs(r#"{"type":"bye"}"#), vec![]);
     assert_eq!(needs(r#"{"type":"list_models"}"#), vec![Capability::ModelsRead]);
     assert_eq!(needs(r#"{"type":"download_model","model":"m","reason":"r"}"#), vec![Capability::ModelsDownload]);
-    assert_eq!(needs(r#"{"type":"cancel_job","job":1}"#), vec![Capability::TranscribeFile]);
+    assert_eq!(needs(r#"{"type":"cancel_job","job":1}"#), vec![]);
+    assert_eq!(needs(r#"{"type":"session_stop","session":1}"#), vec![]);
+    assert_eq!(needs(r#"{"type":"session_audio","session":1,"pcm":""}"#), vec![Capability::SessionLive]);
     assert_eq!(needs(r#"{"type":"session_start","sources":["client"]}"#), vec![Capability::SessionLive]);
     assert_eq!(needs(r#"{"type":"session_start","sources":["mic","system"]}"#), vec![Capability::SessionLive, Capability::AudioMic, Capability::AudioSystem]);
     assert_eq!(needs(r#"{"type":"enhance","prompt":"p"}"#), vec![Capability::AiEnhance]);
@@ -318,7 +333,7 @@ fn requests_need_the_capabilities_of_the_table() {
 fn capabilities_and_codes_are_the_names_of_the_docs() {
     let names: Vec<_> = Capability::ALL.iter().map(Capability::as_str).collect();
     assert_eq!(names, ["models.read", "models.download", "transcribe.file", "session.live", "audio.mic", "audio.system", "ai.enhance", "dictation.observe"]);
-    for code in ["not_an_extension", "capability", "busy", "declined", "model_not_downloaded", "wrong_role", "unsupported", "bad_request", "too_many_streams", "unknown_model", "model_retired"] {
+    for code in ["not_approved", "capability", "busy", "declined", "model_not_downloaded", "wrong_role", "unsupported", "bad_request", "too_many_streams", "unknown_model", "model_retired"] {
         assert!(!matches!(ErrorCode::parse(code), ErrorCode::Other(_)), "{code}");
     }
 }
@@ -332,4 +347,20 @@ fn every_written_message_has_the_version() {
     assert!(!line.contains('\n'));
     let value: Value = serde_json::from_str(&encode(None, &Event::HostClosing)).unwrap();
     assert_eq!(value, json!({"v": 1, "type": "host_closing"}));
+}
+
+#[test]
+fn a_partial_joins_its_two_texts_with_one_space_where_needed() {
+    let text = |committed: &str, tentative: &str| PartialEvent { session: 1, source: None, committed: committed.into(), tentative: tentative.into() }.text();
+    assert_eq!(text("hello", "world"), "hello world");
+    assert_eq!(text("hello ", "world"), "hello world");
+    assert_eq!(text("hello", " world"), "hello world");
+    assert_eq!(text("hello  ", "  world"), "hello world");
+    assert_eq!(text("", "world"), "world");
+    assert_eq!(text("hello ", ""), "hello");
+    assert_eq!(text(" ", " "), "");
+    assert_eq!(text("hello", ", world"), "hello, world");
+    assert_eq!(text("is it", "?"), "is it?");
+    assert_eq!(text("今天", "天气"), "今天天气");
+    assert_eq!(text("hello", "世界"), "hello 世界");
 }

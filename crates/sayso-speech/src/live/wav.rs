@@ -2,7 +2,7 @@
 //! while the session runs. The sizes in the header are right after
 //! [`WavWriter::finish`].
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
@@ -23,9 +23,14 @@ pub(crate) struct WavWriter {
 }
 
 impl WavWriter {
-    /// Make the file, or empty a file that exists.
+    /// Make the file, or empty a file that exists. On Unix a new file is for this
+    /// user only, because a recording holds what people said.
     pub fn create(path: &Path) -> io::Result<WavWriter> {
-        let mut file = BufWriter::new(File::create(path)?);
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = BufWriter::new(options.open(path)?);
         file.write_all(&header(0))?;
         Ok(WavWriter { path: path.to_path_buf(), file, samples: 0 })
     }
@@ -79,7 +84,7 @@ fn header(samples: u64) -> [u8; HEADER_BYTES as usize] {
 /// format that [`WavWriter`] writes.
 pub(crate) fn read(path: &Path) -> io::Result<Vec<f32>> {
     let bytes = std::fs::read(path)?;
-    let bad = |what: &str| io::Error::new(io::ErrorKind::InvalidData, format!("{} is not a WAV file of Sayso: {what}", path.display()));
+    let bad = |what: &str| io::Error::new(io::ErrorKind::InvalidData, format!("{} is not a recording of a live session: {what}", path.display()));
     if bytes.len() < HEADER_BYTES as usize || &bytes[0..4] != b"RIFF" || &bytes[8..16] != b"WAVEfmt " {
         return Err(bad("no RIFF header"));
     }

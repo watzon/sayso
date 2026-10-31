@@ -150,9 +150,9 @@ models:
     use_preview: "Usa %{name} per l'anteprima in tempo reale"
   roles:
     vad_title: "Rilevamento della voce"
-    vad_note: "Trova il parlato nelle registrazioni lunghe per le tue estensioni. La dettatura non lo usa."
+    vad_note: "Trova il parlato nelle registrazioni lunghe per le tue app collegate. La dettatura non lo usa."
     speakers_title: "Parlanti"
-    speakers_note: "Trova chi parla e quando in una registrazione, per le tue estensioni."
+    speakers_note: "Trova chi parla e quando in una registrazione, per le tue app collegate."
     automatic_uses: "Ora usa %{name}"
     automatic_none: "Nessun modello dei parlanti è scaricato. Scaricane uno qui sotto."
     basic: "Base"

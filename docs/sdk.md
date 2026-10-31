@@ -73,7 +73,7 @@ Chris approved these on 2026-10-29.
 6. **A new model store with immutable artifacts.** Sayso and every engine in local mode use one store for each user. Artifacts never change. A model id points to its artifacts through a manifest. The store is a new folder (`v1`), so the engines of older versions never change it.
 7. **Features of the user stay in Sayso.** `enhance` (the providers and styles of the user), `subscribe` (`dictation_done`), and the download question exist only in Sayso mode. In local mode they get `unsupported`, and `download_model` downloads without a question: the app asks its own user.
 8. **The engine still has one owner in each process.** Sayso serves apps through its host, not through its engine. An app in local mode starts its own engine. Decision 2 of `extensions.md` stays.
-9. **The app ships its own engine.** It packs the engine release file for its systems. The SDK finds it with `sayso_engine_sdk::find_engine`. The SDK does not start the engine inside an installed Sayso, because a Sayso update would then change the engine of the app.
+9. **The app ships its own engine.** It packs the engine release file for its systems. The SDK finds it with `sayso_sdk::find_engine`, from `sayso-engine-sdk`. The SDK does not start the engine inside an installed Sayso, because a Sayso update would then change the engine of the app.
 10. **`Mode::Auto` does not start Sayso.** Sayso has hotkeys and a menu bar icon, and the user did not ask for them. `Mode::Sayso { start: true }` starts Sayso (`connect_or_start`) when the app asks for it.
 
 ## Approval
@@ -104,7 +104,7 @@ Notes:
 What the question shows:
 
 - The name from the system (the bundle name on macOS, else the file name), and the identity (team and identifier, or the path).
-- The name that the app gave, marked as "The app calls itself …". The host removes control characters and characters that change the direction of text, and cuts the name to 40 characters.
+- The name that the app gave, marked as "The app calls itself …". The host removes control characters and characters that change the direction of text or that show as nothing, and cuts the name to 40 characters. A path shows these characters as `�`, and the identity keeps the real path.
 - Each capability in plain words ("Record from your microphone", "Record the sound of other apps and calls", "See each dictation after it is inserted").
 
 The answers:
@@ -117,9 +117,10 @@ The answers:
 Limits, so an app cannot fill the screen with questions:
 
 - One approval question is on the screen at a time, for all apps.
-- At most four connections wait for an approval question. A fifth gets `error {code: "busy"}` at once.
-- A connection that closes while it waits takes back its question.
-- Questions of the same identity count as one.
+- Questions of the same identity count as one. At most four connections of one identity wait for it. A fifth gets `error {code: "busy"}` at once.
+- At most four identities wait for an approval question, which includes the one on the screen. A fifth gets `error {code: "busy"}` at once. So one app with many connections does not block other apps.
+- A connection that closes while it waits takes back its question. When the last one closes, the window closes, and the identity gets `busy` with no question for 30 seconds. So an app that connects and closes in a loop does not take the focus each time.
+- **Allow** is inactive for 500 ms after the window shows, because the window takes the focus. A click that was meant for another window does not answer yes. The download question has the same delay. Nothing moves when the delay ends, so reduced motion changes nothing.
 
 The system permissions stay separate. Sayso asks the system for the system audio permission the first time a live session in Sayso mode asks for the source `system`.
 
@@ -130,6 +131,7 @@ The system permissions stay separate. Sayso asks the system for the system audio
 name = "Notetaker"            # The name from the system, which Sayso shows.
 team_id = "ABCDE12345"        # macOS, signed apps.
 identifier = "app.justsayso.notetaker"
+signer = "Example LLC"        # The organization on the certificate, which Sayso shows.
 # path = "/opt/notetaker/bin/notetaker"   # Other identities.
 allowed = true
 granted = ["session.live", "audio.mic", "audio.system", "transcribe.file"]
@@ -172,6 +174,7 @@ All MIT, with `publish = true`.
 | `ModelResolver` | The model of each role when a request names none, and the checks (`unknown_model`, `wrong_role`, ...) | The choices of the user and the catalog of Sayso | The options of the app and the engine catalog |
 | `ModelRetention` | Hold and release a model while work runs | `ModelUse` and the memory policy | Load and unload in the SDK |
 | `Gate` | Wait while dictation runs | `DictationGate` | Never waits |
+| `Microphone`, `SystemAudio` | Open a capture as a feed of audio, gaps, and its end | The shared microphone in `sayso-app/src/mic.rs`, and `sayso_capture::live::LiveSystemAudio` | `sayso_capture::live` |
 | `EventSink` | Where events go | The connection of the app | The event channel of the SDK |
 | `Recordings` | Where `record_to` and temporary recordings go | The folders of today | The same rules |
 | Cancellation | Stop a job or a session between engine calls | As today | As today |
@@ -192,17 +195,24 @@ let speech = Speech::connect(Options {
     engine: Engine::from_release(resources.join("engine")), // used in local mode
 })?;
 
-speech.mode();                                  // Mode::Sayso or Mode::Local, now
-let job = speech.transcribe_file(path, FileOptions::default().diarize())?;
-let session = speech.start_session(SessionOptions::sources([Source::Mic, Source::System]).record_to(folder))?;
-for event in speech.events() { /* segment, partial, speakers, job_done, mode_changed, ... */ }
-speech.stop_session(session)?;
+speech.mode();                                  // ActiveMode::Sayso or ActiveMode::Local, now
+let job = speech.transcribe_file(TranscribeFile { path, diarize: Some(true), ..Default::default() })?;
+let session = speech.start_session(SessionStart { sources: vec![Source::Mic], record_to: Some(folder), ..Default::default() })?;
+for event in speech.events() { /* Event::Message(segment, partial, speakers, job_done, ...), Event::ModeChanged, ... */ }
+speech.stop_session(session.session)?;
 ```
+
+`start_session` gives `SessionReply {session, excludes}`. The requests are the structs of `sayso-protocol`, so both modes have one set of fields. `Options` is built with `Options::new(mode, app)` and its setters.
 
 - `Speech::connect` with `Mode::Sayso` fails when Sayso does not run (`host_not_running`) or the user refused the app (`not_approved`).
 - `Mode::Local` never talks to Sayso.
 - `Mode::Auto` tries Sayso, and uses local mode when Sayso does not run or refused the app. A refused app does not ask again, because the host remembers the answer.
 - `speech.features()` tells the app what the mode that it has now can do. `mode_changed {mode, features}` tells the app when that changes.
+- The ids of jobs and sessions come from the SDK, in both modes. An id does not come back after a mode change, so an old id can never name new work. `Event::Message` has these ids, not the numbers of the host.
+- A live session ends with the reply of `stop_session`, or else with `session_ended`. When both can come, only the first counts, and a `session_ended` that passes the reply gives `stop_session` its text.
+- `Mode::Sayso` does not change mode. After the end of a connection, the app gets `Event::Disconnected`, requests give `host_not_running`, and `speech.reconnect()` connects again. It is not automatic, as with a request that goes out twice: the app decides.
+- Three error codes come only from the SDK: `host_not_running`, `connection_lost`, and `host_closing`. The app never sees the event `host_closing`, only the ends of its work with that code, and the change.
+- `session_ended` has the optional field `code`, for a session that ended with the connection.
 
 ### What differs between modes
 
@@ -220,16 +230,20 @@ The messages and the end rules are the same. These things differ, and the tests 
 - **One lock.** The SDK starts a request and changes mode under one lock. So a request that starts during a change waits for the change, and a change waits until no work is active.
 - **To Sayso.** While in local mode, the SDK watches for the socket of the host. When it appears, the SDK opens a connection and finishes `hello`: the approval, the protocol version, and the features. Only then, and only when no work is active, does it change mode. It sends `mode_changed`, and then stops its engine, so the model is in memory once. When `hello` fails, it stays in local mode and tries again after 30 s or when the socket changes.
 - **To local.** On `host_closing`, the work of the host ends as today (`job_failed`, the end of the live session), and the SDK changes to local mode and sends `mode_changed`.
-- **A lost connection.** When the connection ends without `host_closing` (Sayso crashed), each request without a reply gets `error {code: "connection_lost"}`, each job gets `job_failed {code: "connection_lost"}`, and each live session ends with the same code. The SDK never sends a request again by itself, because it cannot know if the host did it.
+- **A lost connection.** When the connection ends without `host_closing` (Sayso crashed), each request without a reply gets `error {code: "connection_lost"}`, each job gets `job_failed {code: "connection_lost"}`, and each live session ends with the same code. The SDK never sends a request again by itself, because it cannot know if the host did it. A request that the app sends before the SDK sees the loss also gets `connection_lost`. The first request after `mode_changed` runs in local mode.
 - **One end for each piece of work.** The SDK keeps a table of its open work. The first end of a piece of work (the reply of the host, `job_done`, or the end from a lost connection) removes it from the table, and only that end goes to the app. So a reply and a lost connection at the same moment give one end.
 - **The change after `host_closing` or a lost connection** is one step under the lock: end the open work, close the connection, change to local mode, and send `mode_changed`. Only then does the SDK take new requests. Local mode starts its engine at the first request that needs it.
 - **Generations.** Each connection has a number. The SDK drops events of an older connection, so they cannot reach new work.
 - A change never moves work. When Sayso starts during a long job in local mode, the job ends in local mode, and the next job goes to Sayso.
+- A host that hangs looks like a person who has not answered, so the host says which it is: when `hello` waits for a person, it sends `approval_waiting` at once. Without that event or a reply in 10 s (`Timing::hello_limit`), the SDK closes the connection and counts Sayso as not running: `Mode::Auto` uses local mode, and `Mode::Sayso` gets `host_not_running`. `Mode::Sayso { start: true }` then also tries to start Sayso and tries `hello` once more. `sayso_sdk::client::Client` has no such limit.
+- `Speech::connect` with `Mode::Auto` waits for the answer when Sayso asks about the app for the first time, because it tries Sayso first. The question in a later `hello` of the watcher does not stop work: work runs in local mode until the answer.
+- A watcher looks for the socket every 200 ms. A socket has an identity on Unix (the device, the inode, and the change time). A named pipe on Windows has none, so only the 30 s help there after a failed `hello`.
 
 ### Local mode
 
-- The engine: from the release file that the app ships (decision 9). The SDK checks `hello`: the protocol version, and the features that the request needs.
-- Models: the model store. `download_model` downloads at once.
+- The engine: from the release file that the app ships (decision 9). The SDK checks `hello`: the protocol version, and the features that the request needs. An engine that cannot start, or has no `catalog`, gives `unsupported`. It starts at the first request that needs it, and again after a crash when no open work uses it.
+- Models: the model store. `download_model` downloads at once. A model stays in memory for 60 s after the last work that used it, so the next job of a list finds it loaded.
+- The checks and the codes of a request are the same as in Sayso (`crates/sayso-sdk/src/local_models.rs`). The test `both_modes_refuse_the_same_requests` runs one table of requests in both modes.
 - Capture: `sayso-capture` in the process of the app. On macOS the app needs its own microphone and system audio permissions, and the usage text in its `Info.plist` (`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`).
 - When Sayso dictates at the same time, the two engines share the hardware, and dictation can be slower. `Mode::Auto` keeps this time short, because it moves to Sayso at the next piece of work.
 
@@ -246,7 +260,7 @@ The models folders of today cannot be shared:
 
 ### Layout
 
-The store is `v1` in the models folder of Sayso (`Paths::models_dir`): `~/Library/Application Support/Sayso/models/v1` on macOS, `%LOCALAPPDATA%\Sayso\models\v1` on Windows, and `$XDG_DATA_HOME/sayso/models/v1` on Linux. The SDK has the same rules, because an MIT crate cannot use `sayso_core::paths`. Local mode uses the store also when Sayso is not installed, so a later Sayso finds the models. The engines of older versions never open `v1`.
+The store is `v1` in the models folder of Sayso (`Paths::models_dir`): `~/Library/Application Support/Sayso/models/v1` on macOS, `%LOCALAPPDATA%\Sayso\models\v1` on Windows, and `$XDG_DATA_HOME/sayso/models/v1` on Linux (`~/.local/share/sayso/models/v1` when the variable is not set). `XDG_DATA_HOME` counts on each system, not only on Linux, because `Paths` reads it first. `sayso_sdk::model_store` has the same rules, because an MIT crate cannot use `sayso_core::paths`, and the test `sayso-host/tests/sdk_paths.rs` compares the two. The SDK has the same rules, because an MIT crate cannot use `sayso_core::paths`. Local mode uses the store also when Sayso is not installed, so a later Sayso finds the models. The engines of older versions never open `v1`.
 
 ```
 v1/
@@ -257,6 +271,7 @@ v1/
   locks/<digest>.get                  exclusive while one engine downloads the artifact
   staging/<digest>.<pid>.<random>/    a download in progress: an `owner` file first, then `work/` and `files/`
   trash/<digest>.<random>/            artifacts that wait to be deleted
+  migrating/<digest>/                 a stage of the migration, which the cleanup of an engine does not touch
   migration.json                      the journal of the migration
   cache/<key>/                        caches that the engines control, each with its own lock
 ```
@@ -305,18 +320,22 @@ An engine also runs a cleanup after the last holder of a loaded model lets it go
 
 ### Migration and downgrade
 
-Sayso moves its models from the old folders into `v1` once. Only one Sayso runs for each data folder (an instance lock on each system), and the migration runs before Sayso starts its engine, so no engine of Sayso writes the old folders while it runs. An app that points an engine of an older SDK at the models folder of Sayso is not supported: `sayso-engine-sdk` already says that two engines must not use one folder.
+Sayso moves its models from the old folders into `v1` once. Only one Sayso runs for each data folder (an instance lock on each system), and the migration runs before Sayso starts its engine, so no engine of Sayso writes the old folders while it runs. It runs on the thread that starts the engine, because the hash check takes seconds and the tray and the overlay must not wait for it. An engine that the user chose (the setting `engine_path` or `SAYSO_ENGINE_PATH`) can be older than the store, so Sayso does not migrate for it and does not give it the store. An app that points an engine of an older SDK at the models folder of Sayso is not supported: `sayso-engine-sdk` already says that two engines must not use one folder.
 
 1. Take `meta` exclusive for the whole migration. Write the plan into `migration.json`: each model, its descriptor, and its old files.
-2. For each artifact of a model: make hard links of the old files in a staging folder, then hash the linked files and compare them with the descriptor. A hard link takes no space and leaves the old folder as it was. On a volume without hard links, copy the files instead.
-3. When every artifact of a model matches, publish them and the manifest as in "Download", and mark the model as done in `migration.json`. When a file is missing or does not match, the model is not migrated, and the user downloads it again.
-4. When every model is done, delete the old folders, then `migration.json`.
+2. For each artifact of a model: make hard links of the old files in `migrating/<digest>/`, then hash the linked files and compare them with the descriptor. A hard link takes no space and leaves the old folder as it was. On a volume without hard links, copy the files instead.
+3. When every artifact of a model matches, publish them and the manifest as in "Download", and mark the model as done in `migration.json`. When a file is missing, cannot be read, or does not match, the model is not migrated and is marked as kept, with the reason, and the user downloads it again. Its old files stay until then.
+4. When every model is done, mark `migration.json` as removing, then delete the old folders of the models that moved, and mark `migration.json` as finished. The file stays with the kept models, so the next start does not hash them again. When a kept model is in the store, the next start deletes its old folders.
 
 After a crash, the next start reads `migration.json` and does each step again. Each step can run twice with the same result. Models that were done stay done.
 
+When the migration fails before it marks `migration.json` as removing, each old folder is still there, so the engine runs on them without the store for this start. The next start looks at the old folders again, also for a model that was kept, because the user can have downloaded a model in between. After the mark, the engine uses the store, also when the migration fails. A Parakeet Unified folder without its CTC helper is kept, and the user downloads it again. A kept model has no delete button, because it is not on disk for the engine: its old files go when the user downloads it.
+
 After a downgrade, the older Sayso does not see `v1`, and the user downloads the models again. The release notes of the version with `store_v1` say this.
 
-The engine of an older app in local mode, without `store_v1`, uses its own folder (`SAYSO_MODELS_DIR`) as today. The SDK passes the store only to an engine that lists `store_v1`.
+The engine of an older app in local mode, without `store_v1`, uses its own folder (`SAYSO_MODELS_DIR`) as today. The SDK passes the store only to an engine that lists `store_v1`: it starts the engine without the variable, reads `hello`, and when the feature is there, it starts the engine again with the variable.
+
+Core ML keeps its compiled models by path. So after the migration, the first load of each model on macOS optimizes it again, and takes as long as the first load after a download (9 to 22 s for Parakeet Unified and Nemotron on the Mac of the check).
 
 ### Caches outside the store
 
@@ -410,18 +429,40 @@ FluidAudio does not check hashes: it checks the size of each file only (`FileDow
 
 | System | How | Limits |
 |---|---|---|
-| macOS 14.2 and later | A Core Audio process tap through an aggregate device | Needs the system audio permission and `NSAudioCaptureUsageDescription`. On 14.0 and 14.1 the source `system` gets `unsupported`. |
-| Windows | WASAPI loopback of the default output device | Sound that goes to another device is not captured. Follows a change of the default device, with a gap. |
-| Linux | The monitor of the default sink in PipeWire, or through the PulseAudio interface of PipeWire | The Flatpak of Sayso needs access to the audio server. |
+| macOS 14.2 and later | A Core Audio process tap through a private aggregate device | Needs the system audio permission and `NSAudioCaptureUsageDescription`. On 14.0 and 14.1 the source `system` gets `unsupported`. The app links CoreAudio weakly (`sayso-app/build.rs`), because a strong import of the tap functions stops the launch on these versions. `cpal` imports them, so each app with `sayso-capture` needs the flag, also one that does not use the source. A library cannot set it for the program of another package, so the README of `sayso-sdk` gives the line for the `build.rs` of the app, and `sayso-sdk/tests/macos_launch.rs` proves that it makes the imports weak. |
+| Windows | WASAPI loopback of the default output device, through `cpal` | Sound that goes to another device is not captured. Follows a change of the default device, with a gap. No packets arrive while nothing plays, so silence fills that time. |
+| Linux | The monitor of the default sink, through the native protocol of PulseAudio (crate `pulseaudio`, MIT, no C library). `pipewire-pulse` serves the same protocol. | The Flatpak of Sayso needs access to the audio server. A system with PipeWire and no `pipewire-pulse` gets an error at `session_start`. |
 
 Rules for both modes:
 
-- **What is left out.** The capture leaves out the sounds of Sayso and of the app when the system allows it. The macOS tap can leave out a list of processes, so it leaves out both. On Windows and Linux, the step checks what the system allows. The `ok` of `session_start` lists what the capture leaves out (`excludes`), so the app knows.
-- **Times.** Each frame has the time of the capture clock. The microphone and the system audio of one session use the same clock, so the echo rule can compare them.
-- **Device changes.** A change of the device gives an event `source_gap {source, ms}`.
-- **Permissions.** A refused permission gives `error {code: "permission"}` at `session_start`. A permission that the user takes back during a session ends that source with `source_ended {source, reason: "permission"}`. The other sources go on.
+- **What is left out.** `excludes` in the `ok` of `session_start` lists what the capture really leaves out: `sayso`, `app`, or both. It is empty without the source `system`.
+  - macOS: the tap has an exclude list of processes. In Sayso mode it has Sayso and the app (`excludes: ["sayso", "app"]`). In local mode the two are one process (`excludes: ["app"]`). A process that has played no sound has no Core Audio process object yet. The capture checks the list again while it runs, and adds the process when it appears. When macOS refuses the change two times, the process goes out of the list of the capture, and a new stream tries again. The `ok` went out before that, so the app sees it only in the log of the process that captures. When the app has no known process id, `app` is not in the list.
+  - Windows: nothing (`excludes: []`). [Endpoint loopback](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording) records the mix of the device. [Process loopback](https://learn.microsoft.com/en-us/windows/win32/api/audioclientactivationparams/ns-audioclientactivationparams-audioclient_process_loopback_params) (Windows 10 build 20348 and later) can leave out only one process tree, and Sayso mode has two to leave out. We do not use it.
+  - Linux: nothing (`excludes: []`). [Every sink has a monitor source](https://www.freedesktop.org/wiki/Software/PulseAudio/FAQ/), which gives what the sink plays, after the mix. Leaving out a stream needs another routing of the sound of the user (a virtual sink or a graph per stream), and we do not change their audio setup.
+- **Times.** Each frame has the time of the capture clock (`sayso_capture::clock::now`, one clock in the process). The time is taken at the audio callback, and is correct to one device buffer. The microphone and the system audio of one session use it, so the echo rule can compare them. The sources of a session share one start: the first audio of the session is time 0, and a source that starts later gets silence before its first audio.
+- **Silence.** When no audio arrives for 200 ms and the stream is fine (Windows while nothing plays), the capture gives silent frames, so the times of the source go on. A hole of more than 10 s gives `source_gap`. The capture clock does not advance during a sleep of the computer on macOS and Linux, so the capture also compares the wall clock with it: a difference of more than 2 s gives `source_gap`. A user who sets the clock forward gets one too.
+- **Device changes.** A change of the device gives an event `source_gap {session, source, ms}` when the new stream is open, also when it gives no audio, and the capture goes on with the new device. The recording and the VAD get `ms` of silence, at most 60 s, so the times of later segments stay correct. The capture checks the default device every 2 s, so the old device can give up to 2 s after the change. The microphone in `sayso-app/src/mic.rs` gives the same event.
+- **Permissions.** A refused permission gives `error {code: "permission"}` at `session_start`. The system audio opens before the other sources, so the microphone does not run while the system asks, and a refusal opens no microphone and leaves no recording. When the app or Sayso closes during the question, the start ends when the question ends: the sources close, and the next session can start. A permission that the user takes back during a session ends that source with `source_ended {session, source, reason: "permission"}`. The other sources go on. A capture that does not come back for 60 s ends with the reason `failed`. `source_ended` comes after the last segment of the source.
 
-Each source of a live session is a separate stream, as in "Capture" of `extensions.md`. The echo rule (drop a microphone segment that a system segment covers in time and in words) is in `sayso-speech`, so both modes have it. Set its limit with test recordings, and write it in this file.
+The permission on macOS has no public API. `system::access()` reads it with `TCCAccessPreflight` of the private framework TCC, through `dlopen`. When the answer is "no answer yet" and the bundle has `NSAudioCaptureUsageDescription`, the capture asks with `TCCAccessRequest` and waits up to 120 s. A program without a bundle gets the question from `AudioDeviceStart`, which blocks until a person answers. So `system::start` can take as long as the person takes. A refused capture gets no error from Core Audio, and its buffers are silent, so the preflight is the only sign. Public reports say that the preflight is not always reliable. We have not yet seen a real refusal or a real take-back on macOS (see "Progress"). If polling the preflight does not see a take-back, `source_ended` does not come, and this section must change. Linux has no permission on the desktop: a refusal of the server (a wrong cookie, or a socket without access) gives `permission` at the start. Windows has no permission for loopback.
+
+Each source of a live session is a separate stream, as in "Capture" of `extensions.md`.
+
+The echo rule is in `sayso-speech` (`live/echo.rs`), so both modes have it. In a session with `mic` and `system`, a microphone segment is dropped when a system segment covers at least half of its time (with 1 s of slack, for the way through the room and the speech detection) and at least 60% of its words. Words are compared in order (longest common subsequence), without case or punctuation, and a word of 4 letters or more can differ by one letter. A segment of 3 words or fewer must also be at least 50% of the system words of its time, so "I think so" stays when the call says "I think we should ship it". A microphone segment waits until the system source has passed its time, at most 60 s, so with both sources the microphone segments can come later than the system segments. When the system source ends, nothing waits. Partials are not filtered: only `segment` and the final text.
+
+**The limit of 60%.** It comes from `crates/sayso-speech/tests/fixtures/echo_pairs.tsv`, 1170 synthetic text pairs that `echo_pairs.py` makes with a fixed seed: 270 pairs of one sentence as a system transcript and with the errors that a second transcript through a room has, and 900 pairs of real text on the same topic, which share common words but are not an echo. They are not recordings. A real call must confirm the limit (the check of step 13).
+
+| Limit | Echoes dropped | Real text dropped |
+|---|---|---|
+| 30% | 99.6% | 3.3% |
+| 40% | 99.6% | 0.7% |
+| 50% | 99.3% | 0.4% |
+| **60%** | **98.1%** | **0.0%** |
+| 70% | 92.6% | 0.0% |
+| 80% | 81.5% | 0.0% |
+| 90% | 58.1% | 0.0% |
+
+We chose 60%, because a lost sentence of the user costs more than a sentence seen twice, and it still drops almost all echoes. To print the table again: `cargo test -p sayso-speech echo_limit -- --nocapture`.
 
 The microphone part of `sayso-capture` comes from `sayso-platform-common/src/audio.rs` and the shared capture of `sayso-app/src/mic.rs`. The shared capture (one stream for dictation and a live session) stays in Sayso. `sayso-capture` gives the device and the frames.
 
@@ -435,11 +476,27 @@ The Linux Flatpak of Sayso has its own folders, and these parts do not work acro
 
 Step 9a tests each direction in real sandboxes before the rest of step 9. When the host cannot know the identity of an app across the sandbox, that combination is not supported, and the SDK of the app uses local mode. Then the app and Sayso use two stores and can load a model twice: the promises of "Goal" do not cover that combination. The host never trusts an app id that the client sends.
 
+Step 9a ran on Ubuntu 24.04 with GNOME on 2026-10-31, with Sayso 0.14.0 and its `.flatpak`, in real sandboxes:
+
+| Sayso | App | Result | Why |
+|---|---|---|---|
+| In the Flatpak | Outside | Not supported. The app uses local mode. | The app looks for the socket in `$XDG_RUNTIME_DIR/sayso`, and Sayso has it in `$XDG_RUNTIME_DIR/app/dev.sayso.Sayso`. |
+| In the Flatpak | In another sandbox with the same app id | Not supported. The app uses local mode. | The app reaches the socket, and the host closes the connection: the process that writes is not in the PID namespace of the host, so it has no identity. |
+| Outside | In a sandbox | Not supported. The app uses local mode. | The app looks for the socket in its own `app/` folder, and Sayso has it in `$XDG_RUNTIME_DIR/sayso`. |
+| Outside | Outside | Works. | |
+
+So a connected app and Sayso must both be outside a sandbox. In each other combination, the app and Sayso use two stores. The app with its own Flatpak id was not tested: its socket path and its PID namespace are the same as in the second row or the third row.
+
 ## Security
 
 - **Sayso does not say that an app is safe.** No person reviews connected apps. The approval question says what the app asks for and what the system knows about it.
 - **An approved app is a native program with the rights of the user.** Approval controls only what Sayso gives it.
 - **A path identity trusts the file at that path.** A program that replaces the file gets the grants. Malware that runs as the user can do that and more, which is outside what Sayso can protect against, as in `extensions.md`.
+- **The identity is of the process that writes, not of the process that connected.** A program can connect, give the socket to a child, and then start an approved program. So the host identifies the process that wrote the first line, and closes the connection when a later line comes from another process.
+  - macOS: the host reads the audit token after each line. The token follows the last writer. It must have the pid and the pid version of the first line, and the version changes with an exec. A line from before an exec gets no identity, because its token no longer names a running program.
+  - Linux: each read gives the pid of its writer through `SCM_CREDENTIALS`. `SO_PEERCRED` is not used, because it says only who connected. `/proc/<pid>/exe` must be the same device and inode as the file at its path, so a bind mount in a private mount namespace does not pass. The process must be in the PID namespace of the host, because a process with a capability in its own namespace can write another pid in its credentials.
+  - Windows: there is no exec, and the pipe keeps the pid of the process that connected. Only pid reuse applies: the process that connected ends, a child keeps the pipe, and an approved program gets the same pid before the first line. The code does not check for this.
+- **Lines from before an exec stay open on Linux.** A process can write `hello` and requests, and start an approved program before the host reads them. The pid is the same, so the host runs them as the approved program, and a child that keeps the socket reads the replies. Nothing on Linux tells the host that an exec came after the write. On macOS, the token keeps only the last writer, so a line of a child counts as a line of its parent when the parent writes before the host reads it. For this, the parent has to write to the socket that it inherited.
 - **The name that an app gives is not checked.** The question shows the name from the system first, and the name of the app only as a quote.
 - **An app cannot borrow the permissions of Sayso in local mode.** It captures in its own process, so the system asks the user for the app.
 - **In Sayso mode, Sayso records for the app.** The menu bar shows it, and **Stop** ends it.
@@ -514,5 +571,9 @@ Chris answered these on 2026-10-29.
 
 | Step | State | Notes |
 |---|---|---|
+| 9. Approval | Done | Chris approved the designs on 2026-10-30. 9b is built: the identity rules, `apps.toml`, `hello` with `app` and `capabilities`, the question and its limits, `not_approved`, Settings › Connected apps, the recording state, and the removal of the extension code. A review found that a process could take the identity of an approved app through a shared socket, and that grants did not stop all work. Both are fixed, and "Security" says what stays open. Checked on macOS, with automated tests and in the real app, and with the tests of the host in a Linux container, with bind mounts and PID namespaces. On Windows the code compiles, and its tests run only in CI. 9a ran on 2026-10-31: see "Flatpak". The question, **Allow**, **Don't allow**, and `apps.toml` ran in the real app on macOS 27.2, macOS 14.6.1, Windows 11 on ARM (the x64 build, emulated), and Ubuntu 24.04 ([vm-testing.md](vm-testing.md)). |
 | 10. MIT core | Done | `sayso-speech` (MIT): jobs and live sessions from `sayso-host` (the plan of chunks, the final pass of each part, the speakers, the queue, `DictationGate`), Basic VAD and the resampler from `sayso-core`, and the file decoder (`symphonia`). Its own types (`ModelId`, `Timestamps`, `Turn`, `EngineEvent`, `EngineError`, `Refusal`, `JobSpec`, `SessionSpec`); the events are the messages of `sayso-protocol`. The traits `SpeechEngine`, `ModelResolver`, `ModelRetention`, `Gate`, `EventSink`, and `Recordings`. `sayso-capture` (MIT): the microphone with `cpal`, from `sayso-platform-common/src/audio.rs`; the place for the system audio of step 13 is the module `system`. `sayso-host` gives the adapters: `BackendEngine` (`SttBackend` and the bus), `SaysoModels` (the choices of the user and the catalog), `ModelUse`, and `RecordingFolder`. `sayso-core` re-exports `basic_vad` and `resample` and converts its types. The shared microphone stays in `sayso-app/src/mic.rs`. Every author of the moved files is Chris (`git log --follow`, 2026-10-29). Checked: `cargo test --workspace`, clippy, `scripts/check-deps.sh`, `cargo tree` of both crates (no GPL crate), and `cargo package` of both crates with `workspace-hack` removed. The dictation benchmark (`docs/benchmark.md`) showed no regression in two pairs of runs, on the record in #64. |
-| 11. Model store | In progress | Done: the write inventory and the descriptors (#65), the rules in `sayso_core::model_store`, `store_v1` in the Rust engine, and the store level of the conformance suite. Open: `store_v1` in the Swift engine, the migration in Sayso, and the checks of a real 0.13 models folder and of the engine of the last release beside a new one. A stalled download holds its `get` lock until the limit of 6 hours for one file, because `ureq` has no limit for the time between two reads. sherpa-onnx ends the process on a broken VAD model, so that load gives no `failed` reply; the store stays as it was. |
+| 11. Model store | Done | Done: the write inventory and the descriptors (#65), the rules in `sayso_core::model_store`, `store_v1` in both engines, the store level of the conformance suite, the migration in Sayso (`sayso_core::model_migration`), and the store option of `sayso-engine-sdk`. A real 0.13 models folder of macOS moved without a download: a clone of it moved `parakeet-unified-en` and `nemotron-en` in 3.7 s, and both load and transcribe with the network blocked. Real 0.13 models folders moved without a download on macOS 27.2, Windows 11, and Ubuntu 24.04 on 2026-10-31: each file hash is the same after the move, and the only file left out is the old `.complete` marker. The 0.13 engine beside a new engine on Ubuntu downloaded a model to the old folder, and the hash of the store did not change. The release notes of 0.14.0 have the sentence about a downgrade. A stalled download holds its `get` lock until the limit of 6 hours for one file, because `ureq` has no limit for the time between two reads. sherpa-onnx ends the process on a broken VAD model, so that load gives no `failed` reply; the store stays as it was. |
+| 12. `sayso-sdk` | Done, except publication and the Windows runs | `sayso-sdk` (MIT): `Speech` with `Mode::Sayso { start }`, `Mode::Local`, and `Mode::Auto`, `features()`, `mode()`, `Event::ModeChanged`, the mode changes under one lock, and the client that was `sayso-extension`, in `sayso_sdk::client`. The source `system` runs in both modes since the merge of step 13: `source_gap`, `source_ended`, and `excludes` reach the app with the ids of the SDK, and no event comes after the end of its work. Local mode: the engine that the app ships, the model store, `download_model` at once, the checks of Sayso (`local_models.rs`), and `sayso-capture` in the process of the app. The check is `crates/sayso-host/tests/sdk_modes.rs`, in `sayso-host` because `sayso-sdk` cannot have a GPL crate in its tree, even as a dev-dependency: a real `Host` in a child process, so a test can kill it. Its scenarios ran with the fake engine, and by hand with the Swift engine on a Mac (`real_engine_check`, a temporary store, `whisper-tiny` and `parakeet-eou-120m`). `crates/sayso-sdk/tests/one_end.rs` has the races against a fake host. Not run: the real microphone in local mode, because the tests use the source `client` or a fake capture. On Windows the crate is checked to compile, but `sdk_modes` and `one_end` run only on Unix. `sayso-extension` is out of the workspace dependencies, and its README says that it moved. The crates are published in step 14, and that version of `sayso-extension` goes out then. The tests of the source `system` use a fake capture, through `Options::capture` and `HostServices::system_audio`. No real tap ran in local mode, because it waits for a person. |
+| 13. System audio | Done, except a real call | Built: `sayso_capture::system` on each system, `sayso_capture::clock`, `sayso_capture::live` (`LiveMicrophone`, `LiveSystemAudio`), the events `source_gap` and `source_ended`, `error {code: "permission"}`, `excludes`, the source `system` in the host, `NSAudioCaptureUsageDescription` in `packaging/Info.plist` and its translations, and the echo rule with its limit. The real checks ran on 2026-10-31 ([vm-testing.md](vm-testing.md)): the tone is found on macOS 27.2 and 14.6.1, Windows 11 on ARM (the x64 build, emulated), Ubuntu 24.04 and Fedora 44 (both PipeWire). On macOS a refused question and a later start give `Permission`, and the capture ends when the user turns the permission off in System Settings. On PipeWire a change of the default output gives a gap, and frames go on. Tested with fakes on macOS and Linux: the sessions (gap, source ended, both sources, the echo rule), and the host over its socket. Not run: a real call without headphones, so the echo limit still comes from synthetic text; a change of device on macOS and Windows, because each VM has one output; the source `system` through Sayso or local mode with real capture, because the tests use a fake capture. The manual checks are the ignored tests in `crates/sayso-capture/tests/system_real.rs`. |
+| 14. Guide | Written. The crates are not published, and the check by someone other than Chris is not done | The guide is in [sdk-guide/](sdk-guide/README.md): a tutorial that builds a small app (`crates/sayso-sdk/examples/scribe.rs`), a how-to for each task (`examples/guide.rs`), and the reference of the Host API. `scripts/check-sdk-guide.py` checks that each Rust block of the guide is the code of these files, and CI runs it. The examples compile with the workspace. The writer built the tutorial from an empty folder on a Mac with the Swift engine of the repository, `Mode::Local`, a temporary model store, and `whisper-tiny`: the file job and the live session with the source `client` ran, and the other how-to code ran with the same engine, except what needs a person or Sayso. Not run: the microphone, the system audio (it waits for a question of the system), `Mode::Sayso` and `Mode::Auto` against a real Sayso, a notarized app with the engine inside, Linux, and Windows. Open: publish the crates (and the last version of `sayso-extension`), and a person other than Chris builds an app from the guide alone. |

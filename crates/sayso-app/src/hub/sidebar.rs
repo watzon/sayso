@@ -252,6 +252,7 @@ pub fn settings_label(page: SettingsPage) -> (String, Icon) {
         SettingsPage::Appearance => (t!("hub.settings_nav.appearance"), Icon::Drop),
         SettingsPage::HistoryPrivacy => (t!("hub.settings_nav.history_privacy"), Icon::Shield),
         SettingsPage::Permissions => (t!("hub.settings_nav.permissions"), Icon::Lock),
+        SettingsPage::ConnectedApps => (t!("hub.settings_nav.connected_apps"), Icon::Apps),
         SettingsPage::Advanced => (t!("hub.settings_nav.advanced"), Icon::Code),
     }
 }

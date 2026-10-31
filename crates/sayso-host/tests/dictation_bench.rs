@@ -29,8 +29,8 @@ use sayso_core::config::{Config, RoleChoice};
 use sayso_core::models::ModelId;
 use sayso_core::stt::SessionOptions;
 use sayso_engine_client::EngineClient;
-use sayso_extension::protocol::{Event as HostEvent, JobReply, SessionReply};
-use sayso_extension::{Client, Event};
+use sayso_sdk::protocol::{Event as HostEvent, JobReply, SessionReply};
+use sayso_sdk::client::{Client, Event};
 use sayso_host::{DownloadQuestion, HostServices};
 use sayso_platform::SttBackend;
 use serde_json::json;
@@ -60,6 +60,9 @@ impl HostServices for Services {
     }
     fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
+    }
+    fn ask_approval(&self, _: &sayso_host::ApprovalQuestion, _: &dyn Fn() -> bool) -> Option<bool> {
+        None
     }
 }
 
@@ -201,7 +204,7 @@ fn run_live(client: Client, audio: Vec<i16>, stop: Arc<AtomicBool>) -> std::thre
                 if stop.load(Ordering::Relaxed) {
                     break 'feed;
                 }
-                client.send("session_audio", fields(json!({"session": session, "pcm": sayso_extension::protocol::pcm::encode_i16(part)}))).unwrap();
+                client.send("session_audio", fields(json!({"session": session, "pcm": sayso_sdk::protocol::pcm::encode_i16(part)}))).unwrap();
                 sent += part.len();
                 // Real time: wait until the audio that went out is due.
                 let due = Duration::from_secs_f64(sent as f64 / 16_000.0);
@@ -238,7 +241,7 @@ fn dictation_while_an_extension_works() {
     let mut config = Config::default();
     config.dictation.model = ModelId::new(FINAL_MODEL);
     config.models.vad = RoleChoice::Model(ModelId::new("silero-vad"));
-    write_state(&setup.state, &here(), &["transcribe.file", "session.live"], None);
+    write_apps(&setup.apps, &["transcribe.file", "session.live"]);
     let host = start_with(&setup, Arc::new(Services { engine: engine.clone(), config }));
     let gate = host.dictation_gate();
 

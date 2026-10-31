@@ -8,8 +8,8 @@ use parking_lot::Mutex;
 use sayso_core::config::Config;
 use sayso_core::models::{self, ModelId, ModelInfo, ModelTask};
 use sayso_core::stt::{self, Diarization, EngineEvent, ModelStatus, SessionOptions, SpeechPart, TimedTranscript, Transcript, Turn};
-use sayso_extension::protocol::{ErrorCode, Event as HostEvent, JobReply};
-use sayso_extension::{Client, Event};
+use sayso_sdk::protocol::{ErrorCode, Event as HostEvent, JobReply};
+use sayso_sdk::client::{Client, Event};
 use sayso_host::{DownloadQuestion, Host, HostServices};
 use sayso_platform::{PlatformError, Result, SttBackend};
 use serde_json::json;
@@ -154,6 +154,9 @@ impl HostServices for Services {
     fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
     }
+    fn ask_approval(&self, _: &sayso_host::ApprovalQuestion, _: &dyn Fn() -> bool) -> Option<bool> {
+        None
+    }
 }
 
 fn first_of(task: ModelTask) -> ModelId {
@@ -176,7 +179,7 @@ struct World {
 
 fn world(granted: &[&str], engine: JobEngine) -> World {
     let setup = setup();
-    write_state(&setup.state, &here(), granted, None);
+    write_apps(&setup.apps, granted);
     let engine = Arc::new(engine);
     let mut config = Config::default();
     config.dictation.model = speech();
@@ -365,7 +368,7 @@ fn a_closed_connection_cancels_its_jobs() {
     start_job(&first, &path, json!({}));
     start_job(&first, &path, json!({}));
     drop(first);
-    eventually("the host sees the close", || world.host.connected_extensions().is_empty());
+    eventually("the host sees the close", || world.host.connected_apps().is_empty());
 
     let (second, events) = world.client();
     let job = start_job(&second, &path, json!({}));
@@ -406,14 +409,14 @@ fn jobs_need_their_capability_and_an_engine() {
     let world = world(&[], JobEngine::new());
     let (client, _events) = world.client();
     let path = world.wav("a.wav", 1_000, &[]);
-    for (kind, body) in [("transcribe_file", json!({"path": path})), ("cancel_job", json!({"job": 1}))] {
-        let error = refused(client.request(kind, fields(body)));
-        assert_eq!(error.code, Some(ErrorCode::Capability), "{kind}");
-        assert_eq!(error.capability, Some(sayso_extension::protocol::Capability::TranscribeFile));
-    }
+    let error = refused(client.request("transcribe_file", fields(json!({"path": path}))));
+    assert_eq!(error.code, Some(ErrorCode::Capability));
+    assert_eq!(error.capability, Some(sayso_sdk::protocol::Capability::TranscribeFile));
+    // An app can always cancel its own job, so this needs no grant.
+    assert_eq!(refused(client.request("cancel_job", fields(json!({"job": 1})))).code, Some(ErrorCode::BadRequest));
 
     let setup = setup();
-    write_state(&setup.state, &here(), ALL, None);
+    write_apps(&setup.apps, ALL);
     let _host = start_with(&setup, Arc::new(Services { engine: None, config: Config::default() }));
     let client = Client::connect_to(&setup.socket).unwrap();
     let error = refused(client.request("transcribe_file", fields(json!({"path": path}))));
@@ -477,8 +480,8 @@ fn a_part_of_a_live_session_holds_a_job_between_its_parts() {
 fn jobs_hold_sayso_open_until_they_end() {
     let world = world(ALL, JobEngine::new());
     // The name of the record is what Sayso shows.
-    let state = std::fs::read_to_string(&world.setup.state).unwrap();
-    std::fs::write(&world.setup.state, format!("{state}name = \"Media\"\n")).unwrap();
+    let apps = std::fs::read_to_string(&world.setup.apps).unwrap();
+    std::fs::write(&world.setup.apps, apps.replace("name = \"Test\"", "name = \"Media\"")).unwrap();
     let changes = Arc::new(AtomicUsize::new(0));
     {
         let changes = changes.clone();
@@ -492,7 +495,7 @@ fn jobs_hold_sayso_open_until_they_end() {
     world.host.dictation_gate().begin();
     let first = start_job(&client, &path, json!({}));
     let second = start_job(&client, &path, json!({}));
-    let hold = sayso_host::Hold { extension_id: ID.into(), name: "Media".into(), work: sayso_host::Work::Job };
+    let hold = sayso_host::Hold { app_id: id(), name: "Media".into(), work: sayso_host::Work::Job };
     assert_eq!(world.host.holds(), vec![hold], "one entry for the jobs of one extension");
     assert!(changes.load(Ordering::SeqCst) >= 2, "the observer hears each new job");
 
@@ -502,4 +505,27 @@ fn jobs_hold_sayso_open_until_they_end() {
     assert!(matches!(until_end(&events, first).last(), Some(HostEvent::JobDone { .. })));
     eventually("the jobs no longer hold Sayso", || world.host.holds().is_empty());
     eventually("the observer hears the end", || changes.load(Ordering::SeqCst) > before_end);
+}
+
+#[test]
+fn a_grant_that_goes_ends_the_jobs_of_the_app_with_capability() {
+    let world = world(ALL, JobEngine::new());
+    let (client, events) = world.client();
+    let path = world.wav("a.wav", 20_000, &THREE);
+    world.host.dictation_gate().begin();
+    let running = start_job(&client, &path, json!({}));
+    let waiting = start_job(&client, &path, json!({}));
+    world.host.stop_work_without_grant();
+    assert!(!world.host.holds().is_empty(), "the grant is still there");
+
+    world.host.apps().set_grant(&id(), &sayso_sdk::protocol::Capability::TranscribeFile, false).unwrap();
+    world.host.stop_work_without_grant();
+    let gone = |job| HostEvent::JobFailed { job, message: sayso_host::jobs::GRANT_GONE.into(), code: Some(ErrorCode::Capability) };
+    assert_eq!(until_end(&events, running).last(), Some(&gone(running)));
+    assert_eq!(until_end(&events, waiting).last(), Some(&gone(waiting)));
+    world.host.dictation_gate().end();
+    assert_eq!(world.engine.transcribed(), 0, "no text after the grant went");
+
+    // An app can always cancel its own job.
+    client.request("cancel_job", fields(json!({"job": running}))).unwrap();
 }
