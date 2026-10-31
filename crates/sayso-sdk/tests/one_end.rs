@@ -228,6 +228,61 @@ fn a_refused_capture_gives_the_code_permission_and_leaves_no_open_work() {
     assert!(!seen.iter().any(|event| matches!(event, Event::Message(_))), "no session was open: {seen:?}");
 }
 
+fn with_hello_limit(options: Options, hello_limit: Duration) -> Options {
+    let timing = Timing { watch: Duration::from_millis(5), hello_limit, ..Timing::default() };
+    options.timing(timing)
+}
+
+#[test]
+fn a_host_that_says_nothing_to_hello_counts_as_not_running() {
+    let place = place();
+    host(&place.socket, |_, mut peer| while peer.read().is_some() {});
+    let sayso = with_hello_limit(options(Mode::Sayso { start: false }, &place), Duration::from_millis(100));
+    let error = Speech::connect(sayso).err().unwrap();
+    assert_eq!(error.code, Some(ErrorCode::HostNotRunning), "{error:?}");
+    let auto = with_hello_limit(options(Mode::Auto, &place), Duration::from_millis(100));
+    assert_eq!(Speech::connect(auto).unwrap().mode(), ActiveMode::Local);
+}
+
+#[test]
+fn a_host_that_says_that_it_asks_a_person_has_no_limit() {
+    let place = place();
+    host(&place.socket, |_, mut peer| {
+        let hello = peer.read().unwrap();
+        peer.send(&[json!({"type": "approval_waiting", "id": hello["id"]})]);
+        // Longer than the limit. A slow machine only makes the wait longer.
+        std::thread::sleep(Duration::from_secs(3));
+        peer.send(&[json!({"type": "ok", "id": hello["id"], "host_version": "fake", "protocol": protocol::PROTOCOL})]);
+        while peer.read().is_some() {}
+    });
+    let speech = Speech::connect(with_hello_limit(options(Mode::Sayso { start: false }, &place), Duration::from_secs(2))).unwrap();
+    assert_eq!(speech.mode(), ActiveMode::Sayso);
+    assert!(speech.events().try_iter().next().is_none(), "the app does not see the event of the wait");
+}
+
+/// The connection ends right after `hello`, in a race with the check of `reconnect`. It gives
+/// an error, or else `Ok` and then the `Disconnected` of that connection. Never `Ok` with nothing.
+#[test]
+fn reconnect_never_says_ok_without_a_connection() {
+    let place = place();
+    host(&place.socket, |_, mut peer| {
+        let hello = peer.read().unwrap();
+        peer.send(&[json!({"type": "ok", "id": hello["id"], "host_version": "fake", "protocol": protocol::PROTOCOL})]);
+        peer.close();
+    });
+    let speech = sayso(&place);
+    let events = speech.events();
+    wait_for(&events, |event| matches!(event, Event::Disconnected { .. }));
+    for _ in 0..200 {
+        match speech.reconnect() {
+            Ok(()) => {
+                wait_for(&events, |event| matches!(event, Event::Disconnected { .. }));
+            }
+            Err(error) => assert_eq!(error.code, Some(ErrorCode::ConnectionLost), "{error:?}"),
+        }
+    }
+}
+
 #[test]
 fn a_lost_connection_ends_each_piece_of_work_once_and_sends_nothing_again() {
     let place = place();

@@ -183,13 +183,15 @@ pub struct Timing {
     pub retry: Duration,
     /// How long [`Mode::Sayso`] with `start` waits for Sayso.
     pub start_wait: Duration,
+    /// How long the first reply to `hello` can take, unless Sayso said that it asks the user.
+    pub hello_limit: Duration,
     /// How long local mode keeps a model in memory after the last work that used it.
     pub keep_model: Duration,
 }
 
 impl Default for Timing {
     fn default() -> Timing {
-        Timing { watch: Duration::from_millis(200), retry: Duration::from_secs(30), start_wait: client::START_WAIT, keep_model: Duration::from_secs(60) }
+        Timing { watch: Duration::from_millis(200), retry: Duration::from_secs(30), start_wait: client::START_WAIT, hello_limit: Duration::from_secs(10), keep_model: Duration::from_secs(60) }
     }
 }
 

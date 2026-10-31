@@ -166,6 +166,7 @@ fn events() -> Vec<(&'static str, Event)> {
             }),
         ),
         (r#"{"v":1,"type":"host_closing"}"#, Event::HostClosing),
+        (r#"{"v":1,"type":"approval_waiting"}"#, Event::ApprovalWaiting),
         (r#"{"v":1,"type":"session_ended","session":7,"text":"Hello there."}"#, Event::SessionEnded { session: 7, text: "Hello there.".into(), code: None }),
         (r#"{"v":1,"type":"source_gap","session":7,"source":"system","ms":240}"#, Event::SourceGap { session: 7, source: Source::System, ms: 240 }),
         (r#"{"v":1,"type":"source_ended","session":7,"source":"system","reason":"permission"}"#, Event::SourceEnded { session: 7, source: Source::System, reason: SourceEndReason::Permission }),

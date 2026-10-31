@@ -54,6 +54,9 @@ pub enum Event {
         code: Option<ErrorCode>,
     },
     DictationDone(DictationDone),
+    /// `hello` waits for the answer of a person. A client must wait for its reply
+    /// without a limit after this. Without it, a client can call a silent host stuck.
+    ApprovalWaiting,
     /// Sayso quits or restarts, and closes the connection.
     HostClosing,
 }
@@ -71,6 +74,7 @@ tagged_kind!(Event {
     SourceEnded => "source_ended",
     SessionEnded => "session_ended",
     DictationDone => "dictation_done",
+    ApprovalWaiting => "approval_waiting",
     HostClosing => "host_closing",
 });
 

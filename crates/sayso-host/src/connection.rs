@@ -307,6 +307,8 @@ impl Connection<'_> {
                 return true;
             }
             HelloStep::Ask(question) => {
+                // The client can now tell this wait from a stuck host.
+                responder.event(&Event::ApprovalWaiting);
                 self.asking.store(true, Ordering::SeqCst);
                 let shared = self.shared.clone();
                 let caller = caller.clone();

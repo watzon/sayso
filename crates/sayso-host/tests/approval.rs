@@ -58,6 +58,10 @@ fn an_app_in_any_folder_is_asked_once_and_works_after_allow() {
 
     services.answer(true);
     let client = waiting.join().unwrap().unwrap();
+    let said: Vec<_> = client.events().try_iter().collect();
+    assert!(matches!(&said[..], [sayso_sdk::client::Event::Host { event: sayso_sdk::protocol::Event::ApprovalWaiting, .. }]), "the host said that it waits for a person: {said:?}");
+    let known = connect(&setup, &app).join().unwrap().unwrap();
+    assert!(known.events().try_iter().next().is_none(), "no person: no such event");
     assert_eq!(client.hello().capabilities, vec![Capability::ModelsRead, Capability::TranscribeFile]);
     assert!(client.hello().denied.is_empty());
     client.request("list_models", fields(json!({}))).unwrap();
@@ -178,6 +182,8 @@ fn requests_of_a_connection_that_waits_for_the_answer_are_refused_without_a_clos
         let mut next = || serde_json::from_str::<serde_json::Value>(&lines.next().unwrap().unwrap()).unwrap();
         stream.write_all(b"{\"v\":1,\"type\":\"hello\",\"id\":\"h1\",\"protocol\":1}\n").unwrap();
         services.wait_for_approvals(1);
+        let said = next();
+        assert_eq!((said["id"].clone(), said["type"].clone()), (json!("h1"), json!("approval_waiting")), "{said}");
         stream.write_all(b"{\"v\":1,\"type\":\"list_models\",\"id\":\"r1\"}\n{\"v\":1,\"type\":\"hello\",\"id\":\"h2\",\"protocol\":1}\n").unwrap();
         for id in ["r1", "h2"] {
             let reply = next();
@@ -372,6 +378,7 @@ fn an_approved_app_that_gets_busy_keeps_its_connection() {
         let mut lines = BufReader::new(stream.try_clone().unwrap()).lines();
         let mut next = || serde_json::from_str::<serde_json::Value>(&lines.next().unwrap().unwrap()).unwrap();
         stream.write_all(b"{\"v\":1,\"type\":\"hello\",\"id\":\"h1\",\"protocol\":1,\"capabilities\":[\"audio.mic\"]}\n").unwrap();
+        assert_eq!(next()["type"], json!("approval_waiting"));
         assert_eq!(next()["code"], json!("busy"));
         stream.write_all(b"{\"v\":1,\"type\":\"bye\",\"id\":\"b\"}\n").unwrap();
         assert_eq!(next()["type"], json!("ok"), "the connection stays open");

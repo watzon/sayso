@@ -43,7 +43,7 @@ for event in speech.events() {
 
 `Mode::Auto` changes only when the app has no active work: no request without a reply, no job, no live session. A change never moves work. When Sayso starts during a job in local mode, the job ends in local mode and the next job goes to Sayso. When Sayso crashes, a request without a reply gets `connection_lost`, each job gets `job_failed` with that code, and each live session ends with that code. The SDK never sends a request again by itself, because it cannot know if Sayso did it.
 
-The first connection to Sayso can show a question to the user, and `Speech::connect` waits for the answer. Call it on a thread that can wait.
+The first connection to Sayso can show a question to the user, and `Speech::connect` waits for the answer. Call it on a thread that can wait. A Sayso that does not answer `hello` in 10 s and does not say that it asks the user counts as a Sayso that does not run.
 
 ## What differs between modes
 

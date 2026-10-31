@@ -17,7 +17,7 @@ use crate::protocol::{self, Capability, ErrorCode, ErrorReply, Fields, HelloRepl
 use crate::transport::{self, SocketId};
 use crate::wire::{Incoming, Wire};
 use crate::{ActiveMode, Error, Event, Features, Mode, Options, client};
-use crossbeam_channel::{Receiver, Sender, bounded, unbounded};
+use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded, unbounded};
 use parking_lot::{Condvar, Mutex};
 use sayso_speech::{EventSink, ModelResolver};
 use serde::Serialize;
@@ -245,12 +245,15 @@ impl Shared {
         let generation = self.next_generation.fetch_add(1, Ordering::SeqCst);
         let id = transport::socket_id(socket);
         let dead = Arc::new(AtomicBool::new(false));
+        let asking = Arc::new(AtomicBool::new(false));
         let (hello_out, hello_in) = bounded(1);
         let mut hello_out = Some(hello_out);
         let wire = {
             let shared = self.clone();
             let dead = dead.clone();
+            let asking = asking.clone();
             Wire::open(socket, move |incoming| match incoming {
+                Incoming::Event { event: protocol::Event::ApprovalWaiting, .. } => asking.store(true, Ordering::SeqCst),
                 Incoming::Reply { id: Some(id), reply } if id == HELLO => {
                     if let Some(out) = hello_out.take() {
                         let _ = out.send(reply);
@@ -273,14 +276,16 @@ impl Shared {
         })?;
         let connection = Arc::new(HostConnection { wire, generation, socket: id, dead, hello: OnceLock::new() });
         *self.connecting.lock() = Some(connection.clone());
-        let hello = self.finish_hello(&connection, &hello_in);
+        let hello = self.finish_hello(&connection, &hello_in, &asking);
         *self.connecting.lock() = None;
         let hello = hello?;
         let _ = connection.hello.set(hello);
         Ok(connection)
     }
 
-    fn finish_hello(&self, connection: &HostConnection, reply: &Receiver<Reply>) -> Result<HelloReply, ErrorReply> {
+    /// A host that says nothing is stuck, so its `hello` has a limit. A host that says
+    /// `approval_waiting` waits for a person, and a person has no limit.
+    fn finish_hello(&self, connection: &HostConnection, reply: &Receiver<Reply>, asking: &AtomicBool) -> Result<HelloReply, ErrorReply> {
         if self.closing.load(Ordering::SeqCst) {
             return Err(error(ErrorCode::ConnectionLost, "the SDK closes"));
         }
@@ -288,10 +293,17 @@ impl Shared {
         let mut fields = app.fields();
         fields.insert("id".into(), HELLO.into());
         connection.wire.write(HELLO, fields).map_err(|e| error(ErrorCode::ConnectionLost, format!("cannot talk to Sayso: {e}")))?;
-        let hello: HelloReply = match reply.recv() {
-            Ok(Reply::Ok(fields)) => parse(&fields, HELLO)?,
-            Ok(Reply::Error(e)) => return Err(e),
-            Err(_) => return Err(error(ErrorCode::ConnectionLost, "the connection to Sayso ended during hello")),
+        let limit = self.options.timing.hello_limit;
+        let answer = match reply.recv_timeout(limit) {
+            Ok(answer) => Some(answer),
+            Err(RecvTimeoutError::Disconnected) => None,
+            Err(RecvTimeoutError::Timeout) if asking.load(Ordering::SeqCst) => reply.recv().ok(),
+            Err(RecvTimeoutError::Timeout) => return Err(error(ErrorCode::HostNotRunning, format!("Sayso did not answer hello in {} s", limit.as_secs_f32()))),
+        };
+        let hello: HelloReply = match answer {
+            Some(Reply::Ok(fields)) => parse(&fields, HELLO)?,
+            Some(Reply::Error(e)) => return Err(e),
+            None => return Err(error(ErrorCode::ConnectionLost, "the connection to Sayso ended during hello")),
         };
         if hello.protocol != PROTOCOL {
             return Err(ErrorReply { code: None, message: format!("Sayso speaks protocol {}, and this SDK speaks {PROTOCOL}", hello.protocol), capability: None, reason: None });
@@ -652,7 +664,9 @@ impl Speech {
     /// - [`Mode::Local`] never talks to Sayso. It fails when the engine is not there.
     /// - [`Mode::Auto`] uses Sayso when it can, else local mode.
     ///
-    /// When Sayso asks the user about this app, this waits for the answer.
+    /// When Sayso asks the user about this app, this waits for the answer. A Sayso that
+    /// does not answer in [`Timing::hello_limit`](crate::Timing::hello_limit) and does not say that it asks
+    /// counts as a Sayso that does not run.
     pub fn connect(options: Options) -> Result<Speech, Error> {
         let (events_out, events) = unbounded();
         let mode = options.mode;
@@ -961,11 +975,16 @@ impl Speech {
         }
         let connection = connect_to_sayso(&self.shared, start)?;
         let mut state = self.shared.state.lock();
-        if matches!(state.route, Route::Gone) && !connection.dead.load(Ordering::SeqCst) {
-            state.route = Route::Sayso(connection);
-            let features = self.shared.features(&state.route);
-            self.shared.send(Event::ModeChanged { mode: ActiveMode::Sayso, features });
+        if !matches!(state.route, Route::Gone) {
+            // Another call of this function won, and that connection is the route.
+            return Ok(());
         }
+        if connection.dead.load(Ordering::SeqCst) {
+            return Err(error(ErrorCode::ConnectionLost, "the connection to Sayso ended just after hello"));
+        }
+        state.route = Route::Sayso(connection);
+        let features = self.shared.features(&state.route);
+        self.shared.send(Event::ModeChanged { mode: ActiveMode::Sayso, features });
         Ok(())
     }
 }

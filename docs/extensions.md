@@ -251,7 +251,7 @@ Every request with an `id` gets one reply: `ok` or `error`. Events can arrive at
 
 | Request | Capability | Fields | Reply and events |
 |---|---|---|---|
-| `hello` | none | `sdk, protocol, features` | `ok {host_version, protocol, features, extension_id, capabilities}` |
+| `hello` | none | `sdk, protocol, features` | `ok {host_version, protocol, features, extension_id, capabilities}`. When the reply waits for the answer of a person, the event `approval_waiting` comes first, at once. |
 | `list_models` | `models.read` | `role?` (`final`, `streaming`, `vad`, `diarization`) | `ok {models: [{id, name, roles, state, languages, timestamps, size_bytes, choice}]}`. `choice` lists the roles for which the host uses this model when a request names none. |
 | `download_model` | `models.download` | `model, reason` | The host asks the user, unless the model is on disk or already downloads. Then `model_state` and `download_progress` events, and `ok`, or `error {code: "declined"}`, or `error {code: "unknown_model"}`, or `error` with the message of the engine when the download fails. |
 | `transcribe_file` | `transcribe.file` | `path, model?, vad_model?, language?, diarize?, diarization_model?, speakers?` | `ok {job}` at once. Then `job_progress {job, fraction}` and `segment {job, start_ms, end_ms, text}`. With `diarize`, `speakers {job, turns}` after the last segment. At the end `job_done {job, text}` or `job_failed {job, message, code}`. |
@@ -423,6 +423,7 @@ These rules of the wire format are fixed in `sayso-protocol`:
 - A job ends with exactly one `job_done` or `job_failed`, and no event of the job comes after it. A cancelled job gets `job_failed` without `code` and with the message "The job was cancelled.". When the host closes, each job gets `job_failed` before `host_closing`.
 - A failed download gives `error` without `code`, with `message` and the `reason` of the engine protocol, after `model_state {state: "failed"}`. `declined` and `unknown_model` have a `code`.
 - A line that is not a JSON object with a string `type` gets `error` without `id` and with `code: "bad_request"`. A known request with a missing field or a field of the wrong type gets `bad_request` with its `id`. An unknown request type gets `error` with its `id` and no `code`, as in the engine protocol.
+- `approval_waiting` has the `id` of `hello`, and says that the reply waits for a person. A client can give up on a host that sends neither a reply nor this event: the SDK does so after 10 s (`docs/sdk.md`, "Mode changes in `Mode::Auto`").
 - `dictation_done` has no `id`. The `ok {events}` reply of `subscribe` comes before the first event, and lists only the event names that the host knows.
 - `enhance` sends no events: one `ok {text, provider, model}` or one `error`. The error codes are `bad_request`, `unavailable`, `unsupported`, `timeout`, and `refused` (see "Requests"); an output that Sayso cannot use gives `error` without `code`.
 - A reader keeps a capability or an error code that it does not know, and ignores a message type that it does not know.
