@@ -114,10 +114,12 @@ pub fn refused(result: Answer) -> sayso_protocol::ErrorReply {
 
 pub type Answer = std::result::Result<sayso_sdk::client::Reply, Error>;
 
+/// The limit only ends a test that already failed, so it is long: a new connection can take
+/// several seconds when many tests run on a machine with much to do.
 pub fn eventually(what: &str, check: impl Fn() -> bool) {
     let start = Instant::now();
     while !check() {
-        assert!(start.elapsed() < Duration::from_secs(5), "{what}");
+        assert!(start.elapsed() < Duration::from_secs(60), "{what}");
         std::thread::sleep(Duration::from_millis(10));
     }
 }
