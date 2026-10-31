@@ -350,7 +350,7 @@ impl Tray {
 
     /// The dot on the icon while an app records.
     pub fn set_recording(&self, recording: Option<&super::TrayRecording>) {
-        let incognito = self.look.lock().map_or(false, |mut look| {
+        let incognito = self.look.lock().is_ok_and(|mut look| {
             look.1 = recording.cloned();
             look.0
         });
