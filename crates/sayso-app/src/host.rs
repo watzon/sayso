@@ -14,7 +14,7 @@ use sayso_core::pipeline::PipelineOutput;
 use sayso_core::style::StyleLibrary;
 use sayso_enhance::SecretStore;
 use sayso_host::{ApprovalQuestion, DownloadQuestion, Hold, StyleRequest, Work};
-use sayso_host::live::{MicFeed, Microphone};
+use sayso_host::live::{AudioFeed, Microphone, OpenError, SystemAudio};
 use sayso_platform::SttBackend;
 use sayso_store::Store;
 use std::path::{Path, PathBuf};
@@ -68,6 +68,10 @@ impl sayso_host::HostServices for AppHostServices {
 
     fn microphone(&self) -> Option<Arc<dyn Microphone>> {
         Some(Arc::new(HostMic { mic: self.mic.clone(), config_file: self.config_file.clone() }))
+    }
+
+    fn system_audio(&self) -> Option<Arc<dyn SystemAudio>> {
+        Some(Arc::new(sayso_capture::live::LiveSystemAudio { this_process: "sayso" }))
     }
 
     /// When the app disconnects or Sayso closes the host, the window
@@ -148,10 +152,13 @@ struct HostMic {
 }
 
 impl Microphone for HostMic {
-    fn open(&self) -> Result<MicFeed, String> {
+    fn open(&self) -> Result<AudioFeed, OpenError> {
         let device = AppHostServices::load_config(&self.config_file).audio.input_device;
-        let (lease, frames) = self.mic.join_queued(device.as_deref()).map_err(|e| e.to_string())?;
-        Ok(MicFeed { frames, lease: Box::new(lease) })
+        let (lease, items) = self.mic.join_queued(device.as_deref()).map_err(|e| match e {
+            sayso_platform::PlatformError::PermissionDenied(_) => OpenError::Permission(e.to_string()),
+            other => OpenError::Failed(other.to_string()),
+        })?;
+        Ok(AudioFeed { items, lease: Box::new(lease), excludes: Vec::new() })
     }
 }
 

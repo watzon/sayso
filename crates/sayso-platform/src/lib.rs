@@ -262,6 +262,8 @@ pub struct AudioFrame {
     pub samples: Vec<f32>,
     /// RMS of this frame, 0.0 to 1.0, scaled for display.
     pub level: f32,
+    /// The time of the first sample on the capture clock (`sayso_capture::clock`).
+    pub time: std::time::Duration,
 }
 
 /// Stops capture when dropped.

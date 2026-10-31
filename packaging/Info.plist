@@ -17,6 +17,7 @@
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Sayso listens to the microphone only while you dictate. Speech is transcribed on this Mac.</string>
+  <key>NSAudioCaptureUsageDescription</key><string>Sayso records the sound of other apps and calls only for an app that you allowed, while that app records.</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 Watzon Ventures LLC</string>
 </dict>
 </plist>

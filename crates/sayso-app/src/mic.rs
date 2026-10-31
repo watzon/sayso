@@ -23,11 +23,13 @@
 //! A change of the setting alone does not move the capture; the next user does.
 
 use parking_lot::Mutex;
+use sayso_host::live::{CapturedAudio, FeedItem};
 use sayso_platform::{AudioCapture, AudioFrame, CaptureHandle, Result};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// A user of the shared microphone with a queue: the lease, and the frames.
-pub type Queued = (Box<dyn CaptureHandle>, crossbeam_channel::Receiver<Vec<f32>>);
+pub type Queued = (Box<dyn CaptureHandle>, crossbeam_channel::Receiver<FeedItem>);
 
 pub struct SharedMic {
     audio: Arc<dyn AudioCapture>,
@@ -55,7 +57,30 @@ enum Sink {
     /// Runs on the capture thread. For dictation, which must not wait.
     Inline(Box<dyn FnMut(AudioFrame) + Send>),
     /// A queue that never blocks the capture thread. For live sessions.
-    Queue(crossbeam_channel::Sender<Vec<f32>>),
+    Queue(QueueSink),
+}
+
+/// A live session: its queue, and what tells it about a move to another device.
+struct QueueSink {
+    tx: crossbeam_channel::Sender<FeedItem>,
+    /// The capture of its last frame, and the end of that frame.
+    last: Option<(u64, Duration)>,
+}
+
+impl QueueSink {
+    /// A frame of the capture of `generation`. A live session that moved to
+    /// another device gets a gap first.
+    fn send(&mut self, generation: u64, frame: &AudioFrame) {
+        if let Some((last, end)) = self.last
+            && last != generation
+        {
+            let ms = u64::try_from(frame.time.saturating_sub(end).as_millis()).unwrap_or(u64::MAX);
+            let _ = self.tx.send(FeedItem::Gap { ms });
+        }
+        self.last = Some((generation, frame.time + Duration::from_millis(20)));
+        // A user that dropped its receiver leaves with its lease.
+        let _ = self.tx.send(FeedItem::Audio(CapturedAudio { samples: frame.samples.clone(), time: Some(frame.time) }));
+    }
 }
 
 impl SharedMic {
@@ -75,7 +100,7 @@ impl SharedMic {
     /// ends after the last frame.
     pub fn join_queued(self: &Arc<Self>, device: Option<&str>) -> Result<Queued> {
         let (tx, rx) = crossbeam_channel::unbounded();
-        let id = self.join(device, Sink::Queue(tx))?;
+        let id = self.join(device, Sink::Queue(QueueSink { tx, last: None }))?;
         Ok((Box::new(Lease { mic: Some(self.clone()), id }), rx))
     }
 
@@ -155,10 +180,9 @@ impl SharedMic {
                     on_frame(frame.clone());
                 }
             }
-            for (_, sink) in users.list.iter() {
+            for (_, sink) in users.list.iter_mut() {
                 if let Sink::Queue(queue) = sink {
-                    // A user that dropped its receiver leaves with its lease.
-                    let _ = queue.send(frame.samples.clone());
+                    queue.send(generation, &frame);
                 }
             }
         })
@@ -241,14 +265,14 @@ mod tests {
         fn frame(&self, value: f32) {
             let running: Vec<_> = self.running.lock().iter().filter(|r| !r.2.load(Ordering::SeqCst)).map(|r| r.1.clone()).collect();
             for callback in running {
-                (callback.lock())(AudioFrame { samples: vec![value; 320], level: 0.0 });
+                (callback.lock())(AudioFrame { samples: vec![value; 320], level: 0.0, time: Duration::ZERO });
             }
         }
 
         /// A frame from the capture that started as number `start` (from 1), also after its stop.
         fn frame_from(&self, start: usize, value: f32) {
             let callback = self.running.lock().iter().find(|r| r.0 == start).map(|r| r.1.clone()).unwrap();
-            (callback.lock())(AudioFrame { samples: vec![value; 320], level: 0.0 });
+            (callback.lock())(AudioFrame { samples: vec![value; 320], level: 0.0, time: Duration::ZERO });
         }
 
         fn live(&self) -> usize {
@@ -269,8 +293,13 @@ mod tests {
         (got, Box::new(move |frame: AudioFrame| sink.lock().push(frame.samples[0])))
     }
 
-    fn firsts(rx: &crossbeam_channel::Receiver<Vec<f32>>) -> Vec<f32> {
-        rx.try_iter().map(|samples| samples[0]).collect()
+    fn firsts(rx: &crossbeam_channel::Receiver<FeedItem>) -> Vec<f32> {
+        rx.try_iter()
+            .filter_map(|item| match item {
+                FeedItem::Audio(audio) => Some(audio.samples[0]),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -325,6 +354,22 @@ mod tests {
         }
         assert_eq!(got.lock().len(), 5_000, "the dictation got every frame");
         assert!(started.elapsed() < Duration::from_secs(2), "the frames did not wait: {:?}", started.elapsed());
+    }
+
+    #[test]
+    fn a_move_to_a_new_device_gives_a_live_session_one_gap_with_its_length() {
+        let (fake, mic) = setup();
+        let (_live, frames) = mic.join_queued(Some("built-in")).unwrap();
+        let frame_at = |ms: u64| AudioFrame { samples: vec![0.0; 320], level: 0.0, time: Duration::from_millis(ms) };
+        (fake.running.lock()[0].1.lock())(frame_at(1_000));
+        let (_, on_frame) = dictation();
+        let _dictating = mic.start(Some("headset"), on_frame).unwrap();
+        (fake.running.lock()[1].1.lock())(frame_at(1_300));
+        (fake.running.lock()[1].1.lock())(frame_at(1_320));
+        let items: Vec<FeedItem> = frames.try_iter().collect();
+        assert_eq!(items.len(), 4, "{items:?}");
+        assert_eq!(items[1], FeedItem::Gap { ms: 280 });
+        assert!(matches!(items[3], FeedItem::Audio(_)), "one gap");
     }
 
     #[test]
