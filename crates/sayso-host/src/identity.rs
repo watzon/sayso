@@ -86,8 +86,10 @@ impl Peer {
     pub(crate) fn pid(&self) -> Option<u32> {
         #[cfg(target_os = "macos")]
         return Some(self.token[5]);
-        #[cfg(any(target_os = "linux", windows))]
+        #[cfg(target_os = "linux")]
         return Some(self.pid as u32);
+        #[cfg(windows)]
+        return Some(self.pid);
         #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         None
     }
