@@ -204,6 +204,15 @@ fn init_logging(paths: &Paths, level: Option<&str>) {
     // The D-Bus library (Linux) logs each connection step at info.
     let filter = format!("{level},zbus=warn,tracing=warn");
     let mut builder = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(filter));
+    // GPUI logs its errors without a module. The file and the line say where they come from.
+    builder.format(|out, record| {
+        use std::io::Write;
+        let source = match (record.target(), record.file(), record.line()) {
+            ("", Some(file), Some(line)) => format!("{file}:{line}"),
+            (target, ..) => target.to_owned(),
+        };
+        writeln!(out, "[{} {:<5} {source}] {}", out.timestamp(), record.level(), record.args())
+    });
     if let Ok(file) = std::fs::File::create(paths.log_dir().join("sayso.log")) {
         builder.target(env_logger::Target::Pipe(Box::new(file)));
     }
