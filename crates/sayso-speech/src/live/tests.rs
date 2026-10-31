@@ -968,3 +968,19 @@ fn a_recording_is_for_this_user_only() {
     wav::WavWriter::create(&path).unwrap().finish().unwrap();
     assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
 }
+
+/// These errors go to the app in both modes, and local mode has no Sayso.
+#[test]
+fn the_errors_of_a_session_do_not_name_sayso() {
+    let f = fixture();
+    let first = f.sessions.start(owner(1), spec(&[Source::Client]), Arc::new(Events::default())).unwrap();
+    let busy = f.sessions.start(owner(2), spec(&[Source::Client]), Arc::new(Events::default())).unwrap_err();
+    assert_eq!(busy.code, Some(ErrorCode::Busy));
+    f.sessions.stop(1, first.session).unwrap();
+    let unsupported = check_sources(&[Source::Mic], false, false).unwrap_err();
+    f.sessions.close();
+    let closed = f.sessions.start(owner(1), spec(&[Source::Client]), Arc::new(Events::default())).unwrap_err();
+    for error in [busy, unsupported, closed] {
+        assert!(!error.message.contains("Sayso"), "{error:?}");
+    }
+}

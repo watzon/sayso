@@ -74,7 +74,7 @@ An `Error` has `code` (optional), `message` (English, for people), `capability` 
 | `too_many_streams` | The engine has no free stream. | Stop other work, then try again. |
 | `permission` | The system refused the microphone or the system audio. | Tell the user to allow it in System Settings. |
 | `unavailable`, `refused`, `timeout` | The AI provider of `enhance` failed. | Show the message. Try again later. |
-| `host_not_running` | Sayso does not run (`Mode::Sayso` only). | Ask the user to start Sayso, or use `Mode::Auto`. |
+| `host_not_running` | Sayso does not run, or did not answer in 10 s (`Mode::Sayso` only). | Ask the user to start Sayso, or use `Mode::Auto`. |
 | `connection_lost` | The connection to Sayso ended without a goodbye. The request may have run. | Check the state before you repeat a request. |
 | `host_closing` | Sayso quit and ended this work. | Start the work again if the user wants it, in the new mode. |
 

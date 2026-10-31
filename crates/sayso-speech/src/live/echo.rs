@@ -10,7 +10,7 @@
 
 use crate::EventSink;
 use parking_lot::Mutex;
-use sayso_protocol::{Event, Segment, SegmentEvent, Source};
+use sayso_protocol::{Event, Segment, SegmentEvent, Source, is_unspaced};
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -55,14 +55,6 @@ pub(crate) fn words(text: &str) -> Vec<String> {
         out.push(word);
     }
     out
-}
-
-fn is_unspaced(c: char) -> bool {
-    matches!(c as u32,
-        0x3040..=0x30FF // Hiragana and Katakana.
-        | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF // Han.
-        | 0x0E00..=0x0E7F // Thai.
-    )
 }
 
 /// The same word, or a word with one wrong letter, as two transcripts of one

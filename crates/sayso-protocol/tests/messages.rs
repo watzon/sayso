@@ -348,3 +348,19 @@ fn every_written_message_has_the_version() {
     let value: Value = serde_json::from_str(&encode(None, &Event::HostClosing)).unwrap();
     assert_eq!(value, json!({"v": 1, "type": "host_closing"}));
 }
+
+#[test]
+fn a_partial_joins_its_two_texts_with_one_space_where_needed() {
+    let text = |committed: &str, tentative: &str| PartialEvent { session: 1, source: None, committed: committed.into(), tentative: tentative.into() }.text();
+    assert_eq!(text("hello", "world"), "hello world");
+    assert_eq!(text("hello ", "world"), "hello world");
+    assert_eq!(text("hello", " world"), "hello world");
+    assert_eq!(text("hello  ", "  world"), "hello world");
+    assert_eq!(text("", "world"), "world");
+    assert_eq!(text("hello ", ""), "hello");
+    assert_eq!(text(" ", " "), "");
+    assert_eq!(text("hello", ", world"), "hello, world");
+    assert_eq!(text("is it", "?"), "is it?");
+    assert_eq!(text("今天", "天气"), "今天天气");
+    assert_eq!(text("hello", "世界"), "hello 世界");
+}

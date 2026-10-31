@@ -54,12 +54,12 @@ fn engine_in_resources(resources: &Path) -> Engine {
 
 If the folder has no engine, `Speech::connect` with `Mode::Local` returns the error code `unsupported`, with a message that names the folder. `Mode::Auto` does not check the engine when it connects. The first request that needs the engine returns `unsupported`. If you set no `Options::engine`, both modes return `bad_request`.
 
-To get the path of the program yourself, add `sayso-engine-sdk` to `Cargo.toml` and call `find_engine`:
+To get the path of the program yourself, call `find_engine`:
 
 <!-- check: verbatim crates/sayso-sdk/examples/guide.rs -->
 ```rust
 fn engine_program(resources: &Path) -> std::io::Result<PathBuf> {
-    sayso_engine_sdk::find_engine(resources.join("engine"))
+    sayso_sdk::find_engine(resources.join("engine"))
 }
 ```
 

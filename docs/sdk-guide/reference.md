@@ -235,14 +235,15 @@ A reply is `ok` or `error`.
 | `source_ended` | `session`, `source`, `reason` | One source ended and the others go on. |
 | `session_ended` | `session`, `text`, `code?` | A session ended without `session_stop`. |
 | `dictation_done` | `text`, `transcript`, `app?`, `site?`, `style?`, `time` | A dictation was inserted. Needs `subscribe`. |
+| `approval_waiting` | none | `hello` waits for the answer of a person. `Speech` handles this event, so the app sees it only with `sayso_sdk::client`. |
 | `host_closing` | none | Sayso quits or restarts. |
 
 Details:
 
 - `segment` has `job` for a job, and `session` with `source` for a live session. Its times are in milliseconds from the start of the file or the session. `words` is set when the model has the timestamp level `word`.
 - `speakers` comes after the last `segment` of a job. For a live session, one comes for each source, after the last `segment` and before the reply to `session_stop`.
-- `partial`: `committed` does not change any more. `tentative` can change.
-- `source_gap`: the recording and the times of the source have `ms` of silence there, at most 60 seconds.
+- `partial`: `committed` does not change any more. `tentative` can change. `PartialEvent::text()` gives both as one text, with one space where the text needs one: not before punctuation that closes, and not in a script without spaces.
+- `source_gap`: the recording and the times of the source have `ms` of silence there, at most 60 seconds. It comes at a change of the device, and after the computer sleeps.
 - `source_ended`: the last `segment` of the source comes before it. `reason` is `permission` or `failed`.
 - `session_ended`: the user stopped the session in Sayso, or the SDK ended it because the connection ended. In that case `code` is set (`connection_lost` or `host_closing`). The last `segment` and `speakers` events come before it. There is no reply to `session_stop` after it.
 - `dictation_done`: `text` is the inserted text, `transcript` is the text of the speech model before replacements and the style, `app` is the name of the app, `site` the host of the web page, and `style` the id of the style. `time` is in RFC 3339 and UTC. No event comes while incognito is on.
@@ -334,7 +335,7 @@ A code that this version does not know reads as `ErrorCode::Other(String)`.
 - A job waits while a dictation runs or while a part of a live session is in the engine. A job does not stop a live session.
 - In Sayso mode, these limits are for all apps together. In local mode, they are for your app.
 - Approval questions: one on the screen at a time. At most 4 connections of one identity and 4 identities wait. More get `busy`. After the last waiting connection of an identity closes, that identity gets `busy` for 30 seconds.
-- The echo rule: in a session with `mic` and `system`, a microphone segment is dropped when a system segment covers at least half of its time and at least 60 % of its words. A microphone segment can wait for the system source, up to 60 seconds.
+- The echo rule: in a session with `mic` and `system`, a microphone segment is dropped when a system segment covers at least half of its time and at least 60 % of its words. A segment of 3 words or fewer must also be at least half of the system words of its time, so a short real reply stays. A microphone segment can wait for the system source, up to 60 seconds.
 - A gap of more than 10 seconds in a source gives `source_gap`. A capture that does not come back for 60 seconds ends with `source_ended {reason: "failed"}`.
 
 ## What differs between modes
@@ -353,7 +354,7 @@ The messages and the end rules are the same in both modes. These things differ:
 | Features | `Features::host`, from `hello`. | `Features::engine`, from the engine of the app. |
 | `excludes` on macOS | `["sayso", "app"]` | `["app"]` |
 | `partial` and `segment` text | From the engine of Sayso. | From the engine of the app. The same model can give a different text when the engine versions differ. |
-| Error messages | Written by Sayso. | Written by the SDK. Some still say "Sayso", for example "Sayso runs one at a time". |
+| Error messages | Written by Sayso. | Written by the SDK. The errors of the shared code are true in both modes, and do not name Sayso. |
 
 Only the SDK gives these:
 
@@ -383,7 +384,7 @@ Only the SDK gives these:
 | `stop_session(u64)` | `session_stop` | The text (`String`) |
 | `enhance(Enhance)` | `enhance` | `EnhanceReply` |
 | `subscribe(&[&str])` | `subscribe` | The event names (`Vec<String>`) |
-| `reconnect()` | `hello` | `()`. For `Mode::Sayso` only. |
+| `reconnect()` | `hello` | `()`. For `Mode::Sayso` only. `connection_lost` when the new connection ended at once. |
 
 The calls block. `&Speech` can be shared between threads. Dropping the `Speech` ends its work, closes the connection or stops the engine.
 
@@ -396,7 +397,7 @@ The calls block. `&Speech` can be shared between threads. Dropping the `Speech` 
 | `.engine(Engine)` | The engine of the app. Needed for `Local` and `Auto`. |
 | `.models(ModelChoices)` | The choices of the app for local mode: `final_model`, `preview_model`, `vad_model`, `diarization_model`, `language`. |
 | `.socket(path)` | Another socket for Sayso. |
-| `.timing(Timing)` | `watch` (200 ms), `retry` (30 s), `start_wait` (10 s), `keep_model` (60 s). |
+| `.timing(Timing)` | `watch` (200 ms), `retry` (30 s), `start_wait` (10 s), `hello_limit` (10 s), `keep_model` (60 s). |
 | `.capture(CaptureSources)` | Another microphone and system audio, instead of the real capture. |
 
 `Mode::Sayso { start: true }` starts Sayso when it does not run and waits up to `Timing::start_wait`. `Mode::Auto` never starts Sayso.

@@ -57,7 +57,7 @@ On macOS 14.0 and 14.1, the source `system` returns the error code `unsupported`
 ## Ask for the permissions at the right time
 
 - `Speech::features().system_audio` tells you, without a question, if the source `system` can start. It is true when the system supports the capture and the user did not refuse your app. Your app can still get `permission` at the start.
-- A first `start_session` with `Source::System` can wait up to 120 seconds for the answer of the user. Call it on a thread that can wait.
+- A first `start_session` with `Source::System` can wait up to 120 seconds for the answer of the user. Call it on a thread that can wait. The microphone of the session opens after the answer, and a refusal opens no microphone and leaves no recording.
 - If the user refuses, `start_session` returns the error code `permission`. If the user takes the permission back during a session, that source ends with `source_ended { reason: "permission" }`. The other sources go on.
 - A refused capture gets no error from Core Audio and only silence, so the SDK reads the permission state itself. We have not seen a real refusal or a real take-back on macOS yet, so test these with a real person before you rely on them.
 

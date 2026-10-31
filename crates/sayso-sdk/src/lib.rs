@@ -60,6 +60,7 @@ mod transport;
 mod wire;
 
 pub use paths::model_store;
+pub use sayso_engine_sdk::find_engine;
 pub use sayso_protocol as protocol;
 pub use sayso_protocol::Fields;
 pub use speech::Speech;

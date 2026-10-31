@@ -264,7 +264,7 @@ fn live(speech: &Speech, samples: &[i16]) -> Result<String, String> {
         std::thread::sleep(Duration::from_millis(100));
         for event in speech.events().try_iter() {
             match event {
-                Event::Message(protocol::Event::Partial(partial)) => eprintln!("partial: {}{}", partial.committed, partial.tentative),
+                Event::Message(protocol::Event::Partial(partial)) => eprintln!("partial: {}", partial.text()),
                 Event::Message(protocol::Event::Segment(segment)) => eprintln!("segment: {}", segment.segment.text),
                 _ => {}
             }
@@ -408,7 +408,7 @@ fn live(speech: &Speech, samples: &[i16]) -> Result<String, String> {
         std::thread::sleep(Duration::from_millis(100));
         for event in speech.events().try_iter() {
             match event {
-                Event::Message(protocol::Event::Partial(partial)) => eprintln!("partial: {}{}", partial.committed, partial.tentative),
+                Event::Message(protocol::Event::Partial(partial)) => eprintln!("partial: {}", partial.text()),
                 Event::Message(protocol::Event::Segment(segment)) => eprintln!("segment: {}", segment.segment.text),
                 _ => {}
             }

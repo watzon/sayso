@@ -380,7 +380,7 @@ impl LiveSessions {
                 return Err(start_cancelled());
             }
             if !matches!(*slot, Slot::Free) {
-                return Err(LiveError::new(Some(ErrorCode::Busy), "another live session runs; Sayso runs one at a time"));
+                return Err(LiveError::new(Some(ErrorCode::Busy), "another live session runs, and only one can run at a time"));
             }
             *slot = Slot::Starting { connection: owner.connection, cancelled: false };
         }
@@ -717,7 +717,7 @@ impl Drop for FreeAfterStart<'_> {
 }
 
 fn start_cancelled() -> LiveError {
-    LiveError::new(None, "the app or Sayso closed during the start of the live session")
+    LiveError::new(None, "the start of the live session was cancelled, because the app or the program that runs it closed")
 }
 
 fn unknown_session(session: u64) -> LiveError {
@@ -738,7 +738,7 @@ fn check_sources(sources: &[Source], has_microphone: bool, has_system_audio: boo
             Source::Mic if has_microphone => {}
             Source::System if has_system_audio => {}
             Source::Client => {}
-            Source::Mic | Source::System => return Err(LiveError::new(Some(ErrorCode::Unsupported), format!("this version of Sayso cannot capture the source {source}"))),
+            Source::Mic | Source::System => return Err(LiveError::new(Some(ErrorCode::Unsupported), format!("this program cannot capture the source {source}"))),
             Source::Other(other) => return Err(LiveError::new(Some(ErrorCode::BadRequest), format!("unknown source {other}"))),
         }
     }

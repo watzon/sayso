@@ -140,6 +140,29 @@ pub struct PartialEvent {
     pub tentative: String,
 }
 
+impl PartialEvent {
+    /// `committed` and `tentative` as one text, with one space between them where the text
+    /// needs one: not before punctuation that closes, and not in a script without spaces.
+    pub fn text(&self) -> String {
+        let (committed, tentative) = (self.committed.trim_end(), self.tentative.trim_start());
+        let (Some(last), Some(first)) = (committed.chars().next_back(), tentative.chars().next()) else {
+            return format!("{committed}{tentative}");
+        };
+        let closes = matches!(first, ',' | '.' | ';' | ':' | '!' | '?' | ')' | ']' | '}' | '%' | '\'' | '’' | '…' | '、' | '。' | '，' | '！' | '？');
+        let separator = if closes || (is_unspaced(last) && is_unspaced(first)) { "" } else { " " };
+        format!("{committed}{separator}{tentative}")
+    }
+}
+
+/// A character of a script without spaces between its words: Chinese, Japanese, or Thai.
+pub fn is_unspaced(c: char) -> bool {
+    matches!(c as u32,
+        0x3040..=0x30FF // Hiragana and Katakana.
+        | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF // Han.
+        | 0x0E00..=0x0E7F // Thai.
+    )
+}
+
 /// A dictation after its insert.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DictationDone {

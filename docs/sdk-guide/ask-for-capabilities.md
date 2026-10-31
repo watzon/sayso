@@ -31,7 +31,7 @@ fn connect_to_sayso() -> Result<Speech, Error> {
 }
 ```
 
-`Speech::connect` waits for the answer of the user, so call it on a thread that can wait. The answer is **Allow** for all the listed capabilities, or **Don't allow**. Sayso remembers it. If your app asks for a new capability later, Sayso asks only about the new one. Until the user answers, your app keeps its old grants.
+`Speech::connect` waits for the answer of the user, so call it on a thread that can wait. Sayso says at once that it asks. A Sayso that says nothing and does not reply in 10 s (`Timing::hello_limit`) counts as a Sayso that does not run. The answer is **Allow** for all the listed capabilities, or **Don't allow**. Sayso remembers it. If your app asks for a new capability later, Sayso asks only about the new one. Until the user answers, your app keeps its old grants.
 
 ## Check what you have
 

@@ -65,7 +65,7 @@ fn label(source: &Option<Source>) -> String {
 fn show_event(event: &Event, session: u64) -> bool {
     match event {
         Event::Message(protocol::Event::Partial(partial)) if partial.session == session => {
-            println!("{}: {} {}", label(&partial.source), partial.committed, partial.tentative);
+            println!("{}: {}", label(&partial.source), partial.text());
         }
         Event::Message(protocol::Event::Segment(found)) if found.session == Some(session) => {
             println!("{}: {}", label(&found.source), found.segment.text);
@@ -235,7 +235,7 @@ fn engine_in_resources(resources: &Path) -> Engine {
 }
 
 fn engine_program(resources: &Path) -> std::io::Result<PathBuf> {
-    sayso_engine_sdk::find_engine(resources.join("engine"))
+    sayso_sdk::find_engine(resources.join("engine"))
 }
 
 fn engine_with_own_folders(program: PathBuf, data: &Path) -> Engine {

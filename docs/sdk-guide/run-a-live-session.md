@@ -50,7 +50,7 @@ fn label(source: &Option<Source>) -> String {
 fn show_event(event: &Event, session: u64) -> bool {
     match event {
         Event::Message(protocol::Event::Partial(partial)) if partial.session == session => {
-            println!("{}: {} {}", label(&partial.source), partial.committed, partial.tentative);
+            println!("{}: {}", label(&partial.source), partial.text());
         }
         Event::Message(protocol::Event::Segment(found)) if found.session == Some(session) => {
             println!("{}: {}", label(&found.source), found.segment.text);
@@ -94,7 +94,7 @@ fn record_for(speech: &Speech, folder: &Path, how_long: Duration) -> Result<Stri
 
 The events of a session are:
 
-- `partial { session, source, committed, tentative }`. The text of one source so far. `committed` does not change any more. `tentative` can still change. A model without the role `streaming` sends no `partial`.
+- `partial { session, source, committed, tentative }`. The text of one source so far. `committed` does not change any more, and `partial.text()` gives both texts joined, with one space where the text needs one. `tentative` can still change. A model without the role `streaming` sends no `partial`.
 - `segment { session, source, start_ms, end_ms, text, words? }`. A part of the text that will not change. Times are from the start of the session.
 - `source_gap { session, source, ms }`. A source lost audio, for example when the output device changed. The session goes on, and the recording has `ms` of silence there.
 - `source_ended { session, source, reason }`. One source ended and the others go on. `reason` is `permission` (the user took the permission back) or `failed` (the capture did not come back). The last `segment` of the source comes before this event.

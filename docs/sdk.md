@@ -73,7 +73,7 @@ Chris approved these on 2026-10-29.
 6. **A new model store with immutable artifacts.** Sayso and every engine in local mode use one store for each user. Artifacts never change. A model id points to its artifacts through a manifest. The store is a new folder (`v1`), so the engines of older versions never change it.
 7. **Features of the user stay in Sayso.** `enhance` (the providers and styles of the user), `subscribe` (`dictation_done`), and the download question exist only in Sayso mode. In local mode they get `unsupported`, and `download_model` downloads without a question: the app asks its own user.
 8. **The engine still has one owner in each process.** Sayso serves apps through its host, not through its engine. An app in local mode starts its own engine. Decision 2 of `extensions.md` stays.
-9. **The app ships its own engine.** It packs the engine release file for its systems. The SDK finds it with `sayso_engine_sdk::find_engine`. The SDK does not start the engine inside an installed Sayso, because a Sayso update would then change the engine of the app.
+9. **The app ships its own engine.** It packs the engine release file for its systems. The SDK finds it with `sayso_sdk::find_engine`, from `sayso-engine-sdk`. The SDK does not start the engine inside an installed Sayso, because a Sayso update would then change the engine of the app.
 10. **`Mode::Auto` does not start Sayso.** Sayso has hotkeys and a menu bar icon, and the user did not ask for them. `Mode::Sayso { start: true }` starts Sayso (`connect_or_start`) when the app asks for it.
 
 ## Approval

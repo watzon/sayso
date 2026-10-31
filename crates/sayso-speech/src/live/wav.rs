@@ -84,7 +84,7 @@ fn header(samples: u64) -> [u8; HEADER_BYTES as usize] {
 /// format that [`WavWriter`] writes.
 pub(crate) fn read(path: &Path) -> io::Result<Vec<f32>> {
     let bytes = std::fs::read(path)?;
-    let bad = |what: &str| io::Error::new(io::ErrorKind::InvalidData, format!("{} is not a WAV file of Sayso: {what}", path.display()));
+    let bad = |what: &str| io::Error::new(io::ErrorKind::InvalidData, format!("{} is not a recording of a live session: {what}", path.display()));
     if bytes.len() < HEADER_BYTES as usize || &bytes[0..4] != b"RIFF" || &bytes[8..16] != b"WAVEfmt " {
         return Err(bad("no RIFF header"));
     }

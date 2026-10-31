@@ -44,7 +44,7 @@ impl JobRunner {
         let _hold = self.models.hold(job.models());
         for model in job.models() {
             run.before_engine_call()?;
-            self.engine.load(&model).map_err(|e| Stopped::Failed(format!("Sayso cannot load the model {model}: {e}")))?;
+            self.engine.load(&model).map_err(|e| Stopped::Failed(format!("cannot load the model {model}: {e}")))?;
         }
 
         let parts = plan::speech_parts(&audio, &job.vad, &*self.engine, self.vad_window_ms, &mut || run.before_engine_call())?;
