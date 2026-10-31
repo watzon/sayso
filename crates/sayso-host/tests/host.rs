@@ -205,3 +205,15 @@ fn a_line_that_is_not_utf8_closes_the_connection() {
     stream.read_to_string(&mut reply).unwrap();
     assert!(reply.contains("bad_request"), "{reply}");
 }
+
+#[test]
+fn a_host_can_start_again_at_once_on_the_same_socket() {
+    let setup = setup();
+    write_apps(&setup.apps, &[]);
+    let host = start(&setup);
+    let client = Client::connect_to(&setup.socket).unwrap();
+    client.hello();
+    drop(client);
+    drop(host);
+    let _again = start(&setup);
+}

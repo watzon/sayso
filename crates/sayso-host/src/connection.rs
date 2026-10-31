@@ -98,12 +98,14 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
     }
 
     let mut connection = Connection { shared, number, caller: None, writer: None, attested, files: FileAccess::Same, jobs_with_file: Arc::default(), notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
-    let first_line = Arc::new(AtomicBool::new(false));
+    // Dropped at the first line or at the end of the connection, and the wait
+    // ends with it: the thread must not keep the connection open.
+    let (first_line, no_first_line) = crossbeam_channel::bounded::<()>(0);
+    let mut first_line = Some(first_line);
     {
-        let (first_line, closer) = (first_line.clone(), closer.clone());
+        let closer = closer.clone();
         let _ = std::thread::Builder::new().name("sayso-host-first-line".into()).spawn(move || {
-            std::thread::sleep(FIRST_LINE_WAIT);
-            if !first_line.load(Ordering::SeqCst) {
+            if no_first_line.recv_timeout(FIRST_LINE_WAIT) == Err(crossbeam_channel::RecvTimeoutError::Timeout) {
                 log::debug!("host: a program said nothing, and its connection closes");
                 closer();
             }
@@ -122,7 +124,7 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
                 break;
             }
         }
-        first_line.store(true, Ordering::SeqCst);
+        first_line = None;
         if line.len() as u64 > limit {
             let _ = outgoing.send(Outgoing::Line(encode(None, &Reply::error(Some(ErrorCode::BadRequest), "the line is longer than 16 MiB"))));
             break;
@@ -145,6 +147,7 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
         }
     }
 
+    drop(first_line);
     open.store(false, Ordering::SeqCst);
     // The jobs and the live session of an app end with its connection.
     if let Some(jobs) = &shared.jobs {
