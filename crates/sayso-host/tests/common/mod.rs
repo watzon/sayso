@@ -354,3 +354,16 @@ impl HostServices for FakeServices {
         PipelineOutput { text, replacements: Vec::new(), enhance, enhance_error, timings: None, notice: None }
     }
 }
+
+/// The example program, built for this test.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub fn example() -> PathBuf {
+    // <target>/<profile>/deps/<this test>
+    let profile = this_program().parent().unwrap().parent().unwrap().to_path_buf();
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let target = profile.parent().unwrap();
+    let built = std::process::Command::new(cargo).args(["build", "--quiet", "-p", "sayso-sdk", "--example", "sayso-ext", "--manifest-path"]).arg(&manifest).arg("--target-dir").arg(target).status().unwrap();
+    assert!(built.success());
+    profile.join("examples/sayso-ext")
+}
