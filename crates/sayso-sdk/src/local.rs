@@ -11,9 +11,8 @@ use sayso_engine_sdk::{EngineOptions, Stderr};
 use sayso_speech::jobs::{DictationGate, JobQueue, JobRunner};
 use sayso_speech::live::{LiveDeps, LiveError, LiveSessions, Owner, RecordingFolder, Started};
 use sayso_speech::{EventSink, JobSpec, SessionSpec};
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use tempfile::TempDir;
 
 /// Local mode has one app, so one number for its connection.
 const CONNECTION: u64 = 1;
@@ -24,14 +23,20 @@ pub(crate) struct LocalRun {
     engine: Arc<LocalEngine>,
     jobs: JobQueue,
     live: LiveSessions,
-    recordings: PathBuf,
+    /// Goes with the run, after the sessions.
+    _recordings: TempDir,
 }
 
-/// A folder for the temporary recordings of one run. Two apps and two runs have their
-/// own folders, because the file names have only the number of the session.
-fn recordings_folder() -> PathBuf {
-    static NEXT: AtomicU64 = AtomicU64::new(0);
-    std::env::temp_dir().join(format!("sayso-sdk-live-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::SeqCst)))
+/// A folder for the temporary recordings of one run. They hold what people said, and the
+/// temporary folder of Linux is open to each user. So the name is random, the mode is 0700,
+/// and the creation fails on a name that exists (it then tries another name).
+fn recordings_folder() -> std::io::Result<TempDir> {
+    let mut builder = tempfile::Builder::new();
+    builder.prefix("sayso-sdk-live-");
+    // The default of the crate is 0755, less the umask.
+    #[cfg(unix)]
+    builder.permissions(std::os::unix::fs::PermissionsExt::from_mode(0o700));
+    builder.tempdir()
 }
 
 impl LocalRun {
@@ -48,16 +53,16 @@ impl LocalRun {
         let gate = Arc::new(DictationGate::new());
         let jobs = JobQueue::start(Arc::new(JobRunner::new(adapter.clone(), adapter.clone())), gate.clone()).map_err(|e| failed(format!("cannot start a thread: {e}")))?;
         let capture = capture.cloned().unwrap_or_else(real_capture);
-        let recordings = recordings_folder();
+        let recordings = recordings_folder().map_err(|e| failed(format!("cannot make a folder for the recordings: {e}")))?;
         let live = LiveSessions::new(LiveDeps {
             engine: adapter.clone(),
             microphone: Some(capture.microphone),
             system_audio: Some(capture.system_audio),
             gate,
             models: adapter.clone(),
-            recordings: Arc::new(RecordingFolder::new(recordings.clone())),
+            recordings: Arc::new(RecordingFolder::new(recordings.path().to_path_buf())),
         });
-        Ok(Arc::new(LocalRun { engine: adapter, jobs, live, recordings }))
+        Ok(Arc::new(LocalRun { engine: adapter, jobs, live, _recordings: recordings }))
     }
 
     pub fn is_running(&self) -> bool {
@@ -110,8 +115,6 @@ impl LocalRun {
 impl Drop for LocalRun {
     fn drop(&mut self) {
         self.live.close();
-        // A session that was cancelled now has no more use for its files.
-        let _ = std::fs::remove_dir_all(&self.recordings);
     }
 }
 
@@ -138,6 +141,19 @@ pub(crate) fn real_system_audio_usable() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn the_folder_of_the_recordings_is_private_and_has_a_random_name() {
+        use std::os::unix::fs::PermissionsExt;
+        let (one, two) = (recordings_folder().unwrap(), recordings_folder().unwrap());
+        assert_ne!(one.path(), two.path());
+        for folder in [&one, &two] {
+            assert_eq!(std::fs::metadata(folder.path()).unwrap().permissions().mode() & 0o777, 0o700);
+            let name = folder.path().file_name().unwrap().to_string_lossy().into_owned();
+            assert!(!name.contains(&std::process::id().to_string()), "{name}: the name does not say the process");
+        }
+    }
 
     #[test]
     fn local_mode_names_this_process_app() {
