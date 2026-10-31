@@ -626,7 +626,7 @@ impl AppModel {
             crate::app::apply_language(&self.config);
             cx.emit(AppEvent::LanguageChanged);
         }
-        if before.hotkeys != self.config.hotkeys {
+        if before.hotkeys != self.config.hotkeys || (!before.onboarding.reached_keys() && self.config.onboarding.reached_keys()) {
             self.register_hotkeys();
         }
         if !self.config.history.enabled {
@@ -690,6 +690,11 @@ impl AppModel {
     }
 
     pub fn register_hotkeys(&mut self) {
+        // Binding keys can open a system dialog, for example the shortcut
+        // portal on GNOME. Do not show one over the first steps.
+        if !self.config.onboarding.reached_keys() {
+            return;
+        }
         let h = &self.config.hotkeys;
         // Config files can bypass the recorder's conflict checks.
         let usable = |hotkey: Option<Hotkey>| hotkey.filter(|key| h.toggle.is_none_or(|toggle| !key.conflicts_with_toggle(toggle)));

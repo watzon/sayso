@@ -36,6 +36,12 @@ text = "Sayso crashed at the start with software drawing on LLVM 22, for example
 systems = ["linux"]
 
 [[release.item]]
+icon = "keyboard"
+title = "No shortcut question over the welcome page"
+text = "On GNOME, the system asked about Sayso's shortcuts as soon as Sayso first started. It now asks on the shortcut step of the setup."
+systems = ["linux"]
+
+[[release.item]]
 icon = "lock"
 title = "macOS asks at the right time"
 text = "At the first start, macOS no longer asks for access before Sayso says why it needs it."
