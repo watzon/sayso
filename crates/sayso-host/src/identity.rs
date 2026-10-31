@@ -12,7 +12,9 @@
 //!   A signature that is not valid gives no identity.
 //! - Linux: `SCM_CREDENTIALS` of each read gives the pid of the writer, then
 //!   `/proc/<pid>/exe`. A file that was deleted or replaced after the start,
-//!   another file at that path, and another PID namespace give no identity.
+//!   and another file at that path give no identity. A process in another PID
+//!   namespace has an identity only in a Flatpak sandbox: its app id, with the
+//!   checks of `sayso_bridge::identity`.
 //! - Windows: `GetNamedPipeClientProcessId`, then `QueryFullProcessImageNameW`,
 //!   made canonical with `GetFinalPathNameByHandleW`.
 
@@ -51,6 +53,9 @@ pub enum Identity {
     Signed { team_id: String, identifier: String },
     /// The canonical path of the executable: every other program.
     Path(PathBuf),
+    /// Linux, a process in a Flatpak sandbox. The system gives the id
+    /// (`docs/sdk.md`, "Flatpak"), and each program of the sandbox has it.
+    Flatpak { app_id: String },
 }
 
 impl Identity {
@@ -60,6 +65,7 @@ impl Identity {
     pub fn id(&self) -> String {
         match self {
             Identity::Signed { team_id, identifier } => format!("signed:{team_id}/{identifier}"),
+            Identity::Flatpak { app_id } => format!("flatpak:{app_id}"),
             Identity::Path(path) => match path.to_str() {
                 Some(text) if cfg!(windows) => format!("path:{}", text.to_lowercase()),
                 Some(text) => format!("path:{text}"),
@@ -99,6 +105,12 @@ impl Caller {
     /// A caller with the path of `executable` as its identity.
     pub fn from_path(executable: PathBuf) -> Caller {
         Caller { name: system_name(&executable), interpreter: is_interpreter(&executable), identity: Identity::Path(executable), signer: None }
+    }
+
+    /// A caller in a Flatpak sandbox. The name is the last part of the app id.
+    pub fn from_flatpak(app_id: String) -> Caller {
+        let name = app_id.rsplit('.').next().and_then(clean_name).unwrap_or_else(|| "?".into());
+        Caller { name, interpreter: false, identity: Identity::Flatpak { app_id }, signer: None }
     }
 }
 
@@ -204,35 +216,20 @@ fn signer_name(summary: &str, team_id: &str) -> Option<String> {
     clean_name(name)
 }
 
-/// A Linux link to a file that was deleted or replaced after the start.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
-fn deleted_link(link: &Path) -> bool {
-    link.as_os_str().as_encoded_bytes().ends_with(b" (deleted)")
-}
-
 #[cfg(target_os = "linux")]
-mod system {
-    use super::{Caller, Peer, deleted_link};
-    use std::os::unix::fs::MetadataExt;
+pub(crate) mod system {
+    use super::{Caller, Peer};
+    use sayso_bridge::identity::Who;
 
     pub fn identify(peer: &Peer) -> Result<Caller, String> {
-        let exe = format!("/proc/{}/exe", peer.pid);
-        let link = std::fs::read_link(&exe).map_err(|e| format!("no {exe}: {e}"))?;
-        if deleted_link(&link) {
-            return Err(format!("{} was deleted or replaced after it started", link.display()));
+        sayso_bridge::identity::identify(peer.pid).map(from_who)
+    }
+
+    pub fn from_who(who: Who) -> Caller {
+        match who {
+            Who::Path(path) => Caller::from_path(path),
+            Who::Flatpak(app_id) => Caller::from_flatpak(app_id),
         }
-        // Who has a capability in a PID namespace can write the pid of another
-        // process of it in `SCM_CREDENTIALS`. In the namespace of the host, only the true pid passes.
-        let namespace = |pid: &str| std::fs::read_link(format!("/proc/{pid}/ns/pid")).map_err(|e| format!("no PID namespace of {pid}: {e}"));
-        if namespace(&peer.pid.to_string())? != namespace("self")? {
-            return Err(format!("process {} is in another PID namespace", peer.pid));
-        }
-        // A private mount namespace can show another file at the path of an approved app.
-        let file_of = |path: &std::path::Path| std::fs::metadata(path).map(|meta| (meta.dev(), meta.ino())).map_err(|e| format!("cannot read {}: {e}", path.display()));
-        if file_of(exe.as_ref())? != file_of(&link)? {
-            return Err(format!("process {} does not run the file at {}", peer.pid, link.display()));
-        }
-        Ok(Caller::from_path(link))
     }
 }
 
@@ -512,12 +509,6 @@ mod tests {
     }
 
     #[test]
-    fn a_link_to_a_deleted_file_is_found() {
-        assert!(deleted_link(Path::new("/opt/app/bin/app (deleted)")));
-        assert!(!deleted_link(Path::new("/opt/app/bin/app")));
-    }
-
-    #[test]
     fn an_identity_gives_one_key() {
         let signed = Identity::Signed { team_id: "ABCDE12345".into(), identifier: "app.example".into() };
         assert_eq!(signed.id(), "signed:ABCDE12345/app.example");
@@ -530,6 +521,16 @@ mod tests {
         let signed = Identity::Signed { team_id: "TEAM".into(), identifier: "app.x".into() };
         assert_ne!(Identity::Path("TEAM/app.x".into()).id(), signed.id());
         assert_ne!(Identity::Path("signed:TEAM/app.x".into()).id(), signed.id());
+    }
+
+    #[test]
+    fn a_flatpak_id_has_its_own_key_and_name() {
+        let caller = Caller::from_flatpak("dev.example.Notes".into());
+        assert_eq!(caller.identity.id(), "flatpak:dev.example.Notes");
+        assert_eq!(caller.name, "Notes");
+        assert!(!caller.interpreter);
+        assert_ne!(Identity::Path("flatpak:dev.example.Notes".into()).id(), caller.identity.id());
+        assert_ne!(Identity::Signed { team_id: "flatpak".into(), identifier: "dev.example.Notes".into() }.id(), caller.identity.id());
     }
 
     #[cfg(unix)]

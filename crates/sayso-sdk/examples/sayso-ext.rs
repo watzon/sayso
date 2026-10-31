@@ -52,7 +52,7 @@ fn main() {
         return;
     }
     let command = args.remove(0);
-    let connected = protocol::socket::host_socket_path().map_err(Error::from).and_then(|socket| if start { Client::connect_or_start_as(&socket, &app, sayso_sdk::client::START_WAIT, sayso_sdk::client::start_sayso) } else { Client::connect_as(&socket, &app) });
+    let connected = protocol::socket::client_socket_path().map_err(Error::from).and_then(|socket| if start { Client::connect_or_start_as(&socket, &app, sayso_sdk::client::START_WAIT, sayso_sdk::client::start_sayso) } else { Client::connect_as(&socket, &app) });
     let client = match connected {
         Ok(client) => client,
         // No reply of a command is on stdout yet.

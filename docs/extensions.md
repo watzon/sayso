@@ -402,7 +402,7 @@ Inside the host, a request that takes time gets a `Responder` (its events with t
 The socket:
 
 - `SAYSO_HOST_SOCKET`, when it is set, is the path. Sayso sets it for the extensions that it starts.
-- Else on Linux: `$XDG_RUNTIME_DIR/sayso/host.sock`, or `$XDG_RUNTIME_DIR/app/<app id>/host.sock` in a Flatpak.
+- Else on Linux: `$XDG_RUNTIME_DIR/sayso/host.sock`. A host in a Flatpak listens at `$XDG_RUNTIME_DIR/app/<app id>/host.sock`, and `sayso-bridge` serves the first path for it (`sdk.md`, "Flatpak").
 - Else on macOS: `sayso/host.sock` in the temporary folder of the user (`confstr(_CS_DARWIN_USER_TEMP_DIR)`). Each process of the user gets the same folder, also when Finder starts it.
 - Else: `/tmp/sayso-<uid>/host.sock`.
 - Windows: `\\.\pipe\sayso-host-<user SID>`.

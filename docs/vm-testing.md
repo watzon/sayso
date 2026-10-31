@@ -31,7 +31,7 @@ Get the files of the last release with `gh release download`.
 3. The log has `moved to the model store`. Each hash is in `models/v1/artifacts`. Onboarding shows the model as downloaded.
 4. Run the example app `transcribe` against Sayso, with no engine in its folder. Answer the question on the screen. Check the text, `apps.toml`, **Don't allow**, and a second run that gets no question.
 5. Run the ignored tests of `crates/sayso-capture/tests/system_real.rs`.
-6. On Linux, start the `.flatpak` as well. The table in [sdk.md](sdk.md), "Flatpak", must stay true.
+6. On Linux, start the `.flatpak` as well, and run the example app outside and in a test Flatpak with `--filesystem=xdg-run/sayso:ro`. Do both against Sayso outside as well. The table in [sdk.md](sdk.md), "Flatpak", must stay true.
 7. After a release, take the macOS clone back to the snapshot and let the 0.13 app update itself, then install the notarized DMG on a clean clone.
 
 ## What is different in a VM
@@ -42,6 +42,8 @@ Get the files of the last release with `gh release download`.
 - The screen locks when the VM is idle. Turn that off in the clone, or use `vmpal sign-in`.
 - A macOS 14 VM has no VMPal Tools, so drive it with `vmpal ui` and a read-only shared folder.
 - The test programs of Windows need the DLLs of the install folder in `PATH`.
+- `vmpal exec` as a user has no `sudo`. Use `vmpal exec --admin`, for example for `flatpak install --system`.
+- Ubuntu shows a crash dialog of `spice-vdagent` in a clone. It is not from Sayso, but it covers the question: click **Don't send**.
 
 ## Results for 0.14.0 (2026-10-31)
 
@@ -66,3 +68,18 @@ Problems found, none new in 0.14.0:
 - **macOS.** At the first start the system asks for Accessibility or Events access before onboarding explains why.
 - **Windows.** The log has `Invalid window handle` and `window not found` when the question closes. Nothing else goes wrong.
 - **Windows.** A silent install stops with exit code 1 while Sayso runs, because the installer cannot ask to close it. An install with its window asks.
+
+## Results for connected apps across the Flatpak sandbox (2026-10-31)
+
+A test build of the 0.14.1 work on Ubuntu 24.04.5 on aarch64, in a clone of `Desktop Test Ubuntu`. The full table and what stays open are in [sdk.md](sdk.md), "Flatpak". The logs are in `/Volumes/SHARED/VMs/evidence/sayso-0.14.1/flatpak/`.
+
+| Sayso | App | Allow | Don't allow | Spoofs refused |
+|---|---|---|---|---|
+| `.flatpak` | Outside | Text in Sayso mode | Local mode | Pass |
+| `.flatpak` | Test Flatpak, own id | Text in Sayso mode | Local mode | Pass |
+| Test copy of the `.flatpak`, with the example | Same id | Text in Sayso mode | Local mode | Pass |
+| `.deb` | Test Flatpak | Text in Sayso mode | Local mode | Pass |
+| `.deb` | Outside | Text in Sayso mode | Local mode | Pass |
+| Test copy, system install | Test Flatpak, system install | Text in Sayso mode | Local mode | Not repeated, except a false `.flatpak-info` |
+
+The clean quit, `kill -9` of Sayso, a killed bridge, a stale socket, a Sayso outside and one in a Flatpak in both orders, and an app that starts before the folder exists gave the results that [sdk.md](sdk.md) describes.

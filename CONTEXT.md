@@ -96,7 +96,7 @@ A separate app that uses Sayso through the Host API (`docs/sdk.md`). The user ap
 _Avoid_: extension, plug-in, add-on, client (in UI text).
 
 **Approval**
-The answer of the user to the first connection of an app: **Allow** with the capabilities that the app asked for, or **Don't allow**. Sayso keeps it in `<data dir>/apps.toml`. The host knows the app by the identity of its executable: the team and the identifier of its code signature on macOS, else its path. A program with a signature that is not valid gets no question. The user can change the answer in Settings › Connected apps.
+The answer of the user to the first connection of an app: **Allow** with the capabilities that the app asked for, or **Don't allow**. Sayso keeps it in `<data dir>/apps.toml`. The host knows the app by the identity of its executable: the team and the identifier of its code signature on macOS, its app id in a Flatpak sandbox, else its path. A program with a signature that is not valid gets no question. The user can change the answer in Settings › Connected apps.
 
 **Host**
 Sayso, when it serves connected apps (`sayso-host`). It knows an app by the identity of its executable and the record of the app in `apps.toml`.

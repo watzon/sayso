@@ -26,4 +26,6 @@ pub(crate) struct Conn {
     /// end of the connection.
     pub closer: Arc<dyn Fn() + Send + Sync>,
     pub peer: WriterOf,
+    /// A connection of `sayso-bridge`: it checked the app already.
+    pub attested: Option<crate::sandbox::Attested>,
 }

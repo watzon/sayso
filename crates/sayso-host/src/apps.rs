@@ -34,6 +34,9 @@ pub struct AppRecord {
     /// Other identities.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<PathBuf>,
+    /// Linux, an app in a Flatpak sandbox.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flatpak: Option<String>,
     /// **Allow**. A record without it is a **Don't allow**.
     #[serde(default)]
     pub allowed: bool,
@@ -50,9 +53,10 @@ impl AppRecord {
     /// The identity of this record. None for a record that names no program:
     /// it matches nothing.
     pub fn identity(&self) -> Option<Identity> {
-        match (&self.team_id, &self.identifier, &self.path) {
-            (Some(team_id), Some(identifier), None) => Some(Identity::Signed { team_id: team_id.clone(), identifier: identifier.clone() }),
-            (None, None, Some(path)) => Some(Identity::Path(path.clone())),
+        match (&self.team_id, &self.identifier, &self.path, &self.flatpak) {
+            (Some(team_id), Some(identifier), None, None) => Some(Identity::Signed { team_id: team_id.clone(), identifier: identifier.clone() }),
+            (None, None, Some(path), None) => Some(Identity::Path(path.clone())),
+            (None, None, None, Some(app_id)) => Some(Identity::Flatpak { app_id: app_id.clone() }),
             _ => None,
         }
     }
@@ -251,9 +255,10 @@ impl AppsFile {
     /// The answer to the first question of `caller`, about `capabilities`.
     pub(crate) fn answer_first(&self, caller: &Caller, capabilities: &[Capability], allow: bool) -> io::Result<()> {
         let names: Vec<String> = capabilities.iter().map(ToString::to_string).collect();
-        let (team_id, identifier, path) = match &caller.identity {
-            Identity::Signed { team_id, identifier } => (Some(team_id.clone()), Some(identifier.clone()), None),
-            Identity::Path(path) => (None, None, Some(path.clone())),
+        let (team_id, identifier, path, flatpak) = match &caller.identity {
+            Identity::Signed { team_id, identifier } => (Some(team_id.clone()), Some(identifier.clone()), None, None),
+            Identity::Path(path) => (None, None, Some(path.clone()), None),
+            Identity::Flatpak { app_id } => (None, None, None, Some(app_id.clone())),
         };
         let record = AppRecord {
             name: caller.name.clone(),
@@ -261,6 +266,7 @@ impl AppsFile {
             identifier,
             signer: caller.signer.clone(),
             path,
+            flatpak,
             allowed: allow,
             granted: if allow { names.clone() } else { Vec::new() },
             denied: if allow { Vec::new() } else { names },
@@ -364,6 +370,16 @@ denied = ["transcribe.file"]
 
     fn caller(path: &str) -> Caller {
         Caller::from_path(path.into())
+    }
+
+    #[test]
+    fn a_flatpak_app_has_its_own_record() {
+        let apps = Apps::parse("[[apps]]\nname = \"Notes\"\nflatpak = \"dev.example.Notes\"\nallowed = true\n").unwrap();
+        let identity = Identity::Flatpak { app_id: "dev.example.Notes".into() };
+        assert!(apps.find(&identity).is_some());
+        assert!(apps.find(&Identity::Path("dev.example.Notes".into())).is_none());
+        let both = Apps::parse("[[apps]]\nname = \"x\"\npath = \"/opt/x\"\nflatpak = \"dev.example.Notes\"\nallowed = true\n").unwrap();
+        assert!(both.apps[0].identity().is_none(), "a record with two identities matches nothing");
     }
 
     #[test]

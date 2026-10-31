@@ -7255,6 +7255,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-bridge"
+version = "0.14.0"
+dependencies = [
+ "libc",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "sayso-capture"
 version = "0.14.0"
 dependencies = [
@@ -7422,6 +7431,7 @@ dependencies = [
  "libc",
  "log",
  "parking_lot",
+ "sayso-bridge",
  "sayso-core",
  "sayso-engine-client",
  "sayso-platform",

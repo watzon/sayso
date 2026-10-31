@@ -9,6 +9,7 @@
 use crate::approval::{self, HelloStep};
 use crate::identity::{Caller, Peer};
 use crate::responder::{Notifier, Outgoing, Responder};
+use crate::sandbox::{Attested, FileAccess};
 use crate::transport::Conn;
 use crate::Shared;
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -54,7 +55,7 @@ impl Entry {
 }
 
 pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
-    let Conn { reader, writer, closer, peer } = conn;
+    let Conn { reader, writer, closer, peer, attested } = conn;
     let (outgoing, messages) = unbounded();
     // False when the reader ends. Work for this connection stops then.
     let open = Arc::new(AtomicBool::new(true));
@@ -84,7 +85,7 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
         connections.insert(number, Entry::new(outgoing.clone(), writer));
     }
 
-    let mut connection = Connection { shared, number, caller: None, writer: None, notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
+    let mut connection = Connection { shared, number, caller: None, writer: None, attested, files: FileAccess::Same, notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
     let mut reader = BufReader::new(reader);
     let mut line = Vec::new();
     loop {
@@ -161,6 +162,10 @@ struct Connection<'a> {
     caller: Option<Caller>,
     /// The process that wrote the first line.
     writer: Option<Peer>,
+    /// What `sayso-bridge` says about the app, until the first line.
+    attested: Option<Attested>,
+    /// How the host opens a file that the app names.
+    files: FileAccess,
     notifier: Notifier,
     /// The jobs that this connection started.
     jobs: Mutex<HashSet<u64>>,
@@ -196,8 +201,19 @@ impl Connection<'_> {
     }
 
     fn identify(&mut self, peer: Result<Peer, String>) {
+        let attested = self.attested.take();
         let caller = peer.and_then(|peer| {
-            let caller = self.shared.identify.identify(&peer)?;
+            let caller = match attested {
+                Some(attested) => {
+                    self.files = attested.files;
+                    attested.caller?
+                }
+                None => {
+                    let caller = self.shared.identify.identify(&peer)?;
+                    self.files = FileAccess::of(&caller, &peer)?;
+                    caller
+                }
+            };
             self.writer = Some(peer);
             Ok(caller)
         });
@@ -272,8 +288,23 @@ impl Connection<'_> {
             Request::DownloadModel(request) => {
                 self.spawn("download", responder, move |shared, app_id, responder| crate::download::download_model(shared, app_id, &request, responder));
             }
-            Request::TranscribeFile(request) => crate::job_requests::transcribe_file(self.shared, self.number, &self.jobs, &request, responder),
+            Request::TranscribeFile(mut request) => {
+                let file = match self.files.open(&request.path) {
+                    Ok(file) => file,
+                    Err(message) => {
+                        responder.reply(Reply::error(Some(ErrorCode::BadRequest), message));
+                        return false;
+                    }
+                };
+                if let Some(file) = &file {
+                    request.path = file.path.clone();
+                }
+                crate::job_requests::transcribe_file(self.shared, self.number, &self.jobs, &request, file, responder);
+            }
             Request::CancelJob(request) => crate::job_requests::cancel_job(self.shared, self.number, &self.jobs, &request, responder),
+            Request::SessionStart(request) if request.record_to.is_some() && self.files.has_another_view() => {
+                responder.reply(Reply::error(Some(ErrorCode::Unsupported), "record_to does not work across a Flatpak sandbox, because Sayso and the app see other files. Start the session without it, and write the audio in the app"));
+            }
             Request::SessionStart(request) => {
                 let number = self.number;
                 let pid = self.writer.as_ref().and_then(Peer::pid);

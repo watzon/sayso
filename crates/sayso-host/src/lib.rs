@@ -13,6 +13,8 @@
 mod apps;
 mod approval;
 mod backend;
+#[cfg(target_os = "linux")]
+mod bridge;
 mod bus;
 mod connection;
 mod download;
@@ -25,6 +27,7 @@ mod live_requests;
 mod models;
 mod responder;
 pub mod jobs;
+mod sandbox;
 mod transport;
 
 pub use enhance::StyleRequest;
@@ -152,16 +155,22 @@ pub struct HostConfig {
     pub identify: Arc<dyn Identify>,
     /// How long an identity gets no new question after it took one back.
     pub approval_cooldown: std::time::Duration,
+    /// A Sayso in a Flatpak: where `sayso-bridge` listens outside the sandbox.
+    pub bridge_socket: Option<PathBuf>,
 }
 
 impl HostConfig {
     pub fn new(socket: PathBuf, apps_file: PathBuf) -> HostConfig {
-        HostConfig { socket, apps: Arc::new(AppsFile::new(apps_file)), host_version: env!("CARGO_PKG_VERSION").into(), identify: Arc::new(SystemIdentify), approval_cooldown: approval::COOLDOWN }
+        HostConfig { socket, apps: Arc::new(AppsFile::new(apps_file)), host_version: env!("CARGO_PKG_VERSION").into(), identify: Arc::new(SystemIdentify), approval_cooldown: approval::COOLDOWN, bridge_socket: None }
     }
 
     /// The socket of `sayso_protocol::socket`, and `apps.toml` in the data folder.
     pub fn for_paths(paths: &Paths) -> io::Result<HostConfig> {
-        Ok(HostConfig::new(sayso_protocol::socket::host_socket_path()?, paths.apps_file()))
+        let mut config = HostConfig::new(sayso_protocol::socket::host_socket_path()?, paths.apps_file());
+        if sayso_core::flatpak::app_id().is_some() {
+            config.bridge_socket = Some(sayso_protocol::socket::client_socket_path()?);
+        }
+        Ok(config)
     }
 }
 
@@ -171,6 +180,8 @@ pub struct Host {
     shared: Arc<Shared>,
     listener: Arc<transport::Listener>,
     accept: Mutex<Option<JoinHandle<()>>>,
+    #[cfg(target_os = "linux")]
+    bridge: Mutex<Option<bridge::Bridge>>,
 }
 
 pub(crate) struct Shared {
@@ -303,7 +314,16 @@ impl Host {
             std::thread::Builder::new().name("sayso-host".into()).spawn(move || accept_loop(&shared, &listener))?
         };
         log::info!("host: apps connect at {}", config.socket.display());
-        Ok(Host { socket: config.socket, shared, listener, accept: Mutex::new(Some(accept)) })
+        #[cfg(target_os = "linux")]
+        let bridge = config.bridge_socket.and_then(|socket| bridge::Bridge::start(shared.clone(), socket));
+        Ok(Host {
+            socket: config.socket,
+            shared,
+            listener,
+            accept: Mutex::new(Some(accept)),
+            #[cfg(target_os = "linux")]
+            bridge: Mutex::new(bridge),
+        })
     }
 
     /// The keys of the apps that are connected now, in order.
@@ -331,6 +351,10 @@ impl Host {
             }
             connections.values_mut().filter_map(connection::Entry::close_with_host_closing).collect::<Vec<_>>()
         };
+        #[cfg(target_os = "linux")]
+        if let Some(bridge) = self.bridge.lock().take() {
+            bridge.close();
+        }
         if self.listener.wake()
             && let Some(accept) = self.accept.lock().take()
         {
@@ -343,6 +367,14 @@ impl Host {
         self.listener.remove();
         self.shared.bus.stop();
         log::info!("host: closed");
+    }
+
+    /// Take the connections of a `sayso-bridge` that holds the other end of
+    /// `control`, as a Sayso in a Flatpak does with the bridge that it starts.
+    /// For the tests.
+    #[cfg(target_os = "linux")]
+    pub fn attach_bridge(&self, control: std::os::fd::OwnedFd) {
+        *self.bridge.lock() = bridge::Bridge::attach(self.shared.clone(), control);
     }
 
     /// The gate of the jobs. The app calls `begin` when a dictation starts
@@ -433,19 +465,22 @@ fn accept_loop(shared: &Arc<Shared>, listener: &transport::Listener) {
             return;
         }
         match accepted {
-            Ok(conn) => {
-                let number = shared.next_connection.fetch_add(1, Ordering::SeqCst);
-                let shared = shared.clone();
-                let spawned = std::thread::Builder::new().name("sayso-host-read".into()).spawn(move || connection::serve(&shared, number, conn));
-                if let Err(e) = spawned {
-                    log::warn!("host: cannot start a connection thread: {e}");
-                }
-            }
+            Ok(conn) => serve_connection(shared, conn),
             Err(e) => {
                 log::warn!("host: accept failed: {e}");
                 // Do not spin when the listener is broken.
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }
         }
+    }
+}
+
+/// Serve one connection on a thread of its own.
+fn serve_connection(shared: &Arc<Shared>, conn: transport::Conn) {
+    let number = shared.next_connection.fetch_add(1, Ordering::SeqCst);
+    let shared = shared.clone();
+    let spawned = std::thread::Builder::new().name("sayso-host-read".into()).spawn(move || connection::serve(&shared, number, conn));
+    if let Err(e) = spawned {
+        log::warn!("host: cannot start a connection thread: {e}");
     }
 }
