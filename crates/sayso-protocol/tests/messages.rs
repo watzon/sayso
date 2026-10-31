@@ -167,6 +167,8 @@ fn events() -> Vec<(&'static str, Event)> {
         ),
         (r#"{"v":1,"type":"host_closing"}"#, Event::HostClosing),
         (r#"{"v":1,"type":"session_ended","session":7,"text":"Hello there."}"#, Event::SessionEnded { session: 7, text: "Hello there.".into() }),
+        (r#"{"v":1,"type":"source_gap","session":7,"source":"system","ms":240}"#, Event::SourceGap { session: 7, source: Source::System, ms: 240 }),
+        (r#"{"v":1,"type":"source_ended","session":7,"source":"system","reason":"permission"}"#, Event::SourceEnded { session: 7, source: Source::System, reason: SourceEndReason::Permission }),
     ]
 }
 
@@ -227,7 +229,7 @@ fn the_typed_ok_bodies_read_from_ok_fields() {
     let job: JobReply = parse_ok(&Reply::ok_with(&JobReply { job: 7 }).ok_fields()).unwrap();
     assert_eq!(job.job, 7);
     for (body, expected) in [
-        (Reply::ok_with(&SessionReply { session: 3 }), json!({"session": 3})),
+        (Reply::ok_with(&SessionReply { session: 3, excludes: vec!["sayso".into(), "app".into()] }), json!({"session": 3, "excludes": ["sayso", "app"]})),
         (Reply::ok_with(&TextReply { text: "Hi.".into() }), json!({"text": "Hi."})),
         (Reply::ok_with(&EnhanceReply { text: "Hi.".into(), provider: "openai".into(), model: "gpt".into() }), json!({"text": "Hi.", "provider": "openai", "model": "gpt"})),
         (Reply::ok_with(&SubscribeReply { events: vec!["dictation_done".into()] }), json!({"events": ["dictation_done"]})),

@@ -109,6 +109,8 @@ names! {
         Refused = "refused",
         /// The language model, or for `enhance` the AI provider, gave no reply in time.
         Timeout = "timeout",
+        /// The system refused a capture permission (the system audio or the microphone).
+        Permission = "permission",
     }
 }
 
@@ -156,5 +158,15 @@ names! {
         System = "system",
         /// The app sends the audio with `session_audio`.
         Client = "client",
+    }
+}
+
+names! {
+    /// Why a source of a live session ended before the session.
+    SourceEndReason {
+        /// The user took the permission of the system back.
+        Permission = "permission",
+        /// The capture failed, and it did not come back.
+        Failed = "failed",
     }
 }
