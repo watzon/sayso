@@ -1126,17 +1126,19 @@ fn a_capture_that_waits_for_a_person_does_not_hold_the_lock_and_stops_a_change_o
 #[test]
 fn the_sdk_waits_for_a_person_longer_than_the_limit_of_hello() {
     let mut world = World::fake();
-    // The host has this long to send its event, also on a machine with much to do.
-    let limit = Duration::from_secs(5);
+    // The host has this long to send its event. Its identity check of a new connection can
+    // take several seconds on a machine with much to do, so the limit is not short.
+    let limit = Duration::from_secs(30);
     world.timing.hello_limit = limit;
     std::fs::write(&world.setup.apps, "").unwrap();
     let mut sayso = world.start_sayso();
+    let start = Instant::now();
     let speech = {
         let options = world.speech_options(Mode::Sayso { start: false });
         std::thread::spawn(move || Speech::connect(options))
     };
     sayso.wait_count("questions", 1);
-    std::thread::sleep(limit + Duration::from_secs(1));
+    std::thread::sleep((limit + Duration::from_secs(1)).saturating_sub(start.elapsed()));
     assert!(!speech.is_finished(), "the SDK waits for the person");
     sayso.tell("answer yes");
     assert_eq!(speech.join().unwrap().unwrap().mode(), ActiveMode::Sayso);
