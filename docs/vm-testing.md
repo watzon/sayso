@@ -57,6 +57,8 @@ Get the files of the last release with `gh release download`.
 | Permission taken back | Pass | Not run | No permission | No permission | No permission |
 | Change of output device | One device | One device | One device | Pass | Not run |
 | The 0.13 engine beside the new one | Not run | Not run | Not run | Pass | Not run |
+| The released 0.13 app finds 0.14.0 | Pass | Not run | Pass | Not run | Not run |
+| The released 0.13 app updates itself | Pass | Not run | No self-update, it offers the download | No self-update | No self-update |
 
 Problems found, none new in 0.14.0:
 
