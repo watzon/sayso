@@ -44,7 +44,7 @@ struct World {
 fn world(granted: &[&str]) -> World {
     let program = program();
     let setup = setup();
-    write_app(&setup.apps, &program.canonicalize().unwrap(), granted);
+    write_app(&setup.apps, &canonical(program), granted);
     let services = FakeServices::new(Some(FakeEngine::new()));
     {
         let mut config = services.config.lock();
