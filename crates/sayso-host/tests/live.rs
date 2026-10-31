@@ -9,16 +9,16 @@ use parking_lot::Mutex;
 use sayso_core::config::Config;
 use sayso_core::models::{self, ModelId, ModelInfo, ModelTask};
 use sayso_core::stt::{self, Diarization, EngineEvent, ModelStatus, SessionOptions, TimedTranscript, Transcript, Turn};
-use sayso_extension::protocol::{Capability, ErrorCode, Event as HostEvent, SessionReply, Source, TextReply};
-use sayso_extension::{Client, Event};
-use sayso_host::live::{LiveInfo, LiveObserver, MicFeed, Microphone};
+use sayso_sdk::protocol::{Capability, ErrorCode, Event as HostEvent, SessionReply, Source, SourceEndReason, TextReply};
+use sayso_sdk::client::{Client, Event};
+use sayso_host::live::{AudioFeed, CapturedAudio, FeedItem, LiveInfo, LiveObserver, Microphone, OpenError, SourceEnd, SystemAudio};
 use sayso_host::{DownloadQuestion, Host, HostServices};
 use sayso_platform::{PlatformError, Result, SttBackend};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 mod common;
@@ -218,11 +218,11 @@ impl SttBackend for LiveEngine {
 /// it closes the channel of a feed when its lease drops.
 #[derive(Default)]
 struct FakeMic {
-    feeds: Arc<Mutex<HashMap<u64, Sender<Vec<f32>>>>>,
+    feeds: Arc<Mutex<HashMap<u64, Sender<FeedItem>>>>,
     next: AtomicUsize,
 }
 
-struct Lease(u64, Arc<Mutex<HashMap<u64, Sender<Vec<f32>>>>>);
+struct Lease(u64, Arc<Mutex<HashMap<u64, Sender<FeedItem>>>>);
 
 impl Drop for Lease {
     fn drop(&mut self) {
@@ -234,7 +234,7 @@ impl FakeMic {
     fn feed(&self, samples: &[i16]) {
         let frame: Vec<f32> = samples.iter().map(|&s| f32::from(s) / 32768.0).collect();
         for tx in self.feeds.lock().values() {
-            let _ = tx.send(frame.clone());
+            let _ = tx.send(FeedItem::Audio(CapturedAudio::untimed(frame.clone())));
         }
     }
 
@@ -244,17 +244,52 @@ impl FakeMic {
 }
 
 impl Microphone for FakeMic {
-    fn open(&self) -> std::result::Result<MicFeed, String> {
-        let (tx, frames) = unbounded();
+    fn open(&self) -> std::result::Result<AudioFeed, OpenError> {
+        let (tx, items) = unbounded();
         let id = self.next.fetch_add(1, Ordering::SeqCst) as u64;
         self.feeds.lock().insert(id, tx);
-        Ok(MicFeed { frames, lease: Box::new(Lease(id, self.feeds.clone())) })
+        Ok(AudioFeed { items, lease: Box::new(Lease(id, self.feeds.clone())), excludes: Vec::new() })
+    }
+}
+
+/// The system audio, which the test steers.
+#[derive(Default)]
+struct FakeSystem {
+    refused: AtomicBool,
+    feed: Mutex<Option<Sender<FeedItem>>>,
+    /// The process that the session asked to leave out.
+    app_pid: Mutex<Option<u32>>,
+    /// While true, `open` waits, as for a question of the system.
+    hold: AtomicBool,
+    waiting: AtomicBool,
+}
+
+impl FakeSystem {
+    fn send(&self, item: FeedItem) {
+        self.feed.lock().as_ref().expect("the capture runs").send(item).unwrap();
+    }
+}
+
+impl SystemAudio for FakeSystem {
+    fn open(&self, app_pid: Option<u32>) -> std::result::Result<AudioFeed, OpenError> {
+        while self.hold.load(Ordering::SeqCst) {
+            self.waiting.store(true, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        if self.refused.load(Ordering::SeqCst) {
+            return Err(OpenError::Permission("the system audio permission is denied".into()));
+        }
+        *self.app_pid.lock() = app_pid;
+        let (tx, items) = unbounded();
+        *self.feed.lock() = Some(tx);
+        Ok(AudioFeed { items, lease: Box::new(()), excludes: vec!["sayso".into(), "app".into()] })
     }
 }
 
 struct Services {
     engine: Arc<LiveEngine>,
     mic: Option<Arc<FakeMic>>,
+    system: Option<Arc<FakeSystem>>,
     config: Config,
     temp: PathBuf,
 }
@@ -274,6 +309,9 @@ impl HostServices for Services {
     }
     fn microphone(&self) -> Option<Arc<dyn Microphone>> {
         self.mic.clone().map(|mic| mic as Arc<dyn Microphone>)
+    }
+    fn system_audio(&self) -> Option<Arc<dyn SystemAudio>> {
+        self.system.clone().map(|system| system as Arc<dyn SystemAudio>)
     }
     fn live_temp_dir(&self) -> PathBuf {
         self.temp.clone()
@@ -307,9 +345,15 @@ struct World {
     setup: Setup,
     engine: Arc<LiveEngine>,
     mic: Arc<FakeMic>,
+    system: Arc<FakeSystem>,
 }
 
 fn world(granted: &[&str], engine: LiveEngine) -> World {
+    world_with(granted, engine, false)
+}
+
+/// `system`: this host can capture the system audio.
+fn world_with(granted: &[&str], engine: LiveEngine, system: bool) -> World {
     let setup = setup();
     write_apps(&setup.apps, granted);
     let engine = Arc::new(engine);
@@ -317,8 +361,10 @@ fn world(granted: &[&str], engine: LiveEngine) -> World {
     let mut config = Config::default();
     config.dictation.model = streaming();
     let temp = setup.dir.path().join("live-temp");
-    let host = start_with(&setup, Arc::new(Services { engine: engine.clone(), mic: Some(mic.clone()), config, temp }));
-    World { host, setup, engine, mic }
+    let fake_system = Arc::new(FakeSystem::default());
+    let services = Services { engine: engine.clone(), mic: Some(mic.clone()), system: system.then(|| fake_system.clone()), config, temp };
+    let host = start_with(&setup, Arc::new(services));
+    World { host, setup, engine, mic, system: fake_system }
 }
 
 impl World {
@@ -355,7 +401,7 @@ fn stop(client: &Client, session: u64) -> String {
 /// Send the audio in frames of 160 ms, without an `id`.
 fn send_audio(client: &Client, session: u64, samples: &[i16]) {
     for chunk in samples.chunks(16 * 160) {
-        client.send("session_audio", fields(json!({"session": session, "pcm": sayso_extension::protocol::pcm::encode_i16(chunk)}))).unwrap();
+        client.send("session_audio", fields(json!({"session": session, "pcm": sayso_sdk::protocol::pcm::encode_i16(chunk)}))).unwrap();
     }
 }
 
@@ -398,7 +444,7 @@ fn a_client_session_gives_partials_segments_speakers_and_its_text() {
     let samples = audio(12_000, &TWO);
     send_audio(&client, session, &samples);
     // With an `id`, `session_audio` gets `ok`.
-    let pcm = sayso_extension::protocol::pcm::encode_i16(&[0; 160]);
+    let pcm = sayso_sdk::protocol::pcm::encode_i16(&[0; 160]);
     client.request("session_audio", fields(json!({"session": session, "pcm": pcm}))).unwrap();
     let text = stop(&client, session);
     assert_eq!(text, "w1 w2");
@@ -447,7 +493,7 @@ fn a_session_without_audio_stops_with_no_text() {
     // A second stop, and audio after the stop, name no session that runs.
     let error = refused(client.request("session_stop", fields(json!({"session": session}))));
     assert_eq!(error.code, Some(ErrorCode::BadRequest));
-    let pcm = sayso_extension::protocol::pcm::encode_i16(&[0; 160]);
+    let pcm = sayso_sdk::protocol::pcm::encode_i16(&[0; 160]);
     assert_eq!(refused(client.request("session_audio", fields(json!({"session": session, "pcm": pcm.clone()})))).code, Some(ErrorCode::BadRequest));
     // Without an `id`, the error has none either, and comes with the events.
     client.send("session_audio", fields(json!({"session": session, "pcm": pcm}))).unwrap();
@@ -507,6 +553,39 @@ fn the_source_system_is_unsupported() {
 }
 
 #[test]
+fn the_source_system_replies_with_what_it_leaves_out_and_gives_its_events() {
+    let world = world_with(&["session.live", "audio.system", "audio.mic"], LiveEngine::new(), true);
+    let (client, events) = world.client();
+    let reply = start(&client, json!({"sources": ["mic", "system"]})).unwrap().parse::<SessionReply>().unwrap();
+    assert_eq!(reply.excludes, ["sayso", "app"]);
+    assert_eq!(*world.system.app_pid.lock(), Some(std::process::id()), "the capture leaves out the process of the app");
+    world.system.send(FeedItem::Gap { ms: 240 });
+    world.system.send(FeedItem::Ended(SourceEnd::Permission));
+    let seen = Mutex::new(Vec::new());
+    eventually("the events arrive", || {
+        let mut all = seen.lock();
+        all.extend(drain(&events));
+        let gap = all.iter().any(|e| matches!(e, HostEvent::SourceGap { session, source: Source::System, ms: 240 } if *session == reply.session));
+        let ended = all.iter().any(|e| matches!(e, HostEvent::SourceEnded { source: Source::System, reason: SourceEndReason::Permission, .. }));
+        gap && ended
+    });
+    assert!(world.host.live_session().is_some(), "the session goes on with the microphone");
+    assert_eq!(world.mic.open_feeds(), 1);
+    stop(&client, reply.session);
+}
+
+#[test]
+fn a_refused_system_audio_permission_gets_the_code_permission() {
+    let world = world_with(&["session.live", "audio.system", "audio.mic"], LiveEngine::new(), true);
+    world.system.refused.store(true, Ordering::SeqCst);
+    let (client, _) = world.client();
+    let error = refused(start(&client, json!({"sources": ["mic", "system"]})));
+    assert_eq!(error.code, Some(ErrorCode::Permission));
+    assert_eq!(world.host.live_session(), None);
+    assert_eq!((world.engine.open_streams(), world.mic.open_feeds()), (0, 0), "the failed start closes what it opened");
+}
+
+#[test]
 fn a_mic_session_takes_the_shared_microphone() {
     let world = world(&["session.live", "audio.mic"], LiveEngine::new());
     let (client, events) = world.client();
@@ -515,7 +594,7 @@ fn a_mic_session_takes_the_shared_microphone() {
     assert_eq!((live.sources, live.captures_mic), (vec![Source::Mic], true));
     assert_eq!(world.mic.open_feeds(), 1);
     // `session_audio` is only for the source `client`.
-    let pcm = sayso_extension::protocol::pcm::encode_i16(&[0; 160]);
+    let pcm = sayso_sdk::protocol::pcm::encode_i16(&[0; 160]);
     assert_eq!(refused(client.request("session_audio", fields(json!({"session": session, "pcm": pcm})))).code, Some(ErrorCode::BadRequest));
 
     for frame in audio(12_000, &TWO).chunks(16 * 20) {
@@ -628,7 +707,7 @@ fn wait_for_end(events: &Receiver<Event>, session: u64) -> String {
     loop {
         let left = deadline.saturating_duration_since(std::time::Instant::now());
         match events.recv_timeout(left) {
-            Ok(Event::Host { event: HostEvent::SessionEnded { session: ended, text }, .. }) if ended == session => return text,
+            Ok(Event::Host { event: HostEvent::SessionEnded { session: ended, text, .. }, .. }) if ended == session => return text,
             Ok(_) => {}
             Err(_) => panic!("no session_ended for session {session}"),
         }
@@ -710,4 +789,24 @@ fn an_app_can_stop_its_own_session_after_a_grant_goes() {
     assert_eq!(refused(client.request("session_audio", audio)).code, Some(ErrorCode::Capability), "no new audio");
     stop(&client, session);
     eventually("the slot is free", || world.host.live_session().is_none());
+}
+
+/// An app that quits while the system asks its question: nothing captures after the answer.
+#[cfg(unix)]
+#[test]
+fn an_app_that_quits_during_the_question_of_the_system_leaves_no_session() {
+    use std::io::Write;
+    let world = world_with(&["session.live", "audio.system"], LiveEngine::new(), true);
+    world.system.hold.store(true, Ordering::SeqCst);
+    let mut app = std::os::unix::net::UnixStream::connect(&world.setup.socket).unwrap();
+    writeln!(app, r#"{{"v":1,"type":"session_start","id":"s","sources":["system"]}}"#).unwrap();
+    eventually("the capture waits", || world.system.waiting.load(Ordering::SeqCst));
+    drop(app);
+    let (client, _events) = world.client();
+    eventually("the host saw the end of the connection", || world.host.connected_apps().len() == 1);
+    assert_eq!(refused(start(&client, json!({"sources": ["client"]}))).code, Some(ErrorCode::Busy), "the question is still open");
+
+    world.system.hold.store(false, Ordering::SeqCst);
+    eventually("the slot is free", || start(&client, json!({"sources": ["client"]})).is_ok());
+    assert_eq!(world.host.live_session().map(|live| live.sources), Some(vec![Source::Client]), "the session of the app that quit is gone");
 }

@@ -4,10 +4,17 @@
 //! show it for the file. The resource script is compiled with `rc.exe` from
 //! the Windows SDK, so no build dependency is needed. Without the SDK the
 //! build goes on with a warning and the exe has no icon.
+//!
+//! macOS: link CoreAudio weakly. The process tap functions (macOS 14.2) are
+//! imported by name, and a strong import stops the app at launch on 14.0 and
+//! 14.1, where the source `system` must only get `unsupported`.
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=../../assets/app/AppIcon.ico");
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg-bins=-Wl,-weak_framework,CoreAudio");
+    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         windows_resources();
     }

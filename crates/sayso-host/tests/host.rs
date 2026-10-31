@@ -2,7 +2,8 @@
 //! identity check is the real one: the record of `apps.toml` has the path of
 //! this test program, so the test process is the app.
 
-use sayso_extension::{Client, Error, Event, Fields};
+use sayso_sdk::Fields;
+use sayso_sdk::client::{Client, Error, Event};
 use sayso_host::{Host, HostConfig};
 use sayso_protocol::{Capability, ErrorCode};
 use serde_json::json;

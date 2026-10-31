@@ -251,12 +251,12 @@ Every request with an `id` gets one reply: `ok` or `error`. Events can arrive at
 
 | Request | Capability | Fields | Reply and events |
 |---|---|---|---|
-| `hello` | none | `sdk, protocol, features` | `ok {host_version, protocol, features, extension_id, capabilities}` |
+| `hello` | none | `sdk, protocol, features` | `ok {host_version, protocol, features, extension_id, capabilities}`. When the reply waits for the answer of a person, the event `approval_waiting` comes first, at once. |
 | `list_models` | `models.read` | `role?` (`final`, `streaming`, `vad`, `diarization`) | `ok {models: [{id, name, roles, state, languages, timestamps, size_bytes, choice}]}`. `choice` lists the roles for which the host uses this model when a request names none. |
 | `download_model` | `models.download` | `model, reason` | The host asks the user, unless the model is on disk or already downloads. Then `model_state` and `download_progress` events, and `ok`, or `error {code: "declined"}`, or `error {code: "unknown_model"}`, or `error` with the message of the engine when the download fails. |
 | `transcribe_file` | `transcribe.file` | `path, model?, vad_model?, language?, diarize?, diarization_model?, speakers?` | `ok {job}` at once. Then `job_progress {job, fraction}` and `segment {job, start_ms, end_ms, text}`. With `diarize`, `speakers {job, turns}` after the last segment. At the end `job_done {job, text}` or `job_failed {job, message, code}`. |
 | `cancel_job` | none | `job` | `ok`, also for a job of this connection that already ended. The job gets `job_failed` at once. A job that this connection did not start gets `error {code: "bad_request"}`. |
-| `session_start` | `session.live`, plus `audio.mic` or `audio.system` for those sources | `sources` (`mic`, `system`, `client`), `model?, preview_model?, vad_model?, language?, diarize?, diarization_model?, record_to?` | `ok {session}`, or `error {code: "busy"}` when another live session runs, or `error {code: "too_many_streams"}` when the engine has no free stream. Then `partial {session, source, committed, tentative}` and `segment {session, source, start_ms, end_ms, text}` events. |
+| `session_start` | `session.live`, plus `audio.mic` or `audio.system` for those sources | `sources` (`mic`, `system`, `client`), `model?, preview_model?, vad_model?, language?, diarize?, diarization_model?, record_to?` | `ok {session, excludes}`, or `error {code: "busy"}` when another live session runs, or `error {code: "too_many_streams"}` when the engine has no free stream, or `error {code: "permission"}` when the system refuses a capture permission. `excludes` lists what the capture of the source `system` leaves out (`sayso`, `app`), and is empty when the system does not allow it. Then `partial {session, source, committed, tentative}` and `segment {session, source, start_ms, end_ms, text}` events, `source_gap {session, source, ms}` when a device change loses audio, and `source_ended {session, source, reason}` (`permission` or `failed`) when one source ends and the others go on. |
 | `session_audio` | `session.live` | `session, pcm` (base64, 16 kHz mono i16). Only for the source `client`. | Without `id`: no reply, and an `error` without `id` when the audio is wrong. With `id`: `ok` or `error`. |
 | `session_stop` | none | `session` | Last segments. With `diarize`, `speakers {session, source, turns}` for each source. Then `ok {text}`. |
 | `enhance` | `ai.enhance` | `text`, `style?` or `prompt?`, `provider?` | `ok {text, provider, model}`, or `error` with the codes below. |
@@ -356,15 +356,15 @@ How a live session runs (`crates/sayso-speech/src/live/`, with the model checks 
 - **Engine session ids.** A dictation numbers its engine sessions from 1. The host numbers the preview streams and VAD sessions of live sessions from 2^40, so the two never meet. A source uses at most two streams of the engine (a preview stream and a VAD session). When the engine has no free stream, `session_start` gets `error {code: "too_many_streams"}`, and the host closes the streams that it opened.
 - **End of the VAD.** At the stop, the host closes a VAD session of the engine with `stream_end` and waits for its reply (`SttBackend::end_vad`). The engine sends the last `speech_end` before that reply, and the bus of the host passes it on before `end_vad` returns, so the host does not wait for a time of silence. An engine client that cannot wait for the reply keeps the default `end_vad`; then the host ends the open speech at the end of the audio.
 - **Stop.** `session_stop` ends the audio, closes the streams, waits for the part that the engine transcribes now, transcribes the last part, and runs diarization on the recording of each source. The `segment` and `speakers` events of a session have no `id`; they come before the `ok {text}` reply. `text` is the text of all segments in the order of time. When the extension closes its connection, or Sayso quits, the host stops its session without diarization, and does not transcribe the parts that wait. When Sayso quits, this happens before `host_closing`.
-- **Sources.** This version captures `mic` and `client`. `system` gets `error {code: "unsupported"}`.
+- **Sources.** This version captures `mic`, `system`, and `client`. `system` gets `error {code: "unsupported"}` on macOS 14.0 and 14.1. See "System audio" in `sdk.md` for what each system leaves out, and for the rules of times, gaps, and permissions.
 
-There is no echo cancellation in the first version. When the user has no headphones, the microphone hears the call too. The host then drops a microphone segment when a system segment overlaps it in time and has most of the same words. Set the limit for "most" with test recordings at the build, and write it in this file.
+There is no echo cancellation in the first version. When the user has no headphones, the microphone hears the call too. The host then drops a microphone segment when a system segment overlaps it in time and has at least 60% of the same words. With both sources, a microphone segment waits for the system source to pass its time. `sdk.md` has the rule and how we chose the limit.
 
 System audio is new work for each system:
 
 - macOS: a Core Audio process tap. It needs macOS 14.2 or later and a system audio permission for Sayso.
-- Windows: WASAPI loopback.
-- Linux: the monitor source of the default output in PipeWire.
+- Windows: WASAPI loopback of the default output device.
+- Linux: the monitor of the default sink, through the protocol of PulseAudio, which PipeWire also serves.
 
 Sayso asks for the system audio permission the first time a live session asks for the source `system`, and not at onboarding.
 
@@ -391,7 +391,7 @@ Step 6 builds the Host API in these crates:
 | Crate | License | What it has |
 |---|---|---|
 | `sayso-protocol` | MIT | The messages of the engine protocol and the Host API, with serde. The error codes and the capabilities. The PCM helpers (base64 of 16-bit PCM). No I/O. |
-| `sayso-extension` | MIT | The client of the Host API. Blocking calls and a channel of events, with no async runtime, like the rest of Sayso. |
+| `sayso-sdk` (it replaced `sayso-extension`, see `docs/sdk.md`) | MIT | The client of the Host API. Blocking calls and a channel of events, with no async runtime, like the rest of Sayso. |
 | `sayso-engine-sdk` | MIT | Start an engine and talk to it over stdio. |
 | `sayso-host` | GPL | The server: the socket, the identity check, `apps.toml`, the approval question, the capabilities, the scheduler, jobs, and live sessions. No GPUI. |
 
@@ -411,7 +411,7 @@ The folder of the socket has mode `0700`. The SDK has the same rules, because an
 
 [sdk.md](sdk.md) has the format of `apps.toml`. The host reads the file again when it changes, so a grant that the user takes back stops the next request. `models.read` is always granted.
 
-Errors of the Host API have these codes, in addition to the codes of the engine protocol: `not_approved`, `capability`, `busy`, `declined`, `model_not_downloaded`, `wrong_role` (a model that cannot do the role of the request, for example a speech model as `vad_model`), `unsupported` (the engine of this computer cannot do it), and `bad_request`.
+Errors of the Host API have these codes, in addition to the codes of the engine protocol: `not_approved`, `capability`, `busy`, `declined`, `model_not_downloaded`, `wrong_role` (a model that cannot do the role of the request, for example a speech model as `vad_model`), `unsupported` (the engine of this computer cannot do it), `permission` (the system refused a capture permission), and `bad_request`.
 
 These rules of the wire format are fixed in `sayso-protocol`:
 
@@ -419,10 +419,11 @@ These rules of the wire format are fixed in `sayso-protocol`:
 - `choice` in `list_models` is a list of roles: the roles for which the host uses the model when a request names none (see "Requests").
 - Events that a request caused have its `id` and come before its reply. After the reply, no event has that `id`. Work that goes on after the reply (jobs and live sessions) sends events without an `id`. So the events of a job have no `id`, and `job` tells the job. The `ok {job}` reply comes before the first event of the job.
 - The events of a live session (`partial`, `segment`, `speakers`) have no `id`, and `session` tells the session. The `ok {session}` reply comes before the first event of the session, and the `ok {text}` reply of `session_stop` comes after its last event.
-- `session_audio` without an `id` gets no `ok`. When it fails, the `error` has no `id`. `sayso-extension` sends it with `Client::send`, and gives an `error` without an `id` as `Event::Error`.
+- `session_audio` without an `id` gets no `ok`. When it fails, the `error` has no `id`. `sayso_sdk::client` sends it with `Client::send`, and gives an `error` without an `id` as `Event::Error`.
 - A job ends with exactly one `job_done` or `job_failed`, and no event of the job comes after it. A cancelled job gets `job_failed` without `code` and with the message "The job was cancelled.". When the host closes, each job gets `job_failed` before `host_closing`.
 - A failed download gives `error` without `code`, with `message` and the `reason` of the engine protocol, after `model_state {state: "failed"}`. `declined` and `unknown_model` have a `code`.
 - A line that is not a JSON object with a string `type` gets `error` without `id` and with `code: "bad_request"`. A known request with a missing field or a field of the wrong type gets `bad_request` with its `id`. An unknown request type gets `error` with its `id` and no `code`, as in the engine protocol.
+- `approval_waiting` has the `id` of `hello`, and says that the reply waits for a person. A client can give up on a host that sends neither a reply nor this event: the SDK does so after 10 s (`docs/sdk.md`, "Mode changes in `Mode::Auto`").
 - `dictation_done` has no `id`. The `ok {events}` reply of `subscribe` comes before the first event, and lists only the event names that the host knows.
 - `enhance` sends no events: one `ok {text, provider, model}` or one `error`. The error codes are `bad_request`, `unavailable`, `unsupported`, `timeout`, and `refused` (see "Requests"); an output that Sayso cannot use gives `error` without `code`.
 - A reader keeps a capability or an error code that it does not know, and ignores a message type that it does not know.

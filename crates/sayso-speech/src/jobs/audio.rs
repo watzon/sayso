@@ -22,7 +22,7 @@ use symphonia::core::probe::Hint;
 const PER_MS: u64 = SAMPLE_RATE as u64 / 1000;
 
 /// What the error messages name.
-const FORMATS: &str = "Sayso reads WAV, FLAC, MP3, AAC, and M4A files.";
+const FORMATS: &str = "The formats are WAV, FLAC, MP3, AAC, and M4A.";
 
 /// 16 kHz mono audio, as 16-bit samples.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -61,7 +61,7 @@ impl Audio {
 /// Read and decode `path`. The error is an English sentence for `job_failed`.
 pub fn read(path: &Path) -> Result<Audio, String> {
     let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
-    let file = std::fs::File::open(path).map_err(|e| format!("Sayso cannot open {}: {e}", path.display()))?;
+    let file = std::fs::File::open(path).map_err(|e| format!("cannot open {}: {e}", path.display()))?;
     let stream = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(extension) = path.extension().and_then(|e| e.to_str()) {
@@ -72,8 +72,8 @@ pub fn read(path: &Path) -> Result<Audio, String> {
     let probed = symphonia::default::get_probe()
         .format(&hint, stream, &options, &MetadataOptions::default())
         .map_err(|e| match e {
-            Error::IoError(e) => format!("Sayso cannot read {name}: {e}"),
-            _ => format!("{name} is not an audio file that Sayso can read. {FORMATS}"),
+            Error::IoError(e) => format!("cannot read {name}: {e}"),
+            _ => format!("{name} is not an audio file that can be read. {FORMATS}"),
         })?;
     let mut format = probed.format;
     let track = format
@@ -84,7 +84,7 @@ pub fn read(path: &Path) -> Result<Audio, String> {
     let track_id = track.id;
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|e| format!("Sayso cannot decode the audio in {name} ({e}). {FORMATS}"))?;
+        .map_err(|e| format!("cannot decode the audio in {name} ({e}). {FORMATS}"))?;
 
     let mut out = Mono::default();
     // Reserve the whole length when the file says it, so the buffer does not grow by doubling.
@@ -102,7 +102,7 @@ pub fn read(path: &Path) -> Result<Audio, String> {
             Err(Error::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
             // A new chain of tracks starts: the job reads the first one only.
             Err(Error::ResetRequired) => break,
-            Err(Error::IoError(e)) => return Err(format!("Sayso cannot read {name}: {e}")),
+            Err(Error::IoError(e)) => return Err(format!("cannot read {name}: {e}")),
             Err(e) => return Err(format!("{name} is damaged: {e}")),
         };
         if packet.track_id() != track_id {
@@ -124,13 +124,13 @@ pub fn read(path: &Path) -> Result<Audio, String> {
             // A damaged packet: leave it out, as players do.
             Err(Error::DecodeError(e)) => last_error = Some(e),
             Err(Error::IoError(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(format!("Sayso cannot decode the audio in {name}: {e}")),
+            Err(e) => return Err(format!("cannot decode the audio in {name}: {e}")),
         }
     }
     if out.samples.is_empty()
         && let Some(e) = last_error
     {
-        return Err(format!("Sayso cannot decode the audio in {name}: {e}"));
+        return Err(format!("cannot decode the audio in {name}: {e}"));
     }
     Ok(Audio { samples: out.finish() })
 }
@@ -301,9 +301,9 @@ mod tests {
         let path = dir.path().join("notes.txt");
         std::fs::write(&path, "Meeting notes: nothing to hear here.").unwrap();
         let message = read(&path).unwrap_err();
-        assert_eq!(message, "notes.txt is not an audio file that Sayso can read. Sayso reads WAV, FLAC, MP3, AAC, and M4A files.");
+        assert_eq!(message, "notes.txt is not an audio file that can be read. The formats are WAV, FLAC, MP3, AAC, and M4A.");
         let message = read(&dir.path().join("missing.wav")).unwrap_err();
-        assert!(message.starts_with("Sayso cannot open ") && message.contains("missing.wav"), "{message}");
+        assert!(message.starts_with("cannot open ") && message.contains("missing.wav"), "{message}");
     }
 
     #[test]

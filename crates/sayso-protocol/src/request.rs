@@ -71,7 +71,7 @@ impl Request {
 /// The first request of a client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hello {
-    /// The name and version of the SDK, for example `sayso-extension 0.13.0`.
+    /// The name and version of the SDK, for example `sayso-sdk 0.13.0`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sdk: Option<String>,
     pub protocol: u32,

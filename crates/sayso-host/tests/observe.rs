@@ -2,8 +2,8 @@
 //! identity check (see `common`).
 
 use crossbeam_channel::Receiver;
-use sayso_extension::protocol::{Capability, DictationDone, ErrorCode, Event as HostEvent, SubscribeReply};
-use sayso_extension::{Client, Event};
+use sayso_sdk::protocol::{Capability, DictationDone, ErrorCode, Event as HostEvent, SubscribeReply};
+use sayso_sdk::client::{Client, Event};
 use serde_json::json;
 use std::time::Duration;
 

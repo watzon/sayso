@@ -113,6 +113,13 @@ pub trait HostServices: Send + Sync {
         None
     }
 
+    /// The system audio, for live sessions with the source `system`. None:
+    /// `session_start` with `system` gets `unsupported`. Sayso asks the system
+    /// for the permission the first time a session opens it.
+    fn system_audio(&self) -> Option<Arc<dyn live::SystemAudio>> {
+        None
+    }
+
     /// The folder for the recordings of live sessions without `record_to`.
     /// The host deletes each recording after its session.
     fn live_temp_dir(&self) -> PathBuf {
@@ -257,6 +264,7 @@ impl Host {
             live::LiveSessions::new(live::LiveDeps {
                 engine: Arc::new(live::BackendEngine::new(engine.clone(), Some(bus.clone()))),
                 microphone: services.microphone(),
+                system_audio: services.system_audio(),
                 gate: gate.clone(),
                 models: model_use.clone(),
                 recordings: Arc::new(live::RecordingFolder::new(services.live_temp_dir())),

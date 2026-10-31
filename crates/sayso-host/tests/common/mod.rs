@@ -15,7 +15,8 @@ use sayso_core::history::EnhanceOutcome;
 use sayso_core::pipeline::PipelineOutput;
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript};
 use sayso_core::style::StyleLibrary;
-use sayso_extension::{Error, Fields};
+use sayso_sdk::Fields;
+use sayso_sdk::client::Error;
 use sayso_host::{ApprovalQuestion, Caller, DownloadQuestion, Host, Identify, Peer, HostConfig, HostServices, StyleRequest};
 use sayso_platform::{EngineStart, PlatformError, Result, SttBackend};
 use std::path::{Path, PathBuf};
@@ -120,12 +121,14 @@ pub fn refused(result: Answer) -> sayso_protocol::ErrorReply {
     }
 }
 
-pub type Answer = std::result::Result<sayso_extension::Reply, Error>;
+pub type Answer = std::result::Result<sayso_sdk::client::Reply, Error>;
 
+/// The limit only ends a test that already failed, so it is long: a new connection can take
+/// several seconds when many tests run on a machine with much to do.
 pub fn eventually(what: &str, check: impl Fn() -> bool) {
     let start = Instant::now();
     while !check() {
-        assert!(start.elapsed() < Duration::from_secs(5), "{what}");
+        assert!(start.elapsed() < Duration::from_secs(60), "{what}");
         std::thread::sleep(Duration::from_millis(10));
     }
 }
@@ -350,4 +353,17 @@ impl HostServices for FakeServices {
         };
         PipelineOutput { text, replacements: Vec::new(), enhance, enhance_error, timings: None, notice: None }
     }
+}
+
+/// The example program, built for this test.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub fn example() -> PathBuf {
+    // <target>/<profile>/deps/<this test>
+    let profile = this_program().parent().unwrap().parent().unwrap().to_path_buf();
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let target = profile.parent().unwrap();
+    let built = std::process::Command::new(cargo).args(["build", "--quiet", "-p", "sayso-sdk", "--example", "sayso-ext", "--manifest-path"]).arg(&manifest).arg("--target-dir").arg(target).status().unwrap();
+    assert!(built.success());
+    profile.join("examples/sayso-ext")
 }

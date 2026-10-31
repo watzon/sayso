@@ -276,7 +276,8 @@ impl Connection<'_> {
             Request::CancelJob(request) => crate::job_requests::cancel_job(self.shared, self.number, &self.jobs, &request, responder),
             Request::SessionStart(request) => {
                 let number = self.number;
-                self.spawn("live-start", responder, move |shared, app_id, responder| crate::live_requests::session_start(shared, number, app_id, &request, responder));
+                let pid = self.writer.as_ref().and_then(Peer::pid);
+                self.spawn("live-start", responder, move |shared, app_id, responder| crate::live_requests::session_start(shared, number, app_id, pid, &request, responder));
             }
             Request::SessionAudio(request) => crate::live_requests::session_audio(self.shared, self.number, &request, responder),
             Request::SessionStop(request) => {
@@ -306,6 +307,8 @@ impl Connection<'_> {
                 return true;
             }
             HelloStep::Ask(question) => {
+                // The client can now tell this wait from a stuck host.
+                responder.event(&Event::ApprovalWaiting);
                 self.asking.store(true, Ordering::SeqCst);
                 let shared = self.shared.clone();
                 let caller = caller.clone();

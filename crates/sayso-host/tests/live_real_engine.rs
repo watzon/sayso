@@ -14,8 +14,8 @@
 use sayso_core::config::{Config, RoleChoice};
 use sayso_core::models::ModelId;
 use sayso_engine_client::EngineClient;
-use sayso_extension::protocol::{Event as HostEvent, SessionReply, TextReply};
-use sayso_extension::{Client, Event};
+use sayso_sdk::protocol::{Event as HostEvent, SessionReply, TextReply};
+use sayso_sdk::client::{Client, Event};
 use sayso_host::{DownloadQuestion, HostServices};
 use sayso_platform::SttBackend;
 use serde_json::json;
@@ -84,7 +84,7 @@ fn a_client_session_on_the_real_engine_gives_partials_segments_and_speakers() {
     let all = [once.clone(), vec![0i16; 3 * 16_000], once.clone()].concat();
     let fed = Instant::now();
     for chunk in all.chunks(16_000 * 160 / 1000) {
-        client.send("session_audio", fields(json!({"session": session, "pcm": sayso_extension::protocol::pcm::encode_i16(chunk)}))).unwrap();
+        client.send("session_audio", fields(json!({"session": session, "pcm": sayso_sdk::protocol::pcm::encode_i16(chunk)}))).unwrap();
         std::thread::sleep(Duration::from_millis(40));
     }
     println!("fed {} ms of audio in {} ms", all.len() / 16, fed.elapsed().as_millis());

@@ -5,6 +5,7 @@ _version: 1
 # scripts/i18n-system-files.py writes these files from this catalog.
 system:
   microphone_usage: "Sayso n’écoute le microphone que pendant que vous dictez. La parole est transcrite sur ce Mac."
+  system_audio_usage: "Sayso enregistre le son des autres apps et des appels uniquement pour une app que vous avez autorisée, pendant qu’elle enregistre."
   generic_name: "Dictée vocale"
   comment: "Parlez, et Sayso écrit le texte dans l’app que vous utilisez"
   # Search words, separated by ";", with a ";" at the end. Keep "whisper"

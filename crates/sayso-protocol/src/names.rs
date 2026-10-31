@@ -109,6 +109,15 @@ names! {
         Refused = "refused",
         /// The language model, or for `enhance` the AI provider, gave no reply in time.
         Timeout = "timeout",
+        /// The system refused a capture permission (the system audio or the microphone).
+        Permission = "permission",
+        /// Sayso does not run. Only the SDK gives this code, because no host can reply.
+        HostNotRunning = "host_not_running",
+        /// The connection to Sayso ended without `host_closing`: it crashed. Only the SDK
+        /// gives this code. The request or the work can have run in the host or not.
+        ConnectionLost = "connection_lost",
+        /// Sayso quits, and it did not end this work first. Only the SDK gives this code.
+        HostClosing = "host_closing",
     }
 }
 
@@ -156,5 +165,15 @@ names! {
         System = "system",
         /// The app sends the audio with `session_audio`.
         Client = "client",
+    }
+}
+
+names! {
+    /// Why a source of a live session ended before the session.
+    SourceEndReason {
+        /// The user took the permission of the system back.
+        Permission = "permission",
+        /// The capture failed, and it did not come back.
+        Failed = "failed",
     }
 }

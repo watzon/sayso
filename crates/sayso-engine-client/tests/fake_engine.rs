@@ -329,8 +329,10 @@ fn vad_and_diarization_models_download_with_their_engine_object() {
         wait_for_requests(&f.models, "download", n + 1);
         let info = sayso_core::models::find_local(&model).unwrap();
         let sent = requests(&f.models).into_iter().rfind(|r| r.contains(r#""type":"download""#)).unwrap();
-        let engine = serde_json::to_string(&info.engine).unwrap();
-        assert!(sent.contains(&engine) && sent.contains(&format!(r#""size_bytes":{}"#, info.size_bytes)), "{sent}");
+        // Parsed values: the order of the keys in the text is not fixed.
+        let sent: serde_json::Value = serde_json::from_str(&sent).unwrap();
+        assert_eq!(sent["engine"], serde_json::to_value(&info.engine).unwrap(), "{sent}");
+        assert_eq!(sent["size_bytes"], info.size_bytes, "{sent}");
     }
 }
 

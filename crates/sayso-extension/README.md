@@ -1,5 +1,7 @@
 # sayso-extension
 
+**This crate moved to [`sayso-sdk`](https://crates.io/crates/sayso-sdk).** The new crate has this client in `sayso_sdk::client`, and `Speech`, which also works when Sayso does not run. Use it for new apps. This crate gets no more changes.
+
 The client of the Sayso Host API. Use it to write an app that uses [Sayso](https://github.com/watzon/sayso), the dictation app.
 
 A connected app is a separate app. It connects to Sayso over a local socket (a named pipe on Windows), sends requests, and gets events. With the Host API, an extension can list and download models, transcribe files, run live sessions from the microphone or from its own audio, enhance text, and get each dictation when it is done. Sayso owns the engine, the microphone, the models, and the API keys. The extension owns its UI and its data.

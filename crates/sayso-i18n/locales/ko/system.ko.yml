@@ -5,6 +5,7 @@ _version: 1
 # scripts/i18n-system-files.py writes these files from this catalog.
 system:
   microphone_usage: "Sayso는 받아쓰기를 하는 동안에만 마이크를 사용해요. 음성은 이 Mac에서 전사돼요."
+  system_audio_usage: "Sayso는 허용한 앱이 녹음하는 동안에만 그 앱을 위해 다른 앱과 통화의 소리를 녹음합니다."
   generic_name: "음성 받아쓰기"
   comment: "말하면 Sayso가 사용 중인 앱에 텍스트를 써 줘요"
   # Search words, separated by ";", with a ";" at the end. Keep "whisper"

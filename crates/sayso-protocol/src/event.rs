@@ -2,7 +2,7 @@
 //! request. Other events can come at any time.
 
 use crate::codec::tagged_kind;
-use crate::{ErrorCode, ModelState, Segment, Source, Turn};
+use crate::{ErrorCode, ModelState, Segment, Source, SourceEndReason, Turn};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -28,15 +28,35 @@ pub enum Event {
         code: Option<ErrorCode>,
     },
     Partial(PartialEvent),
+    /// A source of a live session lost audio, for example at a change of the
+    /// output device. The recording and the times of the source have silence there.
+    SourceGap {
+        session: u64,
+        source: Source,
+        ms: u64,
+    },
+    /// A source of a live session ended, and the other sources go on. The last
+    /// `segment` of the source comes before it.
+    SourceEnded {
+        session: u64,
+        source: Source,
+        reason: SourceEndReason,
+    },
     /// The user stopped the live session in Sayso, not the app. The last
     /// `segment` and `speakers` events come before it, and it is the end of
-    /// the session: there is no reply to `session_stop`.
+    /// the session: there is no reply to `session_stop`. The SDK also gives
+    /// this event, with a `code`, when the connection ends during a session.
     SessionEnded {
         session: u64,
         /// The text of all segments in the order of time.
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<ErrorCode>,
     },
     DictationDone(DictationDone),
+    /// `hello` waits for the answer of a person. A client must wait for its reply
+    /// without a limit after this. Without it, a client can call a silent host stuck.
+    ApprovalWaiting,
     /// Sayso quits or restarts, and closes the connection.
     HostClosing,
 }
@@ -50,8 +70,11 @@ tagged_kind!(Event {
     JobDone => "job_done",
     JobFailed => "job_failed",
     Partial => "partial",
+    SourceGap => "source_gap",
+    SourceEnded => "source_ended",
     SessionEnded => "session_ended",
     DictationDone => "dictation_done",
+    ApprovalWaiting => "approval_waiting",
     HostClosing => "host_closing",
 });
 
@@ -115,6 +138,29 @@ pub struct PartialEvent {
     pub committed: String,
     /// The newest text, which can still change.
     pub tentative: String,
+}
+
+impl PartialEvent {
+    /// `committed` and `tentative` as one text, with one space between them where the text
+    /// needs one: not before punctuation that closes, and not in a script without spaces.
+    pub fn text(&self) -> String {
+        let (committed, tentative) = (self.committed.trim_end(), self.tentative.trim_start());
+        let (Some(last), Some(first)) = (committed.chars().next_back(), tentative.chars().next()) else {
+            return format!("{committed}{tentative}");
+        };
+        let closes = matches!(first, ',' | '.' | ';' | ':' | '!' | '?' | ')' | ']' | '}' | '%' | '\'' | '’' | '…' | '、' | '。' | '，' | '！' | '？');
+        let separator = if closes || (is_unspaced(last) && is_unspaced(first)) { "" } else { " " };
+        format!("{committed}{separator}{tentative}")
+    }
+}
+
+/// A character of a script without spaces between its words: Chinese, Japanese, or Thai.
+pub fn is_unspaced(c: char) -> bool {
+    matches!(c as u32,
+        0x3040..=0x30FF // Hiragana and Katakana.
+        | 0x3400..=0x4DBF | 0x4E00..=0x9FFF | 0xF900..=0xFAFF // Han.
+        | 0x0E00..=0x0E7F // Thai.
+    )
 }
 
 /// A dictation after its insert.

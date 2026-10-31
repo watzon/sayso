@@ -4,7 +4,7 @@
 The catalogs in crates/sayso-i18n/locales/<locale>/system.<locale>.yml hold
 the text that the system shows outside the app. This script writes:
 
-- packaging/macos/<lproj>/InfoPlist.strings: the microphone prompt of macOS.
+- packaging/macos/<lproj>/InfoPlist.strings: the microphone and system audio prompts of macOS.
 - The localized lines of packaging/linux/dev.sayso.Sayso.desktop.
 - The localized lines of packaging/linux/dev.sayso.Sayso.metainfo.xml.
 
@@ -63,7 +63,11 @@ def xml_escape(text):
 
 
 def info_plist_strings(texts):
-    return GENERATED + f'"NSMicrophoneUsageDescription" = "{strings_escape(texts["microphone_usage"])}";\n'
+    return (
+        GENERATED
+        + f'"NSMicrophoneUsageDescription" = "{strings_escape(texts["microphone_usage"])}";\n'
+        + f'"NSAudioCaptureUsageDescription" = "{strings_escape(texts["system_audio_usage"])}";\n'
+    )
 
 
 def desktop_entry(current, translations):

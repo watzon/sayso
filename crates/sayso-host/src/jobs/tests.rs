@@ -372,7 +372,7 @@ fn an_unreadable_file_or_a_failed_engine_fails_the_job() {
     let Event::JobFailed { message, .. } = harness.run(spec(dir.path().join("gone.wav"), Timestamps::Word, VadRun::Basic)).wait_end() else {
         panic!()
     };
-    assert!(message.starts_with("Sayso cannot open"), "{message}");
+    assert!(message.starts_with("cannot open"), "{message}");
 
     let (_dir, path) = wav(&audio(5_000, &[(1_000, 2_000, 1)]));
     let harness = Harness::new(FakeEngine { fail_transcribe: true, ..Default::default() });
