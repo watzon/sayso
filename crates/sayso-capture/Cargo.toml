@@ -10,6 +10,7 @@ repository = "https://github.com/watzon/sayso"
 readme = "README.md"
 
 [dependencies]
+parking_lot.workspace = true
 # The resampler.
 sayso-speech.workspace = true
 crossbeam-channel.workspace = true
@@ -34,4 +35,3 @@ pulseaudio = "0.3.2"
 futures = { version = "0.3", default-features = false, features = ["executor"] }
 
 [dev-dependencies]
-parking_lot.workspace = true

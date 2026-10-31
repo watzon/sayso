@@ -11,7 +11,7 @@
 //! runs, and the system asks at `AudioDeviceStart`. That call does not return
 //! until the user answers.
 
-use super::{Access, Backend, Error, FrameSink, Options, Stream};
+use super::{Access, Backend, Error, Exclude, FrameSink, Options, Stream};
 use crate::mic::{Pipeline, RawFrame};
 use block2::RcBlock;
 use objc2::rc::Retained;
@@ -26,9 +26,11 @@ use objc2_core_audio::{
 };
 use objc2_core_audio_types::{AudioBufferList, AudioStreamBasicDescription, AudioTimeStamp, kAudioFormatFlagIsFloat, kAudioFormatLinearPCM};
 use objc2_core_foundation::{CFDictionary, CFRetained, CFString};
+use parking_lot::Mutex;
 use objc2_foundation::{NSArray, NSBundle, NSDictionary, NSMutableDictionary, NSNumber, NSOperatingSystemVersion, NSProcessInfo, NSString, NSObject};
 use std::ffi::{CStr, c_void};
 use std::ptr::NonNull;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
@@ -237,11 +239,13 @@ unsafe extern "C-unwind" fn io_proc(_device: AudioObjectID, _now: NonNull<AudioT
 
 pub(super) struct Tap {
     options: Options,
+    /// The processes that macOS did not let the tap add, so `excludes` does not list them.
+    not_left_out: Arc<Mutex<Vec<u32>>>,
 }
 
 impl Tap {
     pub(super) fn new(options: Options) -> Tap {
-        Tap { options }
+        Tap { options, not_left_out: Arc::default() }
     }
 }
 
@@ -253,8 +257,27 @@ struct TapStream {
     description: Retained<CATapDescription>,
     /// The processes to leave out, with the object when they have one.
     processes: Vec<(u32, Option<AudioObjectID>)>,
+    not_left_out: Arc<Mutex<Vec<u32>>>,
     device: Option<AudioDeviceID>,
     sample_rate: f64,
+}
+
+/// Run a call of Core Audio, and once more when it fails. Gives the last status.
+fn try_twice(mut call: impl FnMut() -> i32) -> i32 {
+    match call() {
+        0 => 0,
+        _ => call(),
+    }
+}
+
+/// The names of the processes that the tap leaves out.
+fn left_out(exclude: &[Exclude], not_left_out: &[u32]) -> Vec<String> {
+    exclude.iter().filter(|process| !not_left_out.contains(&process.pid)).map(|process| process.name.clone()).collect()
+}
+
+/// The rate of the tap for the resampler, which cannot take 0.
+fn pipeline_rate(rate: f64) -> Result<u32, Error> {
+    if (1.0..=f64::from(u32::MAX)).contains(&rate) { Ok(rate as u32) } else { Err(Error::Failed(format!("the tap has the sample rate {rate}"))) }
 }
 
 // SAFETY: the raw pointer is used by the audio thread and by `drop` after the
@@ -265,26 +288,33 @@ unsafe impl Send for TapStream {}
 impl TapStream {
     /// A process to leave out can get its audio object after the tap started.
     fn update_excludes(&mut self) {
-        let mut changed = false;
+        let mut new = Vec::new();
         for (pid, object) in &mut self.processes {
             if object.is_none() {
                 *object = process_object(*pid);
-                changed |= object.is_some();
+                if object.is_some() {
+                    new.push(*pid);
+                }
             }
         }
-        if !changed {
+        if new.is_empty() {
             return;
         }
         let objects: Vec<AudioObjectID> = self.processes.iter().filter_map(|process| process.1).collect();
         let property = address(kAudioTapPropertyDescription);
-        // SAFETY: the description is valid, and the property takes a reference to one.
-        let status = unsafe {
-            self.description.setProcesses(&process_array(&objects));
-            let reference: *const CATapDescription = &*self.description;
-            AudioObjectSetPropertyData(self.tap, NonNull::from(&property), 0, std::ptr::null(), size_of::<*const CATapDescription>() as u32, NonNull::from(&reference).cast())
-        };
+        let status = try_twice(|| {
+            // SAFETY: the description is valid, and the property takes a reference to one.
+            unsafe {
+                self.description.setProcesses(&process_array(&objects));
+                let reference: *const CATapDescription = &*self.description;
+                AudioObjectSetPropertyData(self.tap, NonNull::from(&property), 0, std::ptr::null(), size_of::<*const CATapDescription>() as u32, NonNull::from(&reference).cast())
+            }
+        });
         if status != 0 {
             log::warn!("system audio: cannot change the processes that the tap leaves out: Core Audio error {status}");
+            // `excludes` says what is really left out. A new stream tries again.
+            self.processes.retain(|process| !new.contains(&process.0));
+            self.not_left_out.lock().extend(new);
         }
     }
 }
@@ -356,6 +386,8 @@ impl Backend for Tap {
     fn open(&mut self, mut sink: FrameSink) -> Result<Box<dyn Stream>, Error> {
         let processes: Vec<(u32, Option<AudioObjectID>)> = self.options.exclude.iter().map(|process| (process.pid, process_object(process.pid))).collect();
         let objects: Vec<AudioObjectID> = processes.iter().filter_map(|process| process.1).collect();
+        // A process with an object is in the description of this new tap.
+        self.not_left_out.lock().retain(|pid| !processes.iter().any(|process| process.0 == *pid && process.1.is_some()));
         let device = default_output();
         // SAFETY: a new object with a valid array. `setPrivate` and the others only store their value.
         let description = unsafe {
@@ -384,9 +416,10 @@ impl Backend for Tap {
         if format.mFormatID != kAudioFormatLinearPCM || format.mFormatFlags & kAudioFormatFlagIsFloat == 0 || format.mBitsPerChannel != 32 {
             return Err(Error::Failed(format!("the tap has the format {} with {} bits, not 32-bit float", format.mFormatID, format.mBitsPerChannel)));
         }
+        let rate = pipeline_rate(format.mSampleRate)?;
         let channels = format.mChannelsPerFrame.max(1) as u16;
         let on_frame: SinkFn = Box::new(move |frame: &RawFrame| sink.push(frame));
-        let state = Box::into_raw(Box::new(IoState { pipeline: Pipeline::new(channels, format.mSampleRate as u32, on_frame), channels: usize::from(channels), interleaved: Vec::new() }));
+        let state = Box::into_raw(Box::new(IoState { pipeline: Pipeline::new(channels, rate, on_frame), channels: usize::from(channels), interleaved: Vec::new() }));
         let mut proc_id: AudioDeviceIOProcID = None;
         // SAFETY: `state` lives until the IO function is destroyed.
         let created = check(unsafe { AudioDeviceCreateIOProcID(aggregate, Some(io_proc), state.cast(), NonNull::from(&mut proc_id)) }, "the IO function");
@@ -402,11 +435,11 @@ impl Backend for Tap {
         }
         // `TapStream` closes them from now on.
         std::mem::forget(partial);
-        Ok(Box::new(TapStream { tap, aggregate, proc_id, state, description, processes, device, sample_rate: format.mSampleRate }))
+        Ok(Box::new(TapStream { tap, aggregate, proc_id, state, description, processes, not_left_out: self.not_left_out.clone(), device, sample_rate: format.mSampleRate }))
     }
 
     fn excludes(&self) -> Vec<String> {
-        self.options.exclude.iter().map(|process| process.name.clone()).collect()
+        left_out(&self.options.exclude, &self.not_left_out.lock())
     }
 }
 
@@ -429,6 +462,36 @@ mod tests {
         assert_eq!(access_from(0), Access::Granted);
         assert_eq!(access_from(1), Access::Denied);
         assert_eq!(access_from(2), Access::Unknown);
+    }
+
+    #[test]
+    fn a_failed_change_of_the_tap_gets_one_more_try() {
+        let tries = std::cell::Cell::new(0);
+        let call = |answers: &[i32]| {
+            tries.set(0);
+            try_twice(|| {
+                tries.set(tries.get() + 1);
+                answers[tries.get() - 1]
+            })
+        };
+        assert_eq!((call(&[0]), tries.get()), (0, 1));
+        assert_eq!((call(&[5, 0]), tries.get()), (0, 2));
+        assert_eq!((call(&[5, 6]), tries.get()), (6, 2));
+    }
+
+    #[test]
+    fn excludes_do_not_list_a_process_that_the_tap_could_not_add() {
+        let exclude = [Exclude { name: "sayso".into(), pid: 1 }, Exclude { name: "app".into(), pid: 2 }];
+        assert_eq!(left_out(&exclude, &[]), ["sayso", "app"]);
+        assert_eq!(left_out(&exclude, &[2]), ["sayso"]);
+    }
+
+    #[test]
+    fn a_tap_with_no_sample_rate_is_a_failed_open_and_no_panic() {
+        assert_eq!(pipeline_rate(48_000.0), Ok(48_000));
+        for rate in [0.0, 0.5, -1.0, f64::NAN, f64::INFINITY] {
+            assert!(matches!(pipeline_rate(rate), Err(Error::Failed(_))), "{rate}");
+        }
     }
 
     #[test]

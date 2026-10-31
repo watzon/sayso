@@ -47,7 +47,7 @@ impl SystemAudio for LiveSystemAudio {
             system::Error::Unsupported(message) => OpenError::Unsupported(message),
             system::Error::Failed(message) => OpenError::Failed(message),
         })?;
-        let excludes = capture.excludes().to_vec();
+        let excludes = capture.excludes();
         Ok(AudioFeed { items, lease: Box::new(capture), excludes })
     }
 }

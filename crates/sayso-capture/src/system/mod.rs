@@ -17,13 +17,17 @@
 //! - The **supervisor** thread looks at the stream a few times each second. A
 //!   change of the output device, or a stream that broke, opens a new stream and
 //!   gives [`Event::Gap`]. A permission that the user took back gives
-//!   [`Event::Ended`].
+//!   [`Event::Ended`]. The capture clock can stop while the computer sleeps, so
+//!   the supervisor also compares the wall clock with it, and a difference gives
+//!   [`Event::Gap`].
 
 use crate::clock;
 use crate::mic::{FRAME_SAMPLES, FRAME_TIME, Frame, QUEUE_FRAMES, RawFrame, display_level, rms};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded, unbounded};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -125,6 +129,9 @@ const SILENCE_AFTER: Duration = Duration::from_millis(200);
 const IDLE_CHECK: Duration = Duration::from_millis(100);
 /// A longer hole is not silence: the computer slept, for example. It is a gap.
 const MAX_SILENCE: Duration = Duration::from_secs(10);
+/// A wall clock that runs this much ahead of the capture clock between two looks
+/// says that the computer slept.
+const SLEPT_AFTER: Duration = Duration::from_secs(2);
 /// How long a drop waits for the worker and the supervisor.
 const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -133,8 +140,12 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(2);
 #[allow(clippy::large_enum_variant)]
 enum Message {
     Frame(RawFrame, Duration),
-    /// A new stream opens: the next frame comes after a gap.
+    /// A new stream opens: no silence until it is there.
     Reopening,
+    /// The new stream is there, also when it gives no audio.
+    Reopened,
+    /// The computer slept for this many ms, and the capture clock did not see it.
+    Slept(u64),
     Ended(End),
     Stop,
 }
@@ -177,7 +188,7 @@ pub(crate) trait Backend: Send + 'static {
     fn permission_held(&self) -> bool;
     /// Open a stream that gives its frames to `sink`.
     fn open(&mut self, sink: FrameSink) -> Result<Box<dyn Stream>, Error>;
-    /// The names of the processes that the streams leave out.
+    /// The names of the processes that the streams leave out now.
     fn excludes(&self) -> Vec<String>;
 }
 
@@ -219,7 +230,7 @@ fn backend(_options: Options) -> Box<dyn Backend> {
 /// A capture that runs. Dropping it ends the capture, after the last frames
 /// reached the function.
 pub struct Capture {
-    excludes: Vec<String>,
+    excludes: Arc<Mutex<Vec<String>>>,
     stop: Sender<()>,
     supervisor: Option<JoinHandle<()>>,
     worker: Option<WorkerHandle>,
@@ -227,10 +238,11 @@ pub struct Capture {
 
 impl Capture {
     /// The names from [`Options::exclude`] of the processes that this capture
-    /// leaves out. On macOS, each of them. On Windows and Linux, none: the
-    /// system mixes the output, and the capture cannot take a process out of the mix.
-    pub fn excludes(&self) -> &[String] {
-        &self.excludes
+    /// leaves out now. On macOS, each of them, except a process that macOS did not
+    /// let the tap add. On Windows and Linux, none: the system mixes the output,
+    /// and the capture cannot take a process out of the mix.
+    pub fn excludes(&self) -> Vec<String> {
+        self.excludes.lock().clone()
     }
 }
 
@@ -261,32 +273,61 @@ struct Timing {
     tick: Duration,
     retry: Duration,
     give_up: Duration,
+    wall_clock: fn() -> SystemTime,
 }
 
 impl Timing {
-    const REAL: Timing = Timing { tick: TICK, retry: RETRY, give_up: GIVE_UP };
+    const REAL: Timing = Timing { tick: TICK, retry: RETRY, give_up: GIVE_UP, wall_clock: SystemTime::now };
+}
+
+/// Finds a sleep of the computer. `Instant` does not advance during a sleep on
+/// macOS and Linux, and the wall clock does. A user who sets the clock forward
+/// looks the same, and gets a gap too.
+struct SleepWatch {
+    wall: SystemTime,
+    steady: Instant,
+}
+
+impl SleepWatch {
+    /// Gives the time of a sleep since the last look.
+    fn look(&mut self, wall: SystemTime, steady: Instant) -> Option<u64> {
+        let wall_passed = wall.duration_since(self.wall).unwrap_or_default();
+        let steady_passed = steady.saturating_duration_since(self.steady);
+        self.wall = wall;
+        self.steady = steady;
+        let slept = wall_passed.saturating_sub(steady_passed);
+        (slept > SLEPT_AFTER).then(|| gap_ms(slept))
+    }
 }
 
 fn start_with(mut backend: Box<dyn Backend>, timing: Timing, on_event: Box<dyn FnMut(Event) + Send>) -> Result<Capture, Error> {
     backend.prepare()?;
     let (worker, tx) = WorkerHandle::start(on_event)?;
     let stream = backend.open(FrameSink { tx: tx.clone(), lost: false })?;
-    let excludes = backend.excludes();
+    let excludes = Arc::new(Mutex::new(backend.excludes()));
     let (stop, stopped) = bounded(1);
     let supervisor = std::thread::Builder::new()
         .name("sayso-system-audio".into())
-        .spawn(move || supervise(backend, stream, &tx, &stopped, timing))
+        .spawn({
+            let excludes = excludes.clone();
+            let sleep_watch = SleepWatch { wall: (timing.wall_clock)(), steady: Instant::now() };
+            move || supervise(backend, stream, &tx, &stopped, timing, sleep_watch, &excludes)
+        })
         .map_err(|e| Error::Failed(format!("the thread of the system audio: {e}")))?;
     Ok(Capture { excludes, stop, supervisor: Some(supervisor), worker: Some(worker) })
 }
 
-fn supervise(mut backend: Box<dyn Backend>, stream: Box<dyn Stream>, tx: &Sender<Message>, stopped: &Receiver<()>, timing: Timing) {
+fn supervise(mut backend: Box<dyn Backend>, stream: Box<dyn Stream>, tx: &Sender<Message>, stopped: &Receiver<()>, timing: Timing, mut sleep_watch: SleepWatch, excludes: &Mutex<Vec<String>>) {
     let mut stream = Some(stream);
     let mut failing_since: Option<Instant> = None;
     loop {
         let wait = if stream.is_some() { timing.tick } else { timing.retry };
         if !matches!(stopped.recv_timeout(wait), Err(RecvTimeoutError::Timeout)) {
             return;
+        }
+        if let Some(ms) = sleep_watch.look((timing.wall_clock)(), Instant::now()) {
+            log::info!("system audio: the computer slept for {ms} ms");
+            let _ = tx.send(Message::Slept(ms));
         }
         if !backend.permission_held() {
             log::info!("system audio: the permission was taken back");
@@ -296,7 +337,9 @@ fn supervise(mut backend: Box<dyn Backend>, stream: Box<dyn Stream>, tx: &Sender
             return;
         }
         if let Some(open) = &mut stream {
-            if open.still_good() {
+            let good = open.still_good();
+            *excludes.lock() = backend.excludes();
+            if good {
                 continue;
             }
             log::info!("system audio: the stream opens again");
@@ -307,6 +350,8 @@ fn supervise(mut backend: Box<dyn Backend>, stream: Box<dyn Stream>, tx: &Sender
             Ok(opened) => {
                 stream = Some(opened);
                 failing_since = None;
+                *excludes.lock() = backend.excludes();
+                let _ = tx.send(Message::Reopened);
             }
             Err(error) => {
                 let since = *failing_since.get_or_insert_with(Instant::now);
@@ -365,6 +410,19 @@ impl Timeline {
         gap
     }
 
+    /// A new stream is there at the time `now`. Gives the gap, unless a frame of
+    /// the new stream came first. Silence goes on from now, so a stream with no
+    /// audio does not stop the times of the source.
+    fn reopened(&mut self, now: Duration) -> Option<u64> {
+        if !self.reopening {
+            return None;
+        }
+        self.reopening = false;
+        let gap = gap_ms(now.saturating_sub(self.end));
+        self.end = self.end.max(now);
+        Some(gap)
+    }
+
     /// No frame arrived for a while, and the time is now `now`.
     fn idle(&mut self, now: Duration) -> Idle {
         if self.reopening || self.ended {
@@ -409,6 +467,16 @@ impl WorkerHandle {
                             on_event(Event::Frame(Frame { samples: samples.to_vec(), level, time }));
                         }
                         Ok(Message::Reopening) => timeline.reopening = true,
+                        Ok(Message::Reopened) => {
+                            if let Some(ms) = timeline.reopened(clock::now()) {
+                                on_event(Event::Gap { ms });
+                            }
+                        }
+                        Ok(Message::Slept(ms)) => {
+                            if !timeline.ended {
+                                on_event(Event::Gap { ms });
+                            }
+                        }
                         Ok(Message::Ended(end)) => {
                             timeline.ended = true;
                             on_event(Event::Ended(end));
@@ -445,9 +513,7 @@ impl WorkerHandle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use parking_lot::Mutex;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
     const MS: Duration = Duration::from_millis(1);
 
@@ -462,6 +528,8 @@ mod tests {
         fail_open: AtomicBool,
         /// `open` says that the permission is gone.
         refuse_open: AtomicBool,
+        /// macOS did not let the tap add the process.
+        exclude_lost: AtomicBool,
         opened: AtomicUsize,
         closed: AtomicUsize,
         sink: Mutex<Option<FrameSink>>,
@@ -501,7 +569,7 @@ mod tests {
             Ok(Box::new(FakeStream(self.0.clone())))
         }
         fn excludes(&self) -> Vec<String> {
-            vec!["app".into()]
+            if self.0.exclude_lost.load(Ordering::SeqCst) { Vec::new() } else { vec!["app".into()] }
         }
     }
 
@@ -511,7 +579,7 @@ mod tests {
         }
     }
 
-    const FAST: Timing = Timing { tick: Duration::from_millis(2), retry: Duration::from_millis(2), give_up: Duration::from_millis(40) };
+    const FAST: Timing = Timing { tick: Duration::from_millis(2), retry: Duration::from_millis(2), give_up: Duration::from_millis(40), wall_clock: SystemTime::now };
     const NEVER_GIVE_UP: Timing = Timing { give_up: Duration::from_secs(3600), ..FAST };
 
     fn capture(fake: &Arc<Fake>, timing: Timing) -> (Capture, Receiver<Event>) {
@@ -522,8 +590,9 @@ mod tests {
 
     /// The next event that is not a frame of silence from the worker.
     fn next(rx: &Receiver<Event>) -> Event {
+        let deadline = Instant::now() + Duration::from_secs(30);
         loop {
-            let event = rx.recv_timeout(Duration::from_secs(30)).expect("an event comes");
+            let event = rx.recv_deadline(deadline).expect("an event comes");
             if !matches!(&event, Event::Frame(frame) if frame.level == 0.0) {
                 return event;
             }
@@ -585,6 +654,76 @@ mod tests {
         fake.frame();
         assert!(matches!(next(&rx), Event::Gap { .. }));
         assert!(matches!(next(&rx), Event::Frame(_)));
+    }
+
+    #[test]
+    fn a_new_stream_with_no_audio_gives_the_gap_and_the_silence_goes_on() {
+        let fake = Arc::new(Fake::default());
+        let (_capture, rx) = capture(&fake, NEVER_GIVE_UP);
+        fake.device_changed.store(true, Ordering::SeqCst);
+        eventually("the second stream opens", || fake.opened.load(Ordering::SeqCst) == 2);
+        // No frame of a stream in this test: the two events can only come from the open.
+        let mut gap = false;
+        loop {
+            match rx.recv_timeout(Duration::from_secs(30)).expect("an event comes") {
+                Event::Gap { .. } => gap = true,
+                Event::Frame(frame) if gap && frame.level == 0.0 => break,
+                Event::Frame(_) => {}
+                Event::Ended(end) => panic!("the capture ended: {end:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_frame_before_the_message_of_the_open_gives_one_gap() {
+        let mut timeline = Timeline::new(Duration::ZERO);
+        timeline.reopening = true;
+        assert_eq!(timeline.frame(MS * 500), Some(500));
+        assert_eq!(timeline.reopened(MS * 510), None);
+    }
+
+    #[test]
+    fn the_timeline_goes_on_after_a_new_stream_with_no_audio() {
+        let mut timeline = Timeline::new(Duration::ZERO);
+        timeline.reopening = true;
+        assert_eq!(timeline.idle(MS * 500), Idle::Nothing);
+        assert_eq!(timeline.reopened(MS * 500), Some(500));
+        assert_eq!(timeline.idle(MS * 600), Idle::Nothing, "the gap has the time up to the open");
+        let Idle::Silence(times) = timeline.idle(MS * 800) else { panic!("silence") };
+        assert_eq!(times.first(), Some(&(MS * 500)), "silence from the open on");
+    }
+
+    #[test]
+    fn the_sleep_watch_sees_a_wall_clock_that_runs_ahead() {
+        let (wall, steady) = (SystemTime::UNIX_EPOCH + Duration::from_secs(1000), Instant::now());
+        let mut watch = SleepWatch { wall, steady };
+        let after = Duration::from_millis(250);
+        assert_eq!(watch.look(wall + after, steady + after), None, "both clocks ran");
+        assert_eq!(watch.look(wall + after + Duration::from_secs(2), steady + after), None, "2 s is not more than the limit");
+        assert_eq!(watch.look(wall + after + Duration::from_secs(5), steady + after), Some(3000), "from the last look");
+        assert_eq!(watch.look(wall, steady + after), None, "a clock that goes back is no sleep");
+    }
+
+    #[test]
+    fn a_sleep_of_the_computer_gives_a_gap() {
+        static AHEAD: AtomicU64 = AtomicU64::new(0);
+        fn wall() -> SystemTime {
+            SystemTime::now() + Duration::from_secs(AHEAD.load(Ordering::SeqCst))
+        }
+        let fake = Arc::new(Fake::default());
+        let (_capture, rx) = capture(&fake, Timing { wall_clock: wall, ..NEVER_GIVE_UP });
+        AHEAD.store(3600, Ordering::SeqCst);
+        let Event::Gap { ms } = next(&rx) else { panic!("a gap") };
+        assert!((3_599_000..=3_601_000).contains(&ms), "{ms}");
+    }
+
+    #[test]
+    fn excludes_say_what_the_capture_leaves_out_now() {
+        let fake = Arc::new(Fake::default());
+        let (capture, _rx) = capture(&fake, NEVER_GIVE_UP);
+        assert_eq!(capture.excludes(), ["app"]);
+        fake.exclude_lost.store(true, Ordering::SeqCst);
+        eventually("the process is not in the list", || capture.excludes().is_empty());
     }
 
     #[test]
