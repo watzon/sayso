@@ -1,23 +1,47 @@
 //! Who is calling (`docs/sdk.md`, "Identity"). The host knows an app by its
 //! executable, not by a token and not by what the app says:
 //!
-//! - macOS: `LOCAL_PEERTOKEN` gives the audit token, and the code signature of
-//!   that process gives the team id and the identifier. An ad hoc or missing
-//!   signature gives the path of `proc_pidpath`. A signature that is not valid
-//!   gives no identity.
-//! - Linux: `SO_PEERCRED` gives the pid, then `/proc/<pid>/exe`. A file that
-//!   was deleted or replaced after the start gives no identity.
+//! The check runs on the process that wrote the first line of the connection,
+//! not on the process that connected: a program can connect, give the socket
+//! to a child, and then start an approved program. After that, a line from
+//! another process closes the connection (`docs/sdk.md`, "Security").
+//!
+//! - macOS: `LOCAL_PEERTOKEN` gives the audit token of the last writer, and the
+//!   code signature of that process gives the team id and the identifier. An
+//!   ad hoc or missing signature gives the path of `proc_pidpath_audittoken`.
+//!   A signature that is not valid gives no identity.
+//! - Linux: `SCM_CREDENTIALS` of each read gives the pid of the writer, then
+//!   `/proc/<pid>/exe`. A file that was deleted or replaced after the start,
+//!   another file at that path, and another PID namespace give no identity.
 //! - Windows: `GetNamedPipeClientProcessId`, then `QueryFullProcessImageNameW`,
 //!   made canonical with `GetFinalPathNameByHandleW`.
 
 use std::path::{Path, PathBuf};
 
-/// The other end of a connection. Only the host makes one.
+/// The process that wrote a line. Only the host makes one.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Peer {
-    #[cfg(unix)]
-    pub(crate) stream: std::os::unix::net::UnixStream,
+    /// `audit_token_t`. It changes with an exec, and the pid does not.
+    #[cfg(target_os = "macos")]
+    pub(crate) token: [u32; 8],
+    #[cfg(target_os = "linux")]
+    pub(crate) pid: libc::pid_t,
     #[cfg(windows)]
-    pub(crate) pipe: std::sync::Arc<crate::transport::windows::Pipe>,
+    pub(crate) pid: u32,
+}
+
+impl Peer {
+    /// True when both come from one process. On macOS also from one exec of it.
+    pub(crate) fn same_process(&self, other: &Peer) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            (self.token[5], self.token[7]) == (other.token[5], other.token[7])
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            self == other
+        }
+    }
 }
 
 /// How the host knows an app, and how `apps.toml` keeps it.
@@ -62,7 +86,8 @@ impl Caller {
 /// Finds the process at the other end of a connection. A trait, so tests can
 /// give the host another identity.
 pub trait Identify: Send + Sync {
-    /// The identity of the peer. An error says why it has none: the host
+    /// The identity of the process that wrote the first line of a connection.
+    /// An error says why it has none: the host
     /// refuses the connection with `not_approved` and asks no question.
     fn identify(&self, peer: &Peer) -> Result<Caller, String>;
 }
@@ -132,26 +157,31 @@ fn deleted_link(link: &Path) -> bool {
 #[cfg(target_os = "linux")]
 mod system {
     use super::{Caller, Peer, deleted_link};
-    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::MetadataExt;
 
     pub fn identify(peer: &Peer) -> Result<Caller, String> {
-        let mut credentials: libc::ucred = unsafe { std::mem::zeroed() };
-        let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;
-        // SAFETY: the socket is open, and `credentials` has the size in `len`.
-        let result = unsafe { libc::getsockopt(peer.stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&raw mut credentials).cast(), &mut len) };
-        if result != 0 {
-            return Err(format!("no peer credentials: {}", std::io::Error::last_os_error()));
-        }
-        let link = std::fs::read_link(format!("/proc/{}/exe", credentials.pid)).map_err(|e| format!("no /proc/{}/exe: {e}", credentials.pid))?;
+        let exe = format!("/proc/{}/exe", peer.pid);
+        let link = std::fs::read_link(&exe).map_err(|e| format!("no {exe}: {e}"))?;
         if deleted_link(&link) {
             return Err(format!("{} was deleted or replaced after it started", link.display()));
+        }
+        // Who has a capability in a PID namespace can write the pid of another
+        // process of it in `SCM_CREDENTIALS`. In the namespace of the host, only the true pid passes.
+        let namespace = |pid: &str| std::fs::read_link(format!("/proc/{pid}/ns/pid")).map_err(|e| format!("no PID namespace of {pid}: {e}"));
+        if namespace(&peer.pid.to_string())? != namespace("self")? {
+            return Err(format!("process {} is in another PID namespace", peer.pid));
+        }
+        // A private mount namespace can show another file at the path of an approved app.
+        let file_of = |path: &std::path::Path| std::fs::metadata(path).map(|meta| (meta.dev(), meta.ino())).map_err(|e| format!("cannot read {}: {e}", path.display()));
+        if file_of(exe.as_ref())? != file_of(&link)? {
+            return Err(format!("process {} does not run the file at {}", peer.pid, link.display()));
         }
         Ok(Caller::from_path(link))
     }
 }
 
 #[cfg(target_os = "macos")]
-mod system {
+pub(crate) mod system {
     use super::{Caller, Identity, Path, Peer, clean_name, is_interpreter, signer_name};
     use core_foundation::array::{CFArray, CFArrayRef};
     use core_foundation::base::TCFType;
@@ -165,6 +195,7 @@ mod system {
     use std::ffi::c_void;
     use std::os::fd::AsRawFd;
     use std::os::unix::ffi::OsStringExt;
+    use std::os::unix::net::UnixStream;
     use std::path::PathBuf;
     use std::str::FromStr;
 
@@ -184,21 +215,29 @@ mod system {
         fn SecCodeCopySigningInformation(code: *const c_void, flags: u32, information: *mut CFDictionaryRef) -> i32;
     }
 
-    fn audit_token(peer: &Peer) -> Result<AuditToken, String> {
+    unsafe extern "C" {
+        fn proc_pidpath_audittoken(token: *mut AuditToken, buffer: *mut c_void, size: u32) -> libc::c_int;
+    }
+
+    /// The process that wrote to `stream` last.
+    pub fn last_writer(stream: &UnixStream) -> Result<Peer, String> {
         let mut token: AuditToken = [0; 8];
         let mut len = std::mem::size_of::<AuditToken>() as libc::socklen_t;
         // SAFETY: the socket is open, and `token` has the size in `len`.
-        let result = unsafe { libc::getsockopt(peer.stream.as_raw_fd(), libc::SOL_LOCAL, libc::LOCAL_PEERTOKEN, token.as_mut_ptr().cast(), &mut len) };
+        let result = unsafe { libc::getsockopt(stream.as_raw_fd(), libc::SOL_LOCAL, libc::LOCAL_PEERTOKEN, token.as_mut_ptr().cast(), &mut len) };
         if result != 0 {
             return Err(format!("no audit token: {}", std::io::Error::last_os_error()));
         }
-        Ok(token)
+        Ok(Peer { token })
     }
 
-    fn executable(pid: libc::c_int) -> Result<PathBuf, String> {
+    /// The path of the process with this token. A process that did an exec
+    /// after the token gets an error, also when the pid is the same.
+    fn executable(mut token: AuditToken) -> Result<PathBuf, String> {
+        let pid = token[5];
         let mut buffer = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
-        // SAFETY: the buffer has the size that the call gets.
-        let len = unsafe { libc::proc_pidpath(pid, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
+        // SAFETY: the buffer has the size that the call gets, and the token lives for the call.
+        let len = unsafe { proc_pidpath_audittoken(&mut token, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
         if len <= 0 {
             return Err(format!("no path for pid {pid}: {}", std::io::Error::last_os_error()));
         }
@@ -237,8 +276,8 @@ mod system {
     }
 
     pub fn identify(peer: &Peer) -> Result<Caller, String> {
-        let token = audit_token(peer)?;
-        let executable = executable(token[5] as libc::c_int)?;
+        let token = peer.token;
+        let executable = executable(token)?;
         let bytes: Vec<u8> = token.iter().flat_map(|part| part.to_ne_bytes()).collect();
         let data = CFData::from_buffer(&bytes);
         let mut attributes = GuestAttributes::new();
@@ -300,7 +339,7 @@ mod system {
 }
 
 #[cfg(windows)]
-mod system {
+pub(crate) mod system {
     use super::{Caller, Peer};
     use std::os::windows::ffi::{OsStrExt, OsStringExt};
     use std::path::PathBuf;
@@ -309,14 +348,21 @@ mod system {
     use windows_sys::Win32::System::Pipes::GetNamedPipeClientProcessId;
     use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW};
 
+    /// The client of `pipe`. The pipe keeps the pid of the process that connected.
+    pub fn client(pipe: &crate::transport::windows::Pipe) -> Result<Peer, String> {
+        let mut pid = 0u32;
+        // SAFETY: the pipe is open for this call.
+        if unsafe { GetNamedPipeClientProcessId(pipe.handle(), &mut pid) } == 0 {
+            return Err(format!("no client process: {}", std::io::Error::last_os_error()));
+        }
+        Ok(Peer { pid })
+    }
+
     fn image_path(peer: &Peer) -> Result<PathBuf, String> {
-        // SAFETY: the pipe and the process handle are open for these calls,
-        // and the buffer has the size in `len`.
+        let pid = peer.pid;
+        // SAFETY: the process handle is open for these calls, and the buffer
+        // has the size in `len`.
         unsafe {
-            let mut pid = 0u32;
-            if GetNamedPipeClientProcessId(peer.pipe.handle(), &mut pid) == 0 {
-                return Err(format!("no client process: {}", std::io::Error::last_os_error()));
-            }
             let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
             if process.is_null() {
                 return Err(format!("cannot open process {pid}: {}", std::io::Error::last_os_error()));

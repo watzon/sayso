@@ -7,10 +7,10 @@
 //! request on the same connection.
 
 use crate::approval::{self, HelloStep};
-use crate::identity::Caller;
+use crate::identity::{Caller, Peer};
 use crate::responder::{Notifier, Outgoing, Responder};
 use crate::transport::Conn;
-use crate::{Peer, Shared};
+use crate::Shared;
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use sayso_protocol::{Capability, DecodeError, Decoded, ErrorCode, ErrorReply, Event, Hello, Kind, Reply, Request, Subscribe, SubscribeReply, decode, encode};
@@ -84,15 +84,7 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
         connections.insert(number, Entry::new(outgoing.clone(), writer));
     }
 
-    let caller = identify(shared, &peer);
-    drop(peer);
-    if let Some(caller) = &caller {
-        log::info!("host: {} connected", caller.name);
-        if let Some(entry) = shared.connections.lock().get_mut(&number) {
-            entry.app_id = Some(caller.identity.id());
-        }
-    }
-    let connection = Connection { shared, number, caller, notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
+    let mut connection = Connection { shared, number, caller: None, writer: None, notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
     let mut reader = BufReader::new(reader);
     let mut line = Vec::new();
     loop {
@@ -113,6 +105,10 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
         let text = text.trim_end_matches(['\n', '\r']);
         if text.trim().is_empty() {
             continue;
+        }
+        // After the read: the system knows the writer of the line only now.
+        if !connection.check_writer(peer()) {
+            break;
         }
         if connection.handle(text) {
             break;
@@ -155,23 +151,16 @@ fn write_loop(mut writer: Box<dyn Write + Send>, messages: &Receiver<Outgoing>, 
     closer();
 }
 
-/// The app at the other end. None: the system gives no identity that the
-/// host can trust, and the app gets `not_approved` with no question.
-fn identify(shared: &Shared, peer: &Peer) -> Option<Caller> {
-    match shared.identify.identify(peer) {
-        Ok(caller) => Some(caller),
-        Err(e) => {
-            log::warn!("host: a program has no identity: {e}");
-            None
-        }
-    }
-}
-
 struct Connection<'a> {
     shared: &'a Arc<Shared>,
     /// The number of the connection in the host.
     number: u64,
+    /// The app, from its first line. None before it, and when the system gives
+    /// no identity that the host can trust: the app gets `not_approved` with
+    /// no question.
     caller: Option<Caller>,
+    /// The process that wrote the first line.
+    writer: Option<Peer>,
     notifier: Notifier,
     /// The jobs that this connection started.
     jobs: Mutex<HashSet<u64>>,
@@ -184,6 +173,46 @@ struct Connection<'a> {
 impl Connection<'_> {
     fn responder(&self, id: Option<&str>) -> Responder {
         Responder::new(id.map(str::to_owned), self.notifier.clone())
+    }
+
+    /// The first line tells who the app is. A later line from another process
+    /// says false: the connection closes (`docs/sdk.md`, "Security").
+    fn check_writer(&mut self, peer: Result<Peer, String>) -> bool {
+        let Some(writer) = &self.writer else {
+            self.identify(peer);
+            return true;
+        };
+        match peer {
+            Ok(peer) if writer.same_process(&peer) => true,
+            Ok(_) => {
+                log::warn!("host: another process wrote to the connection of {}, so it closes", self.caller.as_ref().map_or("?", |caller| &caller.name));
+                false
+            }
+            Err(e) => {
+                log::warn!("host: a connection closes: {e}");
+                false
+            }
+        }
+    }
+
+    fn identify(&mut self, peer: Result<Peer, String>) {
+        let caller = peer.and_then(|peer| {
+            let caller = self.shared.identify.identify(&peer)?;
+            self.writer = Some(peer);
+            Ok(caller)
+        });
+        let caller = match caller {
+            Ok(caller) => caller,
+            Err(e) => {
+                log::warn!("host: a program has no identity: {e}");
+                return;
+            }
+        };
+        log::info!("host: {} connected", caller.name);
+        if let Some(entry) = self.shared.connections.lock().get_mut(&self.number) {
+            entry.app_id = Some(caller.identity.id());
+        }
+        self.caller = Some(caller);
     }
 
     /// Answer one line, and say true when the connection closes after it.
