@@ -50,7 +50,16 @@ pub fn setup() -> Setup {
 
 /// This test program, as the system names it.
 pub fn this_program() -> PathBuf {
-    std::env::current_exe().unwrap().canonicalize().unwrap()
+    canonical(&std::env::current_exe().unwrap())
+}
+
+/// The path as the host knows it. `canonicalize` gives `\\?\C:\x` on Windows, and the host `C:\x`.
+pub fn canonical(path: &Path) -> PathBuf {
+    let path = path.canonicalize().unwrap();
+    match path.to_str().and_then(|text| text.strip_prefix(r"\\?\")) {
+        Some(short) if cfg!(windows) => PathBuf::from(short),
+        _ => path,
+    }
 }
 
 /// Approve the test program, with these grants.

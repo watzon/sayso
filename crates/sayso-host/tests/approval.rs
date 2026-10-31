@@ -684,7 +684,7 @@ mod real_signature {
         };
         services.wait_for_approvals(1);
         let question = services.approvals.lock()[0].clone();
-        assert_eq!(question.identity, Identity::Path(good.canonicalize().unwrap()));
+        assert_eq!(question.identity, Identity::Path(canonical(&good)));
         services.answer(true);
         let output = waiter.join().unwrap();
         assert!(output.status.success(), "{output:?}");
