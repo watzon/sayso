@@ -207,12 +207,27 @@ jobs:
         shell: bash
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/sayso-*-linux-${{ matrix.arch }}.deb xvfb xauth dbus mesa-vulkan-drivers
-          export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
-          status=0
-          timeout 30 dbus-run-session -- xvfb-run -a sayso || status=$?
+          export XDG_CACHE_HOME="$RUNNER_TEMP/cache" XDG_CONFIG_HOME="$RUNNER_TEMP/config"
           log="$XDG_CACHE_HOME/sayso/logs/sayso.log"
-          cat "$log"
-          [[ $status -eq 124 ]] || { echo "::error::Sayso stopped with status $status before the timeout."; exit 1; }
+          run_sayso() {
+            status=0
+            rm -f "$log"
+            timeout 30 dbus-run-session -- xvfb-run -a sayso || status=$?
+            cat "$log"
+            [[ $status -eq 124 ]] || { echo "::error::Sayso stopped with status $status before the timeout."; exit 1; }
+          }
+          # The first start binds no keys: that can open a system dialog.
+          run_sayso
+          for text in 'sayso-engine .* ready' 'Selected GPU adapter'; do
+            grep -qE "$text" "$log" || { echo "::error::The log does not have \"$text\"."; exit 1; }
+          done
+          if grep -q 'chords use' "$log"; then
+            echo "::error::Sayso bound the keys before the shortcut step of onboarding."
+            exit 1
+          fi
+          # After onboarding, it binds them at the start.
+          printf '[onboarding]\ncompleted = true\nstep = 6\n' > "$XDG_CONFIG_HOME/sayso/config.toml"
+          run_sayso
           for text in 'sayso-engine .* ready' 'Selected GPU adapter' 'chords use'; do
             grep -qE "$text" "$log" || { echo "::error::The log does not have \"$text\"."; exit 1; }
           done
