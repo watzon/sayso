@@ -5,11 +5,10 @@ use crate::local_engine::LocalEngine;
 use crate::local_models::LocalModels;
 use crate::protocol::{self, ErrorCode, ErrorReply, ModelState};
 use crate::{Engine, ModelChoices, Timing, paths};
-use crossbeam_channel::unbounded;
-use sayso_capture::mic;
+use sayso_capture::live::LiveMicrophone;
 use sayso_engine_sdk::{EngineOptions, Stderr};
 use sayso_speech::jobs::{DictationGate, JobQueue, JobRunner};
-use sayso_speech::live::{LiveDeps, LiveError, LiveSessions, MicFeed, Microphone, Owner, RecordingFolder};
+use sayso_speech::live::{LiveDeps, LiveError, LiveSessions, Owner, RecordingFolder};
 use sayso_speech::{EventSink, JobSpec, SessionSpec};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,7 +52,8 @@ impl LocalRun {
         let recordings = recordings_folder();
         let live = LiveSessions::new(LiveDeps {
             engine: adapter.clone(),
-            microphone: Some(Arc::new(AppMicrophone)),
+            microphone: Some(Arc::new(LiveMicrophone { device: None })),
+            system_audio: None,
             gate,
             models: adapter.clone(),
             recordings: Arc::new(RecordingFolder::new(recordings.clone())),
@@ -94,7 +94,7 @@ impl LocalRun {
     }
 
     pub fn start_session(&self, app: &str, spec: SessionSpec, sink: Arc<dyn EventSink>) -> Result<u64, LiveError> {
-        self.live.start(Owner { connection: CONNECTION, app_id: app.to_string() }, spec, sink)
+        self.live.start(Owner { connection: CONNECTION, app_id: app.to_string(), pid: None }, spec, sink).map(|started| started.session)
     }
 
     pub fn audio(&self, session: u64, pcm: &str) -> Result<(), LiveError> {
@@ -116,40 +116,4 @@ impl Drop for LocalRun {
 
 fn failed(message: String) -> ErrorReply {
     ErrorReply { code: None, message, capability: None, reason: None }
-}
-
-/// The default microphone, with `sayso-capture`, in the process of the app. On macOS the
-/// system asks the user for the app, so the app needs `NSMicrophoneUsageDescription`.
-struct AppMicrophone;
-
-impl Microphone for AppMicrophone {
-    fn open(&self) -> Result<MicFeed, String> {
-        let (frames_out, frames) = unbounded();
-        // A stream of `cpal` stays on the thread that made it. Dropping the lease ends this thread.
-        let (lease, lease_end) = crossbeam_channel::bounded::<()>(0);
-        let (started_out, started) = crossbeam_channel::bounded(1);
-        std::thread::Builder::new()
-            .name("sayso-sdk-mic".into())
-            .spawn(move || {
-                let capture = mic::start(
-                    None,
-                    Box::new(move |frame: mic::Frame| {
-                        let _ = frames_out.send(frame.samples);
-                    }),
-                );
-                match capture {
-                    Ok(capture) => {
-                        let _ = started_out.send(Ok(()));
-                        let _ = lease_end.recv();
-                        drop(capture);
-                    }
-                    Err(e) => {
-                        let _ = started_out.send(Err(e.to_string()));
-                    }
-                }
-            })
-            .map_err(|e| e.to_string())?;
-        started.recv().map_err(|e| e.to_string())??;
-        Ok(MicFeed { frames, lease: Box::new(lease) })
-    }
 }

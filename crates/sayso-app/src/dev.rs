@@ -202,7 +202,7 @@ fn start_fake_capture(
                 vec![0.0; frame]
             };
             let rms = (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len().max(1) as f32).sqrt();
-            on_frame(sayso_platform::AudioFrame { level: (rms * 6.0).min(1.0), samples: chunk });
+            on_frame(sayso_platform::AudioFrame { level: (rms * 6.0).min(1.0), samples: chunk, time: sayso_capture::clock::now() });
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
     });

@@ -62,7 +62,7 @@ impl AudioCapture for CpalAudio {
         if (self.microphone_status)() == PermissionState::Denied {
             return Err(PlatformError::PermissionDenied(Permission::Microphone));
         }
-        let on_frame = Box::new(move |frame: mic::Frame| on_frame(AudioFrame { samples: frame.samples, level: frame.level }));
+        let on_frame = Box::new(move |frame: mic::Frame| on_frame(AudioFrame { samples: frame.samples, level: frame.level, time: frame.time }));
         let capture = mic::start(device_id, on_frame).map_err(platform_error)?;
         Ok(Box::new(Handle { _capture: capture }))
     }

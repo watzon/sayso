@@ -81,6 +81,18 @@ pub struct Caller {
     pub interpreter: bool,
 }
 
+impl Peer {
+    /// The process, for the capture of the system audio to leave out.
+    pub(crate) fn pid(&self) -> Option<u32> {
+        #[cfg(target_os = "macos")]
+        return Some(self.token[5]);
+        #[cfg(any(target_os = "linux", windows))]
+        return Some(self.pid as u32);
+        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+        None
+    }
+}
+
 impl Caller {
     /// A caller with the path of `executable` as its identity.
     pub fn from_path(executable: PathBuf) -> Caller {

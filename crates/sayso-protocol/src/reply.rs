@@ -101,6 +101,10 @@ pub struct JobReply {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionReply {
     pub session: u64,
+    /// What the capture of the source `system` leaves out: `sayso`, `app`, or
+    /// both. Empty when the system does not allow it, or without that source.
+    #[serde(default)]
+    pub excludes: Vec<String>,
 }
 
 /// `ok` to `session_stop`.

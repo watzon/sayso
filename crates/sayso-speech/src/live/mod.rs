@@ -2,7 +2,7 @@
 //! `session_audio`, `session_stop`, and "Scheduling", "Capture", "Lifecycle",
 //! "Privacy"): audio that is transcribed for an app while it arrives.
 //!
-//! A session has one or more sources (`mic`, `client`), and each source is a
+//! A session has one or more sources (`mic`, `system`, `client`), and each source is a
 //! pipeline of its own (`source`): the audio goes to the recording (a WAV
 //! file), to a preview stream of the engine when the session has a streaming
 //! model (`partial` events), and to a VAD (a VAD session of the engine, or
@@ -14,11 +14,12 @@
 //!
 //! The parts of this module do not know the connection: the events go to an
 //! [`EventSink`] (the same type as for jobs), the engine is a
-//! [`SpeechEngine`], the microphone a [`Microphone`], dictation first is a
-//! [`Gate`] (the [`DictationGate`](crate::DictationGate) of jobs), and the
+//! [`SpeechEngine`], the microphone a [`Microphone`], the system audio a
+//! [`SystemAudio`], dictation first is a [`Gate`] (the [`DictationGate`](crate::DictationGate) of jobs), and the
 //! recordings go where [`Recordings`] says. Sayso gives them in
 //! `sayso-host` (`live_requests.rs`).
 
+mod echo;
 mod source;
 mod wav;
 
@@ -30,10 +31,12 @@ use crate::{EngineError, EventSink, ModelId, ModelRetention, SpeechEngine};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use sayso_protocol::{ErrorCode, Event, Reply, Source, SpeakersEvent};
-use source::{SourcePlan, SourceResult, SourceRun, SourceVad};
+use echo::EchoGate;
+use source::{EchoRole, SessionClock, SourcePlan, SourceResult, SourceRun, SourceVad};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
 use wav::WavWriter;
 
 /// The first engine session id of live sessions.
@@ -50,14 +53,81 @@ pub trait Microphone: Send + Sync {
     /// Start to get the audio of the microphone. The frames (16 kHz mono)
     /// come in the order of capture, from now on, and never wait for the
     /// receiver. Dropping the feed stops them.
-    fn open(&self) -> Result<MicFeed, String>;
+    fn open(&self) -> Result<AudioFeed, OpenError>;
 }
 
-/// The audio of the microphone for one source.
-pub struct MicFeed {
-    pub frames: Receiver<Vec<f32>>,
-    /// Dropping it gives the microphone back; the channel then closes after the last frame.
+/// The system audio: the sound of other apps and calls (`sayso_capture::live`).
+pub trait SystemAudio: Send + Sync {
+    /// Start to get the system audio, as [`Microphone::open`] does. It can
+    /// wait for the answer of the user to a question of the system. `app_pid`
+    /// is the process of the app that asked, for the capture to leave out.
+    fn open(&self, app_pid: Option<u32>) -> Result<AudioFeed, OpenError>;
+}
+
+/// The audio of one captured source.
+pub struct AudioFeed {
+    pub items: Receiver<FeedItem>,
+    /// Dropping it ends the capture; the channel then closes after the last frame.
     pub lease: Box<dyn Send>,
+    /// What the capture leaves out, for the reply of `session_start`.
+    pub excludes: Vec<String>,
+}
+
+/// What a capture gives, in order.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FeedItem {
+    Audio(CapturedAudio),
+    /// The capture lost this much audio, for example at a change of the device.
+    Gap { ms: u64 },
+    /// The capture ended before the session. No more items come.
+    Ended(SourceEnd),
+}
+
+/// 16 kHz mono samples.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CapturedAudio {
+    pub samples: Vec<f32>,
+    /// The time of the first sample on the capture clock, which the sources of
+    /// one session share. None: this source has no such clock, and its times
+    /// are its samples.
+    pub time: Option<Duration>,
+}
+
+impl CapturedAudio {
+    /// Samples without a time on the capture clock.
+    pub fn untimed(samples: Vec<f32>) -> CapturedAudio {
+        CapturedAudio { samples, time: None }
+    }
+}
+
+/// Why a capture ended before the session.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SourceEnd {
+    /// The user took the permission of the system back.
+    Permission,
+    /// The capture failed and did not come back. The text is English.
+    Failed(String),
+}
+
+/// Why a capture did not start. The text is English.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OpenError {
+    /// The system refused the permission.
+    Permission(String),
+    /// This system cannot capture it.
+    Unsupported(String),
+    Failed(String),
+}
+
+impl OpenError {
+    fn live(self, source: &Source) -> LiveError {
+        let (code, message) = match self {
+            OpenError::Permission(message) => (Some(ErrorCode::Permission), message),
+            OpenError::Unsupported(message) => (Some(ErrorCode::Unsupported), message),
+            OpenError::Failed(message) => (None, message),
+        };
+        LiveError::new(code, format!("the source {source} did not start: {message}"))
+    }
 }
 
 /// Tells the app which live session runs, for the menu bar.
@@ -115,6 +185,17 @@ impl SessionSpec {
 pub struct Owner {
     pub connection: u64,
     pub app_id: String,
+    /// The process of the app, when it is not this process. The capture of the
+    /// system audio leaves it out.
+    pub pid: Option<u32>,
+}
+
+/// A session that started.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Started {
+    pub session: u64,
+    /// What the capture of the system audio leaves out.
+    pub excludes: Vec<String>,
 }
 
 /// What the sessions need from the app.
@@ -122,6 +203,8 @@ pub struct LiveDeps {
     pub engine: Arc<dyn SpeechEngine>,
     /// None when this app cannot capture the microphone.
     pub microphone: Option<Arc<dyn Microphone>>,
+    /// None when this app cannot capture the system audio.
+    pub system_audio: Option<Arc<dyn SystemAudio>>,
     pub gate: Arc<dyn Gate>,
     /// The models that a session uses stay in memory while it runs (the
     /// same use as jobs, for the memory policy of the app).
@@ -231,7 +314,8 @@ struct Running {
     info: LiveInfo,
     owner: Owner,
     /// The audio of the source `client`, while it is open.
-    client: Option<Sender<Vec<f32>>>,
+    client: Option<Sender<FeedItem>>,
+    excludes: Vec<String>,
     /// Held until the stop.
     stopper: Option<Stopper>,
 }
@@ -239,13 +323,15 @@ struct Running {
 /// What a stop needs, taken out of the slot so the stop does not hold its lock.
 struct Stopper {
     sources: Vec<SourceRun>,
-    /// The microphone leases. Dropping them ends the audio of the source `mic`.
+    /// The leases of the captures. Dropping them ends the audio of the sources `mic` and `system`.
     leases: Vec<Box<dyn Send>>,
     cancel: Arc<AtomicBool>,
     sink: Arc<dyn EventSink>,
     diarization: Option<ModelId>,
     /// The recordings to delete after the stop (no `record_to`).
     temporary: Vec<PathBuf>,
+    /// The echo rule, when the session has both `mic` and `system`.
+    echo: Option<Arc<EchoGate>>,
     /// The models of the session, until it ends.
     _models: Box<dyn Send>,
 }
@@ -277,9 +363,10 @@ impl LiveSessions {
     }
 
     /// `session_start`. Gives the id of the session; its events go to `sink`.
-    /// `busy` when a session of any app runs. Blocks while the models load.
-    pub fn start(&self, owner: Owner, spec: SessionSpec, sink: Arc<dyn EventSink>) -> Result<u64, LiveError> {
-        check_sources(&spec.sources, self.inner.deps.microphone.is_some())?;
+    /// `busy` when a session of any app runs. Blocks while the models load, and
+    /// while the user answers a question of the system about the capture.
+    pub fn start(&self, owner: Owner, spec: SessionSpec, sink: Arc<dyn EventSink>) -> Result<Started, LiveError> {
+        check_sources(&spec.sources, self.inner.deps.microphone.is_some(), self.inner.deps.system_audio.is_some())?;
         {
             let mut slot = self.inner.slot.lock();
             if !matches!(*slot, Slot::Free) {
@@ -291,10 +378,11 @@ impl LiveSessions {
         match self.open(session, &owner, &spec, sink) {
             Ok(running) => {
                 let info = running.info.clone();
+                let excludes = running.excludes.clone();
                 *self.inner.slot.lock() = Slot::Running(Box::new(running));
                 log::info!("host: live session {session} of {} started with {:?}", owner.app_id, spec.sources);
                 self.notify(Some(&info));
-                Ok(session)
+                Ok(Started { session, excludes })
             }
             Err(e) => {
                 *self.inner.slot.lock() = Slot::Free;
@@ -323,6 +411,9 @@ impl LiveSessions {
         }
 
         let cancel = Arc::new(AtomicBool::new(false));
+        let clock = Arc::new(SessionClock::new());
+        let echo = (spec.sources.contains(&Source::Mic) && spec.sources.contains(&Source::System)).then(|| Arc::new(EchoGate::new(session, sink.clone())));
+        let mut excludes = Vec::new();
         for (source, path) in spec.sources.iter().zip(&recordings) {
             // Watch before the engine sessions open, so no event is lost.
             let events = engine.events();
@@ -348,9 +439,16 @@ impl LiveSessions {
             let audio = match source {
                 Source::Mic => {
                     let Some(microphone) = &deps.microphone else { unreachable!("checked in check_sources") };
-                    let feed = microphone.open().map_err(|e| LiveError::new(None, format!("the microphone did not start: {e}")))?;
+                    let feed = microphone.open().map_err(|e| e.live(source))?;
                     opened.leases.push(feed.lease);
-                    feed.frames
+                    feed.items
+                }
+                Source::System => {
+                    let Some(system) = &deps.system_audio else { unreachable!("checked in check_sources") };
+                    let feed = system.open(owner.pid).map_err(|e| e.live(source))?;
+                    opened.leases.push(feed.lease);
+                    excludes = feed.excludes;
+                    feed.items
                 }
                 _ => {
                     let (tx, rx) = unbounded();
@@ -358,7 +456,12 @@ impl LiveSessions {
                     rx
                 }
             };
-            let plan = SourcePlan { session, source: source.clone(), final_model: spec.final_model.clone(), language: spec.language.clone(), preview, vad, wav };
+            let role = echo.as_ref().and_then(|gate| match source {
+                Source::Mic => Some(EchoRole::Mic(gate.clone())),
+                Source::System => Some(EchoRole::System(gate.clone())),
+                _ => None,
+            });
+            let plan = SourcePlan { session, source: source.clone(), final_model: spec.final_model.clone(), language: spec.language.clone(), preview, vad, wav, clock: clock.clone(), echo: role };
             let run = SourceRun::start(plan, audio, events, engine.clone(), sink.clone(), deps.gate.clone(), cancel.clone()).map_err(|e| LiveError::new(None, format!("cannot start a thread: {e}")))?;
             // The source ends its engine sessions now.
             opened.streams.clear();
@@ -371,7 +474,8 @@ impl LiveSessions {
             info: LiveInfo { session, app_id: owner.app_id.clone(), sources: spec.sources.clone(), captures_mic, stopping: false },
             owner: owner.clone(),
             client: kept.client,
-            stopper: Some(Stopper { sources: kept.sources, leases: kept.leases, cancel, sink, diarization: spec.diarization.clone(), temporary: kept.temporary, _models: held }),
+            excludes,
+            stopper: Some(Stopper { sources: kept.sources, leases: kept.leases, cancel, sink, diarization: spec.diarization.clone(), temporary: kept.temporary, echo, _models: held }),
         })
     }
 
@@ -390,7 +494,7 @@ impl LiveSessions {
             return Err(LiveError::new(Some(ErrorCode::BadRequest), message));
         };
         // The receiver lives until the stop closes this sender.
-        let _ = client.send(samples);
+        let _ = client.send(FeedItem::Audio(CapturedAudio::untimed(samples)));
         Ok(())
     }
 
@@ -491,10 +595,17 @@ impl LiveSessions {
     }
 
     fn finish(&self, session: u64, stopper: Stopper, cancelled: bool) -> Result<String, LiveError> {
-        let Stopper { sources, leases, cancel: _, sink, diarization, temporary, _models } = stopper;
-        // The audio of the microphone ends here, and the client sender went with the slot.
+        let Stopper { sources, leases, cancel: _, sink, diarization, temporary, echo, _models } = stopper;
+        // The audio of the captures ends here, and the client sender went with the slot.
         drop(leases);
-        let results: Vec<SourceResult> = sources.into_iter().filter_map(SourceRun::join).collect();
+        let mut results: Vec<SourceResult> = sources.into_iter().filter_map(SourceRun::join).collect();
+        if let Some(echo) = echo {
+            // The rule sends what still waits, and it has the segments that stayed.
+            echo.system_ended();
+            if let Some(mic) = results.iter_mut().find(|result| result.source == Source::Mic) {
+                mic.segments = echo.kept();
+            }
+        }
         let outcome = if cancelled { Ok(String::new()) } else { self.speakers_and_text(session, &results, diarization.as_ref(), &*sink) };
         for path in temporary {
             if let Err(e) = std::fs::remove_file(&path)
@@ -558,10 +669,9 @@ fn unknown_session(session: u64) -> LiveError {
     LiveError::new(Some(ErrorCode::BadRequest), format!("no live session {session} of this connection runs"))
 }
 
-/// The sources that this version can capture: `mic` (when the app has a
-/// microphone) and `client`, each at most once. The source `system` comes
-/// with the system audio of `sayso-capture` (`docs/sdk.md`, step 13).
-fn check_sources(sources: &[Source], has_microphone: bool) -> Result<(), LiveError> {
+/// The sources that this version can capture: `mic` and `system` (when the
+/// app can capture them) and `client`, each at most once.
+fn check_sources(sources: &[Source], has_microphone: bool, has_system_audio: bool) -> Result<(), LiveError> {
     if sources.is_empty() {
         return Err(LiveError::new(Some(ErrorCode::BadRequest), "a live session needs at least one source"));
     }
@@ -571,6 +681,7 @@ fn check_sources(sources: &[Source], has_microphone: bool) -> Result<(), LiveErr
         }
         match source {
             Source::Mic if has_microphone => {}
+            Source::System if has_system_audio => {}
             Source::Client => {}
             Source::Mic | Source::System => return Err(LiveError::new(Some(ErrorCode::Unsupported), format!("this version of Sayso cannot capture the source {source}"))),
             Source::Other(other) => return Err(LiveError::new(Some(ErrorCode::BadRequest), format!("unknown source {other}"))),
@@ -584,7 +695,7 @@ fn check_sources(sources: &[Source], has_microphone: bool) -> Result<(), LiveErr
 struct Opened {
     engine: Arc<dyn SpeechEngine>,
     sources: Vec<SourceRun>,
-    client: Option<Sender<Vec<f32>>>,
+    client: Option<Sender<FeedItem>>,
     streams: Vec<u64>,
     vads: Vec<u64>,
     leases: Vec<Box<dyn Send>>,
@@ -595,7 +706,7 @@ struct Opened {
 /// What a session keeps of a start that worked.
 struct Kept {
     sources: Vec<SourceRun>,
-    client: Option<Sender<Vec<f32>>>,
+    client: Option<Sender<FeedItem>>,
     leases: Vec<Box<dyn Send>>,
     temporary: Vec<PathBuf>,
 }

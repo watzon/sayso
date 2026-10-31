@@ -68,7 +68,6 @@ libc = { version = "0.2" }
 objc2 = { version = "0.6" }
 objc2-core-foundation = { version = "0.3" }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["CGColor", "CGColorSpace", "CGContext", "CGDirectDisplay", "CGEventTypes", "CGFont", "CGImage", "CGPath", "objc2", "std"] }
-objc2-foundation = { version = "0.3" }
 once_cell = { version = "1" }
 
 [target.aarch64-apple-darwin.build-dependencies]
@@ -79,7 +78,11 @@ bitflags = { version = "2", default-features = false, features = ["std"] }
 byteorder = { version = "1" }
 digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["mac", "std"] }
 digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid"] }
-futures-util = { version = "0.3", features = ["io"] }
+futures-channel = { version = "0.3", features = ["sink"] }
+futures-core = { version = "0.3" }
+futures-io = { version = "0.3" }
+futures-sink = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
 getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3", default-features = false, features = ["std", "wasm_js"] }
 libc = { version = "0.2", features = ["extra_traits"] }
 linux-raw-sys = { version = "0.12", default-features = false, features = ["auxvec", "elf", "errno", "general", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "system", "xdp"] }
@@ -88,6 +91,7 @@ once_cell = { version = "1" }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 quote = { version = "1" }
 rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "system", "time"] }
+slab = { version = "0.4" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
@@ -125,7 +129,11 @@ bitflags = { version = "2", default-features = false, features = ["std"] }
 byteorder = { version = "1" }
 digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["mac", "std"] }
 digest-a6292c17cd707f01 = { package = "digest", version = "0.11", features = ["alloc", "mac", "oid"] }
-futures-util = { version = "0.3", features = ["io"] }
+futures-channel = { version = "0.3", features = ["sink"] }
+futures-core = { version = "0.3" }
+futures-io = { version = "0.3" }
+futures-sink = { version = "0.3", default-features = false, features = ["std"] }
+futures-util = { version = "0.3", features = ["channel", "io", "sink"] }
 getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3", default-features = false, features = ["std", "wasm_js"] }
 libc = { version = "0.2", features = ["extra_traits"] }
 linux-raw-sys = { version = "0.12", default-features = false, features = ["auxvec", "elf", "errno", "general", "if_ether", "ioctl", "net", "netlink", "no_std", "prctl", "system", "xdp"] }
@@ -134,6 +142,7 @@ once_cell = { version = "1" }
 proc-macro2 = { version = "1", features = ["span-locations"] }
 quote = { version = "1" }
 rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "system", "time"] }
+slab = { version = "0.4" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
 syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }

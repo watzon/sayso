@@ -3,7 +3,8 @@
 //! Pipeline in the audio callback: convert samples to f32, mix to mono,
 //! resample to 16 kHz, cut into 20 ms frames, and queue each frame for the
 //! worker thread. The callback allocates nothing and takes no lock once its
-//! buffers are warm.
+//! buffers are warm. Each frame gets its time on the capture clock ([`crate::clock`])
+//! in the callback, so a slow `on_frame` does not move it.
 //!
 //! The worker thread computes the display level, copies the frame, and calls
 //! `on_frame`. So `on_frame` can take locks, grow the recording, and write to
@@ -15,6 +16,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Sample, SampleFormat, SizedSample};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, TrySendError, bounded};
 use sayso_speech::resample::StreamResampler;
+use crate::clock;
 use std::time::Duration;
 
 /// Output sample rate for the speech engine.
@@ -23,7 +25,9 @@ pub const TARGET_RATE: u32 = 16_000;
 pub const FRAME_SAMPLES: usize = 320;
 
 /// Frames that the queue between the audio callback and the worker holds: 20 s.
-const QUEUE_FRAMES: usize = 1_024;
+pub(crate) const QUEUE_FRAMES: usize = 1_024;
+/// The length of a frame.
+pub(crate) const FRAME_TIME: Duration = Duration::from_millis(20);
 /// How long `stop` waits for the worker to finish the frames in the queue.
 const WORKER_STOP_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -47,6 +51,10 @@ pub struct Frame {
     pub samples: Vec<f32>,
     /// RMS of this frame, 0.0 to 1.0, scaled for display.
     pub level: f32,
+    /// The time of the first sample on the capture clock ([`crate::clock`]).
+    /// It comes from the arrival of the audio, so it is right to within one
+    /// buffer of the device.
+    pub time: Duration,
 }
 
 /// Why the capture did not start.
@@ -98,7 +106,7 @@ pub fn downmix(interleaved: &[f32], channels: usize, out: &mut Vec<f32>) {
 }
 
 /// One 20 ms frame of 16 kHz mono samples.
-type RawFrame = [f32; FRAME_SAMPLES];
+pub(crate) type RawFrame = [f32; FRAME_SAMPLES];
 
 /// Collects samples and emits whole frames.
 struct Framer {
@@ -121,7 +129,7 @@ impl Framer {
 // A box would allocate in the callback, and `Stop` is sent once.
 #[allow(clippy::large_enum_variant)]
 enum Message {
-    Frame(RawFrame),
+    Frame(RawFrame, Duration),
     /// Sent after the last frame. The worker ends.
     Stop,
 }
@@ -136,7 +144,7 @@ struct FrameSink {
 impl FrameSink {
     fn push(&mut self, frame: &RawFrame) {
         // A frame is a plain copy, so the queue allocates nothing.
-        match self.tx.try_send(Message::Frame(*frame)) {
+        match self.tx.try_send(Message::Frame(*frame, clock::now().saturating_sub(FRAME_TIME))) {
             Ok(()) => {}
             Err(TrySendError::Full(message)) => {
                 // The worker is far behind. Wait for it: a wait costs a glitch at worst,
@@ -174,9 +182,9 @@ impl Worker {
         std::thread::Builder::new()
             .name("sayso-audio".into())
             .spawn(move || {
-                while let Ok(Message::Frame(samples)) = rx.recv() {
+                while let Ok(Message::Frame(samples, time)) = rx.recv() {
                     let level = display_level(rms(&samples));
-                    on_frame(Frame { samples: samples.to_vec(), level });
+                    on_frame(Frame { samples: samples.to_vec(), level, time });
                 }
                 let _ = done_tx.send(());
             })
@@ -197,7 +205,7 @@ impl Worker {
 }
 
 /// Everything the audio callback owns.
-struct Pipeline<F: FnMut(&RawFrame)> {
+pub(crate) struct Pipeline<F: FnMut(&RawFrame)> {
     channels: usize,
     resampler: StreamResampler,
     framer: Framer,
@@ -208,7 +216,7 @@ struct Pipeline<F: FnMut(&RawFrame)> {
 }
 
 impl<F: FnMut(&RawFrame)> Pipeline<F> {
-    fn new(channels: u16, in_rate: u32, on_frame: F) -> Self {
+    pub(crate) fn new(channels: u16, in_rate: u32, on_frame: F) -> Self {
         Self {
             channels: usize::from(channels.max(1)),
             resampler: StreamResampler::new(in_rate, TARGET_RATE),
@@ -220,7 +228,7 @@ impl<F: FnMut(&RawFrame)> Pipeline<F> {
         }
     }
 
-    fn push<T: Sample>(&mut self, data: &[T])
+    pub(crate) fn push<T: Sample>(&mut self, data: &[T])
     where
         f32: cpal::FromSample<T>,
     {
@@ -480,6 +488,23 @@ mod tests {
         let input = ramp(300 * FRAME_SAMPLES);
         let recording = record(&input, 640, 2, Duration::from_millis(1));
         assert!(recording == input, "{} of {} samples, or changed", recording.len(), input.len());
+    }
+
+    #[test]
+    fn frames_have_rising_times_from_the_callback_side() {
+        let times = std::sync::Arc::new(parking_lot::Mutex::new(Vec::<Duration>::new()));
+        let collected = times.clone();
+        // Later than the length of a frame, so the first time is not cut at zero.
+        std::thread::sleep(FRAME_TIME * 2);
+        let before = clock::now();
+        let (worker, mut sink) = Worker::start(Box::new(move |f| collected.lock().push(f.time))).unwrap();
+        sink.push(&[0.0; FRAME_SAMPLES]);
+        std::thread::sleep(Duration::from_millis(5));
+        sink.push(&[0.0; FRAME_SAMPLES]);
+        worker.finish();
+        let times = times.lock();
+        assert_eq!(times.len(), 2);
+        assert!(times[0] + FRAME_TIME >= before && times[1] > times[0], "{times:?}");
     }
 
     #[test]

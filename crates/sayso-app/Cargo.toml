@@ -22,6 +22,7 @@ sayso-transcribe.workspace = true
 sayso-ui.workspace = true
 sayso-update.workspace = true
 sayso-host.workspace = true
+sayso-capture.workspace = true
 sayso-protocol.workspace = true
 gpui-kit.workspace = true
 anyhow.workspace = true

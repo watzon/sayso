@@ -2,7 +2,7 @@
 //! request. Other events can come at any time.
 
 use crate::codec::tagged_kind;
-use crate::{ErrorCode, ModelState, Segment, Source, Turn};
+use crate::{ErrorCode, ModelState, Segment, Source, SourceEndReason, Turn};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -28,6 +28,20 @@ pub enum Event {
         code: Option<ErrorCode>,
     },
     Partial(PartialEvent),
+    /// A source of a live session lost audio, for example at a change of the
+    /// output device. The recording and the times of the source have silence there.
+    SourceGap {
+        session: u64,
+        source: Source,
+        ms: u64,
+    },
+    /// A source of a live session ended, and the other sources go on. The last
+    /// `segment` of the source comes before it.
+    SourceEnded {
+        session: u64,
+        source: Source,
+        reason: SourceEndReason,
+    },
     /// The user stopped the live session in Sayso, not the app. The last
     /// `segment` and `speakers` events come before it, and it is the end of
     /// the session: there is no reply to `session_stop`. The SDK also gives
@@ -53,6 +67,8 @@ tagged_kind!(Event {
     JobDone => "job_done",
     JobFailed => "job_failed",
     Partial => "partial",
+    SourceGap => "source_gap",
+    SourceEnded => "source_ended",
     SessionEnded => "session_ended",
     DictationDone => "dictation_done",
     HostClosing => "host_closing",
