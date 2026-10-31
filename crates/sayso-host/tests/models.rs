@@ -4,8 +4,9 @@
 use crossbeam_channel::Receiver;
 use sayso_core::models::{self, ModelId, ModelTask};
 use sayso_core::stt::{EngineEvent, EngineReason, ModelStatus};
-use sayso_extension::protocol::{self, ErrorCode, ListModelsReply, ModelState, Role};
-use sayso_extension::{Client, Event, Fields};
+use sayso_sdk::protocol::{self, ErrorCode, ListModelsReply, ModelState, Role};
+use sayso_sdk::Fields;
+use sayso_sdk::client::{Client, Event};
 use sayso_platform::EngineStart;
 use serde_json::json;
 use std::sync::Arc;

@@ -8,8 +8,8 @@ use parking_lot::Mutex;
 use sayso_core::config::Config;
 use sayso_core::models::{self, ModelId, ModelInfo, ModelTask};
 use sayso_core::stt::{self, Diarization, EngineEvent, ModelStatus, SessionOptions, SpeechPart, TimedTranscript, Transcript, Turn};
-use sayso_extension::protocol::{ErrorCode, Event as HostEvent, JobReply};
-use sayso_extension::{Client, Event};
+use sayso_sdk::protocol::{ErrorCode, Event as HostEvent, JobReply};
+use sayso_sdk::client::{Client, Event};
 use sayso_host::{DownloadQuestion, Host, HostServices};
 use sayso_platform::{PlatformError, Result, SttBackend};
 use serde_json::json;
@@ -411,7 +411,7 @@ fn jobs_need_their_capability_and_an_engine() {
     let path = world.wav("a.wav", 1_000, &[]);
     let error = refused(client.request("transcribe_file", fields(json!({"path": path}))));
     assert_eq!(error.code, Some(ErrorCode::Capability));
-    assert_eq!(error.capability, Some(sayso_extension::protocol::Capability::TranscribeFile));
+    assert_eq!(error.capability, Some(sayso_sdk::protocol::Capability::TranscribeFile));
     // An app can always cancel its own job, so this needs no grant.
     assert_eq!(refused(client.request("cancel_job", fields(json!({"job": 1})))).code, Some(ErrorCode::BadRequest));
 
@@ -518,7 +518,7 @@ fn a_grant_that_goes_ends_the_jobs_of_the_app_with_capability() {
     world.host.stop_work_without_grant();
     assert!(!world.host.holds().is_empty(), "the grant is still there");
 
-    world.host.apps().set_grant(&id(), &sayso_extension::protocol::Capability::TranscribeFile, false).unwrap();
+    world.host.apps().set_grant(&id(), &sayso_sdk::protocol::Capability::TranscribeFile, false).unwrap();
     world.host.stop_work_without_grant();
     let gone = |job| HostEvent::JobFailed { job, message: sayso_host::jobs::GRANT_GONE.into(), code: Some(ErrorCode::Capability) };
     assert_eq!(until_end(&events, running).last(), Some(&gone(running)));

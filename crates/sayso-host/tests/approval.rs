@@ -2,7 +2,7 @@
 //! with a fake answerer: what an app gets after each answer, the limits of the
 //! question, and a program with a broken signature.
 
-use sayso_extension::{AppHello, Client, Error};
+use sayso_sdk::client::{AppHello, Client, Error};
 use sayso_host::{Caller, Identity};
 use sayso_protocol::{Capability, ErrorCode};
 use serde_json::json;
@@ -627,7 +627,7 @@ fn example() -> PathBuf {
     let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
     let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
     let target = profile.parent().unwrap();
-    let built = std::process::Command::new(cargo).args(["build", "--quiet", "-p", "sayso-extension", "--example", "sayso-ext", "--manifest-path"]).arg(&manifest).arg("--target-dir").arg(target).status().unwrap();
+    let built = std::process::Command::new(cargo).args(["build", "--quiet", "-p", "sayso-sdk", "--example", "sayso-ext", "--manifest-path"]).arg(&manifest).arg("--target-dir").arg(target).status().unwrap();
     assert!(built.success());
     profile.join("examples/sayso-ext")
 }

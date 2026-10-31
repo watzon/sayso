@@ -5,8 +5,8 @@
 use sayso_core::config::{Provider, ProviderKind};
 use sayso_core::enhance::EnhanceError;
 use sayso_core::style::StyleLibrary;
-use sayso_extension::protocol::{Capability, EnhanceReply, ErrorCode};
-use sayso_extension::Client;
+use sayso_sdk::protocol::{Capability, EnhanceReply, ErrorCode};
+use sayso_sdk::client::Client;
 use serde_json::json;
 use std::sync::Arc;
 

@@ -7387,9 +7387,9 @@ dependencies = [
  "parking_lot",
  "sayso-core",
  "sayso-engine-client",
- "sayso-extension",
  "sayso-platform",
  "sayso-protocol",
+ "sayso-sdk",
  "sayso-speech",
  "security-framework",
  "serde",
@@ -7526,6 +7526,24 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "windows-sys 0.61.2",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sayso-sdk"
+version = "0.13.0"
+dependencies = [
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "sayso-capture",
+ "sayso-engine-sdk",
+ "sayso-protocol",
+ "sayso-speech",
+ "serde",
+ "serde_json",
+ "tempfile",
  "windows-sys 0.61.2",
  "workspace-hack",
 ]

@@ -9,8 +9,8 @@ use parking_lot::Mutex;
 use sayso_core::config::Config;
 use sayso_core::models::{self, ModelId, ModelInfo, ModelTask};
 use sayso_core::stt::{self, Diarization, EngineEvent, ModelStatus, SessionOptions, TimedTranscript, Transcript, Turn};
-use sayso_extension::protocol::{Capability, ErrorCode, Event as HostEvent, SessionReply, Source, TextReply};
-use sayso_extension::{Client, Event};
+use sayso_sdk::protocol::{Capability, ErrorCode, Event as HostEvent, SessionReply, Source, TextReply};
+use sayso_sdk::client::{Client, Event};
 use sayso_host::live::{LiveInfo, LiveObserver, MicFeed, Microphone};
 use sayso_host::{DownloadQuestion, Host, HostServices};
 use sayso_platform::{PlatformError, Result, SttBackend};
@@ -355,7 +355,7 @@ fn stop(client: &Client, session: u64) -> String {
 /// Send the audio in frames of 160 ms, without an `id`.
 fn send_audio(client: &Client, session: u64, samples: &[i16]) {
     for chunk in samples.chunks(16 * 160) {
-        client.send("session_audio", fields(json!({"session": session, "pcm": sayso_extension::protocol::pcm::encode_i16(chunk)}))).unwrap();
+        client.send("session_audio", fields(json!({"session": session, "pcm": sayso_sdk::protocol::pcm::encode_i16(chunk)}))).unwrap();
     }
 }
 
@@ -398,7 +398,7 @@ fn a_client_session_gives_partials_segments_speakers_and_its_text() {
     let samples = audio(12_000, &TWO);
     send_audio(&client, session, &samples);
     // With an `id`, `session_audio` gets `ok`.
-    let pcm = sayso_extension::protocol::pcm::encode_i16(&[0; 160]);
+    let pcm = sayso_sdk::protocol::pcm::encode_i16(&[0; 160]);
     client.request("session_audio", fields(json!({"session": session, "pcm": pcm}))).unwrap();
     let text = stop(&client, session);
     assert_eq!(text, "w1 w2");
@@ -447,7 +447,7 @@ fn a_session_without_audio_stops_with_no_text() {
     // A second stop, and audio after the stop, name no session that runs.
     let error = refused(client.request("session_stop", fields(json!({"session": session}))));
     assert_eq!(error.code, Some(ErrorCode::BadRequest));
-    let pcm = sayso_extension::protocol::pcm::encode_i16(&[0; 160]);
+    let pcm = sayso_sdk::protocol::pcm::encode_i16(&[0; 160]);
     assert_eq!(refused(client.request("session_audio", fields(json!({"session": session, "pcm": pcm.clone()})))).code, Some(ErrorCode::BadRequest));
     // Without an `id`, the error has none either, and comes with the events.
     client.send("session_audio", fields(json!({"session": session, "pcm": pcm}))).unwrap();
@@ -515,7 +515,7 @@ fn a_mic_session_takes_the_shared_microphone() {
     assert_eq!((live.sources, live.captures_mic), (vec![Source::Mic], true));
     assert_eq!(world.mic.open_feeds(), 1);
     // `session_audio` is only for the source `client`.
-    let pcm = sayso_extension::protocol::pcm::encode_i16(&[0; 160]);
+    let pcm = sayso_sdk::protocol::pcm::encode_i16(&[0; 160]);
     assert_eq!(refused(client.request("session_audio", fields(json!({"session": session, "pcm": pcm})))).code, Some(ErrorCode::BadRequest));
 
     for frame in audio(12_000, &TWO).chunks(16 * 20) {
@@ -628,7 +628,7 @@ fn wait_for_end(events: &Receiver<Event>, session: u64) -> String {
     loop {
         let left = deadline.saturating_duration_since(std::time::Instant::now());
         match events.recv_timeout(left) {
-            Ok(Event::Host { event: HostEvent::SessionEnded { session: ended, text }, .. }) if ended == session => return text,
+            Ok(Event::Host { event: HostEvent::SessionEnded { session: ended, text, .. }, .. }) if ended == session => return text,
             Ok(_) => {}
             Err(_) => panic!("no session_ended for session {session}"),
         }

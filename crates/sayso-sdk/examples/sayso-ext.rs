@@ -1,8 +1,8 @@
-//! A small extension for the command line. It shows how to use the SDK, and
+//! A small app for the command line. It shows how to use the SDK, and
 //! developers and the tests of Sayso use it to try the Host API.
 //!
 //! ```text
-//! cargo run -p sayso-extension --example sayso-ext -- hello
+//! cargo run -p sayso-sdk --example sayso-ext -- hello
 //! ```
 //!
 //! The program can run from any folder. At the first connection, Sayso asks
@@ -13,8 +13,9 @@
 //! socket: the events of a request, then its reply. A reply `error` ends the
 //! program with the exit code 1. Wrong arguments end it with 2.
 
-use sayso_extension::protocol::{self, Event as HostEvent, Reply as WireReply, pcm};
-use sayso_extension::{AppHello, Client, Error, Event, Fields, Reply};
+use sayso_sdk::protocol::{self, Event as HostEvent, Reply as WireReply, pcm};
+use sayso_sdk::Fields;
+use sayso_sdk::client::{AppHello, Client, Error, Event, Reply};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -51,7 +52,7 @@ fn main() {
         return;
     }
     let command = args.remove(0);
-    let connected = protocol::socket::host_socket_path().map_err(Error::from).and_then(|socket| if start { Client::connect_or_start_as(&socket, &app, sayso_extension::START_WAIT, sayso_extension::start_sayso) } else { Client::connect_as(&socket, &app) });
+    let connected = protocol::socket::host_socket_path().map_err(Error::from).and_then(|socket| if start { Client::connect_or_start_as(&socket, &app, sayso_sdk::client::START_WAIT, sayso_sdk::client::start_sayso) } else { Client::connect_as(&socket, &app) });
     let client = match connected {
         Ok(client) => client,
         // No reply of a command is on stdout yet.

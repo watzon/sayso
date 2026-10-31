@@ -15,7 +15,8 @@ use sayso_core::history::EnhanceOutcome;
 use sayso_core::pipeline::PipelineOutput;
 use sayso_core::stt::{EngineEvent, ModelStatus, SessionOptions, Transcript};
 use sayso_core::style::StyleLibrary;
-use sayso_extension::{Error, Fields};
+use sayso_sdk::Fields;
+use sayso_sdk::client::Error;
 use sayso_host::{ApprovalQuestion, Caller, DownloadQuestion, Host, Identify, Peer, HostConfig, HostServices, StyleRequest};
 use sayso_platform::{EngineStart, PlatformError, Result, SttBackend};
 use std::path::{Path, PathBuf};
@@ -111,7 +112,7 @@ pub fn refused(result: Answer) -> sayso_protocol::ErrorReply {
     }
 }
 
-pub type Answer = std::result::Result<sayso_extension::Reply, Error>;
+pub type Answer = std::result::Result<sayso_sdk::client::Reply, Error>;
 
 pub fn eventually(what: &str, check: impl Fn() -> bool) {
     let start = Instant::now();

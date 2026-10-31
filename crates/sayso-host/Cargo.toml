@@ -40,7 +40,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
-sayso-extension.workspace = true
+sayso-sdk.workspace = true
 # The real-engine test of jobs (ignored by default).
 sayso-engine-client.workspace = true
 serde_json.workspace = true

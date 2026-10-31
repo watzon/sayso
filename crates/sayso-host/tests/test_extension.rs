@@ -1,10 +1,10 @@
-//! The test extension (`sayso-extension/examples/sayso-ext.rs`) against a
+//! The test extension (`sayso-sdk/examples/sayso-ext.rs`) against a
 //! host on a real socket. The test builds the program with cargo, and the
 //! record of `apps.toml` has its path, so the identity check is the real one.
 
 use sayso_core::config::{Provider, ProviderKind};
 use sayso_core::style::StyleLibrary;
-use sayso_extension::protocol::{DictationDone, ErrorCode, Event, HostMessage, Reply, decode, Decoded, Message};
+use sayso_sdk::protocol::{DictationDone, ErrorCode, Event, HostMessage, Reply, decode, Decoded, Message};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -25,7 +25,7 @@ fn program() -> &'static Path {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
         let mut build = Command::new(cargo);
-        build.args(["build", "--quiet", "-p", "sayso-extension", "--example", "sayso-ext", "--manifest-path"]).arg(&manifest).arg("--target-dir").arg(target_dir);
+        build.args(["build", "--quiet", "-p", "sayso-sdk", "--example", "sayso-ext", "--manifest-path"]).arg(&manifest).arg("--target-dir").arg(target_dir);
         if profile_dir.file_name().is_some_and(|name| name == "release") {
             build.arg("--release");
         }
