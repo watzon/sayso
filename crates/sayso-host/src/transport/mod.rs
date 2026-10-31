@@ -15,6 +15,9 @@ pub(crate) mod windows;
 #[cfg(windows)]
 pub(crate) use windows::Listener;
 
+/// Gives the process that wrote the last line that the reader gave.
+pub(crate) type WriterOf = Box<dyn Fn() -> Result<crate::Peer, String> + Send>;
+
 /// One accepted connection.
 pub(crate) struct Conn {
     pub reader: Box<dyn Read + Send>,
@@ -22,6 +25,5 @@ pub(crate) struct Conn {
     /// Stops both directions: a blocked read returns, and the client sees the
     /// end of the connection.
     pub closer: Arc<dyn Fn() + Send + Sync>,
-    /// The process that wrote the last line that the reader gave.
-    pub peer: Box<dyn Fn() -> Result<crate::Peer, String> + Send>,
+    pub peer: WriterOf,
 }

@@ -40,12 +40,12 @@ impl Listener {
         #[cfg(target_os = "linux")]
         let (reader, peer) = linux::reader(stream);
         #[cfg(target_os = "macos")]
-        let (reader, peer): (Box<dyn std::io::Read + Send>, Box<dyn Fn() -> Result<crate::Peer, String> + Send>) = {
+        let (reader, peer): (Box<dyn std::io::Read + Send>, super::WriterOf) = {
             let writer_of = stream.try_clone()?;
             (Box::new(stream), Box::new(move || crate::identity::system::last_writer(&writer_of)))
         };
         #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        let (reader, peer): (Box<dyn std::io::Read + Send>, Box<dyn Fn() -> Result<crate::Peer, String> + Send>) = (Box::new(stream), Box::new(|| Ok(crate::Peer {})));
+        let (reader, peer): (Box<dyn std::io::Read + Send>, super::WriterOf) = (Box::new(stream), Box::new(|| Ok(crate::Peer {})));
         Ok(Conn {
             reader,
             writer: Box::new(writer),
@@ -137,7 +137,7 @@ mod linux {
     /// The reader of a connection, and what gives the writer. The reader takes
     /// a part ahead of the line, so a second writer closes the connection at
     /// the line before its own at the latest.
-    pub fn reader(stream: UnixStream) -> (Box<dyn Read + Send>, Box<dyn Fn() -> Result<crate::Peer, String> + Send>) {
+    pub fn reader(stream: UnixStream) -> (Box<dyn Read + Send>, crate::transport::WriterOf) {
         let writers = Arc::new(Mutex::new(Writers::default()));
         let peer = writers.clone();
         (Box::new(CredentialReader { stream, writers }), Box::new(move || peer.lock().peer()))
