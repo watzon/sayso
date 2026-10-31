@@ -91,8 +91,8 @@ pub fn read(path: &Path) -> Result<Audio, String> {
     if let (Some(frames), Some(rate)) = (track.codec_params.n_frames, track.codec_params.sample_rate)
         && rate > 0
     {
-        let expected = frames.saturating_mul(u64::from(SAMPLE_RATE)) / u64::from(rate);
-        out.samples.reserve(usize::try_from(expected).unwrap_or(0).saturating_add(SAMPLE_RATE as usize));
+        // Only a hint: a file can say anything. A failed reservation is not an error.
+        let _ = out.samples.try_reserve(reservation(frames, rate));
     }
     let mut last_error = None;
     let mut buffer: Option<SampleBuffer<f32>> = None;
@@ -193,8 +193,24 @@ fn to_i16(sample: f32) -> i16 {
     (sample.clamp(-1.0, 1.0) * 32767.0).round() as i16
 }
 
+/// The samples to reserve for a file that says it has `frames` at `rate`: one
+/// hour at most. A longer file grows the buffer from the samples that it has.
+fn reservation(frames: u64, rate: u32) -> usize {
+    let expected = frames.saturating_mul(u64::from(SAMPLE_RATE)) / u64::from(rate);
+    let hour = u64::from(SAMPLE_RATE) * 3600;
+    usize::try_from(expected.min(hour)).unwrap_or(0).saturating_add(SAMPLE_RATE as usize)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_header_cannot_ask_for_more_than_an_hour() {
+        let hour = SAMPLE_RATE as usize * 3600;
+        assert_eq!(reservation(u64::from(u32::MAX), 1), hour + SAMPLE_RATE as usize);
+        assert_eq!(reservation(u64::MAX, 1), hour + SAMPLE_RATE as usize);
+        assert_eq!(reservation(u64::from(SAMPLE_RATE), SAMPLE_RATE), 2 * SAMPLE_RATE as usize);
+    }
+
     use super::*;
     use std::path::PathBuf;
 

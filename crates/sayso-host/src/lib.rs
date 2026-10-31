@@ -477,6 +477,11 @@ fn accept_loop(shared: &Arc<Shared>, listener: &transport::Listener) {
 
 /// Serve one connection on a thread of its own.
 fn serve_connection(shared: &Arc<Shared>, conn: transport::Conn) {
+    if shared.connections.lock().len() >= connection::MAX_CONNECTIONS {
+        log::warn!("host: too many connections, one more is closed");
+        (conn.closer)();
+        return;
+    }
     let number = shared.next_connection.fetch_add(1, Ordering::SeqCst);
     let shared = shared.clone();
     let spawned = std::thread::Builder::new().name("sayso-host-read".into()).spawn(move || connection::serve(&shared, number, conn));

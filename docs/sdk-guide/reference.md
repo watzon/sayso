@@ -1,6 +1,6 @@
 # Host API reference
 
-This page describes the Host API: the messages between a connected app and Sayso, and the way the SDK shows them. The names come from the crates `sayso-protocol` and `sayso-sdk` at version 0.14.0. When this page and the code differ, the code is right.
+This page describes the Host API: the messages between a connected app and Sayso, and the way the SDK shows them. The names come from the crates `sayso-protocol` and `sayso-sdk` at version 0.14.1. When this page and the code differ, the code is right.
 
 An app that uses `sayso-sdk` does not write these messages. It calls methods of `Speech` and reads `Event` values. [The SDK on top of the Host API](#the-sdk-on-top-of-the-host-api) maps one to the other.
 
@@ -79,7 +79,7 @@ A request that needs a capability that the user did not grant gets `error {code:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sdk` | string, optional | The name and version of the client, for example `sayso-sdk 0.14.0`. |
+| `sdk` | string, optional | The name and version of the client, for example `sayso-sdk 0.14.1`. |
 | `protocol` | integer | The protocol version the client speaks. `1`. |
 | `features` | array of strings | The optional parts of the protocol that the client knows. Default: empty. |
 | `app` | `{name}`, optional | What the app says about itself. The host does not check it. It shows the name as a quote of the app, cuts it to 40 characters, and removes control characters. |

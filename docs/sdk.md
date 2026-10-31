@@ -481,7 +481,7 @@ A connected app reaches Sayso across the Flatpak sandbox, in both directions, wi
 - `/app` of the process is that same folder (device and inode).
 - The executable of the process is in `/app` or in the runtime, and it is the same file as on the host. A program in the home folder of the sandbox gets no identity.
 
-The host reads all of this through one handle of `/proc/<pid>`, so a pid that is used again gives an error. The per-read rule does not change: each read gives its writer through `SCM_CREDENTIALS`, and a second writer closes the connection. A part with no pid in the namespace of the reader still counts as `other`, and it fails.
+The host reads all of this through one handle of `/proc/<pid>`, so a pid that is used again after the handle opens gives an error. A pid that is used again before that means the checks read the new process, which must pass them itself. The per-read rule does not change: each read gives its writer through `SCM_CREDENTIALS`, and a second writer closes the connection. A part with no pid in the namespace of the reader still counts as `other`, and it fails.
 
 **A Sayso in a sandbox has a bridge** (`crates/sayso-bridge`, a static program, in `/app/bin`). A process in the Flatpak of Sayso sees no pids outside its sandbox, so it cannot identify any app. The kernel gives it pid 0 for each one, so the rule above closes each connection. Sayso does not change that rule. It starts the bridge with `flatpak-spawn --host --watch-bus --forward-fd=N` from the host path of its `app-path`, so the bridge runs in the PID namespace of the host:
 
@@ -525,6 +525,7 @@ The result of step 9a before this change, with 0.14.0: only the last row worked.
 
 ## Security
 
+- **A program without approval has limits.** The host and the bridge keep 64 connections at most, close a connection that sends no line in 5 seconds, and read 64 KiB at most before they know the writer. One connection keeps 16 waiting jobs with an open file at most, and gets `busy` after that.
 - **Sayso does not say that an app is safe.** No person reviews connected apps. The approval question says what the app asks for and what the system knows about it.
 - **An approved app is a native program with the rights of the user.** Approval controls only what Sayso gives it.
 - **A path identity trusts the file at that path.** A program that replaces the file gets the grants. Malware that runs as the user can do that and more, which is outside what Sayso can protect against, as in `extensions.md`.

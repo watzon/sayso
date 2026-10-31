@@ -18,11 +18,23 @@ use sayso_protocol::{Capability, DecodeError, Decoded, ErrorCode, ErrorReply, Ev
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 /// A longer line is not a request. Audio comes in small parts.
 const MAX_LINE: u64 = 16 * 1024 * 1024;
+
+/// The line before the identity of the writer is known. A `hello` is small.
+const MAX_FIRST_LINE: u64 = 64 * 1024;
+
+/// A program that says nothing for this long loses its connection. It has no
+/// identity yet, so nobody can ask it to stop.
+const FIRST_LINE_WAIT: Duration = Duration::from_secs(5);
+
+/// More connections than any real set of apps. Each one holds file handles of
+/// Sayso, and a program in a sandbox can open them without any approval.
+pub(crate) const MAX_CONNECTIONS: usize = 64;
 
 /// The event after each insert of a dictation.
 pub(crate) const DICTATION_DONE: &str = "dictation_done";
@@ -85,12 +97,24 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
         connections.insert(number, Entry::new(outgoing.clone(), writer));
     }
 
-    let mut connection = Connection { shared, number, caller: None, writer: None, attested, files: FileAccess::Same, notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
+    let mut connection = Connection { shared, number, caller: None, writer: None, attested, files: FileAccess::Same, jobs_with_file: Arc::default(), notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
+    let first_line = Arc::new(AtomicBool::new(false));
+    {
+        let (first_line, closer) = (first_line.clone(), closer.clone());
+        let _ = std::thread::Builder::new().name("sayso-host-first-line".into()).spawn(move || {
+            std::thread::sleep(FIRST_LINE_WAIT);
+            if !first_line.load(Ordering::SeqCst) {
+                log::debug!("host: a program said nothing, and its connection closes");
+                closer();
+            }
+        });
+    }
     let mut reader = BufReader::new(reader);
     let mut line = Vec::new();
     loop {
         line.clear();
-        match (&mut reader).take(MAX_LINE + 1).read_until(b'\n', &mut line) {
+        let limit = if connection.caller.is_some() { MAX_LINE } else { MAX_FIRST_LINE };
+        match (&mut reader).take(limit + 1).read_until(b'\n', &mut line) {
             Ok(0) => break,
             Ok(_) => {}
             Err(e) => {
@@ -98,11 +122,16 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
                 break;
             }
         }
-        if line.len() as u64 > MAX_LINE {
+        first_line.store(true, Ordering::SeqCst);
+        if line.len() as u64 > limit {
             let _ = outgoing.send(Outgoing::Line(encode(None, &Reply::error(Some(ErrorCode::BadRequest), "the line is longer than 16 MiB"))));
             break;
         }
-        let text = String::from_utf8_lossy(&line);
+        // Strict: the bridge reads the line as JSON too, and both must read the same thing.
+        let Ok(text) = std::str::from_utf8(&line) else {
+            let _ = outgoing.send(Outgoing::Line(encode(None, &Reply::error(Some(ErrorCode::BadRequest), "the line is not UTF-8"))));
+            break;
+        };
         let text = text.trim_end_matches(['\n', '\r']);
         if text.trim().is_empty() {
             continue;
@@ -166,6 +195,8 @@ struct Connection<'a> {
     attested: Option<Attested>,
     /// How the host opens a file that the app names.
     files: FileAccess,
+    /// See `job_requests::MAX_JOBS_WITH_FILE`.
+    jobs_with_file: Arc<AtomicUsize>,
     notifier: Notifier,
     /// The jobs that this connection started.
     jobs: Mutex<HashSet<u64>>,
@@ -299,7 +330,7 @@ impl Connection<'_> {
                 if let Some(file) = &file {
                     request.path = file.path.clone();
                 }
-                crate::job_requests::transcribe_file(self.shared, self.number, &self.jobs, &request, file, responder);
+                crate::job_requests::transcribe_file(self.shared, self.number, &self.jobs, &self.jobs_with_file, &request, file, responder);
             }
             Request::CancelJob(request) => crate::job_requests::cancel_job(self.shared, self.number, &self.jobs, &request, responder),
             Request::SessionStart(request) if request.record_to.is_some() && self.files.has_another_view() => {

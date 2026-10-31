@@ -11,7 +11,7 @@ let engineFeatures = [
 ]
 /// The Sayso version, as in `Cargo.toml`. A test in `sayso-core` fails when they differ.
 /// Keep this on one line: that test reads it.
-let engineVersion = "0.14.0"
+let engineVersion = "0.14.1"
 
 /// A failure that is reported to the client as `{"type":"error"}`. Never crashes the process.
 struct EngineError: Error, CustomStringConvertible {

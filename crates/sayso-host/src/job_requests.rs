@@ -15,12 +15,29 @@ use sayso_protocol::Event;
 use sayso_speech::{EventSink, ModelResolver};
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+/// The jobs with an open file that one connection can have. The queue has no
+/// limit, and each of these jobs holds a file handle of Sayso while it waits.
+const MAX_JOBS_WITH_FILE: usize = 16;
 
 /// The events of a job, and the file that the path of the job opens again.
 /// The queue keeps the sink until the job ends, so the file stays open as long.
 struct SinkWithFile {
     notifier: Notifier,
     _file: OpenedFile,
+    jobs_with_file: Arc<AtomicUsize>,
+}
+
+impl Drop for SinkWithFile {
+    fn drop(&mut self) {
+        self.jobs_with_file.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// One more job with a file, or false when the connection has the most it can.
+fn take_job_with_file(count: &AtomicUsize) -> bool {
+    count.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |jobs| (jobs < MAX_JOBS_WITH_FILE).then_some(jobs + 1)).is_ok()
 }
 
 impl EventSink for SinkWithFile {
@@ -32,7 +49,7 @@ impl EventSink for SinkWithFile {
 /// Check the request and queue the job. The reply is `ok {job}` or `error {code}`.
 /// `owned` gets the id of the job, for `cancel_job`. `file` is the file of the
 /// path of the request, when it is a path that only this process can open.
-pub(crate) fn transcribe_file(shared: &Shared, connection: u64, owned: &Mutex<HashSet<u64>>, request: &TranscribeFile, file: Option<OpenedFile>, responder: Responder) {
+pub(crate) fn transcribe_file(shared: &Shared, connection: u64, owned: &Mutex<HashSet<u64>>, jobs_with_file: &Arc<AtomicUsize>, request: &TranscribeFile, file: Option<OpenedFile>, responder: Responder) {
     let (Some(engine), Some(queue)) = (&shared.engine, &shared.jobs) else {
         responder.reply(Reply::error(Some(ErrorCode::Unsupported), "the speech engine of Sayso does not run"));
         return;
@@ -46,7 +63,13 @@ pub(crate) fn transcribe_file(shared: &Shared, connection: u64, owned: &Mutex<Ha
         }
     };
     let sink: Arc<dyn EventSink> = match file {
-        Some(file) => Arc::new(SinkWithFile { notifier: responder.notifier(), _file: file }),
+        Some(file) => {
+            if !take_job_with_file(jobs_with_file) {
+                responder.reply(Reply::error(Some(ErrorCode::Busy), "this connection has too many files waiting"));
+                return;
+            }
+            Arc::new(SinkWithFile { notifier: responder.notifier(), _file: file, jobs_with_file: jobs_with_file.clone() })
+        }
         None => Arc::new(responder.notifier()),
     };
     // The reply goes out before the first event of the job. After a close of
@@ -70,4 +93,20 @@ pub(crate) fn cancel_job(shared: &Shared, connection: u64, owned: &Mutex<HashSet
         queue.cancel(connection, request.job);
     }
     responder.reply(Reply::ok());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_connection_has_a_limit_of_jobs_with_a_file() {
+        let count = AtomicUsize::new(0);
+        for _ in 0..MAX_JOBS_WITH_FILE {
+            assert!(take_job_with_file(&count));
+        }
+        assert!(!take_job_with_file(&count));
+        count.fetch_sub(1, Ordering::SeqCst);
+        assert!(take_job_with_file(&count));
+    }
 }

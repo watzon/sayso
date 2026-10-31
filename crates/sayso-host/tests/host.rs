@@ -160,3 +160,48 @@ fn connect_or_start_reports_a_start_that_fails_or_takes_too_long() {
     assert!(matches!(late, Err(Error::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut));
     assert!(started.elapsed() < Duration::from_secs(5));
 }
+
+#[cfg(unix)]
+#[test]
+fn a_program_that_says_nothing_loses_its_connection() {
+    use std::io::Read;
+    let setup = setup();
+    write_apps(&setup.apps, &[]);
+    let _host = start(&setup);
+    let mut silent = std::os::unix::net::UnixStream::connect(&setup.socket).unwrap();
+    silent.set_read_timeout(Some(std::time::Duration::from_secs(15))).unwrap();
+    let mut rest = Vec::new();
+    assert_eq!(silent.read_to_end(&mut rest).unwrap(), 0, "the host closes without a word");
+}
+
+#[cfg(unix)]
+#[test]
+fn the_host_keeps_a_limited_number_of_connections() {
+    use std::io::Read;
+    let setup = setup();
+    write_apps(&setup.apps, &[]);
+    let _host = start(&setup);
+    // Each one is on the list of the host before the next hello answers.
+    let mut held: Vec<_> = (0..64).map(|_| std::os::unix::net::UnixStream::connect(&setup.socket).unwrap()).collect();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let mut extra = std::os::unix::net::UnixStream::connect(&setup.socket).unwrap();
+    extra.set_read_timeout(Some(std::time::Duration::from_secs(2))).unwrap();
+    let mut rest = Vec::new();
+    assert_eq!(extra.read_to_end(&mut rest).unwrap(), 0, "one more connection closes at once");
+    held.clear();
+}
+
+#[cfg(unix)]
+#[test]
+fn a_line_that_is_not_utf8_closes_the_connection() {
+    use std::io::{Read, Write};
+    let setup = setup();
+    write_apps(&setup.apps, &[]);
+    let _host = start(&setup);
+    let mut stream = std::os::unix::net::UnixStream::connect(&setup.socket).unwrap();
+    stream.write_all(b"{\"x\":\"\xff\"}\n").unwrap();
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(4))).unwrap();
+    let mut reply = String::new();
+    stream.read_to_string(&mut reply).unwrap();
+    assert!(reply.contains("bad_request"), "{reply}");
+}

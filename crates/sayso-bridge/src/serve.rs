@@ -29,6 +29,10 @@ pub const EXIT_IN_USE: u8 = 3;
 const WRITE_TIMEOUT: Duration = Duration::from_secs(2);
 /// A longer line is not a request. The host answers it, so the bridge sends it on.
 const MAX_LINE: usize = 16 * 1024 * 1024;
+/// A program that says nothing for this long loses its connection, as with the host.
+const FIRST_LINE_WAIT: Duration = Duration::from_secs(5);
+/// More connections than any real set of apps, as with the host.
+const MAX_CONNECTIONS: usize = 64;
 /// How long the last replies have to go out after Sayso closes.
 const LAST_REPLIES: Duration = Duration::from_secs(3);
 
@@ -53,6 +57,9 @@ pub fn run(control: OwnedFd, socket: &Path) -> io::Result<()> {
             std::thread::sleep(Duration::from_millis(200));
             continue;
         };
+        if active.load(Ordering::SeqCst) >= MAX_CONNECTIONS {
+            continue;
+        }
         let (control, active) = (control.clone(), active.clone());
         active.fetch_add(1, Ordering::SeqCst);
         let spawned = std::thread::Builder::new().name("sayso-bridge-read".into()).spawn(move || {
@@ -89,12 +96,14 @@ fn serve_client(client: UnixStream, control: &OwnedFd) -> io::Result<()> {
     let writer = client.try_clone()?;
     writer.set_write_timeout(Some(WRITE_TIMEOUT))?;
     let closer = client.try_clone()?;
+    closer.set_read_timeout(Some(FIRST_LINE_WAIT))?;
     let (mut reader, writer_pid) = credentials::reader(client);
     let mut part = vec![0u8; 64 * 1024];
     let count = reader.read(&mut part)?;
     if count == 0 {
         return Ok(());
     }
+    closer.set_read_timeout(None)?;
     let (pid, who, view) = match writer_pid() {
         Ok(pid) => (pid, identity::identify(pid), View::of(pid).ok()),
         Err(e) => (0, Err(e), None),
