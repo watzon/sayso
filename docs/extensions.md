@@ -391,7 +391,7 @@ Step 6 builds the Host API in these crates:
 | Crate | License | What it has |
 |---|---|---|
 | `sayso-protocol` | MIT | The messages of the engine protocol and the Host API, with serde. The error codes and the capabilities. The PCM helpers (base64 of 16-bit PCM). No I/O. |
-| `sayso-extension` | MIT | The client of the Host API. Blocking calls and a channel of events, with no async runtime, like the rest of Sayso. |
+| `sayso-sdk` (it replaced `sayso-extension`, see `docs/sdk.md`) | MIT | The client of the Host API. Blocking calls and a channel of events, with no async runtime, like the rest of Sayso. |
 | `sayso-engine-sdk` | MIT | Start an engine and talk to it over stdio. |
 | `sayso-host` | GPL | The server: the socket, the identity check, `apps.toml`, the approval question, the capabilities, the scheduler, jobs, and live sessions. No GPUI. |
 
@@ -419,7 +419,7 @@ These rules of the wire format are fixed in `sayso-protocol`:
 - `choice` in `list_models` is a list of roles: the roles for which the host uses the model when a request names none (see "Requests").
 - Events that a request caused have its `id` and come before its reply. After the reply, no event has that `id`. Work that goes on after the reply (jobs and live sessions) sends events without an `id`. So the events of a job have no `id`, and `job` tells the job. The `ok {job}` reply comes before the first event of the job.
 - The events of a live session (`partial`, `segment`, `speakers`) have no `id`, and `session` tells the session. The `ok {session}` reply comes before the first event of the session, and the `ok {text}` reply of `session_stop` comes after its last event.
-- `session_audio` without an `id` gets no `ok`. When it fails, the `error` has no `id`. `sayso-extension` sends it with `Client::send`, and gives an `error` without an `id` as `Event::Error`.
+- `session_audio` without an `id` gets no `ok`. When it fails, the `error` has no `id`. `sayso_sdk::client` sends it with `Client::send`, and gives an `error` without an `id` as `Event::Error`.
 - A job ends with exactly one `job_done` or `job_failed`, and no event of the job comes after it. A cancelled job gets `job_failed` without `code` and with the message "The job was cancelled.". When the host closes, each job gets `job_failed` before `host_closing`.
 - A failed download gives `error` without `code`, with `message` and the `reason` of the engine protocol, after `model_state {state: "failed"}`. `declined` and `unknown_model` have a `code`.
 - A line that is not a JSON object with a string `type` gets `error` without `id` and with `code: "bad_request"`. A known request with a missing field or a field of the wrong type gets `bad_request` with its `id`. An unknown request type gets `error` with its `id` and no `code`, as in the engine protocol.

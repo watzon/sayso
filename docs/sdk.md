@@ -194,17 +194,24 @@ let speech = Speech::connect(Options {
     engine: Engine::from_release(resources.join("engine")), // used in local mode
 })?;
 
-speech.mode();                                  // Mode::Sayso or Mode::Local, now
-let job = speech.transcribe_file(path, FileOptions::default().diarize())?;
-let session = speech.start_session(SessionOptions::sources([Source::Mic, Source::System]).record_to(folder))?;
-for event in speech.events() { /* segment, partial, speakers, job_done, mode_changed, ... */ }
+speech.mode();                                  // ActiveMode::Sayso or ActiveMode::Local, now
+let job = speech.transcribe_file(TranscribeFile { path, diarize: Some(true), ..Default::default() })?;
+let session = speech.start_session(SessionStart { sources: vec![Source::Mic], record_to: Some(folder), ..Default::default() })?;
+for event in speech.events() { /* Event::Message(segment, partial, speakers, job_done, ...), Event::ModeChanged, ... */ }
 speech.stop_session(session)?;
 ```
+
+The requests are the structs of `sayso-protocol`, so both modes have one set of fields. `Options` is built with `Options::new(mode, app)` and its setters.
 
 - `Speech::connect` with `Mode::Sayso` fails when Sayso does not run (`host_not_running`) or the user refused the app (`not_approved`).
 - `Mode::Local` never talks to Sayso.
 - `Mode::Auto` tries Sayso, and uses local mode when Sayso does not run or refused the app. A refused app does not ask again, because the host remembers the answer.
 - `speech.features()` tells the app what the mode that it has now can do. `mode_changed {mode, features}` tells the app when that changes.
+- The ids of jobs and sessions come from the SDK, in both modes. An id does not come back after a mode change, so an old id can never name new work. `Event::Message` has these ids, not the numbers of the host.
+- A live session ends with the reply of `stop_session`, or else with `session_ended`. When both can come, only the first counts, and a `session_ended` that passes the reply gives `stop_session` its text.
+- `Mode::Sayso` does not change mode. After the end of a connection, the app gets `Event::Disconnected`, requests give `host_not_running`, and `speech.reconnect()` connects again. It is not automatic, as with a request that goes out twice: the app decides.
+- Three error codes come only from the SDK: `host_not_running`, `connection_lost`, and `host_closing`. The app never sees the event `host_closing`, only the ends of its work with that code, and the change.
+- `session_ended` has the optional field `code`, for a session that ended with the connection.
 
 ### What differs between modes
 
@@ -222,16 +229,19 @@ The messages and the end rules are the same. These things differ, and the tests 
 - **One lock.** The SDK starts a request and changes mode under one lock. So a request that starts during a change waits for the change, and a change waits until no work is active.
 - **To Sayso.** While in local mode, the SDK watches for the socket of the host. When it appears, the SDK opens a connection and finishes `hello`: the approval, the protocol version, and the features. Only then, and only when no work is active, does it change mode. It sends `mode_changed`, and then stops its engine, so the model is in memory once. When `hello` fails, it stays in local mode and tries again after 30 s or when the socket changes.
 - **To local.** On `host_closing`, the work of the host ends as today (`job_failed`, the end of the live session), and the SDK changes to local mode and sends `mode_changed`.
-- **A lost connection.** When the connection ends without `host_closing` (Sayso crashed), each request without a reply gets `error {code: "connection_lost"}`, each job gets `job_failed {code: "connection_lost"}`, and each live session ends with the same code. The SDK never sends a request again by itself, because it cannot know if the host did it.
+- **A lost connection.** When the connection ends without `host_closing` (Sayso crashed), each request without a reply gets `error {code: "connection_lost"}`, each job gets `job_failed {code: "connection_lost"}`, and each live session ends with the same code. The SDK never sends a request again by itself, because it cannot know if the host did it. A request that the app sends before the SDK sees the loss also gets `connection_lost`. The first request after `mode_changed` runs in local mode.
 - **One end for each piece of work.** The SDK keeps a table of its open work. The first end of a piece of work (the reply of the host, `job_done`, or the end from a lost connection) removes it from the table, and only that end goes to the app. So a reply and a lost connection at the same moment give one end.
 - **The change after `host_closing` or a lost connection** is one step under the lock: end the open work, close the connection, change to local mode, and send `mode_changed`. Only then does the SDK take new requests. Local mode starts its engine at the first request that needs it.
 - **Generations.** Each connection has a number. The SDK drops events of an older connection, so they cannot reach new work.
 - A change never moves work. When Sayso starts during a long job in local mode, the job ends in local mode, and the next job goes to Sayso.
+- `Speech::connect` with `Mode::Auto` waits for the answer when Sayso asks about the app for the first time, because it tries Sayso first. The question in a later `hello` of the watcher does not stop work: work runs in local mode until the answer.
+- A watcher looks for the socket every 200 ms. A socket has an identity on Unix (the device, the inode, and the change time). A named pipe on Windows has none, so only the 30 s help there after a failed `hello`.
 
 ### Local mode
 
-- The engine: from the release file that the app ships (decision 9). The SDK checks `hello`: the protocol version, and the features that the request needs.
-- Models: the model store. `download_model` downloads at once.
+- The engine: from the release file that the app ships (decision 9). The SDK checks `hello`: the protocol version, and the features that the request needs. An engine that cannot start, or has no `catalog`, gives `unsupported`. It starts at the first request that needs it, and again after a crash when no open work uses it.
+- Models: the model store. `download_model` downloads at once. A model stays in memory for 60 s after the last work that used it, so the next job of a list finds it loaded.
+- The checks and the codes of a request are the same as in Sayso (`crates/sayso-sdk/src/local_models.rs`). The test `both_modes_refuse_the_same_requests` runs one table of requests in both modes.
 - Capture: `sayso-capture` in the process of the app. On macOS the app needs its own microphone and system audio permissions, and the usage text in its `Info.plist` (`NSMicrophoneUsageDescription`, `NSAudioCaptureUsageDescription`).
 - When Sayso dictates at the same time, the two engines share the hardware, and dictation can be slower. `Mode::Auto` keeps this time short, because it moves to Sayso at the next piece of work.
 
@@ -248,7 +258,7 @@ The models folders of today cannot be shared:
 
 ### Layout
 
-The store is `v1` in the models folder of Sayso (`Paths::models_dir`): `~/Library/Application Support/Sayso/models/v1` on macOS, `%LOCALAPPDATA%\Sayso\models\v1` on Windows, and `$XDG_DATA_HOME/sayso/models/v1` on Linux. The SDK has the same rules, because an MIT crate cannot use `sayso_core::paths`. Local mode uses the store also when Sayso is not installed, so a later Sayso finds the models. The engines of older versions never open `v1`.
+The store is `v1` in the models folder of Sayso (`Paths::models_dir`): `~/Library/Application Support/Sayso/models/v1` on macOS, `%LOCALAPPDATA%\Sayso\models\v1` on Windows, and `$XDG_DATA_HOME/sayso/models/v1` on Linux (`~/.local/share/sayso/models/v1` when the variable is not set). `XDG_DATA_HOME` counts on each system, not only on Linux, because `Paths` reads it first. `sayso_sdk::model_store` has the same rules, because an MIT crate cannot use `sayso_core::paths`, and the test `sayso-host/tests/sdk_paths.rs` compares the two. The SDK has the same rules, because an MIT crate cannot use `sayso_core::paths`. Local mode uses the store also when Sayso is not installed, so a later Sayso finds the models. The engines of older versions never open `v1`.
 
 ```
 v1/
@@ -529,3 +539,4 @@ Chris answered these on 2026-10-29.
 | 9. Approval | In progress | Chris approved the designs on 2026-10-30. 9b is built: the identity rules, `apps.toml`, `hello` with `app` and `capabilities`, the question and its limits, `not_approved`, Settings › Connected apps, the recording state, and the removal of the extension code. A review found that a process could take the identity of an approved app through a shared socket, and that grants did not stop all work. Both are fixed, and "Security" says what stays open. Checked on macOS, with automated tests and in the real app, and with the tests of the host in a Linux container, with bind mounts and PID namespaces. On Windows the code compiles, and its tests run only in CI. Open: 9a. |
 | 10. MIT core | Done | `sayso-speech` (MIT): jobs and live sessions from `sayso-host` (the plan of chunks, the final pass of each part, the speakers, the queue, `DictationGate`), Basic VAD and the resampler from `sayso-core`, and the file decoder (`symphonia`). Its own types (`ModelId`, `Timestamps`, `Turn`, `EngineEvent`, `EngineError`, `Refusal`, `JobSpec`, `SessionSpec`); the events are the messages of `sayso-protocol`. The traits `SpeechEngine`, `ModelResolver`, `ModelRetention`, `Gate`, `EventSink`, and `Recordings`. `sayso-capture` (MIT): the microphone with `cpal`, from `sayso-platform-common/src/audio.rs`; the place for the system audio of step 13 is the module `system`. `sayso-host` gives the adapters: `BackendEngine` (`SttBackend` and the bus), `SaysoModels` (the choices of the user and the catalog), `ModelUse`, and `RecordingFolder`. `sayso-core` re-exports `basic_vad` and `resample` and converts its types. The shared microphone stays in `sayso-app/src/mic.rs`. Every author of the moved files is Chris (`git log --follow`, 2026-10-29). Checked: `cargo test --workspace`, clippy, `scripts/check-deps.sh`, `cargo tree` of both crates (no GPL crate), and `cargo package` of both crates with `workspace-hack` removed. The dictation benchmark (`docs/benchmark.md`) showed no regression in two pairs of runs, on the record in #64. |
 | 11. Model store | In progress | Done: the write inventory and the descriptors (#65), the rules in `sayso_core::model_store`, `store_v1` in both engines, the store level of the conformance suite, the migration in Sayso (`sayso_core::model_migration`), and the store option of `sayso-engine-sdk`. A real 0.13 models folder of macOS moved without a download: a clone of it moved `parakeet-unified-en` and `nemotron-en` in 3.7 s, and both load and transcribe with the network blocked. Open: the check of a real models folder on Windows and Linux, the check of the engine of the last release beside a new one, and the sentence about a downgrade in the release notes (`release-notes.toml` has no place for notes before a release, so it goes in with the entry of the release). A stalled download holds its `get` lock until the limit of 6 hours for one file, because `ureq` has no limit for the time between two reads. sherpa-onnx ends the process on a broken VAD model, so that load gives no `failed` reply; the store stays as it was. |
+| 12. `sayso-sdk` | Done, except publication and the Windows runs | `sayso-sdk` (MIT): `Speech` with `Mode::Sayso { start }`, `Mode::Local`, and `Mode::Auto`, `features()`, `mode()`, `Event::ModeChanged`, the mode changes under one lock, and the client that was `sayso-extension`, in `sayso_sdk::client`. Local mode: the engine that the app ships, the model store, `download_model` at once, the checks of Sayso (`local_models.rs`), and `sayso-capture` in the process of the app. The check is `crates/sayso-host/tests/sdk_modes.rs`, in `sayso-host` because `sayso-sdk` cannot have a GPL crate in its tree, even as a dev-dependency: a real `Host` in a child process, so a test can kill it. Its scenarios ran with the fake engine, and by hand with the Swift engine on a Mac (`real_engine_check`, a temporary store, `whisper-tiny` and `parakeet-eou-120m`). `crates/sayso-sdk/tests/one_end.rs` has the races against a fake host. Not run: the real microphone in local mode, because the tests use the source `client`. On Windows the crate is checked to compile, but `sdk_modes` and `one_end` run only on Unix. `sayso-extension` is out of the workspace dependencies, and its README says that it moved. The crates are published in step 14, and that version of `sayso-extension` goes out then. The source `system` gives `unsupported` in local mode until step 13: `LocalRun::start` has the place for it, and `Features::system_audio` is false in both modes. |

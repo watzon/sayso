@@ -102,7 +102,19 @@ The answer of the user to the first connection of an app: **Allow** with the cap
 Sayso, when it serves connected apps (`sayso-host`). It knows an app by the identity of its executable and the record of the app in `apps.toml`.
 
 **Host API**
-The protocol between the host and a connected app, over a local socket (a named pipe on Windows). It uses the message shapes of the engine protocol. The types are in `sayso-protocol`, and the client is `sayso-extension` (both MIT).
+The protocol between the host and a connected app, over a local socket (a named pipe on Windows). It uses the message shapes of the engine protocol. The types are in `sayso-protocol`, and the client is `sayso-sdk` (both MIT).
+
+**SDK**
+The crate `sayso-sdk` (MIT). Its type `Speech` gives an app one API with three modes: `Mode::Sayso`, `Mode::Local`, and `Mode::Auto`. Both ways to do the work use the messages of `sayso-protocol` and the same end rules.
+
+**Sayso mode**
+The SDK does the work through the Host API. Sayso owns the engine, the microphone, the models, and the choices of the user.
+
+**Local mode**
+The SDK starts the engine that the app ships and does the work in the process of the app, with `sayso-speech` and `sayso-capture`. It does not need Sayso, and it never asks a user. Not to be confused with a **local model**, which is a model that runs on this computer in either mode.
+
+**Mode change**
+`Mode::Auto` goes from one mode to the other, only when the app has no active work. A change never moves work. See `docs/sdk.md`, "Mode changes in `Mode::Auto`".
 
 **Capability**
 A permission that an app asks for in `hello` and the user grants in the approval question, for example `audio.mic`. The host refuses a request whose capability the user did not grant. `models.read` is always granted.
