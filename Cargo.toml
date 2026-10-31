@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# A dependency with a small change, not our code: see vendor/gpui-pre-wgpu/SAYSO.md.
+exclude = ["vendor/gpui-pre-wgpu"]
 
 [workspace.package]
 version = "0.14.0"
@@ -72,3 +74,8 @@ debug = false
 lto = "fat"
 codegen-units = 1
 strip = true
+
+# Keeps Sayso alive on llvmpipe with LLVM 22 (docs/linux.md). Remove it when the
+# gpui-kit update has a Mesa that is fixed: see vendor/gpui-pre-wgpu/SAYSO.md.
+[patch.crates-io]
+gpui-pre-wgpu = { path = "vendor/gpui-pre-wgpu" }

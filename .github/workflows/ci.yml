@@ -104,6 +104,9 @@ jobs:
           fi
       - name: Test
         run: cargo test --workspace
+      # Not a workspace member, so cargo test --workspace does not run it.
+      - name: Test the vendored crate
+        run: cargo test -p gpui-pre-wgpu --test sayso
       - name: Two engines on one model store
         run: cargo test -p sayso-engine --test conformance -- --ignored
       - name: Clippy
