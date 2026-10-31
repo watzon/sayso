@@ -325,6 +325,25 @@ pub fn appkit_later(cx: &App, f: impl FnOnce() + 'static) {
     cx.foreground_executor().spawn(async move { f() }).detach();
 }
 
+/// Close a window that the user answered. Windows tells GPUI that the window
+/// lost focus after GPUI removed it, and GPUI logs an error for that. So on
+/// Windows the window hides first, and goes when that message has come.
+pub fn close_question_window(window: &mut Window, cx: &mut App) {
+    #[cfg(windows)]
+    if let Some(ns) = crate::shell::native(window) {
+        crate::shell::order_out(ns);
+        let handle = window.window_handle();
+        cx.spawn(async move |cx| {
+            cx.background_executor().timer(std::time::Duration::from_millis(50)).await;
+            let _ = handle.update(cx, |_, window, _| window.remove_window());
+        })
+        .detach();
+        return;
+    }
+    let _ = cx;
+    window.remove_window();
+}
+
 pub fn open_hub(model: &Entity<AppModel>, route: Route, cx: &mut App) {
     model.update(cx, |m, cx| m.navigate(route, cx));
     if let Some(handle) = cx.global::<Windows>().hub
