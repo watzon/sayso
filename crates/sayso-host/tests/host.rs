@@ -210,10 +210,13 @@ fn a_line_that_is_not_utf8_closes_the_connection() {
 fn a_host_can_start_again_at_once_on_the_same_socket() {
     let setup = setup();
     write_apps(&setup.apps, &[]);
-    let host = start(&setup);
-    let client = Client::connect_to(&setup.socket).unwrap();
-    client.hello();
-    drop(client);
-    drop(host);
+    // Many times: the end of a connection and the next start race.
+    for _ in 0..50 {
+        let host = start(&setup);
+        let client = Client::connect_to(&setup.socket).unwrap();
+        client.hello();
+        drop(client);
+        drop(host);
+    }
     let _again = start(&setup);
 }

@@ -174,17 +174,24 @@ impl HostConfig {
     }
 }
 
+/// How long `Host::close` waits for the readers. A writer gives up after two seconds.
+const CLOSE_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// The running host. [`Host::close`] (or drop) stops it.
 pub struct Host {
     socket: PathBuf,
     shared: Arc<Shared>,
     listener: Arc<transport::Listener>,
     accept: Mutex<Option<JoinHandle<()>>>,
+    /// Ends when no thread has `Shared::serving` any more.
+    served: crossbeam_channel::Receiver<()>,
     #[cfg(target_os = "linux")]
     bridge: Mutex<Option<bridge::Bridge>>,
 }
 
 pub(crate) struct Shared {
+    /// Each thread that reads a connection has a copy. `Host::close` takes this one.
+    pub serving: Mutex<Option<crossbeam_channel::Sender<()>>>,
     pub host_version: String,
     pub identify: Arc<dyn Identify>,
     pub apps: Arc<AppsFile>,
@@ -289,7 +296,9 @@ impl Host {
             let observers = observers.clone();
             jobs.set_on_change(Arc::new(move || observers.holds_changed()));
         }
+        let (serving, served) = crossbeam_channel::bounded(0);
         let shared = Arc::new(Shared {
+            serving: Mutex::new(Some(serving)),
             host_version: config.host_version,
             identify: config.identify,
             apps: config.apps,
@@ -321,6 +330,7 @@ impl Host {
             shared,
             listener,
             accept: Mutex::new(Some(accept)),
+            served,
             #[cfg(target_os = "linux")]
             bridge: Mutex::new(bridge),
         })
@@ -363,6 +373,12 @@ impl Host {
         // Each writer stops after its last message, or after its timeout.
         for writer in writers {
             let _ = writer.join();
+        }
+        // A reader holds its end of the connection. On Windows a new host can
+        // bind the pipe only after each reader has let go.
+        self.shared.serving.lock().take();
+        if self.served.recv_timeout(CLOSE_WAIT) == Err(crossbeam_channel::RecvTimeoutError::Timeout) {
+            log::warn!("host: a connection did not end in time");
         }
         self.listener.remove();
         self.shared.bus.stop();
@@ -482,9 +498,16 @@ fn serve_connection(shared: &Arc<Shared>, conn: transport::Conn) {
         (conn.closer)();
         return;
     }
+    let Some(serving) = shared.serving.lock().clone() else {
+        (conn.closer)();
+        return;
+    };
     let number = shared.next_connection.fetch_add(1, Ordering::SeqCst);
     let shared = shared.clone();
-    let spawned = std::thread::Builder::new().name("sayso-host-read".into()).spawn(move || connection::serve(&shared, number, conn));
+    let spawned = std::thread::Builder::new().name("sayso-host-read".into()).spawn(move || {
+        let _serving = serving;
+        connection::serve(&shared, number, conn);
+    });
     if let Err(e) = spawned {
         log::warn!("host: cannot start a connection thread: {e}");
     }

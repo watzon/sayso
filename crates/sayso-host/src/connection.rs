@@ -99,13 +99,15 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
 
     let mut connection = Connection { shared, number, caller: None, writer: None, attested, files: FileAccess::Same, jobs_with_file: Arc::default(), notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
     // Dropped at the first line or at the end of the connection, and the wait
-    // ends with it: the thread must not keep the connection open.
+    // ends with it. The weak closer: the thread must not keep the connection open.
     let (first_line, no_first_line) = crossbeam_channel::bounded::<()>(0);
     let mut first_line = Some(first_line);
     {
-        let closer = closer.clone();
+        let closer = Arc::downgrade(&closer);
         let _ = std::thread::Builder::new().name("sayso-host-first-line".into()).spawn(move || {
-            if no_first_line.recv_timeout(FIRST_LINE_WAIT) == Err(crossbeam_channel::RecvTimeoutError::Timeout) {
+            if no_first_line.recv_timeout(FIRST_LINE_WAIT) == Err(crossbeam_channel::RecvTimeoutError::Timeout)
+                && let Some(closer) = closer.upgrade()
+            {
                 log::debug!("host: a program said nothing, and its connection closes");
                 closer();
             }
