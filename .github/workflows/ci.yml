@@ -337,6 +337,20 @@ jobs:
           name: test-windows-installer
           path: dist/Sayso-*-windows-x64-setup.exe
           if-no-files-found: error
+      # The checks of the real system audio and the example apps, for the same VM.
+      - name: Build the test programs
+        run: |
+          cargo build -p sayso-sdk --example scribe --example transcribe
+          $out = cargo test -p sayso-capture --test system_real --no-run --message-format=json | ConvertFrom-Json | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'system_real' }
+          New-Item -ItemType Directory -Force dist\test-programs | Out-Null
+          Copy-Item $out.executable dist\test-programs\system_real.exe
+          Copy-Item target\debug\examples\scribe.exe, target\debug\examples\transcribe.exe dist\test-programs\
+      - name: Keep the test programs
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-windows-programs
+          path: dist/test-programs/
+          if-no-files-found: error
       - name: Make the engine release file
         run: scripts\package-engine.ps1
       - name: Keep the engine release file
