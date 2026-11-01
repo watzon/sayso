@@ -112,12 +112,12 @@ pub struct AppModel {
     /// When a dictation last ran or the active model loaded. The idle time
     /// counts from here.
     pub(crate) last_dictation: Instant,
-    /// The links to the jobs of extensions, when the host runs.
+    /// The links to the jobs of apps, when the host runs.
     pub(crate) host_jobs: Option<crate::host::HostJobs>,
-    /// The host of extensions, when it runs.
+    /// The host of connected apps, when it runs.
     pub(crate) host: Option<Arc<sayso_host::Host>>,
-    /// The user chose "Restart to update" while an extension had a live
-    /// session or a job. Sayso installs the update when the work ends.
+    /// The user chose "Restart to update" while an app had a live session
+    /// or a job. Sayso installs the update when the work ends.
     pub(crate) update_waits: bool,
     pub permissions: HashMap<Permission, PermissionState>,
     /// A permission check runs on the background executor.
@@ -178,9 +178,26 @@ pub struct AppModel {
     pub update_notice: Option<sayso_update::manifest::Version>,
     /// The input devices, scanned off the UI thread. See `devices.rs`.
     pub(crate) devices: crate::devices::InputDevices,
-    /// An extension is installed, so the Models page shows the VAD and
-    /// diarization models. The slow checks read the folder again.
-    pub extensions_installed: bool,
+    /// `apps.toml`. The host and Settings write through this one value.
+    pub apps_file: Arc<sayso_host::AppsFile>,
+    /// The answers in `apps.toml`. The slow checks and each write read it again.
+    pub apps: Arc<sayso_host::Apps>,
+    /// `apps.toml` does not parse: no app can connect, and Settings says so.
+    pub apps_broken: bool,
+    /// The app that records now through a live session.
+    recording_app: Option<RecordingApp>,
+}
+
+/// An app that records now, for the menu bar and the popover.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordingApp {
+    pub session: u64,
+    pub app_id: String,
+    /// The name of its record.
+    pub name: String,
+    pub mic: bool,
+    pub system: bool,
+    pub since: Instant,
 }
 
 impl EventEmitter<AppEvent> for AppModel {}
@@ -228,6 +245,7 @@ pub enum AppEvent {
 
 impl AppModel {
     pub fn new(paths: Paths, config: Config, issues: Vec<ConfigIssue>, services: Services, cx: &mut Context<Self>) -> Self {
+        let apps_file = Arc::new(sayso_host::AppsFile::new(paths.apps_file()));
         let styles_fingerprint = crate::style_files::Fingerprint::of(&paths.styles_dir());
         let styles = StyleLibrary::load(&paths.styles_dir());
         let timing = Timing {
@@ -302,10 +320,14 @@ impl AppModel {
             updater: None,
             update_notice: None,
             devices: Default::default(),
-            extensions_installed: false,
+            apps: Default::default(),
+            apps_broken: false,
+            recording_app: None,
+            apps_file,
         };
         model.system_dark = model.services.platform.prefs.dark_mode();
-        model.extensions_installed = sayso_core::extensions::any_installed(&model.paths.extensions_dir());
+        model.apps = model.apps_file.current();
+        model.apps_broken = model.apps_file.is_broken();
         model.reload_dictionary();
         model.reload_history(cx);
         model.refresh_permissions(cx);
@@ -450,19 +472,19 @@ impl AppModel {
     }
 
     /// "Restart to update": put the new version in place and start it. Does
-    /// nothing during a dictation. The button is off then. While an extension
-    /// has a live session or a job, Sayso waits, and restarts when the work
+    /// nothing during a dictation. The button is off then. While an app has
+    /// a live session or a job, Sayso waits, and restarts when the work
     /// ends (`docs/extensions.md`, "Lifecycle").
     pub fn restart_to_update(&mut self, cx: &mut Context<Self>) {
         if !self.can_restart_to_update() {
             return;
         }
-        let holds = self.extension_holds();
+        let holds = self.app_holds();
         match update_restart(true, &holds) {
             UpdateRestart::Now => {}
             UpdateRestart::WaitFor(name) => {
                 self.update_waits = true;
-                self.blocked_notice = Some(OverlayNotice::new(NoticeIcon::Info, t!("update.waits_for_extension", extension = name)));
+                self.blocked_notice = Some(OverlayNotice::new(NoticeIcon::Info, t!("update.waits_for_app", app = name)));
                 cx.notify();
                 return;
             }
@@ -481,23 +503,71 @@ impl AppModel {
     }
 
     /// False during a dictation: a restart would lose it. False also while
-    /// an update waits for the work of an extension.
+    /// an update waits for the work of an app.
     pub fn can_restart_to_update(&self) -> bool {
         matches!(self.machine.state, State::Idle) && !self.update_waits
     }
 
-    /// The extensions that have a live session or a job now: Sayso asks
-    /// before it quits, and does not install an update.
-    pub fn extension_holds(&self) -> Vec<sayso_host::Hold> {
+    /// The apps that have a live session or a job now: Sayso asks before it
+    /// quits, and does not install an update.
+    pub fn app_holds(&self) -> Vec<sayso_host::Hold> {
         self.host.as_ref().map(|host| host.holds()).unwrap_or_default()
     }
 
-    /// A live session or a job of an extension started or ended, or a
-    /// dictation ended while an update waits.
+    /// At least one app is approved: the Models page shows the models that
+    /// only apps use.
+    pub fn any_app_approved(&self) -> bool {
+        self.apps.any_approved()
+    }
+
+    /// The app that records now, for the menu bar and the popover.
+    pub fn recording_app(&self) -> Option<&RecordingApp> {
+        self.recording_app.as_ref()
+    }
+
+    /// **Stop** in the popover.
+    pub fn stop_recording_app(&mut self, cx: &mut Context<Self>) {
+        let (Some(host), Some(recording)) = (&self.host, &self.recording_app) else { return };
+        host.stop_live_session(recording.session);
+        self.refresh_recording_app();
+        cx.notify();
+    }
+
+    fn refresh_recording_app(&mut self) {
+        use sayso_protocol::Source;
+        let live = self.host.as_ref().and_then(|host| host.live_session());
+        let live = live.filter(|live| !live.stopping && live.sources.iter().any(|source| matches!(source, Source::Mic | Source::System)));
+        self.recording_app = live.map(|live| {
+            let since = self.recording_app.as_ref().filter(|known| known.session == live.session).map_or_else(Instant::now, |known| known.since);
+            let name = self.apps.record(&live.app_id).map_or_else(|| sayso_host::visible_text(&live.app_id), |record| record.shown_name());
+            RecordingApp { session: live.session, name, mic: live.sources.contains(&Source::Mic), system: live.sources.contains(&Source::System), app_id: live.app_id, since }
+        });
+    }
+
+    /// `apps.toml` may have changed: an answer, a switch in Settings, or an
+    /// edit of the file. A session or a job without its grants stops now.
+    pub(crate) fn apps_changed(&mut self, cx: &mut Context<Self>) {
+        let apps = self.apps_file.current();
+        let broken = self.apps_file.is_broken();
+        if apps == self.apps && broken == self.apps_broken {
+            return;
+        }
+        self.apps = apps;
+        self.apps_broken = broken;
+        if let Some(host) = &self.host {
+            host.stop_work_without_grant();
+        }
+        self.refresh_recording_app();
+        cx.notify();
+    }
+
+    /// A live session or a job of an app started or ended, or a dictation
+    /// ended while an update waits.
     pub(crate) fn holds_changed(&mut self, cx: &mut Context<Self>) {
+        self.refresh_recording_app();
         if self.update_waits {
             let idle = matches!(self.machine.state, State::Idle);
-            if update_restart(idle, &self.extension_holds()) == UpdateRestart::Now {
+            if update_restart(idle, &self.app_holds()) == UpdateRestart::Now {
                 self.update_waits = false;
                 self.restart_to_update(cx);
             }
@@ -556,7 +626,7 @@ impl AppModel {
             crate::app::apply_language(&self.config);
             cx.emit(AppEvent::LanguageChanged);
         }
-        if before.hotkeys != self.config.hotkeys {
+        if before.hotkeys != self.config.hotkeys || (!before.onboarding.reached_keys() && self.config.onboarding.reached_keys()) {
             self.register_hotkeys();
         }
         if !self.config.history.enabled {
@@ -620,6 +690,11 @@ impl AppModel {
     }
 
     pub fn register_hotkeys(&mut self) {
+        // Binding keys can open a system dialog, for example the shortcut
+        // portal on GNOME. Do not show one over the first steps.
+        if !self.config.onboarding.reached_keys() {
+            return;
+        }
         let h = &self.config.hotkeys;
         // Config files can bypass the recorder's conflict checks.
         let usable = |hotkey: Option<Hotkey>| hotkey.filter(|key| h.toggle.is_none_or(|toggle| !key.conflicts_with_toggle(toggle)));

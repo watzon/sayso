@@ -9,7 +9,8 @@
 //! Modules:
 //! - [`protocol`]: request parsing and the output writer.
 //! - [`spec`]: the `engine` field of a request (recipe and archives).
-//! - [`store`]: the model folders on disk.
+//! - [`store`]: the model folders on disk, for a model that is not in the model store
+//!   (`sayso_core::model_store`).
 //! - [`download`]: download and extract a model archive, or download one file.
 //! - [`language`]: the language that a model finds in the speech.
 //! - [`parakeet`]: the final pass of a `parakeet_cpp` model, on parakeet.cpp.
@@ -54,6 +55,28 @@ use protocol::Output;
 use std::process::ExitCode;
 use std::sync::Arc;
 
+/// With `SAYSO_MODEL_STORE`, the models that have a descriptor are in that store,
+/// and a cleanup runs now (`docs/sdk.md`, "Clean up").
+fn open_store(config: &mut Config, out: &Arc<Output>) -> anyhow::Result<()> {
+    use sayso_core::model_store::{DESCRIPTORS_ENV, STORE_ENV, Store};
+    if let Some(path) = std::env::var_os(DESCRIPTORS_ENV).filter(|v| !v.is_empty()) {
+        let data = serde_json::from_slice(&std::fs::read(path)?)?;
+        config.descriptors = Box::leak(Box::new(data));
+    }
+    let Some(root) = std::env::var_os(STORE_ENV).filter(|v| !v.is_empty()) else {
+        return Ok(());
+    };
+    let store = Store::open(root.into())?;
+    let (cleaner, out) = (store.clone(), Arc::clone(out));
+    std::thread::Builder::new().name("store-cleanup".into()).spawn(move || {
+        if let Err(e) = cleaner.cleanup() {
+            out.log("warning", &format!("the cleanup of the model store failed: {e}"));
+        }
+    })?;
+    config.store = Some(store);
+    Ok(())
+}
+
 /// Run the engine on stdin and stdout until stdin closes or a `shutdown` request.
 pub fn run() -> ExitCode {
     let out = Arc::new(Output::protocol_stdout());
@@ -69,7 +92,11 @@ pub fn run() -> ExitCode {
         );
         return ExitCode::from(2);
     }
-    let config = Config::from_env(models_dir.clone());
+    let mut config = Config::from_env(models_dir.clone());
+    if let Err(e) = open_store(&mut config, &out) {
+        out.error(&format!("cannot open the model store: {e:#}"), None);
+        return ExitCode::from(2);
+    }
     let loader = Arc::new(sherpa::SherpaLoader::new());
     let engine = Arc::new(Engine::new(config, Arc::clone(&out), loader));
     out.log(

@@ -3,9 +3,8 @@
 
 use super::SessionSpec;
 use crate::jobs::resolve::{self as jobs, EngineView, Refusal, UserChoices, checked, need_feature, refuse};
-use crate::jobs::VadRun;
 use sayso_core::config::PreviewChoice;
-use sayso_core::models::{self, ModelId, ModelTask, Vad};
+use sayso_core::models::{self, ModelId, ModelTask};
 use sayso_protocol::{ErrorCode, SessionStart};
 
 /// Check `request` and choose its models. `preview` is the choice of the user
@@ -31,17 +30,23 @@ pub fn resolve(request: &SessionStart, user: &UserChoices, preview: &PreviewChoi
         None => None,
     };
 
-    let vad = match jobs::vad(request.vad_model.as_deref(), user, engine)? {
-        VadRun::Basic => Vad::Basic,
-        VadRun::Model(id) => Vad::Model(id),
-    };
+    let vad = jobs::vad(request.vad_model.as_deref(), user, engine)?;
     let diarization = jobs::diarization(request.diarize, request.diarization_model.as_deref(), user, engine)?;
-    Ok(SessionSpec { sources: request.sources.clone(), final_model: final_model.id, preview_model, vad, diarization, language, record_to: request.record_to.clone() })
+    Ok(SessionSpec {
+        sources: request.sources.clone(),
+        final_model: final_model.id.into(),
+        preview_model: preview_model.map(Into::into),
+        vad,
+        diarization: diarization.map(Into::into),
+        language,
+        record_to: request.record_to.clone(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::jobs::VadRun;
     use sayso_core::config::RoleChoice;
     use sayso_protocol::Source;
 
@@ -92,21 +97,21 @@ mod tests {
     fn missing_fields_take_the_choices_of_the_user() {
         let setup = Setup::new();
         let spec = setup.resolve(&request()).unwrap();
-        assert_eq!(spec.final_model, streaming());
-        assert_eq!(spec.preview_model, Some(streaming()), "auto: the final model streams itself");
-        assert_eq!(spec.vad, Vad::Model(first(ModelTask::Vad)));
+        assert_eq!(spec.final_model, streaming().into());
+        assert_eq!(spec.preview_model, Some(streaming().into()), "auto: the final model streams itself");
+        assert_eq!(spec.vad, VadRun::Model(first(ModelTask::Vad).into()));
         assert_eq!(spec.diarization, None);
         assert_eq!(spec.language, "en");
         assert_eq!(spec.sources, vec![Source::Client]);
         let spec = setup.resolve(&SessionStart { diarize: Some(true), vad_model: Some("basic".into()), language: Some("de".into()), ..request() }).unwrap();
-        assert_eq!((spec.diarization, spec.vad, spec.language.as_str()), (Some(first(ModelTask::Diarization)), Vad::Basic, "de"));
+        assert_eq!((spec.diarization, spec.vad, spec.language.as_str()), (Some(first(ModelTask::Diarization).into()), VadRun::Basic, "de"));
     }
 
     #[test]
     fn the_preview_model_is_checked() {
         let setup = Setup::new();
         let named = |id: &ModelId| SessionStart { preview_model: Some(id.0.clone()), ..request() };
-        assert_eq!(setup.resolve(&named(&streaming())).unwrap().preview_model, Some(streaming()));
+        assert_eq!(setup.resolve(&named(&streaming())).unwrap().preview_model, Some(streaming().into()));
         assert_eq!(setup.resolve(&named(&not_streaming())).unwrap_err().code, ErrorCode::WrongRole);
         assert_eq!(setup.resolve(&named(&first(ModelTask::Vad))).unwrap_err().code, ErrorCode::WrongRole);
         assert_eq!(setup.resolve(&named(&ModelId::new("no-such-model"))).unwrap_err().code, ErrorCode::UnknownModel);

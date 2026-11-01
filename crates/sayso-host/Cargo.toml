@@ -1,6 +1,6 @@
 [package]
 name = "sayso-host"
-description = "The host of Sayso extensions: the Host API socket, the identity check, state.toml, the capabilities, and jobs. No GPUI."
+description = "The host of connected apps: the Host API socket, the identity check, apps.toml, the approval question, the capabilities, and jobs. No GPUI."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,18 +10,19 @@ publish.workspace = true
 sayso-protocol.workspace = true
 sayso-core.workspace = true
 sayso-platform.workspace = true
+# Jobs and live sessions (MIT, docs/sdk.md "Crates").
+sayso-speech.workspace = true
 serde.workspace = true
 toml.workspace = true
+chrono.workspace = true
 log.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 workspace-hack.workspace = true
-# Reads the files of jobs. MPL-2.0, which a GPL-3.0 program can use. Only the
-# formats of docs/extensions.md ("Requests"): WAV, FLAC, MP3, AAC (ADTS), and M4A.
-symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm", "flac", "mp3", "aac", "isomp4"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+sayso-bridge.workspace = true
 
 # The code signature of the peer (the identity check on macOS).
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -40,7 +41,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
-sayso-extension.workspace = true
+sayso-sdk.workspace = true
 # The real-engine test of jobs (ignored by default).
 sayso-engine-client.workspace = true
 serde_json.workspace = true

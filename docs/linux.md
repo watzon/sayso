@@ -54,13 +54,16 @@ flatpak run dev.sayso.Sayso
 
 The install gets the runtime from Flathub, so your system must have the Flathub remote.
 
+A connected app reaches Sayso across the Flatpak sandbox, in both directions. An app outside needs nothing more. An app in its own Flatpak needs `--filesystem=xdg-run/sayso:ro` in its manifest, else it uses its own engine. Sayso starts a small program on the host for this, `sayso-bridge` ([sdk.md](sdk.md), "Flatpak").
+
 Sayso must send keys to other apps, read the keyboard, and start tools of your system. So its Flatpak has wide permissions, and the sandbox protects little:
 
 | Permission | Why |
 |---|---|
 | X11 and Wayland | The windows, the overlay, key grabs, and the paste key on X11 |
 | All devices | `/dev/uinput` for the paste key and `/dev/input` for keyboard access. The udev rule and the `input` group of "Permissions" apply as they do without Flatpak. The Flatpak cannot install the udev rule. |
-| Host commands (`org.freedesktop.Flatpak`) | The `claude` and `codex` tools of your system, for AI styles, and `gsettings`, for the GNOME custom shortcuts |
+| Host commands (`org.freedesktop.Flatpak`) | The `claude` and `codex` tools of your system, for AI styles, `gsettings`, for the GNOME custom shortcuts, and `sayso-bridge`, so that apps can connect |
+| `xdg-run/sayso`, read-only | A second sandbox of Sayso reaches the socket of `sayso-bridge` |
 | `~/.config/autostart` | **Launch at login** |
 | Media players (`org.mpris.MediaPlayer2.*`) | **Pause media**: Sayso pauses the players that play while you dictate |
 | Secret Service, the tray, audio, network | API keys, the tray icon, the microphone, model downloads, and cloud providers |
@@ -241,6 +244,7 @@ On an RTX 4070 the final pass took 77 ms for 5 s of speech and 347 ms for 58 s, 
 
 ## Known limits
 
+- Without a GPU that passes the limits of `wgpu`, Sayso draws on the processor with Mesa's llvmpipe, which is slower. With LLVM 22 or later, Sayso keeps its instance data in a texture on llvmpipe, because Mesa 26.0 ends with a crash in LLVM on the storage buffer ([vm-testing.md](vm-testing.md)). The log has `llvmpipe with LLVM 22 or later`.
 - Linux has no common way to detect a password field, so Sayso cannot warn you about one.
 - On GNOME, typing (the fallback method) works only for characters of the active keyboard layout. Pasting is not affected.
 - Through `/dev/uinput`, typing works only for ASCII characters with a US layout.

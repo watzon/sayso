@@ -1,4 +1,4 @@
-//! `session_start`, `session_audio`, and `session_stop` (`docs/extensions.md`,
+//! `session_start`, `session_audio`, and `session_stop` (`docs/apps.md`,
 //! "Requests"). The sessions themselves are in [`crate::live`].
 //!
 //! `session_start` and `session_stop` take time (a load, the last parts,
@@ -8,12 +8,12 @@
 //! reply of `session_start`.
 
 use crate::Shared;
-use crate::jobs::{EngineView, EventSink, UserChoices};
-use crate::live::{Owner, resolve};
+use crate::jobs::{EventSink, SaysoModels};
+use crate::live::Owner;
 use crate::responder::{Notifier, Responder};
 use parking_lot::Mutex;
-use sayso_core::models::ModelId;
 use sayso_protocol::{ErrorCode, Event, Reply, SessionAudio, SessionReply, SessionStart, SessionStop, TextReply};
+use sayso_speech::ModelResolver;
 use std::sync::Arc;
 
 fn no_engine() -> Reply {
@@ -21,33 +21,33 @@ fn no_engine() -> Reply {
 }
 
 /// Check the models, start the session, and reply `ok {session}`. Runs on a worker.
-pub(crate) fn session_start(shared: &Shared, connection: u64, extension_id: &str, request: &SessionStart, responder: Responder) {
+pub(crate) fn session_start(shared: &Shared, connection: u64, app_id: &str, app_pid: Option<u32>, request: &SessionStart, responder: Responder) {
     let (Some(engine), Some(live)) = (&shared.engine, &shared.live) else {
         responder.reply(no_engine());
         return;
     };
     let config = shared.services.config();
-    let features = engine.features();
-    let on_disk = |id: &ModelId| engine.status(id).is_on_disk();
-    let user = UserChoices {
-        final_model: &config.dictation.model,
-        language: &config.dictation.language,
-        vad: &config.models.vad,
-        diarization: &config.models.diarization,
-    };
-    let spec = match resolve(request, &user, &config.dictation.preview_model, &EngineView { on_disk: &on_disk, features: &features }) {
+    let spec = match SaysoModels::with(&config, &**engine, |models| models.session(request)) {
         Ok(spec) => spec,
         Err(refusal) => {
             responder.reply(Reply::error(Some(refusal.code), refusal.message));
             return;
         }
     };
-    // The events of the session wait until the extension has its id.
+    // The events of the session wait until the app has its id.
     let sink = Arc::new(AfterReply::new(responder.notifier()));
-    match live.start(Owner { connection, extension_id: extension_id.to_string() }, spec, sink.clone()) {
-        Ok(session) => {
-            responder.reply(Reply::ok_with(&SessionReply { session }));
+    let notifier = responder.notifier();
+    match live.start(Owner { connection, app_id: app_id.to_string(), pid: app_pid }, spec, sink.clone()) {
+        Ok(started) => {
+            responder.reply(Reply::ok_with(&SessionReply { session: started.session, excludes: started.excludes }));
             sink.release();
+            // The user can have taken a grant back during the load.
+            shared.stop_work_without_grant();
+            // The connection can have closed before the start took the slot, where its close
+            // did not see it. A close after this look finds the session in the slot.
+            if !notifier.is_open() {
+                live.connection_closed(connection);
+            }
         }
         Err(e) => responder.reply(e.reply()),
     }

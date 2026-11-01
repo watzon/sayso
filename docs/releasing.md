@@ -198,6 +198,8 @@ On x86_64 (Windows and Linux) the runtime has three builds, because llama.cpp co
 | Nix | `$out/lib/sayso/sayso-cleanup` | None |
 | Homebrew cask | Inside `Sayso.app`, as in the DMG | The DMG |
 
+The Linux tarball and the packages made from its `bin` folder (the Flatpak and the AppImage) also have `sayso-bridge`, a static program. Only a Sayso in a Flatpak starts it ([sdk.md](sdk.md), "Flatpak").
+
 `scripts/bundle.sh`, `scripts/bundle-windows.ps1`, and `scripts/bundle-linux.sh` (through `scripts/build-cleanup.sh`) build the runtime in release mode, also for a debug app, because llama.cpp is slow in a debug build. Every other Linux format takes the binary from the tarball.
 
 The CI job **Cleanup runtime** (`ci.yml`, start it with `gh workflow run ci.yml`) builds, tests, and lints the runtime on the four targets: macOS arm64, Windows x86_64, Linux x86_64, and Linux arm64. It prints the size and the libraries of the binary, and fails when the binary needs OpenMP. `linux.yml` also starts the installed runtime in the `.deb` test and checks that it answers `hello` with the `cpu` backend.

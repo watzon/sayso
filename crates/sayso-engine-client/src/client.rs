@@ -1,8 +1,9 @@
 //! `EngineClient`: spawns the SaysoEngine sidecar and implements `SttBackend`.
 //!
 //! Threads, per client:
-//! - **start**: says hello and refreshes statuses after the first launch, then
-//!   reports `Started`, or `StartFailed` and stops the sidecar.
+//! - **start**: runs `Options::before_launch` and the first launch when there is
+//!   a `before_launch`, says hello and refreshes statuses, then reports `Started`,
+//!   or `StartFailed` and stops the sidecar.
 //! - **supervisor**: reads the sidecar's stdout. When the pipe closes it reports
 //!   `Crashed`, restarts the sidecar with backoff, and starts a recovery thread.
 //! - **writer** (one per sidecar process): owns the sidecar's stdin and drains one
@@ -83,6 +84,21 @@ pub struct Options {
     pub backoff_max: Duration,
     /// Extra environment for the sidecar, also after a restart.
     pub env: Vec<(String, String)>,
+    /// Runs one time on the start thread before the first launch, for work that
+    /// can take long. It gives more environment for the sidecar, also after a
+    /// restart. With it, a program that cannot run gives `StartFailed`, not an
+    /// error from `start_with`.
+    pub before_launch: Option<BeforeLaunch>,
+}
+
+/// See [`Options::before_launch`].
+#[derive(Clone)]
+pub struct BeforeLaunch(pub Arc<dyn Fn() -> Vec<(String, String)> + Send + Sync>);
+
+impl std::fmt::Debug for BeforeLaunch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("BeforeLaunch")
+    }
 }
 
 impl Default for Options {
@@ -94,6 +110,7 @@ impl Default for Options {
             backoff_initial: Duration::from_millis(500),
             backoff_max: Duration::from_secs(5),
             env: Vec::new(),
+            before_launch: None,
         }
     }
 }
@@ -164,6 +181,8 @@ struct Inner {
     models_dir: PathBuf,
     cache_dir: PathBuf,
     options: Options,
+    /// What `before_launch` gave.
+    launch_env: Mutex<Vec<(String, String)>>,
     core: Mutex<Core>,
     subscribers: Mutex<Vec<Sender<EngineEvent>>>,
     statuses: Mutex<HashMap<ModelId, ModelStatus>>,
@@ -280,6 +299,7 @@ impl EngineClient {
             models_dir,
             cache_dir,
             options,
+            launch_env: Mutex::new(Vec::new()),
             core: Mutex::new(Core {
                 conn: None,
                 pending: HashMap::new(),
@@ -303,18 +323,15 @@ impl EngineClient {
             illegal_stop: Mutex::new(None),
             cannot_run: Mutex::new(HashMap::new()),
         });
-        let stdout = inner.launch().map_err(|e| {
-            failed(format!(
-                "cannot start engine {}: {e}",
-                inner.engine_path.display()
-            ))
-        })?;
-        {
-            let inner = Arc::clone(&inner);
-            thread::Builder::new()
-                .name("sayso-engine-supervisor".into())
-                .spawn(move || supervise(&inner, stdout))
-                .map_err(|e| failed(format!("cannot start engine thread: {e}")))?;
+        let deferred = inner.options.before_launch.is_some();
+        if !deferred {
+            let stdout = inner.launch().map_err(|e| {
+                failed(format!(
+                    "cannot start engine {}: {e}",
+                    inner.engine_path.display()
+                ))
+            })?;
+            start_supervisor(&inner, stdout).map_err(|e| failed(format!("cannot start engine thread: {e}")))?;
         }
         let client = EngineClient {
             inner: Arc::clone(&inner),
@@ -324,7 +341,11 @@ impl EngineClient {
         let events = client.subscribe();
         thread::Builder::new()
             .name("sayso-engine-start".into())
-            .spawn(move || inner.first_start())
+            .spawn(move || {
+                if !deferred || inner.deferred_launch() {
+                    inner.first_start();
+                }
+            })
             .map_err(|e| failed(format!("cannot start engine thread: {e}")))?;
         Ok((client, events))
     }
@@ -1086,7 +1107,10 @@ impl Inner {
         }
         let mut child = command
             .env("SAYSO_MODELS_DIR", &self.models_dir)
+            // Only what `Options` says chooses the store, not the shell of Sayso.
+            .env_remove("SAYSO_MODEL_STORE")
             .envs(self.options.env.iter().map(|(k, v)| (k, v)))
+            .envs(self.launch_env.lock().iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -1203,6 +1227,41 @@ impl Inner {
             .min(self.options.backoff_max)
     }
 
+    /// Run `before_launch`, then the first launch. False when there is no sidecar.
+    fn deferred_launch(self: &Arc<Self>) -> bool {
+        if let Some(before) = &self.options.before_launch {
+            *self.launch_env.lock() = (before.0)();
+        }
+        let launched = if self.shutting_down.load(Ordering::SeqCst) {
+            None
+        } else {
+            Some(self.launch().and_then(|stdout| start_supervisor(self, stdout)))
+        };
+        match launched {
+            Some(Ok(())) => {
+                // `Guard` can run before the child exists, and then it does not stop the child.
+                if self.shutting_down.load(Ordering::SeqCst) {
+                    self.kill_child();
+                }
+                true
+            }
+            Some(Err(e)) => {
+                self.shutting_down.store(true, Ordering::SeqCst);
+                self.start.store(START_FAILED, Ordering::SeqCst);
+                self.supervisor_alive.store(false, Ordering::SeqCst);
+                self.emit(EngineEvent::StartFailed {
+                    message: format!("cannot start engine {}: {e}", self.engine_path.display()),
+                });
+                false
+            }
+            None => {
+                self.start.store(START_FAILED, Ordering::SeqCst);
+                self.supervisor_alive.store(false, Ordering::SeqCst);
+                false
+            }
+        }
+    }
+
     /// After the first launch: hello and refresh statuses, then `Started`. When
     /// either fails, stop the sidecar for good and report `StartFailed`.
     fn first_start(&self) {
@@ -1249,6 +1308,14 @@ impl Inner {
             self.emit(EngineEvent::Restarted);
         }
     }
+}
+
+fn start_supervisor(inner: &Arc<Inner>, stdout: ChildStdout) -> std::io::Result<()> {
+    let inner = Arc::clone(inner);
+    thread::Builder::new()
+        .name("sayso-engine-supervisor".into())
+        .spawn(move || supervise(&inner, stdout))
+        .map(|_| ())
 }
 
 /// Read the sidecar's stdout until it closes. Restart it when it dies.

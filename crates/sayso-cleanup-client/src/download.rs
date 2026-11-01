@@ -659,6 +659,18 @@ mod tests {
     }
 
     fn answer(config: &Config, request: tiny_http::Request) {
+        // The port is on the loopback address, so other programs on the machine
+        // can reach it. Some of them probe new local ports (a tool with a
+        // "node" user agent was seen doing it). Only the download code under
+        // test is counted, and a stranger cannot use up a planned failure.
+        let from_client = request
+            .headers()
+            .iter()
+            .any(|h| h.field.equiv("User-Agent") && h.value.as_str().starts_with("Sayso/"));
+        if !from_client {
+            let _ = request.respond(tiny_http::Response::from_data(Vec::new()).with_status_code(404));
+            return;
+        }
         let path = request.url().to_string();
         let range = request
             .headers()

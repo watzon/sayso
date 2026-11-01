@@ -55,7 +55,7 @@ use sayso_protocol::engine::{Hello, Reply, Request};
 use sayso_protocol::{ErrorCode, ErrorReply, PROTOCOL};
 use std::ffi::OsString;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -215,13 +215,15 @@ pub struct EngineOptions {
     pub args: Vec<OsString>,
     /// More environment variables for the program.
     pub env: Vec<(OsString, OsString)>,
+    /// The model store, for an engine that lists `store_v1`. See [`EngineOptions::model_store`].
+    pub model_store: Option<PathBuf>,
     pub stderr: Stderr,
     pub timeouts: Timeouts,
 }
 
 impl EngineOptions {
     pub fn new(program: impl Into<PathBuf>, models_dir: impl Into<PathBuf>) -> EngineOptions {
-        EngineOptions { program: program.into(), models_dir: models_dir.into(), args: Vec::new(), env: Vec::new(), stderr: Stderr::default(), timeouts: Timeouts::default() }
+        EngineOptions { program: program.into(), models_dir: models_dir.into(), args: Vec::new(), env: Vec::new(), model_store: None, stderr: Stderr::default(), timeouts: Timeouts::default() }
     }
 
     pub fn arg(mut self, arg: impl Into<OsString>) -> EngineOptions {
@@ -231,6 +233,14 @@ impl EngineOptions {
 
     pub fn env(mut self, key: impl Into<OsString>, value: impl Into<OsString>) -> EngineOptions {
         self.env.push((key.into(), value.into()));
+        self
+    }
+
+    /// Keep the models in this store, in `SAYSO_MODEL_STORE`. An engine without the
+    /// feature `store_v1` does not get it and uses `models_dir` for each model:
+    /// [`Engine::model_store`] says what the engine does.
+    pub fn model_store(mut self, store: impl Into<PathBuf>) -> EngineOptions {
+        self.model_store = Some(store.into());
         self
     }
 
@@ -245,6 +255,7 @@ impl EngineOptions {
 pub struct Engine {
     connection: Connection,
     hello: Hello,
+    model_store: Option<PathBuf>,
     timeouts: Mutex<Timeouts>,
     events: Receiver<Event>,
     next_session: std::sync::atomic::AtomicU64,
@@ -252,8 +263,23 @@ pub struct Engine {
 
 impl Engine {
     /// Start the engine, send `hello`, and check that it speaks protocol 1.
+    ///
+    /// With [`EngineOptions::model_store`], the first process runs without the store. Only
+    /// `hello` says if the engine has it, and an engine with the store variable does its
+    /// cleanup when it starts. When the engine lists `store_v1`, a second process replaces
+    /// the first with the store.
     pub fn start(options: EngineOptions) -> Result<Engine> {
-        let (connection, events) = Connection::spawn(&options)?;
+        let (mut connection, mut events, mut hello) = Self::spawn(&options, None)?;
+        let model_store = options.model_store.clone().filter(|_| hello.features.iter().any(|feature| feature == "store_v1"));
+        if let Some(store) = &model_store {
+            drop(connection);
+            (connection, events, hello) = Self::spawn(&options, Some(store))?;
+        }
+        Ok(Engine { connection, hello, model_store, timeouts: Mutex::new(options.timeouts), events, next_session: std::sync::atomic::AtomicU64::new(1) })
+    }
+
+    fn spawn(options: &EngineOptions, store: Option<&Path>) -> Result<(Connection, Receiver<Event>, Hello)> {
+        let (connection, events) = Connection::spawn(options, store)?;
         let reply = connection.call(&Request::Hello, "hello", options.timeouts.startup, None)?;
         let Reply::Hello(hello) = reply else {
             return Err(Error::Protocol("the engine did not reply to hello with a hello".into()));
@@ -261,7 +287,13 @@ impl Engine {
         if hello.protocol != PROTOCOL {
             return Err(Error::Protocol(format!("the engine speaks protocol {}, and this SDK speaks {PROTOCOL}", hello.protocol)));
         }
-        Ok(Engine { connection, hello, timeouts: Mutex::new(options.timeouts), events, next_session: std::sync::atomic::AtomicU64::new(1) })
+        Ok((connection, events, hello))
+    }
+
+    /// The model store that this engine uses. None when no store was given, or when
+    /// the engine does not list `store_v1`: its models are then in `models_dir`.
+    pub fn model_store(&self) -> Option<&Path> {
+        self.model_store.as_deref()
     }
 
     /// The version of the engine. It is the version of the Sayso release that the engine comes with.

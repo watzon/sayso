@@ -47,6 +47,9 @@ jobs:
       # The translated system files must match the system catalogs.
       - name: Check the translated system files
         run: python3 scripts/i18n-system-files.py --check
+      # The Rust code in docs/sdk-guide must be the code of the examples that CI compiles.
+      - name: Check the code of the SDK guide
+        run: python3 scripts/check-sdk-guide.py
 
   test:
     name: Tests and clippy (manual)
@@ -68,7 +71,8 @@ jobs:
         run: |
           swift build -c release --package-path native/macos/SaysoEngine
           cargo run -q -p sayso-engine-conformance -- native/macos/SaysoEngine/.build/release/SaysoEngine \
-            --model parakeet-tdt-v2 --engine-json '{"kind":"parakeet_tdt","version":"v2"}'
+            --model parakeet-tdt-v2 --engine-json '{"kind":"parakeet_tdt","version":"v2"}' \
+            --store silero-vad '{"kind":"fluid_vad"}'
 
   test-linux:
     name: Tests and clippy, Linux (manual)
@@ -100,6 +104,11 @@ jobs:
           fi
       - name: Test
         run: cargo test --workspace
+      # Not a workspace member, so cargo test --workspace does not run it.
+      - name: Test the vendored crate
+        run: cargo test -p gpui-pre-wgpu --test sayso
+      - name: Two engines on one model store
+        run: cargo test -p sayso-engine --test conformance -- --ignored
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
@@ -136,6 +145,8 @@ jobs:
           fi
       - name: Test
         run: cargo test --workspace
+      - name: Two engines on one model store
+        run: cargo test -p sayso-engine --test conformance -- --ignored
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
@@ -305,9 +316,9 @@ jobs:
           workspaces: |
             .
             native/cleanup
-      - name: Install CMake
+      - name: Install CMake and Inno Setup
         run: |
-          choco install cmake --no-progress -y
+          choco install cmake innosetup --no-progress -y
           "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
       # Same as the test jobs above: the cache can keep the folders of the
       # sherpa-onnx library without its files.
@@ -320,9 +331,29 @@ jobs:
             cargo clean -p sherpa-onnx-sys
             cargo clean -p sherpa-onnx-sys --release
           fi
-      # No SAYSO_SIGN_CERT, so nothing is signed. No -Installer: the folder is enough.
-      - name: Build the app folder, not signed
-        run: scripts\bundle-windows.ps1
+      # No SAYSO_SIGN_CERT, so nothing is signed. The installer is for tests on a VM.
+      - name: Build the app folder and the installer, not signed
+        run: scripts\bundle-windows.ps1 -Installer
+      - name: Keep the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-windows-installer
+          path: dist/Sayso-*-windows-x64-setup.exe
+          if-no-files-found: error
+      # The checks of the real system audio and the example apps, for the same VM.
+      - name: Build the test programs
+        run: |
+          cargo build -p sayso-sdk --example scribe --example transcribe
+          $out = cargo test -p sayso-capture --test system_real --no-run --message-format=json | ConvertFrom-Json | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'system_real' }
+          New-Item -ItemType Directory -Force dist\test-programs | Out-Null
+          Copy-Item $out.executable dist\test-programs\system_real.exe
+          Copy-Item target\debug\examples\scribe.exe, target\debug\examples\transcribe.exe dist\test-programs\
+      - name: Keep the test programs
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-windows-programs
+          path: dist/test-programs/
+          if-no-files-found: error
       - name: Make the engine release file
         run: scripts\package-engine.ps1
       - name: Keep the engine release file

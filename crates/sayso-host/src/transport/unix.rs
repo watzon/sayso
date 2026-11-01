@@ -1,6 +1,6 @@
 use super::Conn;
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+use std::os::unix::fs::MetadataExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -18,14 +18,9 @@ pub(crate) struct Listener {
 
 impl Listener {
     pub fn bind(path: &Path) -> io::Result<Listener> {
-        let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).ok_or_else(|| io::Error::other(format!("{} has no folder", path.display())))?;
-        private_dir(parent)?;
-        if UnixStream::connect(path).is_ok() {
-            return Err(io::Error::new(io::ErrorKind::AddrInUse, format!("another Sayso serves extensions at {}", path.display())));
-        }
-        // A socket file that nobody answers is left from a crash.
-        let _ = std::fs::remove_file(path);
-        let listener = UnixListener::bind(path)?;
+        let listener = sayso_bridge::listen::bind(path)?;
+        #[cfg(target_os = "linux")]
+        sayso_bridge::credentials::pass_credentials(&listener)?;
         let meta = std::fs::symlink_metadata(path)?;
         Ok(Listener { listener, path: path.to_path_buf(), file: (meta.dev(), meta.ino()) })
     }
@@ -35,14 +30,26 @@ impl Listener {
         let writer = stream.try_clone()?;
         writer.set_write_timeout(Some(WRITE_TIMEOUT))?;
         let closer = stream.try_clone()?;
-        let peer = crate::Peer { stream: stream.try_clone()? };
+        #[cfg(target_os = "linux")]
+        let (reader, peer): (Box<dyn std::io::Read + Send>, super::WriterOf) = {
+            let (reader, writer_pid) = sayso_bridge::credentials::reader(stream);
+            (reader, Box::new(move || writer_pid().map(|pid| crate::Peer { pid })))
+        };
+        #[cfg(target_os = "macos")]
+        let (reader, peer): (Box<dyn std::io::Read + Send>, super::WriterOf) = {
+            let writer_of = stream.try_clone()?;
+            (Box::new(stream), Box::new(move || crate::identity::system::last_writer(&writer_of)))
+        };
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+        let (reader, peer): (Box<dyn std::io::Read + Send>, super::WriterOf) = (Box::new(stream), Box::new(|| Ok(crate::Peer {})));
         Ok(Conn {
-            reader: Box::new(stream),
+            reader,
             writer: Box::new(writer),
             closer: Arc::new(move || {
                 let _ = closer.shutdown(std::net::Shutdown::Both);
             }),
             peer,
+            attested: None,
         })
     }
 
@@ -58,23 +65,6 @@ impl Listener {
         {
             let _ = std::fs::remove_file(&self.path);
         }
-    }
-}
-
-/// Make `dir` for this user only (mode 0700). A folder that is there must be
-/// a real folder of this user that no other user can open.
-fn private_dir(dir: &Path) -> io::Result<()> {
-    match std::fs::DirBuilder::new().mode(0o700).create(dir) {
-        Ok(()) => return Ok(()),
-        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
-        Err(e) => return Err(io::Error::new(e.kind(), format!("cannot make {}: {e}", dir.display()))),
-    }
-    let meta = std::fs::symlink_metadata(dir)?;
-    // SAFETY: getuid has no failure mode.
-    if meta.is_dir() && meta.uid() == unsafe { libc::getuid() } && meta.mode() & 0o077 == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::new(io::ErrorKind::PermissionDenied, format!("{} is not a private folder of this user", dir.display())))
     }
 }
 
@@ -98,7 +88,7 @@ mod tests {
     fn a_stale_socket_is_replaced_and_a_live_one_is_not() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("sayso/host.sock");
-        private_dir(path.parent().unwrap()).unwrap();
+        sayso_bridge::listen::private_dir(path.parent().unwrap()).unwrap();
         drop(UnixListener::bind(&path).unwrap());
         let first = Listener::bind(&path).expect("a socket that nobody answers is stale");
         assert_eq!(Listener::bind(&path).err().unwrap().kind(), io::ErrorKind::AddrInUse);

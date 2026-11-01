@@ -13,6 +13,11 @@
 //!
 //! On macOS and Linux the folder of the socket has mode `0700`. The host
 //! makes it.
+//!
+//! An app looks in the folder outside a sandbox, also when it runs in a Flatpak
+//! ([`client_socket_path`]). Two apps that are not Sayso never share the
+//! `app/<app id>` folder, so Sayso is never there for them. A sandboxed app needs
+//! `--filesystem=xdg-run/sayso:ro` in its manifest (`docs/sdk.md`, "Flatpak").
 
 use std::io;
 use std::path::PathBuf;
@@ -97,6 +102,23 @@ pub fn host_socket_path_for(system: System, env: &impl SocketEnv) -> io::Result<
             None => Err(io::Error::other("cannot find the SID of the user")),
         },
     }
+}
+
+/// The path where an app looks for the host. The same as
+/// [`host_socket_path`], except in a Flatpak on Linux.
+pub fn client_socket_path() -> io::Result<PathBuf> {
+    client_socket_path_for(System::current(), &SystemEnv)
+}
+
+/// The path where an app on `system` with `env` looks for the host.
+pub fn client_socket_path_for(system: System, env: &impl SocketEnv) -> io::Result<PathBuf> {
+    if system == System::Linux
+        && env.var(SOCKET_ENV).is_none()
+        && let Some(runtime) = env.var("XDG_RUNTIME_DIR")
+    {
+        return Ok(PathBuf::from(runtime).join("sayso").join(SOCKET_FILE));
+    }
+    host_socket_path_for(system, env)
 }
 
 /// The real environment of this process.
@@ -241,6 +263,31 @@ mod tests {
         assert_eq!(path(System::Linux, &env), PathBuf::from("/run/user/1000/app/dev.sayso.Sayso/host.sock"));
         env.vars.insert("XDG_RUNTIME_DIR", "");
         assert_eq!(path(System::Linux, &env), PathBuf::from("/tmp/sayso-1000/host.sock"), "an empty variable is not set");
+    }
+
+    #[test]
+    fn an_app_in_a_flatpak_looks_where_an_app_outside_it_looks() {
+        let mut env = FakeEnv { vars: HashMap::from([("XDG_RUNTIME_DIR", "/run/user/1000")]), uid: Some(1000), ..Default::default() };
+        let client = |env: &FakeEnv| client_socket_path_for(System::Linux, env).unwrap();
+        assert_eq!(client(&env), PathBuf::from("/run/user/1000/sayso/host.sock"));
+        env.vars.insert("FLATPAK_ID", "dev.example.Notes");
+        assert_eq!(client(&env), PathBuf::from("/run/user/1000/sayso/host.sock"), "not the folder of the sandbox of the app");
+        env.vars.insert("FLATPAK_ID", "dev.sayso.Sayso");
+        assert_eq!(client(&env), PathBuf::from("/run/user/1000/sayso/host.sock"), "also with the id of Sayso");
+        assert_eq!(path(System::Linux, &env), PathBuf::from("/run/user/1000/app/dev.sayso.Sayso/host.sock"), "the host still listens in its sandbox");
+        env.vars.insert(SOCKET_ENV, "/x/host.sock");
+        assert_eq!(client(&env), PathBuf::from("/x/host.sock"), "the environment variable wins");
+        env.vars.remove(SOCKET_ENV);
+        env.vars.insert("XDG_RUNTIME_DIR", "");
+        assert_eq!(client(&env), PathBuf::from("/tmp/sayso-1000/host.sock"), "an empty variable is not set");
+    }
+
+    #[test]
+    fn an_app_on_other_systems_looks_where_the_host_listens() {
+        let env = FakeEnv { vars: HashMap::from([("XDG_RUNTIME_DIR", "/run/user/501"), ("FLATPAK_ID", "dev.example.Notes")]), temp: Some("/var/folders/T/"), uid: Some(501), sid: Some("S-1-5-21-1") };
+        for system in [System::MacOs, System::Windows, System::OtherUnix] {
+            assert_eq!(client_socket_path_for(system, &env).unwrap(), host_socket_path_for(system, &env).unwrap());
+        }
     }
 
     #[test]

@@ -125,7 +125,16 @@ impl TapController {
         if let Some(event) = released {
             let _ = self.sink.events.send(event);
         }
-        if needed { self.ensure_running() } else { Ok(()) }
+        if !needed {
+            return Ok(());
+        }
+        // Creating the tap makes the system ask for Input Monitoring. Sayso asks
+        // when the user chooses a key that needs it, or in onboarding.
+        // SAFETY: plain permission queries. Accessibility also lets a tap listen.
+        if !unsafe { CGPreflightListenEventAccess() || AXIsProcessTrusted() } {
+            return Err("Input Monitoring is not granted".into());
+        }
+        self.ensure_running()
     }
 
     pub fn set_recording(&self, recording: bool) -> Result<(), String> {
@@ -150,6 +159,12 @@ impl TapController {
     fn ensure_active_tap(&self) {
         let mut slot = self.active.lock();
         if slot.is_some() {
+            return;
+        }
+        // Creating the tap makes the system ask for Accessibility. Sayso asks in
+        // onboarding, after it says why. `set_recording` tries again.
+        // SAFETY: plain permission query.
+        if !unsafe { AXIsProcessTrusted() } {
             return;
         }
         let job = Job::Active { enter: self.enter_logic.clone(), logic: self.logic.clone(), events: self.sink.events.clone() };

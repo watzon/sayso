@@ -32,6 +32,9 @@ on:
       - '.github/workflows/linux.yml'
       - 'packaging/linux/**'
       - 'scripts/bundle-linux.sh'
+      - 'scripts/build-cleanup.sh'
+      - 'scripts/test-cleanup-cpus.sh'
+      - 'scripts/tiny-gguf.py'
       - 'scripts/package-linux.sh'
       - 'scripts/package-engine.sh'
       - 'packaging/engine/**'
@@ -207,31 +210,67 @@ jobs:
         shell: bash
         run: |
           DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/sayso-*-linux-${{ matrix.arch }}.deb xvfb xauth dbus mesa-vulkan-drivers
-          export XDG_CACHE_HOME="$RUNNER_TEMP/cache"
-          status=0
-          timeout 30 dbus-run-session -- xvfb-run -a sayso || status=$?
+          export XDG_CACHE_HOME="$RUNNER_TEMP/cache" XDG_CONFIG_HOME="$RUNNER_TEMP/config"
           log="$XDG_CACHE_HOME/sayso/logs/sayso.log"
-          cat "$log"
-          [[ $status -eq 124 ]] || { echo "::error::Sayso stopped with status $status before the timeout."; exit 1; }
+          run_sayso() {
+            status=0
+            rm -f "$log"
+            timeout 30 dbus-run-session -- xvfb-run -a sayso || status=$?
+            cat "$log"
+            [[ $status -eq 124 ]] || { echo "::error::Sayso stopped with status $status before the timeout."; exit 1; }
+          }
+          # The first start binds no keys: that can open a system dialog.
+          run_sayso
+          for text in 'sayso-engine .* ready' 'Selected GPU adapter'; do
+            grep -qE "$text" "$log" || { echo "::error::The log does not have \"$text\"."; exit 1; }
+          done
+          if grep -q 'chords use' "$log"; then
+            echo "::error::Sayso bound the keys before the shortcut step of onboarding."
+            exit 1
+          fi
+          # After onboarding, it binds them at the start.
+          printf '[onboarding]\ncompleted = true\nstep = 6\n' > "$XDG_CONFIG_HOME/sayso/config.toml"
+          run_sayso
           for text in 'sayso-engine .* ready' 'Selected GPU adapter' 'chords use'; do
             grep -qE "$text" "$log" || { echo "::error::The log does not have \"$text\"."; exit 1; }
           done
 
       # The cleanup runtime needs no model to answer hello, and its backend
-      # is the CPU on Linux. It must not need libgomp (OpenMP is off).
+      # is the CPU on Linux. It must not need libgomp (OpenMP is off). On
+      # x86_64 there are three builds (scripts/build-cleanup.sh).
       - name: Start the installed cleanup runtime
         shell: bash
         run: |
-          runtime=/usr/lib/sayso/sayso-cleanup
-          deps=$(ldd "$runtime")
-          echo "$deps"
-          if grep -qE 'libgomp|not found' <<< "$deps"; then
-            echo "::error::The cleanup runtime has a library that it must not have, or one that is missing."
-            exit 1
+          for runtime in /usr/lib/sayso/sayso-cleanup*; do
+            echo "== $runtime"
+            deps=$(ldd "$runtime")
+            echo "$deps"
+            if grep -qE 'libgomp|not found' <<< "$deps"; then
+              echo "::error::$runtime has a library that it must not have, or one that is missing."
+              exit 1
+            fi
+            reply=$(printf '{"v":1,"id":"1","type":"hello"}\n' | timeout 20 "$runtime")
+            echo "$reply"
+            [[ "$reply" == *'"type":"hello"'*'"backend":"cpu"'* ]] || { echo "::error::$runtime gave no hello reply with the cpu backend."; exit 1; }
+          done
+          if [[ "${{ matrix.arch }}" == x86_64 ]]; then
+            for build in sayso-cleanup-avx sayso-cleanup-baseline; do
+              [[ -x /usr/lib/sayso/$build ]] || { echo "::error::The package has no $build."; exit 1; }
+            done
           fi
-          reply=$(printf '{"v":1,"id":"1","type":"hello"}\n' | timeout 20 "$runtime")
-          echo "$reply"
-          [[ "$reply" == *'"type":"hello"'*'"backend":"cpu"'* ]] || { echo "::error::The cleanup runtime gave no hello reply with the cpu backend."; exit 1; }
+
+      # Each x86_64 build of the cleanup runtime loads a model and completes
+      # text on the oldest processor that it is for, under QEMU, and the AVX2
+      # build stops on a processor without AVX2 (issue #37).
+      - name: Run the cleanup runtime builds on older processors
+        if: matrix.arch == 'x86_64'
+        shell: bash
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends qemu-user python3-venv
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet gguf==0.19.0 numpy
+          "$RUNNER_TEMP/venv/bin/python" scripts/tiny-gguf.py "$RUNNER_TEMP/tiny.gguf"
+          scripts/test-cleanup-cpus.sh /usr/lib/sayso "$RUNNER_TEMP/tiny.gguf"
 
       - name: Keep the packages
         uses: actions/upload-artifact@v4

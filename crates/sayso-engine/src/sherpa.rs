@@ -89,7 +89,9 @@ impl Loader for SherpaLoader {
             Some(dir) => {
                 layout::online_files(dir)?;
                 let dir = dir.clone();
+                let store_use = dirs.store_use.clone();
                 Some(Arc::new(LazyPreview::new(move || {
+                    let _store_use = &store_use;
                     Ok(Arc::new(Online::load(&dir)?) as Arc<dyn LivePreview>)
                 })))
             }

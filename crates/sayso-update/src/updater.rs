@@ -85,6 +85,7 @@ impl Options {
         {
             std::process::exit(0);
         }
+        #[cfg_attr(not(debug_assertions), allow(unused_mut))]
         let mut options = Self {
             url: crate::MANIFEST_URL.to_string(),
             https_only: true,

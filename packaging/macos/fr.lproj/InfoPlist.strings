@@ -1,2 +1,3 @@
 /* Written by scripts/i18n-system-files.py from the system catalog. */
 "NSMicrophoneUsageDescription" = "Sayso n’écoute le microphone que pendant que vous dictez. La parole est transcrite sur ce Mac.";
+"NSAudioCaptureUsageDescription" = "Sayso enregistre le son des autres apps et des appels uniquement pour une app que vous avez autorisée, pendant qu’elle enregistre.";

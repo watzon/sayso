@@ -74,5 +74,5 @@ update:
   now_version: "O Sayso agora é a %{version}"
   whats_new: "Novidades"
   dismiss: "Dispensar"
-  # "Restart to update" while an extension records or transcribes.
-  waits_for_extension: "O Sayso vai reiniciar para atualizar quando %{extension} terminar."
+  # "Restart to update" while an app records or transcribes.
+  waits_for_app: "O Sayso vai reiniciar para atualizar quando %{app} terminar."

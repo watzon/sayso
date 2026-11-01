@@ -296,13 +296,20 @@ impl OverlayView {
     fn track(&mut self, window: &mut Window, check_fullscreen: bool, cx: &mut Context<Self>) -> bool {
         let Some(ns) = crate::shell::native(window) else { return false };
         if !self.configured {
-            crate::shell::configure_overlay(ns);
-            crate::shell::make_never_key(ns);
             self.configured = true;
-            if self.notch.is_some() && crate::shell::can_place_windows() {
-                // macOS keeps a window out of the menu bar. Turn that off,
-                // then put the notch at the top edge again.
-                crate::shell::allow_over_menu_bar(ns);
+            let over_menu_bar = self.notch.is_some() && crate::shell::can_place_windows();
+            // A new style mask changes the backing properties at once, and that
+            // calls into GPUI: see `appkit_later`.
+            crate::app::appkit_later(cx, move || {
+                crate::shell::configure_overlay(ns);
+                crate::shell::make_never_key(ns);
+                if over_menu_bar {
+                    // macOS keeps a window out of the menu bar. Turn that off.
+                    crate::shell::allow_over_menu_bar(ns);
+                }
+            });
+            if over_menu_bar {
+                // Then put the notch at the top edge again.
                 self.move_to(ns, self.origin, self.anchor, cx);
             }
         }

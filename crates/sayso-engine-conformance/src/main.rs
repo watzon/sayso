@@ -3,20 +3,22 @@
 //! ```text
 //! sayso-engine-conformance <engine> [--model <id> --engine-json <json>]
 //!     [--models-dir <dir> --audio <wav> [--stream]]
-//!     [--vad <id> <json>] [--diarization <id> <json>]
+//!     [--vad <id> <json>] [--diarization <id> <json>] [--store <id> <json>]
 //! ```
 //!
 //! `--model` and `--engine-json` add the model level: a catalog entry that is
 //! not on disk. `--models-dir` and `--audio` add the ready level: the same
 //! model, on disk in that folder. `--vad` and `--diarization` add a VAD model
 //! and a diarization model (an id and its `engine` object) to the ready level.
-//! They are on disk in the same folder. The exit code is 1 when a check fails.
+//! They are on disk in the same folder. `--store` adds the store level: a small
+//! VAD model (an id and its `engine` object), which it downloads once. The exit
+//! code is 1 when a check fails.
 
 use sayso_engine_conformance::{Model, Ready, Suite, run};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: sayso-engine-conformance <engine> [--model <id> --engine-json <json>] [--models-dir <dir> --audio <wav> [--stream]] [--vad <id> <json>] [--diarization <id> <json>]";
+const USAGE: &str = "usage: sayso-engine-conformance <engine> [--model <id> --engine-json <json>] [--models-dir <dir> --audio <wav> [--stream]] [--vad <id> <json>] [--diarization <id> <json>] [--store <id> <json>]";
 
 fn main() -> ExitCode {
     match parse(std::env::args().skip(1).collect()) {
@@ -48,6 +50,7 @@ fn parse(args: Vec<String>) -> Result<Suite, String> {
             "--stream" => stream = true,
             "--vad" => vad = Some(model_arg(&flag, value()?, value()?)?),
             "--diarization" => diarization = Some(model_arg(&flag, value()?, value()?)?),
+            "--store" => suite.store = Some(model_arg(&flag, value()?, value()?)?),
             other => return Err(format!("unknown argument {other}")),
         }
     }

@@ -9,7 +9,7 @@ The messages of the [Sayso](https://github.com/watzon/sayso) Host API and of the
 
 Each message is one JSON object on one line, with `"v":1`, a string `type`, and an optional string `id`. `encode` writes a message and `decode` reads one. A reader ignores fields that it does not know, and a message type that it does not know comes back as `Decoded::Unknown`, so an old reader does not fail on a newer peer.
 
-This crate does no I/O. To write an extension, use [`sayso-extension`](https://crates.io/crates/sayso-extension). To run a speech engine from your own app, use [`sayso-engine-sdk`](https://crates.io/crates/sayso-engine-sdk).
+This crate does no I/O. To write an app that uses Sayso, use [`sayso-sdk`](https://crates.io/crates/sayso-sdk). To run a speech engine from your own app, use [`sayso-engine-sdk`](https://crates.io/crates/sayso-engine-sdk).
 
 ## Documentation
 

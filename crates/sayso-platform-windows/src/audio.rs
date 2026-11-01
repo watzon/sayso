@@ -88,7 +88,7 @@ impl Framer {
 // A box would allocate in the callback, and `Stop` is sent once.
 #[allow(clippy::large_enum_variant)]
 enum Message {
-    Frame(RawFrame),
+    Frame(RawFrame, Duration),
     /// Sent after the last frame. The worker ends.
     Stop,
 }
@@ -103,7 +103,7 @@ struct FrameSink {
 impl FrameSink {
     fn push(&mut self, frame: &RawFrame) {
         // A frame is a plain copy, so the queue allocates nothing.
-        match self.tx.try_send(Message::Frame(*frame)) {
+        match self.tx.try_send(Message::Frame(*frame, sayso_capture::clock::now().saturating_sub(Duration::from_millis(20)))) {
             Ok(()) => {}
             Err(TrySendError::Full(message)) => {
                 // The worker is far behind. Wait for it: a wait costs a glitch at worst,
@@ -141,9 +141,9 @@ impl Worker {
         std::thread::Builder::new()
             .name("sayso-audio".into())
             .spawn(move || {
-                while let Ok(Message::Frame(samples)) = rx.recv() {
+                while let Ok(Message::Frame(samples, time)) = rx.recv() {
                     let level = display_level(rms(&samples));
-                    on_frame(AudioFrame { samples: samples.to_vec(), level });
+                    on_frame(AudioFrame { samples: samples.to_vec(), level, time });
                 }
                 let _ = done_tx.send(());
             })

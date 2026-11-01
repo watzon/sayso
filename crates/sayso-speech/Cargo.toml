@@ -1,0 +1,24 @@
+[package]
+name = "sayso-speech"
+description = "Jobs and live sessions over a Sayso speech engine: the file decoder, voice detection, the final pass of each part, and the speakers. Blocking calls, no async runtime."
+version.workspace = true
+edition.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
+license = "MIT"
+publish = true
+repository = "https://github.com/watzon/sayso"
+readme = "README.md"
+
+[dependencies]
+sayso-protocol.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+log.workspace = true
+# Reads the files of jobs. MPL-2.0: a dependency under its own license, so
+# this crate stays MIT. Only the formats of docs/extensions.md ("Requests"):
+# WAV, FLAC, MP3, AAC (ADTS), and M4A.
+symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm", "flac", "mp3", "aac", "isomp4"] }
+workspace-hack.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

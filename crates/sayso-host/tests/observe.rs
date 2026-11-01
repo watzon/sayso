@@ -2,8 +2,8 @@
 //! identity check (see `common`).
 
 use crossbeam_channel::Receiver;
-use sayso_extension::protocol::{Capability, DictationDone, ErrorCode, Event as HostEvent, SubscribeReply};
-use sayso_extension::{Client, Event};
+use sayso_sdk::protocol::{Capability, DictationDone, ErrorCode, Event as HostEvent, SubscribeReply};
+use sayso_sdk::client::{Client, Event};
 use serde_json::json;
 use std::time::Duration;
 
@@ -41,7 +41,7 @@ fn heard(events: &Receiver<Event>) -> Vec<(Option<String>, DictationDone)> {
 #[test]
 fn a_subscriber_gets_each_dictation_without_an_id() {
     let setup = setup();
-    write_state(&setup.state, &here(), OBSERVE, None);
+    write_apps(&setup.apps, OBSERVE);
     let host = start_with(&setup, FakeServices::new(None));
     let client = Client::connect_to(&setup.socket).unwrap();
     let events = client.events();
@@ -68,7 +68,7 @@ fn a_subscriber_gets_each_dictation_without_an_id() {
 #[test]
 fn nothing_goes_out_while_incognito_was_on_at_the_start_or_the_end() {
     let setup = setup();
-    write_state(&setup.state, &here(), OBSERVE, None);
+    write_apps(&setup.apps, OBSERVE);
     let host = start_with(&setup, FakeServices::new(None));
     let client = Client::connect_to(&setup.socket).unwrap();
     let events = client.events();
@@ -84,7 +84,7 @@ fn nothing_goes_out_while_incognito_was_on_at_the_start_or_the_end() {
 #[test]
 fn a_grant_that_the_user_takes_back_stops_the_next_event() {
     let setup = setup();
-    write_state(&setup.state, &here(), OBSERVE, None);
+    write_apps(&setup.apps, OBSERVE);
     let host = start_with(&setup, FakeServices::new(None));
     let client = Client::connect_to(&setup.socket).unwrap();
     let events = client.events();
@@ -92,7 +92,7 @@ fn a_grant_that_the_user_takes_back_stops_the_next_event() {
     host.dictation_done(done("granted"), false, false);
     assert_eq!(heard(&events).len(), 1);
 
-    write_state(&setup.state, &here(), &[], None);
+    write_apps(&setup.apps, &[]);
     host.dictation_done(done("taken back"), false, false);
     assert!(heard(&events).is_empty(), "the grant is read for each event");
     // The connection stays, and `subscribe` needs the capability now.
@@ -100,7 +100,7 @@ fn a_grant_that_the_user_takes_back_stops_the_next_event() {
     assert_eq!((refusal.code, refusal.capability), (Some(ErrorCode::Capability), Some(Capability::DictationObserve)));
 
     // Granted again: the subscription of before counts again.
-    write_state(&setup.state, &here(), OBSERVE, None);
+    write_apps(&setup.apps, OBSERVE);
     host.dictation_done(done("granted again"), false, false);
     assert_eq!(heard(&events), vec![(None, done("granted again"))]);
 }
@@ -108,7 +108,7 @@ fn a_grant_that_the_user_takes_back_stops_the_next_event() {
 #[test]
 fn a_closed_host_sends_no_more_events() {
     let setup = setup();
-    write_state(&setup.state, &here(), OBSERVE, None);
+    write_apps(&setup.apps, OBSERVE);
     let host = start_with(&setup, FakeServices::new(None));
     let client = Client::connect_to(&setup.socket).unwrap();
     let events = client.events();

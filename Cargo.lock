@@ -2092,6 +2092,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "enum-primitive-derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba7795da175654fe16979af73f81f26a8ea27638d8d9823d317016888a63dc4c"
+dependencies = [
+ "num-traits",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "enumflags2"
 version = "0.7.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3532,8 +3543,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre-wgpu"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b1cdb26c1503bf9662ee8fbc5ab0b44b2deeee4b5c12dc67491ba6fb5fc544b"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -5549,7 +5558,9 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1eebcea8b0dbff5f7c8504f3107c68fc061a3eb44932051c8cf8a68d969c3b2"
 dependencies = [
+ "block2 0.6.2",
  "dispatch2",
+ "libc",
  "objc2 0.6.4",
  "objc2-core-audio-types",
  "objc2-core-foundation",
@@ -6413,6 +6424,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1d8f70e07b9c3962945a74e59ca1c511bba65b6419468acc217c457d93f3c740"
 
 [[package]]
+name = "pulseaudio"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ba79a4c6904c987cc31fa50e9b750539404511c2dbd9ce95e5e58444177a21e"
+dependencies = [
+ "bitflags 2.13.2",
+ "byteorder",
+ "enum-primitive-derive",
+ "futures",
+ "log",
+ "mio",
+ "num-traits",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7183,7 +7210,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-app"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "anyhow",
  "ash",
@@ -7200,6 +7227,7 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "rust-embed",
+ "sayso-capture",
  "sayso-cleanup-client",
  "sayso-core",
  "sayso-engine-client",
@@ -7211,6 +7239,7 @@ dependencies = [
  "sayso-platform-linux",
  "sayso-platform-macos",
  "sayso-platform-windows",
+ "sayso-protocol",
  "sayso-store",
  "sayso-transcribe",
  "sayso-ui",
@@ -7226,8 +7255,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-bridge"
+version = "0.14.1"
+dependencies = [
+ "libc",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "sayso-capture"
+version = "0.14.1"
+dependencies = [
+ "block2 0.6.2",
+ "cpal 0.18.2",
+ "crossbeam-channel",
+ "futures",
+ "libc",
+ "log",
+ "objc2 0.6.4",
+ "objc2-core-audio",
+ "objc2-core-audio-types",
+ "objc2-core-foundation",
+ "objc2-foundation 0.3.2",
+ "parking_lot",
+ "pulseaudio",
+ "sayso-speech",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sayso-cleanup-client"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "log",
  "parking_lot",
@@ -7244,15 +7303,17 @@ dependencies = [
 
 [[package]]
 name = "sayso-core"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "chrono",
  "log",
  "regex",
  "sayso-i18n",
  "sayso-ink",
+ "sayso-speech",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
  "toml 0.9.12+spec-1.1.0",
@@ -7263,7 +7324,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-engine"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7291,7 +7352,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-engine-client"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "base64 0.22.1",
  "crossbeam-channel",
@@ -7307,17 +7368,18 @@ dependencies = [
 
 [[package]]
 name = "sayso-engine-conformance"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "base64 0.22.1",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "workspace-hack",
 ]
 
 [[package]]
 name = "sayso-engine-sdk"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "crossbeam-channel",
  "sayso-protocol",
@@ -7329,7 +7391,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-enhance"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "keyring",
  "log",
@@ -7349,7 +7411,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-extension"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "crossbeam-channel",
  "sayso-protocol",
@@ -7361,22 +7423,24 @@ dependencies = [
 
 [[package]]
 name = "sayso-host"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
+ "chrono",
  "core-foundation 0.10.1",
  "crossbeam-channel",
  "libc",
  "log",
  "parking_lot",
+ "sayso-bridge",
  "sayso-core",
  "sayso-engine-client",
- "sayso-extension",
  "sayso-platform",
  "sayso-protocol",
+ "sayso-sdk",
+ "sayso-speech",
  "security-framework",
  "serde",
  "serde_json",
- "symphonia",
  "tempfile",
  "toml 0.9.12+spec-1.1.0",
  "windows-sys 0.61.2",
@@ -7385,7 +7449,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-i18n"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "chrono",
  "regex",
@@ -7396,7 +7460,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-ink"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "serde",
  "toml 0.9.12+spec-1.1.0",
@@ -7405,7 +7469,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "crossbeam-channel",
  "sayso-core",
@@ -7415,13 +7479,12 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform-common"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
- "cpal 0.18.2",
  "crossbeam-channel",
  "log",
- "parking_lot",
  "rodio",
+ "sayso-capture",
  "sayso-core",
  "sayso-platform",
  "workspace-hack",
@@ -7429,7 +7492,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform-linux"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "ashpd",
  "async-channel",
@@ -7460,7 +7523,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform-macos"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "block2 0.6.2",
  "core-foundation 0.10.1",
@@ -7484,7 +7547,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform-windows"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "cpal 0.18.2",
  "crossbeam-channel",
@@ -7494,6 +7557,7 @@ dependencies = [
  "log",
  "parking_lot",
  "rodio",
+ "sayso-capture",
  "sayso-core",
  "sayso-platform",
  "serde_json",
@@ -7504,7 +7568,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-protocol"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "base64 0.22.1",
  "libc",
@@ -7515,8 +7579,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-sdk"
+version = "0.14.1"
+dependencies = [
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "sayso-capture",
+ "sayso-engine-sdk",
+ "sayso-protocol",
+ "sayso-speech",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "windows-sys 0.61.2",
+ "workspace-hack",
+]
+
+[[package]]
+name = "sayso-speech"
+version = "0.14.1"
+dependencies = [
+ "crossbeam-channel",
+ "log",
+ "parking_lot",
+ "sayso-protocol",
+ "symphonia",
+ "tempfile",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sayso-store"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "chrono",
  "claxon",
@@ -7536,7 +7631,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-transcribe"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "log",
  "sayso-core",
@@ -7548,7 +7643,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-ui"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "anyhow",
  "gpui-kit",
@@ -7561,7 +7656,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-update"
-version = "0.13.0"
+version = "0.14.1"
 dependencies = [
  "base64 0.22.1",
  "crossbeam-channel",
@@ -10598,10 +10693,13 @@ dependencies = [
  "byteorder",
  "cc",
  "crc32fast",
- "crossbeam-utils",
  "digest 0.10.7",
  "digest 0.11.3",
  "dispatch2",
+ "futures-channel",
+ "futures-core",
+ "futures-io",
+ "futures-sink",
  "futures-util",
  "getrandom 0.3.4",
  "getrandom 0.4.3",
@@ -10628,9 +10726,9 @@ dependencies = [
  "serde",
  "serde_core",
  "simd-adler32",
+ "slab",
  "smallvec",
  "subtle",
- "symphonia",
  "syn 2.0.119",
  "syn 3.0.6",
  "time",

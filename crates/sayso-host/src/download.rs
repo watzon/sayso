@@ -30,7 +30,7 @@ const ENGINE_START_WAIT: Duration = Duration::from_secs(10);
 const DOWNLOAD_START_WAIT: Duration = Duration::from_secs(30);
 /// How often a wait looks at the connection and at the host.
 const TICK: Duration = Duration::from_millis(250);
-/// The reason of the extension is text from another program. The question to
+/// The reason of the app is text from another program. The question to
 /// the user shows only the start of it.
 const MAX_REASON_CHARS: usize = 300;
 
@@ -53,12 +53,12 @@ pub(crate) fn ready_engine(shared: &Shared, responder: &Responder) -> Result<Arc
 }
 
 /// `download_model`. Runs on a worker thread.
-pub(crate) fn download_model(shared: &Shared, extension_id: &str, request: &DownloadModel, responder: Responder) {
-    let reply = run(shared, extension_id, request, &responder);
+pub(crate) fn download_model(shared: &Shared, app_id: &str, request: &DownloadModel, responder: Responder) {
+    let reply = run(shared, app_id, request, &responder);
     responder.reply(reply);
 }
 
-fn run(shared: &Shared, extension_id: &str, request: &DownloadModel, responder: &Responder) -> Reply {
+fn run(shared: &Shared, app_id: &str, request: &DownloadModel, responder: &Responder) -> Reply {
     let id = ModelId::new(&request.model);
     let Some(info) = core::find_local(&id) else {
         return Reply::error(Some(ErrorCode::UnknownModel), format!("there is no model {} for this computer", request.model));
@@ -76,13 +76,13 @@ fn run(shared: &Shared, extension_id: &str, request: &DownloadModel, responder: 
         Look::Idle => {}
     }
     let started = {
-        let gate = shared.question_gate(extension_id);
+        let gate = shared.question_gate(app_id);
         let _one_question = gate.lock();
         // The request before this one may have started the download.
         match look(shared, &engine, &id) {
             Look::OnDisk => Err(Reply::ok()),
             Look::Running => Ok(StartGuard { shared, id: None }),
-            Look::Idle => ask_and_start(shared, extension_id, request, &info, &engine, responder),
+            Look::Idle => ask_and_start(shared, app_id, request, &info, &engine, responder),
         }
     };
     // The question is closed, so the next one of this extension can open.
@@ -100,7 +100,7 @@ fn run(shared: &Shared, extension_id: &str, request: &DownloadModel, responder: 
 /// disk after all.
 fn ask_and_start<'a>(
     shared: &'a Shared,
-    extension_id: &str,
+    app_id: &str,
     request: &DownloadModel,
     info: &core::ModelInfo,
     engine: &Arc<dyn SttBackend>,
@@ -109,20 +109,20 @@ fn ask_and_start<'a>(
     if !responder.is_open() {
         return Err(Reply::error(None, "the connection is closed"));
     }
-    let extension_name = shared.state.current().record(extension_id).map_or_else(|| extension_id.to_string(), |record| record.display_name().to_string());
+    let app_name = shared.apps.current().record(app_id).map_or_else(|| crate::visible_text(app_id), |record| record.shown_name());
     let question = DownloadQuestion {
-        extension_id: extension_id.to_string(),
-        extension_name,
+        app_id: app_id.to_string(),
+        app_name,
         model_id: info.id.to_string(),
         model_name: info.name.clone(),
         size_bytes: info.size_bytes,
         reason: short(&request.reason),
     };
-    log::info!("host: {extension_id} asks to download {}", info.id);
-    // The question closes when the extension disconnects or Sayso closes.
+    log::info!("host: {app_id} asks to download {}", info.id);
+    // The question closes when the app disconnects or Sayso closes.
     let withdrawn = || !responder.is_open() || shared.is_closing();
     let accepted = shared.services.ask_download(&question, &withdrawn);
-    log::info!("host: the user said {} to {extension_id} for {}", if accepted { "yes" } else { "no" }, info.id);
+    log::info!("host: the user said {} to {app_id} for {}", if accepted { "yes" } else { "no" }, info.id);
     if !accepted {
         return Err(Reply::error(Some(ErrorCode::Declined), "the user said no to the download"));
     }
@@ -144,7 +144,7 @@ fn ask_and_start<'a>(
     if let Err(e) = engine.download(&info.id) {
         return Err(Reply::error(None, format!("the engine cannot start the download: {e}")));
     }
-    log::info!("host: download of {} starts for {extension_id}", info.id);
+    log::info!("host: download of {} starts for {app_id}", info.id);
     starting.insert(info.id.clone());
     Ok(StartGuard { shared, id: Some(info.id.clone()) })
 }
@@ -188,7 +188,9 @@ fn look_with(engine: &Arc<dyn SttBackend>, id: &ModelId, starting: &HashSet<Mode
     }
 }
 
+/// The reason to show: on one line, with nothing that can mislead, and cut.
 fn short(reason: &str) -> String {
+    let reason = crate::identity::without_hidden(&reason.replace(['\n', '\r', '\t'], " "));
     let reason = reason.trim();
     if reason.chars().count() <= MAX_REASON_CHARS {
         return reason.to_string();
@@ -198,7 +200,7 @@ fn short(reason: &str) -> String {
     cut
 }
 
-/// Send the events of the download to the extension until it ends, and give
+/// Send the events of the download to the app until it ends, and give
 /// the reply.
 ///
 /// The old status counts only when it is `downloading`. A model that the host
@@ -243,11 +245,11 @@ fn follow(shared: &Shared, engine: &Arc<dyn SttBackend>, events: &Receiver<Engin
     }
 }
 
-/// What the extension heard so far about one download.
+/// What the app heard so far about one download.
 struct Progress<'a> {
     model: &'a str,
     responder: &'a Responder,
-    /// The last `model_state` that the extension got.
+    /// The last `model_state` that the app got.
     announced: Option<ModelState>,
 }
 
@@ -293,5 +295,17 @@ impl Progress<'_> {
             }
             ModelStatus::NotDownloaded => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::short;
+
+    #[test]
+    fn a_reason_loses_what_can_mislead_and_is_cut() {
+        assert_eq!(short("  Needs\na model\u{202E} for\u{E0041} notes "), "Needs a model for notes");
+        let long = short(&"x".repeat(400));
+        assert!(long.ends_with("...") && long.chars().count() < 400, "{long}");
     }
 }

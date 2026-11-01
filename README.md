@@ -45,18 +45,18 @@ Select a button to download the file of the newest release. The [Releases page](
 
 Linux runs on X11 and on Wayland. [docs/linux.md](docs/linux.md) lists what works on each desktop.
 
-[dmg]: https://github.com/watzon/sayso/releases/download/v0.13.0/Sayso-0.13.0-macos-arm64.dmg
-[exe]: https://github.com/watzon/sayso/releases/download/v0.13.0/Sayso-0.13.0-windows-x64-setup.exe
-[deb-x86_64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-linux-x86_64.deb
-[deb-aarch64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-linux-aarch64.deb
-[rpm-x86_64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-linux-x86_64.rpm
-[rpm-aarch64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-linux-aarch64.rpm
-[flatpak-x86_64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-linux-x86_64.flatpak
-[flatpak-aarch64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-linux-aarch64.flatpak
-[appimage-x86_64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-x86_64.AppImage
-[appimage-aarch64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-aarch64.AppImage
-[tarball-x86_64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-linux-x86_64.tar.gz
-[tarball-aarch64]: https://github.com/watzon/sayso/releases/download/v0.13.0/sayso-0.13.0-linux-aarch64.tar.gz
+[dmg]: https://github.com/watzon/sayso/releases/download/v0.14.0/Sayso-0.14.0-macos-arm64.dmg
+[exe]: https://github.com/watzon/sayso/releases/download/v0.14.0/Sayso-0.14.0-windows-x64-setup.exe
+[deb-x86_64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-linux-x86_64.deb
+[deb-aarch64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-linux-aarch64.deb
+[rpm-x86_64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-linux-x86_64.rpm
+[rpm-aarch64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-linux-aarch64.rpm
+[flatpak-x86_64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-linux-x86_64.flatpak
+[flatpak-aarch64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-linux-aarch64.flatpak
+[appimage-x86_64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-x86_64.AppImage
+[appimage-aarch64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-aarch64.AppImage
+[tarball-x86_64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-linux-x86_64.tar.gz
+[tarball-aarch64]: https://github.com/watzon/sayso/releases/download/v0.14.0/sayso-0.14.0-linux-aarch64.tar.gz
 
 ### macOS
 
@@ -135,7 +135,7 @@ The source code is free software under the [GNU General Public License, version 
 
 The official build is the signed and notarized app. It is free, and it needs no license key. Sayso is paid for by the people who use it: the download page at [justsayso.app](https://justsayso.app) asks what you want to pay, and $0 is a valid answer.
 
-Two crates are an exception. `crates/sayso-ink` and `crates/sayso-ui` (the colors, the paper, and the components) are MIT-licensed, so that extensions can look like Sayso. Each has its own `LICENSE` file. The fonts in `crates/sayso-ui/assets/fonts` keep their own SIL Open Font License files.
+Two crates are an exception. `crates/sayso-ink` and `crates/sayso-ui` (the colors, the paper, and the components) are MIT-licensed, so that other apps can look like Sayso. Each has its own `LICENSE` file. The fonts in `crates/sayso-ui/assets/fonts` keep their own SIL Open Font License files.
 
 The name Sayso and the app icon are not part of the license. If you publish a changed version, give it another name and another icon.
 

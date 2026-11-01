@@ -1,6 +1,6 @@
 # Extensions
 
-Status: proposed on 2026-10-23. Not built. Chris confirmed the decisions in "Decisions" on 2026-10-23, and the answers to the open questions the same day. No question is open. The ADRs are in [adr/](adr/).
+Status: steps 1 to 7 are done. On 2026-10-29 Chris dropped extensions: [sdk.md](sdk.md) replaces steps 8 to 12, and step 9 removed the sections on the manifest, the package, install, update, remove, start, the Marketplace, the registry, and "Names". Later steps still name them. The sections on the engine protocol, the Host API, scheduling, capture, lifecycle, and privacy stay valid, with "connected app" for "extension". The rest of this paragraph is the original status. Proposed on 2026-10-23. Not built. Chris confirmed the decisions in "Decisions" on 2026-10-23, and the answers to the open questions the same day. No question is open. The ADRs are in [adr/](adr/).
 
 This file says how other apps use the speech features of Sayso: models, transcription, voice activity detection, audio capture, and the user's AI providers. Sayso stays a dictation app. Meeting notes, media transcription, and the ideas of other developers become extensions: separate apps that Sayso installs, lists, and starts.
 
@@ -189,7 +189,7 @@ FluidAudio also has streaming diarization (Sortformer, LS-EEND). It can give liv
 
 Config: `models.diarization = "auto"` (the default) or a model id. Automatic means the diarization model on disk. There is no built-in fallback. A request with `diarize: true` and no diarization model on disk gets `error {code: "model_not_downloaded"}`, and the extension can send `download_model`.
 
-In a job, the host gives each segment a speaker (`crates/sayso-host/src/jobs/speakers.rs`):
+In a job, the host gives each segment a speaker (`crates/sayso-speech/src/jobs/speakers.rs`):
 
 1. **Small speakers are folded.** Without a number of speakers, the diarizers find extra speakers that say almost nothing: with CAM++ zh_en at the threshold 0.9, the benchmark found 7 to 10 speakers in 300 s parts of 4-speaker meetings, and many of them had only 0.4 to 9 s of speech (0.1 to 2.6 %). So, when the request has no `speakers`, a speaker with less than 2 % of all speech and less than 10 s of speech (`SMALL_SPEAKER_SHARE`, `SMALL_SPEAKER_MS`) is folded: each of its turns goes to the speaker that overlaps it most, else to the speaker of the nearest turn. The speaker with the most speech always stays. The 10 s limit keeps a real speaker of a long meeting, who has a small share but more than a few words. With these rules, the speakers of those results go from 7, 10, and 8 to 5, 7, and 5 in English (4 real), and from 12, 8, and 8 to 8, 5, and 5 in Mandarin (6 real). In two Mandarin parts that is one speaker too few: a person who says very little can be folded. When the request has `speakers`, the host keeps the speakers of the engine.
 2. **Each segment gets one speaker:** the speaker with the most time in the segment, else the speaker of the nearest turn. The host does not split a segment at a change of speaker, also for models with word times. The segments go to the extension while the job runs, and diarization runs after the last one. Segments of `word` models end at sentence ends and at pauses of 700 ms, where speakers usually change.
@@ -241,13 +241,7 @@ This socket is not the command socket of Linux (`crates/sayso-platform-linux/src
 
 ### Who is calling
 
-The host knows a client by its executable, not by a token:
-
-- macOS: the audit token of the peer gives its code signature. The host compares the signature with the one it checked at install (team id and bundle id). An extension that the user opens from Finder or Spotlight connects too.
-- Linux: `SO_PEERCRED` gives the pid, and `/proc/<pid>/exe` must be in the install directory of an extension.
-- Windows: `GetNamedPipeClientProcessId` gives the pid, and its image path must be in the install directory of an extension.
-
-The host refuses a client that is not an installed extension, with the error `not_an_extension`. An app that is not an extension uses the engine alone, or the user sideloads it.
+The host knows a client by its executable, not by a token. [sdk.md](sdk.md) ("Identity") has the rules for each system. The first `hello` of an identity asks the user ("The question"). The host keeps the answer in `<data dir>/apps.toml`. An app that the user refused, or a program with no identity that the host can trust, gets `not_approved`.
 
 This check works because the identity of the executable survives a restart of Sayso, for example after an update. A token from the last run of Sayso would not survive. Malware that runs as the same user can get around any of these checks. That is outside what the host can protect against (see "Security").
 
@@ -257,14 +251,14 @@ Every request with an `id` gets one reply: `ok` or `error`. Events can arrive at
 
 | Request | Capability | Fields | Reply and events |
 |---|---|---|---|
-| `hello` | none | `sdk, protocol, features` | `ok {host_version, protocol, features, extension_id, capabilities}` |
+| `hello` | none | `sdk, protocol, features` | `ok {host_version, protocol, features, extension_id, capabilities}`. When the reply waits for the answer of a person, the event `approval_waiting` comes first, at once. |
 | `list_models` | `models.read` | `role?` (`final`, `streaming`, `vad`, `diarization`) | `ok {models: [{id, name, roles, state, languages, timestamps, size_bytes, choice}]}`. `choice` lists the roles for which the host uses this model when a request names none. |
 | `download_model` | `models.download` | `model, reason` | The host asks the user, unless the model is on disk or already downloads. Then `model_state` and `download_progress` events, and `ok`, or `error {code: "declined"}`, or `error {code: "unknown_model"}`, or `error` with the message of the engine when the download fails. |
 | `transcribe_file` | `transcribe.file` | `path, model?, vad_model?, language?, diarize?, diarization_model?, speakers?` | `ok {job}` at once. Then `job_progress {job, fraction}` and `segment {job, start_ms, end_ms, text}`. With `diarize`, `speakers {job, turns}` after the last segment. At the end `job_done {job, text}` or `job_failed {job, message, code}`. |
-| `cancel_job` | `transcribe.file` | `job` | `ok`, also for a job of this connection that already ended. The job gets `job_failed` at once. A job that this connection did not start gets `error {code: "bad_request"}`. |
-| `session_start` | `session.live`, plus `audio.mic` or `audio.system` for those sources | `sources` (`mic`, `system`, `client`), `model?, preview_model?, vad_model?, language?, diarize?, diarization_model?, record_to?` | `ok {session}`, or `error {code: "busy"}` when another live session runs, or `error {code: "too_many_streams"}` when the engine has no free stream. Then `partial {session, source, committed, tentative}` and `segment {session, source, start_ms, end_ms, text}` events. |
+| `cancel_job` | none | `job` | `ok`, also for a job of this connection that already ended. The job gets `job_failed` at once. A job that this connection did not start gets `error {code: "bad_request"}`. |
+| `session_start` | `session.live`, plus `audio.mic` or `audio.system` for those sources | `sources` (`mic`, `system`, `client`), `model?, preview_model?, vad_model?, language?, diarize?, diarization_model?, record_to?` | `ok {session, excludes}`, or `error {code: "busy"}` when another live session runs, or `error {code: "too_many_streams"}` when the engine has no free stream, or `error {code: "permission"}` when the system refuses a capture permission. `excludes` lists what the capture of the source `system` leaves out (`sayso`, `app`), and is empty when the system does not allow it. Then `partial {session, source, committed, tentative}` and `segment {session, source, start_ms, end_ms, text}` events, `source_gap {session, source, ms}` when a device change loses audio, and `source_ended {session, source, reason}` (`permission` or `failed`) when one source ends and the others go on. |
 | `session_audio` | `session.live` | `session, pcm` (base64, 16 kHz mono i16). Only for the source `client`. | Without `id`: no reply, and an `error` without `id` when the audio is wrong. With `id`: `ok` or `error`. |
-| `session_stop` | `session.live` | `session` | Last segments. With `diarize`, `speakers {session, source, turns}` for each source. Then `ok {text}`. |
+| `session_stop` | none | `session` | Last segments. With `diarize`, `speakers {session, source, turns}` for each source. Then `ok {text}`. |
 | `enhance` | `ai.enhance` | `text`, `style?` or `prompt?`, `provider?` | `ok {text, provider, model}`, or `error` with the codes below. |
 | `subscribe` | `dictation.observe` | `events: ["dictation_done"]` | `ok {events}`: the events that the connection gets now. Then `dictation_done {text, transcript, app, site, style, time}` after each insert. |
 | `bye` | none | | `ok`, then the host closes the socket |
@@ -332,7 +326,7 @@ A live session waits only for dictation. A job waits for dictation, and also whi
 
 A job runs one VAD part at a time. When a dictation starts, the job finishes the current part, waits, and goes on after the insert. So a job slows dictation by at most one part. The host keeps parts under about 30 s for this reason.
 
-How a job runs (`crates/sayso-host/src/jobs/`):
+How a job runs (`crates/sayso-speech/src/jobs/`, with the model checks of Sayso in `crates/sayso-host/src/jobs/`):
 
 - **Chunks.** VAD gives the speech parts. Neighbouring parts join into chunks of at most 30 s (10 s for a model with the timestamp level `none`, which gets one segment for each chunk), when the pause between them is at most 3 s. Each chunk gets 200 ms of audio before and after its speech. A VAD model gets the file in windows of 10 minutes.
 - **Dictation and live sessions first.** `AppModel::dispatch` tells the host (`DictationGate`) when the dictation state machine enters `Recording` or `Processing`, and when it leaves both. Every way out of a dictation (insert, failed insert, no speech, cancel, failed capture, a recording that is too short) goes through `dispatch`, and a dictation that has not ended after 20 minutes no longer holds jobs. A job waits before each call to the engine (a load, a VAD window, a chunk, diarization) while a dictation runs, and while a live session has a part or its diarization in the engine. Diarization runs once on the whole file, so on a long file it is the one call that can make a dictation wait for more than one part.
@@ -354,7 +348,7 @@ The microphone is one capture in Sayso (`crates/sayso-app/src/mic.rs`). It start
 - A live session gets its frames through a queue of its own. The capture never waits for that queue, so a slow live session does not delay or drop a frame of a dictation.
 - When the user chooses another microphone in Settings while a live session runs, the capture stays on the old microphone until the next user joins (the next dictation, or the next live session). Then the capture moves to the new microphone for all its users: the new microphone starts first, and the old one stops after that. The live session loses only the frames between the two, and never gets the frames of both.
 
-How a live session runs (`crates/sayso-host/src/live/`):
+How a live session runs (`crates/sayso-speech/src/live/`, with the model checks of Sayso in `crates/sayso-host/src/live/`):
 
 - **One pipeline for each source.** The audio goes to the recording, to a preview stream of the engine when the session has a streaming model (`partial` events), and to the VAD: a VAD session of the engine, or Basic VAD in the host. Each speech that ends is a part, with 200 ms of audio before and after it. The final model transcribes the parts one at a time, and each segment of a part becomes a `segment` event with times from the start of the session.
 - **Dictation first.** The final pass of a part and the diarization wait while a dictation runs. The preview stream and the VAD do not wait, so the session hears all the audio.
@@ -362,15 +356,15 @@ How a live session runs (`crates/sayso-host/src/live/`):
 - **Engine session ids.** A dictation numbers its engine sessions from 1. The host numbers the preview streams and VAD sessions of live sessions from 2^40, so the two never meet. A source uses at most two streams of the engine (a preview stream and a VAD session). When the engine has no free stream, `session_start` gets `error {code: "too_many_streams"}`, and the host closes the streams that it opened.
 - **End of the VAD.** At the stop, the host closes a VAD session of the engine with `stream_end` and waits for its reply (`SttBackend::end_vad`). The engine sends the last `speech_end` before that reply, and the bus of the host passes it on before `end_vad` returns, so the host does not wait for a time of silence. An engine client that cannot wait for the reply keeps the default `end_vad`; then the host ends the open speech at the end of the audio.
 - **Stop.** `session_stop` ends the audio, closes the streams, waits for the part that the engine transcribes now, transcribes the last part, and runs diarization on the recording of each source. The `segment` and `speakers` events of a session have no `id`; they come before the `ok {text}` reply. `text` is the text of all segments in the order of time. When the extension closes its connection, or Sayso quits, the host stops its session without diarization, and does not transcribe the parts that wait. When Sayso quits, this happens before `host_closing`.
-- **Sources.** This version captures `mic` and `client`. `system` gets `error {code: "unsupported"}`.
+- **Sources.** This version captures `mic`, `system`, and `client`. `system` gets `error {code: "unsupported"}` on macOS 14.0 and 14.1. See "System audio" in `sdk.md` for what each system leaves out, and for the rules of times, gaps, and permissions.
 
-There is no echo cancellation in the first version. When the user has no headphones, the microphone hears the call too. The host then drops a microphone segment when a system segment overlaps it in time and has most of the same words. Set the limit for "most" with test recordings at the build, and write it in this file.
+There is no echo cancellation in the first version. When the user has no headphones, the microphone hears the call too. The host then drops a microphone segment when a system segment overlaps it in time and has at least 60% of the same words. With both sources, a microphone segment waits for the system source to pass its time. `sdk.md` has the rule and how we chose the limit.
 
 System audio is new work for each system:
 
 - macOS: a Core Audio process tap. It needs macOS 14.2 or later and a system audio permission for Sayso.
-- Windows: WASAPI loopback.
-- Linux: the monitor source of the default output in PipeWire.
+- Windows: WASAPI loopback of the default output device.
+- Linux: the monitor of the default sink, through the protocol of PulseAudio, which PipeWire also serves.
 
 Sayso asks for the system audio permission the first time a live session asks for the source `system`, and not at onboarding.
 
@@ -397,9 +391,9 @@ Step 6 builds the Host API in these crates:
 | Crate | License | What it has |
 |---|---|---|
 | `sayso-protocol` | MIT | The messages of the engine protocol and the Host API, with serde. The error codes and the capabilities. The PCM helpers (base64 of 16-bit PCM). No I/O. |
-| `sayso-extension` | MIT | The client of the Host API. Blocking calls and a channel of events, with no async runtime, like the rest of Sayso. |
+| `sayso-sdk` (it replaced `sayso-extension`, see `docs/sdk.md`) | MIT | The client of the Host API. Blocking calls and a channel of events, with no async runtime, like the rest of Sayso. |
 | `sayso-engine-sdk` | MIT | Start an engine and talk to it over stdio. |
-| `sayso-host` | GPL | The server: the socket, the identity check, `state.toml`, the capabilities, the scheduler, jobs, and live sessions. No GPUI. |
+| `sayso-host` | GPL | The server: the socket, the identity check, `apps.toml`, the approval question, the capabilities, the scheduler, jobs, and live sessions. No GPUI. |
 
 `sayso-host` gets the engine, the capture, and the user interface of Sayso through traits that `sayso-app` gives it (`HostServices`). The microphone of live sessions is `HostServices::microphone`: in `sayso-app` it joins the shared microphone (`SharedMic::join_queued`) on the device of `audio.input_device`. `Host::live_session` and `Host::set_live_observer` tell the app which live session runs, for the menu bar of step 8. For example, `sayso-app` shows the download question (`ask_download`), and `sayso-host` waits for the answer on a thread of its own. The host gives `ask_download` a check (`withdrawn`), and the app closes the window when it is true. `HostServices::styles` and `run_style` give `enhance` the styles of the user and the style step of a dictation. The app tells the host each dictation with `Host::dictation_done`, and asks `Host::holds` before it quits or installs an update. The traits also give the engine (`SttBackend`) and the settings of the user. So the host runs and is tested without a window.
 
@@ -408,32 +402,16 @@ Inside the host, a request that takes time gets a `Responder` (its events with t
 The socket:
 
 - `SAYSO_HOST_SOCKET`, when it is set, is the path. Sayso sets it for the extensions that it starts.
-- Else on Linux: `$XDG_RUNTIME_DIR/sayso/host.sock`, or `$XDG_RUNTIME_DIR/app/<app id>/host.sock` in a Flatpak.
+- Else on Linux: `$XDG_RUNTIME_DIR/sayso/host.sock`. A host in a Flatpak listens at `$XDG_RUNTIME_DIR/app/<app id>/host.sock`, and `sayso-bridge` serves the first path for it (`sdk.md`, "Flatpak").
 - Else on macOS: `sayso/host.sock` in the temporary folder of the user (`confstr(_CS_DARWIN_USER_TEMP_DIR)`). Each process of the user gets the same folder, also when Finder starts it.
 - Else: `/tmp/sayso-<uid>/host.sock`.
 - Windows: `\\.\pipe\sayso-host-<user SID>`.
 
 The folder of the socket has mode `0700`. The SDK has the same rules, because an MIT crate cannot use the paths code of `sayso-core`.
 
-`state.toml` has one record for each installed extension. Step 8 writes it. Until then, tests and developers write it by hand. `name` is the name that Sayso shows in its questions; without it, Sayso shows the id.
+[sdk.md](sdk.md) has the format of `apps.toml`. The host reads the file again when it changes, so a grant that the user takes back stops the next request. `models.read` is always granted.
 
-```toml
-[[extensions]]
-id = "dev.example.notetaker"
-name = "Notetaker"
-version = "1.2.0"
-# The folder that the executable of the extension must be in.
-path = "/Users/me/Library/Application Support/sayso/extensions/dev.example.notetaker/1.2.0"
-sideloaded = false
-granted = ["models.read", "session.live", "audio.mic"]
-# macOS, for an extension from the registry: the code signature that install checked.
-team_id = "ABCDE12345"
-bundle_id = "dev.example.notetaker"
-```
-
-The host reads the file again when it changes, so a grant that the user takes back stops the next request. `models.read` is always granted.
-
-Errors of the Host API have these codes, in addition to the codes of the engine protocol: `not_an_extension`, `capability`, `busy`, `declined`, `model_not_downloaded`, `wrong_role` (a model that cannot do the role of the request, for example a speech model as `vad_model`), `unsupported` (the engine of this computer cannot do it), and `bad_request`.
+Errors of the Host API have these codes, in addition to the codes of the engine protocol: `not_approved`, `capability`, `busy`, `declined`, `model_not_downloaded`, `wrong_role` (a model that cannot do the role of the request, for example a speech model as `vad_model`), `unsupported` (the engine of this computer cannot do it), `permission` (the system refused a capture permission), and `bad_request`.
 
 These rules of the wire format are fixed in `sayso-protocol`:
 
@@ -441,17 +419,18 @@ These rules of the wire format are fixed in `sayso-protocol`:
 - `choice` in `list_models` is a list of roles: the roles for which the host uses the model when a request names none (see "Requests").
 - Events that a request caused have its `id` and come before its reply. After the reply, no event has that `id`. Work that goes on after the reply (jobs and live sessions) sends events without an `id`. So the events of a job have no `id`, and `job` tells the job. The `ok {job}` reply comes before the first event of the job.
 - The events of a live session (`partial`, `segment`, `speakers`) have no `id`, and `session` tells the session. The `ok {session}` reply comes before the first event of the session, and the `ok {text}` reply of `session_stop` comes after its last event.
-- `session_audio` without an `id` gets no `ok`. When it fails, the `error` has no `id`. `sayso-extension` sends it with `Client::send`, and gives an `error` without an `id` as `Event::Error`.
+- `session_audio` without an `id` gets no `ok`. When it fails, the `error` has no `id`. `sayso_sdk::client` sends it with `Client::send`, and gives an `error` without an `id` as `Event::Error`.
 - A job ends with exactly one `job_done` or `job_failed`, and no event of the job comes after it. A cancelled job gets `job_failed` without `code` and with the message "The job was cancelled.". When the host closes, each job gets `job_failed` before `host_closing`.
 - A failed download gives `error` without `code`, with `message` and the `reason` of the engine protocol, after `model_state {state: "failed"}`. `declined` and `unknown_model` have a `code`.
 - A line that is not a JSON object with a string `type` gets `error` without `id` and with `code: "bad_request"`. A known request with a missing field or a field of the wrong type gets `bad_request` with its `id`. An unknown request type gets `error` with its `id` and no `code`, as in the engine protocol.
+- `approval_waiting` has the `id` of `hello`, and says that the reply waits for a person. A client can give up on a host that sends neither a reply nor this event: the SDK does so after 10 s (`docs/sdk.md`, "Mode changes in `Mode::Auto`").
 - `dictation_done` has no `id`. The `ok {events}` reply of `subscribe` comes before the first event, and lists only the event names that the host knows.
 - `enhance` sends no events: one `ok {text, provider, model}` or one `error`. The error codes are `bad_request`, `unavailable`, `unsupported`, `timeout`, and `refused` (see "Requests"); an output that Sayso cannot use gives `error` without `code`.
 - A reader keeps a capability or an error code that it does not know, and ignores a message type that it does not know.
 
 Sub-steps, each with its own pull request:
 
-- **6a.** `sayso-protocol`, the transport, the identity check, `state.toml`, `hello`, `bye`, `host_closing`, and the connection of `sayso-extension`.
+- **6a.** `sayso-protocol`, the transport, the identity check, the file of grants, `hello`, `bye`, `host_closing`, and the connection of `sayso-extension`.
 - **6b.** `list_models` and `download_model` with the question to the user.
 - **6c.** Segments, VAD, and diarization in the engine client. Jobs, the queue, and the scheduler that puts dictation first.
 - **6d.** Live sessions from the microphone and from the client, and `record_to`.
@@ -461,7 +440,7 @@ The recording state of the menu bar icon is in step 8, with the other UI.
 
 ## Capabilities
 
-The user grants the capabilities of an extension at install. An update that adds a capability asks again before it runs. The user can take back a capability with **Permissions** on the Installed tab of the Marketplace. Then the host refuses its requests, and the extension must handle that.
+The user grants the capabilities of an app when it asks (see [sdk.md](sdk.md), "The question"). A new capability asks again. The user can take back a capability in Settings › Connected apps. Then the host refuses its requests, and the extension must handle that.
 
 | Capability | What it allows | Why it asks |
 |---|---|---|
@@ -475,172 +454,6 @@ The user grants the capabilities of an extension at install. An update that adds
 | `dictation.observe` | Get each dictation after it is inserted | It sees everything that the user dictates. |
 
 Later capabilities, not in the first version: `history.read`, and a step in the pipeline before insertion. A step before insertion adds latency to each dictation and can break dictation, so it needs its own design.
-
-## Package and manifest
-
-### Manifest
-
-Every extension has a `sayso-extension.toml` at the top of its package:
-
-```toml
-id = "dev.example.notetaker"   # reverse DNS, unique in the registry
-name = "Notetaker"
-version = "1.2.0"
-host_api = 1                   # the lowest Host API version that it needs
-description = "Notes from your meetings."
-author = "Example"
-homepage = "https://example.dev/notetaker"
-repository = "https://github.com/example/notetaker"
-license = "MIT"
-capabilities = ["models.read", "session.live", "audio.mic", "audio.system", "ai.enhance"]
-
-# Models that the extension cannot work without. Sayso offers them at install.
-[models]
-needs = ["parakeet-unified-en"]
-
-# Entries in the popover of Sayso. A click starts the extension with SAYSO_COMMAND set,
-# or sends a `command` event when it runs.
-[[commands]]
-id = "new-note"
-title = "New meeting note"
-
-# The platforms that the extension supports, and the file that Sayso starts on each.
-# A platform that is not here is not supported. This extension has no Windows build.
-[platforms]
-macos-arm64 = "Notetaker.app"
-linux-x64 = "notetaker"
-linux-arm64 = "notetaker"
-```
-
-### Package
-
-| Platform | File | Rule |
-|---|---|---|
-| `macos-arm64` | `.zip` with one `.app` | Signed with a Developer ID, notarized, and stapled, to be listed |
-| `windows-x64` | `.zip` | No signature necessary |
-| `linux-x64`, `linux-arm64` | `.tar.gz` | No signature necessary |
-
-The package for a platform has only the files for that platform.
-
-### Install
-
-1. Download the file and check its size and SHA-256 against the listing (or skip this for a sideloaded extension).
-2. Unpack it into a staging directory under the data directory.
-3. Read the manifest. Its `id` and `version` must match the listing, and `[platforms]` must have the platform of this computer.
-4. On macOS, check the code signature and notarization of the `.app` with the Security framework. Sayso downloads with `ureq`, so the file has no quarantine flag, and Gatekeeper does not check it. Sayso must do that check itself.
-5. Show the capabilities and the models in `[models] needs`, and ask the user.
-6. Move the directory to `<data dir>/extensions/<id>/<version>/`. Keep the version before it, so the user can go back.
-
-The record of installed extensions and their grants is `<data dir>/extensions/state.toml`, not `config.toml`. It is state, not settings.
-
-### Update and remove
-
-- Sayso does not update extensions by itself in the first version. The user clicks **Update**. If the new version asks for more capabilities, Sayso asks before it installs the version.
-- If the extension runs, Sayso asks the user to close it before the update.
-- **Remove** stops the connection of the extension and deletes `<data dir>/extensions/<id>/`. The data of the extension is in its own folders, and Sayso does not delete it. The confirmation says so.
-
-### Linux packages
-
-A Linux package of an extension must run with only the system libraries that Sayso itself needs: glibc, and the libraries of GPUI (Wayland, X11, xkbcommon, Vulkan).
-
-- **Flatpak:** extensions run in the sandbox of Sayso, with its permissions. Sayso starts them in the sandbox, and the socket is in the sandbox too.
-- **NixOS:** a downloaded binary does not run without `nix-ld`. The Marketplace shows that note on NixOS, and the guide says so.
-- **The tarball, `.deb`, `.rpm`, and AppImage:** no special rules.
-
-### Start
-
-- macOS: `NSWorkspace.openApplication` with `SAYSO_HOST_SOCKET` in the environment of the configuration. The extension then has its own identity for the permissions of macOS. It cannot use the microphone permission of Sayso. A child process of Sayso would get that permission.
-- Windows and Linux: a detached process in its own process group, with the same environment.
-
-## Extensions in Sayso
-
-Sayso gets no new Hub section. The UI is the Marketplace modal, one button that opens it, and one popover menu.
-
-### Sidebar footer
-
-Today the footer of the Hub sidebar (`main_footer` and `rail_footer` in `crates/sayso-app/src/hub/sidebar.rs`) shows the engine status ("Ready", and the final model), the collapse button, the update slip, and the theme switch.
-
-After this change:
-
-- A **Marketplace** button takes the place of the engine status, with the collapse button on its right as before. In the rail it is an icon with the tooltip "Marketplace".
-- The engine status leaves the footer. Settings › General already shows it (`crates/sayso-app/src/hub/settings/general.rs`). The footer shows the engine only when it needs the user: a warning row with **Restart** when the engine stopped or failed to start. "Ready" is the normal state and shows nowhere in the footer.
-- The update slip and the theme switch stay as they are.
-
-The engine status is a live region today (`LiveStatus`), so a screen reader hears a change. The warning row keeps that.
-
-### Marketplace modal
-
-The modal works like Model details on the Models page: Escape, the close button, and a click on the dimmed page close it. It has two tabs:
-
-- **Browse** shows the listings for the platform of the user, with a search field. A click on a listing shows its details in the modal: the description, the author, the platforms, the capabilities in plain words, the models it needs with their sizes, and a link to its repository. The action is **Install**, or **Open** when it is installed.
-- **Installed** shows each installed extension with its icon, name, and version, an **Open** button, and a menu with **Update**, **Permissions**, and **Remove**. In developer mode it also has **Install from folder**. A sideloaded extension has the tag **Not reviewed**.
-
-The modal opens on Installed when an extension is installed, else on Browse. The button in the footer shows a dot when an update is available.
-
-**Install** shows the capabilities in plain words ("Record system audio, including calls") and the models to download, with their sizes, and asks the user before it starts.
-
-### Other places
-
-- **Popover › Extensions**: a submenu with the commands of the installed extensions. It is hidden when no extension is installed.
-- **Settings › Advanced › Developer mode** turns on sideloading.
-
-Sayso does not open files for extensions in the first version. An extension is an app, so the system opens its files.
-
-## Registry
-
-### Repository
-
-```
-extensions/<id>.toml     one file per extension: listing and versions
-index.json               made by CI from extensions/*.toml
-index.json.sig           signature of index.json
-revoked.toml             versions that Sayso must turn off
-schema/                  JSON Schema for the files above
-```
-
-A version in `extensions/<id>.toml`:
-
-```toml
-[[versions]]
-version = "1.2.0"
-host_api = 1
-capabilities = ["models.read", "session.live", "audio.mic", "audio.system", "ai.enhance"]
-
-[versions.files.macos-arm64]
-url = "https://github.com/example/notetaker/releases/download/v1.2.0/Notetaker-macos-arm64.zip"
-size = 18342112
-sha256 = "..."
-
-[versions.files.linux-x64]
-url = "https://github.com/example/notetaker/releases/download/v1.2.0/notetaker-linux-x64.tar.gz"
-size = 21004288
-sha256 = "..."
-```
-
-The keys under `files` are the platforms of the version. They must be the same as the keys of `[platforms]` in the manifest of each package.
-
-### Add or update a listing
-
-1. The author opens a pull request that adds or changes `extensions/<id>.toml`.
-2. CI checks the pull request:
-   - The file matches the schema.
-   - The `repository` of the listing is a public repository (GitHub API, or an anonymous `git ls-remote` for other hosts).
-   - Each file downloads, and its size and SHA-256 match.
-   - The manifest in each package matches the listing (`id`, `version`, `capabilities`, and the platforms).
-   - If the version has a `macos-arm64` file, `codesign --verify --deep --strict` and `stapler validate` pass on its `.app`, on a macOS runner.
-   - A comment lists the capabilities that the version adds, so the reviewer sees them.
-3. A person reviews the pull request with the checklist in the registry repository.
-4. After the merge, CI makes `index.json`, signs it, and pushes both files.
-
-The index has its own signing key, not the key of the updater. A leak of one key then does not give the other. Sayso has both public keys in its binary.
-
-### In Sayso
-
-Sayso gets the index and its signature when the Marketplace opens, and once a day while an extension is installed. If the signature is wrong, Sayso keeps the last good index. When a new version of an installed extension is in the index, the Installed tab shows **Update**.
-
-A listing can stop supporting a platform in a new version. Then a user on that platform keeps the version they have, and the Installed tab says that no update is available for their platform.
-
-A version in `revoked.toml` gets turned off. Sayso refuses its connections, shows **Turned off by the registry** with the reason, and offers an update when there is one.
 
 ## SDK and licensing
 
@@ -682,12 +495,8 @@ The protocol is NDJSON, so an extension can be in any language. The first versio
 
 Know what this design protects against and what it does not:
 
-- **An extension is not in a sandbox.** It is a native program with the rights of the user. It can read files and use the network. Capabilities control only what the host gives it.
-- **The review and notarization reduce the risk. They do not remove it.** A reviewer reads the listing and the repository. A reviewer cannot prove that a binary came from that source. Notarization means that Apple scanned the binary and can revoke it.
-- **Sayso does not bypass Gatekeeper.** It checks the hash from the signed index and, on macOS, the signature and notarization.
-- **An extension cannot borrow the permissions of Sayso.** It starts through LaunchServices with its own identity (see "Start").
-- **The registry can turn off a version.** `revoked.toml` turns it off everywhere at the next fetch of the index.
-- **A sideloaded extension has none of these checks.** Developer mode says so before the user turns it on.
+- **A connected app is not in a sandbox.** It is a native program with the rights of the user. It can read files and use the network. Capabilities control only what the host gives it.
+- **An app cannot borrow the permissions of Sayso.** It runs with its own identity. [sdk.md](sdk.md) ("Security") has the rest.
 
 ## Order of work
 
@@ -720,19 +529,6 @@ Each step ends with a check that proves it.
 | 8 to 12 | Not started | |
 
 The media extension and the Notetaker extension are products. Each gets its own design file before its step: what it does, its screens, and its data. This file covers only what they need from Sayso.
-
-## Names
-
-The four repositories exist since 2026-10-27. They are private and hold only a README. A repository must be public before the registry lists its extension.
-
-| Thing | Name |
-|---|---|
-| Registry repository | `watzon/sayso-extensions` |
-| Template repository | `watzon/sayso-extension-template` |
-| Media extension | `watzon/sayso-media`, id `app.justsayso.media` |
-| Meeting extension | `watzon/sayso-notetaker`, id `app.justsayso.notetaker` |
-
-The private key of the registry (Ed25519, key id `registry-2026-10`) is the secret `SAYSO_REGISTRY_SIGNING_KEY` of the GitHub Actions of the registry repository, and Chris keeps a copy in 1Password. Its public key, `S+MdFSlpfgGXOeIawPSKWiQ44QSImAMwozQAXt/563o=`, goes into Sayso in step 10.
 
 ## Answered questions
 

@@ -5,8 +5,8 @@
 use sayso_core::config::{Provider, ProviderKind};
 use sayso_core::enhance::EnhanceError;
 use sayso_core::style::StyleLibrary;
-use sayso_extension::protocol::{Capability, EnhanceReply, ErrorCode};
-use sayso_extension::Client;
+use sayso_sdk::protocol::{Capability, EnhanceReply, ErrorCode};
+use sayso_sdk::client::Client;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -27,7 +27,7 @@ fn provider(id: &str, name: &str) -> Provider {
 
 fn world(granted: &[&str]) -> World {
     let setup = setup();
-    write_state(&setup.state, &here(), granted, None);
+    write_apps(&setup.apps, granted);
     let services = FakeServices::new(None);
     {
         let mut config = services.config.lock();
@@ -74,7 +74,7 @@ fn enhance_takes_a_style_a_prompt_and_a_provider() {
     assert_eq!(world.ok(json!({"text": "hi", "style": "email"})).text, "[email] hi");
     assert_eq!(world.ok(json!({"text": "hi", "style": "Notes"})).text, "[notes] hi", "a style by its name");
     let reply = world.ok(json!({"text": "hi", "prompt": "Translate to French.", "provider": "work"}));
-    assert_eq!((reply.text.as_str(), reply.provider.as_str()), ("[extension-prompt] hi", "work"));
+    assert_eq!((reply.text.as_str(), reply.provider.as_str()), ("[app-prompt] hi", "work"));
     let runs = world.services.style_runs.lock().clone();
     assert_eq!(runs[2].1, "Translate to French.", "the prompt is the instruction of the style");
     assert_eq!(world.ok(json!({"text": "hi", "provider": "Work account"})).provider, "work", "a provider by its name");

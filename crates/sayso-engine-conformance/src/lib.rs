@@ -15,9 +15,13 @@
 //!   time. With the features `vad` and `diarization`, and a VAD model or a
 //!   diarization model in [`Ready`], it checks `vad`, a VAD session, and
 //!   `diarize`. It does not download or delete.
+//! - **store** needs a small VAD model and the feature `store_v1`. It runs two
+//!   engines on one model store ([`store`]).
 //!
 //! Every line of every engine also gets these checks: it is a JSON object
 //! with `"v":1` and a string `type`, and no request gets two replies.
+
+mod store;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -62,6 +66,8 @@ pub struct Suite {
     pub env: Vec<(String, String)>,
     pub model: Option<Model>,
     pub ready: Option<Ready>,
+    /// A small VAD model of the catalog, for the store level. It uses the network once.
+    pub store: Option<Model>,
     /// The longest wait for a quick reply.
     pub timeout: Duration,
     /// The longest wait for `load` and `transcribe` of a real model.
@@ -75,6 +81,7 @@ impl Suite {
             env: Vec::new(),
             model: None,
             ready: None,
+            store: None,
             timeout: Duration::from_secs(10),
             load_timeout: Duration::from_secs(600),
         }
@@ -167,6 +174,11 @@ pub fn run(suite: &Suite) -> Report {
     match &suite.ready {
         Some(ready) => ready_level(suite, ready, &features, &mut report),
         None => report.skip("ready level", "no models folder given"),
+    }
+    match &suite.store {
+        Some(model) if features.iter().any(|f| f == "store_v1") => store::store_level(suite, model, &mut report),
+        Some(_) => report.skip("store level", "the engine does not list store_v1"),
+        None => report.skip("store level", "no VAD model given"),
     }
     report
 }

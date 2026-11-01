@@ -1,4 +1,4 @@
-//! `list_models` (`docs/extensions.md`, "Requests"): the local models of this
+//! `list_models` (`docs/apps.md`, "Requests"): the local models of this
 //! system with their state and the choice of the user.
 //!
 //! The list has speech, VAD, and diarization models from

@@ -150,9 +150,9 @@ models:
     use_preview: "Utiliser %{name} pour l’aperçu en direct"
   roles:
     vad_title: "Détection de la voix"
-    vad_note: "Trouve la parole dans les longs enregistrements pour vos extensions. La dictée ne l’utilise pas."
+    vad_note: "Trouve la parole dans les longs enregistrements pour vos apps connectées. La dictée ne l’utilise pas."
     speakers_title: "Locuteurs"
-    speakers_note: "Trouve qui parle et quand dans un enregistrement, pour vos extensions."
+    speakers_note: "Trouve qui parle et quand dans un enregistrement, pour vos apps connectées."
     automatic_uses: "Utilise %{name} maintenant"
     automatic_none: "Aucun modèle de locuteurs n’est téléchargé. Téléchargez-en un ci-dessous."
     basic: "Basique"

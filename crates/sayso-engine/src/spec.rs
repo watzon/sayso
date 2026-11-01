@@ -7,6 +7,7 @@
 //! checks their fields more closely.
 
 use anyhow::{Result, anyhow, bail};
+use sayso_core::engine_catalog::descriptors;
 use sayso_core::models::EngineKind;
 use serde_json::Value;
 
@@ -146,6 +147,15 @@ pub const WHISPER_CPP_REPO: &str = "ggerganov/whisper.cpp";
 pub const WHISPER_CPP_REVISION: &str = "main";
 
 impl ModelSpec {
+    /// The format of the files of the model in the model store.
+    pub fn format(&self) -> &'static str {
+        match self.recipe {
+            Recipe::ParakeetGguf => descriptors::PARAKEET_CPP,
+            Recipe::WhisperCpp => descriptors::WHISPER_CPP,
+            _ => descriptors::SHERPA_ONNX,
+        }
+    }
+
     /// Parse the `engine` object of a request.
     pub fn from_json(value: &Value) -> Result<ModelSpec> {
         match value.get("kind").and_then(Value::as_str) {

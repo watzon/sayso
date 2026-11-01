@@ -4,7 +4,8 @@
 //! - `--route=home|history|dictionary|styles|models|settings-<page>` picks the page.
 //! - `--onboarding[=N]` opens onboarding at step N (0 to 6).
 //! - `--whats-new` opens the "What is new" window with the newest notes in `release-notes.toml`.
-//! - `--ask-download` opens the question that an extension asks before it downloads a model, with sample text.
+//! - `--ask-download` opens the question that an app asks before it downloads a model, with sample text.
+//! - `--ask-approval` opens the question that an app asks to use Sayso, with sample text. `--ask-approval=interpreter` shows it for a script interpreter.
 //! - `--dark` / `--light` force the appearance.
 //! - `--size=WxH` opens the Hub or onboarding at this size and drops the
 //!   minimum size, as a tiling window manager does.
@@ -53,6 +54,7 @@ pub fn route() -> Option<Route> {
                 "appearance" => SettingsPage::Appearance,
                 "history" => SettingsPage::HistoryPrivacy,
                 "permissions" => SettingsPage::Permissions,
+                "apps" => SettingsPage::ConnectedApps,
                 "advanced" => SettingsPage::Advanced,
                 _ => SettingsPage::Dictation,
             };
@@ -200,7 +202,7 @@ fn start_fake_capture(
                 vec![0.0; frame]
             };
             let rms = (chunk.iter().map(|s| s * s).sum::<f32>() / chunk.len().max(1) as f32).sqrt();
-            on_frame(sayso_platform::AudioFrame { level: (rms * 6.0).min(1.0), samples: chunk });
+            on_frame(sayso_platform::AudioFrame { level: (rms * 6.0).min(1.0), samples: chunk, time: sayso_capture::clock::now() });
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
     });

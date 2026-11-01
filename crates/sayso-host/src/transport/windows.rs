@@ -225,11 +225,13 @@ impl Listener {
             Err(e) => log::warn!("host: cannot make the next instance of {}: {e}", self.name.display()),
         }
         let closer = pipe.clone();
+        let client = pipe.clone();
         Ok(Conn {
             reader: Box::new(PipeIo(pipe.clone())),
             writer: Box::new(PipeIo(pipe.clone())),
             closer: Arc::new(move || closer.shutdown()),
-            peer: crate::Peer { pipe },
+            peer: Box::new(move || crate::identity::system::client(&client)),
+            attested: None,
         })
     }
 

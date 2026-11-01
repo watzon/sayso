@@ -18,6 +18,13 @@ target_dir=$(cargo metadata --format-version 1 --no-deps | python3 -c 'import js
 
 echo "==> app and engine (cargo, $profile)"
 cargo build -p sayso-app -p sayso-engine $cargo_flag
+# The bridge runs outside the Flatpak sandbox, on any Linux of the user, so it
+# has no library of the system. It is linked statically, and always a release
+# build. Only this crate gets the flag, because of --target.
+echo "==> bridge (cargo, release, static)"
+bridge_target="$arch-unknown-linux-gnu"
+RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -p sayso-bridge --target "$bridge_target"
+bridge_bin="$target_dir/$bridge_target/release/sayso-bridge"
 
 name="sayso-$version-linux-$arch"
 out="${SAYSO_BUNDLE_DIR:-build}/$name"
@@ -30,6 +37,7 @@ install -m 755 "$target_dir/$profile/sayso-engine" "$out/bin/sayso-engine"
 # next to itself, like the engine. On x86_64 there are three builds, one for
 # each instruction set (scripts/build-cleanup.sh).
 scripts/build-cleanup.sh "$out/bin"
+install -m 755 "$bridge_bin" "$out/bin/sayso-bridge"
 cp packaging/linux/dev.sayso.Sayso.desktop "$out/share/applications/"
 cp packaging/linux/dev.sayso.Sayso.metainfo.xml "$out/share/metainfo/"
 cp packaging/linux/70-sayso-uinput.rules "$out/lib/udev/rules.d/"

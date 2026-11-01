@@ -1,12 +1,11 @@
-//! The question that an extension asks before it downloads a model
+//! The question that an app asks before it downloads a model
 //! (`docs/extensions.md`, "Requests", `download_model`).
 //!
 //! The host runs on its own threads and waits for the answer. Each question
-//! is a small window of its own (`question`), so a question from one
-//! extension does not wait for the Hub or for a question from another
-//! extension. Closing the window without a click, or quitting Sayso, answers
-//! no. When the extension disconnects before the user answers, the window
-//! closes, and that also counts as no.
+//! is a small window of its own (`question`), so a question from one app does
+//! not wait for the Hub or for a question from another app. Closing the window
+//! without a click, or quitting Sayso, answers no. When the app disconnects
+//! before the user answers, the window closes, and that also counts as no.
 
 use crate::model::AppModel;
 use crate::question::{self, Texts};
@@ -20,7 +19,7 @@ pub struct Ask {
     pub question: DownloadQuestion,
     /// True means download. The host also takes a closed channel as no.
     pub answer: crossbeam_channel::Sender<bool>,
-    /// A message here closes the window: the extension disconnected, or the
+    /// A message here closes the window: the app disconnected, or the
     /// host closed. The host takes that as no.
     pub withdraw: async_channel::Receiver<()>,
 }
@@ -41,8 +40,8 @@ pub fn listen(model: &Entity<AppModel>, questions: async_channel::Receiver<Ask>,
 pub fn open_sample(model: &Entity<AppModel>, cx: &mut App) {
     let (answer, answered) = crossbeam_channel::bounded(1);
     let question = DownloadQuestion {
-        extension_id: "dev.example.notetaker".into(),
-        extension_name: "dev.example.notetaker".into(),
+        app_id: "dev.example.notetaker".into(),
+        app_name: "Notetaker".into(),
         model_id: "parakeet-tdt-0.6b-v3".into(),
         model_name: "Parakeet TDT v3".into(),
         size_bytes: 640_000_000,
@@ -55,14 +54,16 @@ pub fn open_sample(model: &Entity<AppModel>, cx: &mut App) {
 
 fn texts(q: &DownloadQuestion) -> Texts {
     Texts {
-        window_title: t!("extensions.download_ask.window_title"),
-        title: t!("extensions.download_ask.title", extension = q.extension_name),
-        body: t!("extensions.download_ask.body", model = q.model_name, size = format_size(q.size_bytes)),
-        // The reason is text from the extension: the label says so.
-        quote: (!q.reason.is_empty()).then(|| (t!("extensions.download_ask.reason_label", extension = q.extension_name), q.reason.clone())),
-        cancel: t!("extensions.download_ask.cancel"),
-        confirm: t!("extensions.download_ask.download"),
+        window_title: t!("apps.download_ask.window_title"),
+        title: t!("apps.download_ask.title", app = q.app_name),
+        body: t!("apps.download_ask.body", model = q.model_name, size = format_size(q.size_bytes)),
+        details: None,
+        // The reason is text from the app: the label says so.
+        quote: (!q.reason.is_empty()).then(|| (t!("apps.download_ask.reason_label", app = q.app_name), q.reason.clone())),
+        cancel: t!("apps.download_ask.cancel"),
+        confirm: t!("apps.download_ask.download"),
         danger: false,
+        guarded: true,
     }
 }
 

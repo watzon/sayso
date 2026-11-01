@@ -1,5 +1,7 @@
 # Extensions are separate processes, and Sayso is their host
 
+Status: partly replaced by [ADR 0005](0005-apps-use-sayso-through-the-sdk.md) on 2026-10-29. Apps are still separate processes and the engine still has one owner, but Sayso no longer installs or lists them.
+
 Sayso stays a dictation app, so meeting notes, media transcription, and the work of other developers are extensions. An extension is a separate app that talks to Sayso over a local socket (the Host API). Sayso owns the engine, the audio capture, the permissions of the system, the models, the API keys, and the scheduling. The extension owns its UI and its data. The engine keeps one owner and does not become a shared service. An app that does not want Sayso starts its own engine. Design: [extensions.md](../extensions.md).
 
 ## Considered options

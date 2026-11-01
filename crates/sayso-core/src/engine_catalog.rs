@@ -5,6 +5,12 @@
 //! [`json`] when it starts. The Swift engine cannot call Rust, so it gets the
 //! file `Catalog.generated.swift`, and a test checks that the file is the
 //! same as [`json`] (see [`swift_source`]).
+//!
+//! [`descriptors`] holds the files of each model for the model store. The
+//! Swift engine gets the descriptors of its formats in
+//! `Descriptors.generated.swift`, which a test keeps up to date in the same way.
+
+pub mod descriptors;
 
 use crate::models::{self, ModelInfo, ModelTask};
 use crate::models_onnx::{self, System};
@@ -103,6 +109,20 @@ pub fn swift_source() -> String {
     )
 }
 
+/// The Swift source that holds the descriptors of the formats of the Swift
+/// engine ([`descriptors`]), in the form of `descriptors.json`.
+pub fn swift_descriptors_source() -> String {
+    let data = descriptors::of_formats(descriptors::all(), &[descriptors::FLUIDAUDIO, descriptors::WHISPERKIT]);
+    format!(
+        "// Generated from crates/sayso-core/src/engine_catalog/descriptors.json. Do not edit.\n\
+         // Make it again with: SAYSO_WRITE_CATALOG=1 cargo test -p sayso-core engine_catalog\n\
+         \n\
+         /// The descriptors of the model store for the formats of this engine (`docs/sdk.md`, \"Model store\").\n\
+         enum BuiltInDescriptors {{\n    static let json = #\"\"\"\n{}\"\"\"#\n}}\n",
+        descriptors::render(&data)
+    )
+}
+
 /// `value` with the keys of each object in order. A build of the whole workspace
 /// turns on the feature `preserve_order` of serde_json, which keeps the keys in
 /// the order of insertion. Sorted keys give the same file in each build.
@@ -125,9 +145,16 @@ mod tests {
 
     #[test]
     fn the_swift_catalog_file_is_up_to_date() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../native/macos/SaysoEngine/Sources/SaysoEngine/Catalog.generated.swift");
-        let want = swift_source();
+        check_swift_file("Catalog.generated.swift", swift_source());
+    }
+
+    #[test]
+    fn the_swift_descriptors_file_is_up_to_date() {
+        check_swift_file("Descriptors.generated.swift", swift_descriptors_source());
+    }
+
+    fn check_swift_file(name: &str, want: String) {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../native/macos/SaysoEngine/Sources/SaysoEngine").join(name);
         if std::env::var_os("SAYSO_WRITE_CATALOG").is_some() {
             std::fs::write(&path, &want).unwrap();
         }

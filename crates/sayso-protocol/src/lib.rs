@@ -24,10 +24,10 @@ pub mod socket;
 mod types;
 
 pub use codec::{Decoded, DecodeError, Kind, Message, PROTOCOL, decode, encode};
-pub use event::{DictationDone, DownloadProgress, Event, ModelStateEvent, PartialEvent, SegmentEvent, SpeakersEvent};
-pub use names::{Capability, ErrorCode, ModelState, Role, Source, TimestampLevel};
+pub use event::{DictationDone, DownloadProgress, Event, ModelStateEvent, PartialEvent, SegmentEvent, SpeakersEvent, is_unspaced};
+pub use names::{Capability, ErrorCode, ModelState, Role, Source, SourceEndReason, TimestampLevel};
 pub use reply::{EnhanceReply, parse_ok, ErrorReply, HelloReply, HostMessage, JobReply, ListModelsReply, Reply, SessionReply, SubscribeReply, TextReply};
-pub use request::{CancelJob, DownloadModel, Enhance, Hello, ListModels, Request, SessionAudio, SessionStart, SessionStop, Subscribe, TranscribeFile};
+pub use request::{AppName, CancelJob, DownloadModel, Enhance, Hello, ListModels, Request, SessionAudio, SessionStart, SessionStop, Subscribe, TranscribeFile, session_capabilities};
 pub use types::{ModelInfo, Segment, SpeechPart, Turn, Word};
 
 /// A JSON object: the fields of a message.

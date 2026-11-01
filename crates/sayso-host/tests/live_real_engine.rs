@@ -14,8 +14,8 @@
 use sayso_core::config::{Config, RoleChoice};
 use sayso_core::models::ModelId;
 use sayso_engine_client::EngineClient;
-use sayso_extension::protocol::{Event as HostEvent, SessionReply, TextReply};
-use sayso_extension::{Client, Event};
+use sayso_sdk::protocol::{Event as HostEvent, SessionReply, TextReply};
+use sayso_sdk::client::{Client, Event};
 use sayso_host::{DownloadQuestion, HostServices};
 use sayso_platform::SttBackend;
 use serde_json::json;
@@ -41,6 +41,9 @@ impl HostServices for Services {
     fn ask_download(&self, _: &DownloadQuestion, _: &dyn Fn() -> bool) -> bool {
         false
     }
+    fn ask_approval(&self, _: &sayso_host::ApprovalQuestion, _: &dyn Fn() -> bool) -> Option<bool> {
+        None
+    }
 }
 
 fn read_pcm(path: &Path) -> Vec<i16> {
@@ -64,7 +67,7 @@ fn a_client_session_on_the_real_engine_gives_partials_segments_and_speakers() {
     let mut config = Config::default();
     config.dictation.model = ModelId::new("parakeet-unified-en");
     config.models.vad = RoleChoice::Model(ModelId::new("silero-vad"));
-    write_state(&setup.state, &here(), &["session.live"], None);
+    write_apps(&setup.apps, &["session.live"]);
     let host = start_with(&setup, Arc::new(Services { engine, config }));
     let client = Client::connect_to(&setup.socket).unwrap();
     let events = client.events();
@@ -81,7 +84,7 @@ fn a_client_session_on_the_real_engine_gives_partials_segments_and_speakers() {
     let all = [once.clone(), vec![0i16; 3 * 16_000], once.clone()].concat();
     let fed = Instant::now();
     for chunk in all.chunks(16_000 * 160 / 1000) {
-        client.send("session_audio", fields(json!({"session": session, "pcm": sayso_extension::protocol::pcm::encode_i16(chunk)}))).unwrap();
+        client.send("session_audio", fields(json!({"session": session, "pcm": sayso_sdk::protocol::pcm::encode_i16(chunk)}))).unwrap();
         std::thread::sleep(Duration::from_millis(40));
     }
     println!("fed {} ms of audio in {} ms", all.len() / 16, fed.elapsed().as_millis());

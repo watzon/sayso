@@ -74,5 +74,5 @@ update:
   now_version: "Sayso est maintenant en version %{version}"
   whats_new: "Nouveautés"
   dismiss: "Ignorer"
-  # "Restart to update" while an extension records or transcribes.
-  waits_for_extension: "Sayso redémarrera pour se mettre à jour quand %{extension} aura terminé."
+  # "Restart to update" while an app records or transcribes.
+  waits_for_app: "Sayso redémarrera pour se mettre à jour quand %{app} aura terminé."
