@@ -19,6 +19,7 @@
 //! times stay on the time of the other sources.
 
 use super::echo::EchoGate;
+use super::silence::SilenceWatch;
 use super::wav::WavWriter;
 use super::{CapturedAudio, FeedItem, SourceEnd};
 use crate::basic_vad::BasicVad;
@@ -95,6 +96,8 @@ pub(crate) struct SourcePlan {
     pub clock: Arc<SessionClock>,
     /// None: the session does not have both `mic` and `system`.
     pub echo: Option<EchoRole>,
+    /// The silence limit of the session, and the place of this source in it.
+    pub silence: Option<(Arc<SilenceWatch>, usize)>,
 }
 
 /// What a source gives when it ends.
@@ -114,14 +117,36 @@ pub(crate) struct SourceRun {
 impl SourceRun {
     /// Start the threads. `events` must exist before the engine sessions
     /// opened, so no event is lost. `cancel` stops the final passes that wait.
-    pub fn start(plan: SourcePlan, audio: Receiver<FeedItem>, events: Receiver<EngineEvent>, engine: Arc<dyn SpeechEngine>, sink: Arc<dyn EventSink>, gate: Arc<dyn Gate>, cancel: Arc<AtomicBool>) -> std::io::Result<SourceRun> {
+    pub fn start(
+        plan: SourcePlan,
+        audio: Receiver<FeedItem>,
+        events: Receiver<EngineEvent>,
+        engine: Arc<dyn SpeechEngine>,
+        sink: Arc<dyn EventSink>,
+        gate: Arc<dyn Gate>,
+        cancel: Arc<AtomicBool>,
+    ) -> std::io::Result<SourceRun> {
         let (parts, waiting) = unbounded::<PartMessage>();
         let final_pass = {
-            let worker = FinalPass { session: plan.session, source: plan.source.clone(), model: plan.final_model.clone(), language: plan.language.clone(), engine: engine.clone(), sink: sink.clone(), gate, cancel, echo: plan.echo.clone() };
-            std::thread::Builder::new().name("sayso-host-live-final".into()).spawn(move || worker.run(&waiting))?
+            let worker = FinalPass {
+                session: plan.session,
+                source: plan.source.clone(),
+                model: plan.final_model.clone(),
+                language: plan.language.clone(),
+                engine: engine.clone(),
+                sink: sink.clone(),
+                gate,
+                cancel,
+                echo: plan.echo.clone(),
+            };
+            std::thread::Builder::new()
+                .name("sayso-host-live-final".into())
+                .spawn(move || worker.run(&waiting))?
         };
         let intake = Intake::new(plan, engine, sink, parts);
-        let intake = std::thread::Builder::new().name("sayso-host-live-audio".into()).spawn(move || intake.run(&audio, events, final_pass))?;
+        let intake = std::thread::Builder::new()
+            .name("sayso-host-live-audio".into())
+            .spawn(move || intake.run(&audio, events, final_pass))?;
         Ok(SourceRun { intake })
     }
 
@@ -172,19 +197,33 @@ struct Intake {
     clock_offset: i64,
     /// The system source tells the echo rule how far it is.
     echo: Option<Arc<EchoGate>>,
+    silence: Option<(Arc<SilenceWatch>, usize)>,
+    /// The last time that this source had speech, in ms of audio.
+    last_speech_ms: u64,
 }
 
 enum VadState {
     Basic(Box<BasicVad>),
     /// The engine session, and the start of the speech that is open.
-    Engine { session: u64, open: Option<u64> },
+    Engine {
+        session: u64,
+        open: Option<u64>,
+    },
 }
 
 impl Intake {
-    fn new(plan: SourcePlan, engine: Arc<dyn SpeechEngine>, sink: Arc<dyn EventSink>, parts: Sender<PartMessage>) -> Intake {
+    fn new(
+        plan: SourcePlan,
+        engine: Arc<dyn SpeechEngine>,
+        sink: Arc<dyn EventSink>,
+        parts: Sender<PartMessage>,
+    ) -> Intake {
         let vad = match plan.vad {
             SourceVad::Basic => VadState::Basic(Box::new(BasicVad::new())),
-            SourceVad::Engine { session } => VadState::Engine { session, open: None },
+            SourceVad::Engine { session } => VadState::Engine {
+                session,
+                open: None,
+            },
         };
         Intake {
             session: plan.session,
@@ -208,10 +247,17 @@ impl Intake {
                 Some(EchoRole::System(gate)) => Some(gate),
                 _ => None,
             },
+            silence: plan.silence,
+            last_speech_ms: 0,
         }
     }
 
-    fn run(mut self, audio: &Receiver<FeedItem>, events: Receiver<EngineEvent>, final_pass: JoinHandle<Vec<Segment>>) -> SourceResult {
+    fn run(
+        mut self,
+        audio: &Receiver<FeedItem>,
+        events: Receiver<EngineEvent>,
+        final_pass: JoinHandle<Vec<Segment>>,
+    ) -> SourceResult {
         let mut events = events;
         let mut last_trim = Instant::now();
         let mut last_mark = Instant::now();
@@ -243,20 +289,39 @@ impl Intake {
         }
         self.finish(&events);
         // The final thread ends when the last part is done.
-        let Intake { session, source, wav_path, wav_error, parts, sink, .. } = self;
+        let Intake {
+            session,
+            source,
+            wav_path,
+            wav_error,
+            parts,
+            sink,
+            ..
+        } = self;
         drop(parts);
         let segments = final_pass.join().unwrap_or_default();
         if let Some(end) = ended {
             let reason = match end {
                 SourceEnd::Permission => SourceEndReason::Permission,
                 SourceEnd::Failed(message) => {
-                    log::warn!("host: live session {session}: the source {source} ended: {message}");
+                    log::warn!(
+                        "host: live session {session}: the source {source} ended: {message}"
+                    );
                     SourceEndReason::Failed
                 }
             };
-            sink.event(Event::SourceEnded { session, source: source.clone(), reason });
+            sink.event(Event::SourceEnded {
+                session,
+                source: source.clone(),
+                reason,
+            });
         }
-        SourceResult { source, segments, wav: wav_path, wav_error }
+        SourceResult {
+            source,
+            segments,
+            wav: wav_path,
+            wav_error,
+        }
     }
 
     fn heard_ms(&self) -> u64 {
@@ -278,7 +343,11 @@ impl Intake {
     /// The capture lost `ms` of audio: silence goes there, in the recording and for the VAD.
     fn gap(&mut self, ms: u64) {
         self.silence(ms);
-        self.sink.event(Event::SourceGap { session: self.session, source: self.source.clone(), ms });
+        self.sink.event(Event::SourceGap {
+            session: self.session,
+            source: self.source.clone(),
+            ms,
+        });
     }
 
     fn silence(&mut self, ms: u64) {
@@ -299,7 +368,9 @@ impl Intake {
             VadState::Engine { open, .. } => open.is_some(),
         };
         if !speaking {
-            let _ = self.parts.send(PartMessage::DoneUntil(now - ECHO_VAD_LAG_MS as i64));
+            let _ = self
+                .parts
+                .send(PartMessage::DoneUntil(now - ECHO_VAD_LAG_MS as i64));
         }
     }
 
@@ -310,7 +381,11 @@ impl Intake {
         if let Some(wav) = &mut self.wav
             && let Err(e) = wav.write(samples)
         {
-            log::warn!("host: live session {}: cannot write {}: {e}", self.session, self.wav_path.display());
+            log::warn!(
+                "host: live session {}: cannot write {}: {e}",
+                self.session,
+                self.wav_path.display()
+            );
             self.wav_error = Some(format!("cannot write {}: {e}", self.wav_path.display()));
             self.wav = None;
         }
@@ -333,12 +408,38 @@ impl Intake {
                 }
             }
         }
+        self.watch_silence();
+    }
+
+    /// Tell the silence watch how long nobody has spoken in this source.
+    fn watch_silence(&mut self) {
+        let Some((watch, index)) = &self.silence else {
+            return;
+        };
+        let speaking = match &self.vad {
+            VadState::Basic(vad) => vad.speaking(),
+            VadState::Engine { open, .. } => open.is_some(),
+        };
+        let heard_ms = self.heard * 1000 / RATE;
+        if speaking {
+            self.last_speech_ms = heard_ms;
+        }
+        watch.heard(*index, heard_ms.saturating_sub(self.last_speech_ms));
     }
 
     fn event(&mut self, event: EngineEvent) {
         match event {
-            EngineEvent::Partial { session, committed, tentative } if Some(session) == self.preview => {
-                self.sink.event(Event::Partial(PartialEvent { session: self.session, source: Some(self.source.clone()), committed, tentative }));
+            EngineEvent::Partial {
+                session,
+                committed,
+                tentative,
+            } if Some(session) == self.preview => {
+                self.sink.event(Event::Partial(PartialEvent {
+                    session: self.session,
+                    source: Some(self.source.clone()),
+                    committed,
+                    tentative,
+                }));
             }
             EngineEvent::SpeechStart { session, start_ms } => {
                 if let VadState::Engine { session: vad, open } = &mut self.vad
@@ -347,11 +448,16 @@ impl Intake {
                     *open = Some(start_ms);
                 }
             }
-            EngineEvent::SpeechEnd { session, start_ms, end_ms } => {
+            EngineEvent::SpeechEnd {
+                session,
+                start_ms,
+                end_ms,
+            } => {
                 if let VadState::Engine { session: vad, open } = &mut self.vad
                     && *vad == session
                 {
                     *open = None;
+                    self.last_speech_ms = self.last_speech_ms.max(end_ms);
                     self.cut(start_ms, end_ms);
                 }
             }
@@ -369,21 +475,32 @@ impl Intake {
         let from = sample_at(start_ms - pad_before).max(self.kept_from);
         let to = sample_at(end_ms + PAD_MS).min(self.heard);
         if from >= to {
-            log::debug!("host: live session {}: the audio of the part {start_ms}-{end_ms} ms is gone", self.session);
+            log::debug!(
+                "host: live session {}: the audio of the part {start_ms}-{end_ms} ms is gone",
+                self.session
+            );
             return;
         }
-        let samples = self.kept[(from - self.kept_from) as usize..(to - self.kept_from) as usize].to_vec();
+        let samples =
+            self.kept[(from - self.kept_from) as usize..(to - self.kept_from) as usize].to_vec();
         self.last_end_ms = end_ms;
         // A later part starts at the end of this one or after it.
         self.drop_before(sample_at(end_ms));
-        let _ = self.parts.send(PartMessage::Part(PartAudio { offset_ms: from * 1000 / RATE, samples, clock_offset: self.clock_offset }));
+        let _ = self.parts.send(PartMessage::Part(PartAudio {
+            offset_ms: from * 1000 / RATE,
+            samples,
+            clock_offset: self.clock_offset,
+        }));
     }
 
     /// While nobody speaks, forget the audio older than [`LOOKBACK_MS`].
     fn trim_idle(&mut self) {
         let keep_from = match &self.vad {
             VadState::Basic(vad) if vad.speaking() => return,
-            VadState::Engine { open: Some(start_ms), .. } => sample_at(start_ms.saturating_sub(PAD_MS)),
+            VadState::Engine {
+                open: Some(start_ms),
+                ..
+            } => sample_at(start_ms.saturating_sub(PAD_MS)),
             _ => self.heard.saturating_sub(sample_at(LOOKBACK_MS)),
         };
         self.drop_before(keep_from.max(sample_at(self.last_end_ms)));
@@ -402,7 +519,13 @@ impl Intake {
         if let Some(preview) = self.preview {
             self.engine.end_stream(preview);
         }
-        match std::mem::replace(&mut self.vad, VadState::Engine { session: 0, open: None }) {
+        match std::mem::replace(
+            &mut self.vad,
+            VadState::Engine {
+                session: 0,
+                open: None,
+            },
+        ) {
             VadState::Basic(vad) => {
                 // The partials that came already. The session does not wait for
                 // the last partial of the engine: the segments have the text.
@@ -419,12 +542,19 @@ impl Intake {
                 // it waits in the channel now. A backend that cannot wait for
                 // the reply leaves the speech open: it ends at the end of the audio.
                 if let Err(e) = self.engine.end_vad(session) {
-                    log::warn!("host: live session {}: the end of the VAD session failed: {e}", self.session);
+                    log::warn!(
+                        "host: live session {}: the end of the VAD session failed: {e}",
+                        self.session
+                    );
                 }
                 for event in events.try_iter() {
                     self.event(event);
                 }
-                if let VadState::Engine { open: Some(start_ms), .. } = self.vad {
+                if let VadState::Engine {
+                    open: Some(start_ms),
+                    ..
+                } = self.vad
+                {
                     self.cut(start_ms, self.heard * 1000 / RATE);
                 }
             }
@@ -432,7 +562,11 @@ impl Intake {
         if let Some(wav) = self.wav.take()
             && let Err(e) = wav.finish()
         {
-            log::warn!("host: live session {}: cannot close {}: {e}", self.session, self.wav_path.display());
+            log::warn!(
+                "host: live session {}: cannot close {}: {e}",
+                self.session,
+                self.wav_path.display()
+            );
             self.wav_error = Some(format!("cannot write {}: {e}", self.wav_path.display()));
         }
     }
@@ -472,12 +606,17 @@ impl FinalPass {
                 continue;
             }
             let call = self.gate.engine_call();
-            let transcribed = self.engine.transcribe_segments(&part.samples, &self.model, &self.language);
+            let transcribed =
+                self.engine
+                    .transcribe_segments(&part.samples, &self.model, &self.language);
             drop(call);
             let segments = match transcribed {
                 Ok(segments) => segments,
                 Err(e) => {
-                    log::warn!("host: live session {}: the final pass of a part failed: {e}", self.session);
+                    log::warn!(
+                        "host: live session {}: the final pass of a part failed: {e}",
+                        self.session
+                    );
                     continue;
                 }
             };
@@ -491,7 +630,12 @@ impl FinalPass {
                     gate.mic_segment(segment, part.clock_offset);
                     continue;
                 }
-                self.sink.event(Event::Segment(SegmentEvent { job: None, session: Some(self.session), source: Some(self.source.clone()), segment: segment.clone() }));
+                self.sink.event(Event::Segment(SegmentEvent {
+                    job: None,
+                    session: Some(self.session),
+                    source: Some(self.source.clone()),
+                    segment: segment.clone(),
+                }));
                 if let Some(EchoRole::System(gate)) = &self.echo {
                     gate.system_segment(&segment, part.clock_offset);
                 }

@@ -1,13 +1,17 @@
 [package]
 name = "sayso-cleanup-client"
-description = "Runs cleanup models: starts the cleanup runtime, talks to it, and downloads the model files."
+description = "Runs Sayso cleanup models: starts the cleanup runtime as a separate program, talks to it, and downloads the model files."
 version.workspace = true
 edition.workspace = true
-license.workspace = true
-publish.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
+# It starts the runtime as a separate program and never links it.
+license = "MIT"
+publish = true
+repository = "https://github.com/watzon/sayso"
+readme = "README.md"
 
 [dependencies]
-sayso-core.workspace = true
+sayso-cleanup-models.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -53,6 +53,14 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         code: Option<ErrorCode>,
     },
+    /// The silence limit of a live session stopped its audio. The last parts
+    /// still come as `segment` events. `session_stop` ends the session as usual.
+    /// A session has this event at most once.
+    SilenceLimit {
+        session: u64,
+        /// The limit of the session.
+        silence_ms: u64,
+    },
     DictationDone(DictationDone),
     /// `hello` waits for the answer of a person. A client must wait for its reply
     /// without a limit after this. Without it, a client can call a silent host stuck.
@@ -73,6 +81,7 @@ tagged_kind!(Event {
     SourceGap => "source_gap",
     SourceEnded => "source_ended",
     SessionEnded => "session_ended",
+    SilenceLimit => "silence_limit",
     DictationDone => "dictation_done",
     ApprovalWaiting => "approval_waiting",
     HostClosing => "host_closing",
@@ -145,11 +154,35 @@ impl PartialEvent {
     /// needs one: not before punctuation that closes, and not in a script without spaces.
     pub fn text(&self) -> String {
         let (committed, tentative) = (self.committed.trim_end(), self.tentative.trim_start());
-        let (Some(last), Some(first)) = (committed.chars().next_back(), tentative.chars().next()) else {
+        let (Some(last), Some(first)) = (committed.chars().next_back(), tentative.chars().next())
+        else {
             return format!("{committed}{tentative}");
         };
-        let closes = matches!(first, ',' | '.' | ';' | ':' | '!' | '?' | ')' | ']' | '}' | '%' | '\'' | '’' | '…' | '、' | '。' | '，' | '！' | '？');
-        let separator = if closes || (is_unspaced(last) && is_unspaced(first)) { "" } else { " " };
+        let closes = matches!(
+            first,
+            ',' | '.'
+                | ';'
+                | ':'
+                | '!'
+                | '?'
+                | ')'
+                | ']'
+                | '}'
+                | '%'
+                | '\''
+                | '’'
+                | '…'
+                | '、'
+                | '。'
+                | '，'
+                | '！'
+                | '？'
+        );
+        let separator = if closes || (is_unspaced(last) && is_unspaced(first)) {
+            ""
+        } else {
+            " "
+        };
         format!("{committed}{separator}{tentative}")
     }
 }

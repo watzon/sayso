@@ -16,6 +16,10 @@ sayso-protocol.workspace = true
 sayso-engine-sdk.workspace = true
 sayso-speech.workspace = true
 sayso-capture.workspace = true
+sayso-cleanup-models.workspace = true
+sayso-cleanup-client.workspace = true
+thiserror.workspace = true
+ureq = "3"
 serde.workspace = true
 serde_json.workspace = true
 crossbeam-channel.workspace = true
@@ -23,6 +27,10 @@ parking_lot.workspace = true
 tempfile.workspace = true
 log.workspace = true
 workspace-hack.workspace = true
+
+[dev-dependencies]
+tiny_http = "0.12"
+
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [

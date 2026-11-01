@@ -152,7 +152,7 @@ A cleanup model runs only when Sayso knows the language and the model supports i
 3. Otherwise, a text language detector (`whatlang`, pure Rust) on the text after replacements. Its result counts only when it is reliable (`Info::is_reliable()`). A short text is often not reliable.
 4. No reliable language: no cleanup. The text after replacements goes in, with the notice "Sayso could not tell the language, so it did not clean up this text."
 
-S1-mini supports `en`. Cleanup 1 supports `en`, `de`, `es`, `fr`, `zh`, `ru`, and `ja`. The language goes into `CleanupRequest`. The check runs in `sayso-core::cleanup`, before the request goes to the runtime. Mixed-language text is not reliable, so it does not run.
+S1-mini supports `en`. Cleanup 1 supports `en`, `de`, `es`, `fr`, `zh`, `ru`, and `ja`. The language goes into `CleanupRequest`. The check runs in `sayso-cleanup-models` (`sayso-core::cleanup` re-exports it), before the request goes to the runtime. Mixed-language text is not reliable, so it does not run.
 
 A detected language from the engines (a `language` field on `Transcript`) is later work. It would make step 3 rare.
 
@@ -160,7 +160,7 @@ A detected language from the engines (a `language` field on `Transcript`) is lat
 
 The pipeline stays: transcribe → replacements → spoken punctuation → style → insert. The style step gets a second kind of runner.
 
-- `sayso-core::cleanup` (new, pure, no I/O):
+- `sayso-cleanup-models` (MIT, pure, no I/O; `sayso-core::cleanup` re-exports it, see ADR 0002):
   - `CleanupModelInfo`: id, display name, publisher, file, revision, size, SHA-256, license files, languages, tones, layouts, formats, context keys, the input token limit, the output reserve, and the end markers.
   - `CleanupRequest { text, language, settings, app, site, timeout }`.
   - `render(model, request) -> RawPrompt { text, end, max_tokens }`. It writes the exact input format of each model:

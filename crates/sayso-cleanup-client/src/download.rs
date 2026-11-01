@@ -6,7 +6,7 @@
 //! final name and `ready.json` is written. A folder without a valid
 //! `ready.json` is not ready, also when the model file is there.
 
-use sayso_core::cleanup::CleanupModelInfo;
+use sayso_cleanup_models::CleanupModelInfo;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
@@ -61,7 +61,10 @@ pub enum DownloadError {
 
 /// `<models dir>/cleanup/<id>`.
 pub fn model_dir(models_dir: &Path, model: &CleanupModelInfo) -> PathBuf {
-    debug_assert!(names_are_plain(model), "the catalog names a path that is not a plain name");
+    debug_assert!(
+        names_are_plain(model),
+        "the catalog names a path that is not a plain name"
+    );
     models_dir.join("cleanup").join(model.id)
 }
 
@@ -102,14 +105,22 @@ pub fn download(
     let size = model.size_bytes;
     let path = dir.join(model.file);
     if is_ready(models_dir, model) {
-        progress(Progress { bytes_done: size, bytes_total: size });
+        progress(Progress {
+            bytes_done: size,
+            bytes_total: size,
+        });
         return Ok(path);
     }
     fs::create_dir_all(&dir)?;
 
     let agent = agent();
     let url = |name: &str| {
-        format!("{}/{}/resolve/{}/{name}", endpoint.trim_end_matches('/'), model.repo, model.revision)
+        format!(
+            "{}/{}/resolve/{}/{name}",
+            endpoint.trim_end_matches('/'),
+            model.repo,
+            model.revision
+        )
     };
     for name in model.license_files {
         fetch_small(&agent, &url(name), &dir.join(name), cancel)?;
@@ -119,7 +130,15 @@ pub fn download(
     let partial_info = suffixed(&path, ".partial.json");
     prepare_partial(&partial, &partial_info, model)?;
     let mut reporter = Reporter::new(size);
-    fetch_model(&agent, &url(model.file), &partial, model, cancel, &mut reporter, progress)?;
+    fetch_model(
+        &agent,
+        &url(model.file),
+        &partial,
+        model,
+        cancel,
+        &mut reporter,
+        progress,
+    )?;
     verify(&partial, &partial_info, model, cancel)?;
     mark_ready(&partial, &partial_info, &path, model)?;
     reporter.report(size, true, progress);
@@ -175,11 +194,15 @@ fn is_plain_name(name: &str) -> bool {
     !name.is_empty()
         && name != "."
         && name != ".."
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 fn names_are_plain(model: &CleanupModelInfo) -> bool {
-    is_plain_name(model.id) && is_plain_name(model.file) && model.license_files.iter().all(|n| is_plain_name(n))
+    is_plain_name(model.id)
+        && is_plain_name(model.file)
+        && model.license_files.iter().all(|n| is_plain_name(n))
 }
 
 /// No name from the catalog may lead out of the model folder.
@@ -189,7 +212,10 @@ fn check_names(model: &CleanupModelInfo) -> Result<(), DownloadError> {
     } else {
         Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            format!("the catalog names a path that is not a plain name ({})", model.id),
+            format!(
+                "the catalog names a path that is not a plain name ({})",
+                model.id
+            ),
         )
         .into())
     }
@@ -223,7 +249,11 @@ enum Attempt {
     Retry(DownloadError),
 }
 
-fn get(agent: &ureq::Agent, url: &str, from: u64) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
+fn get(
+    agent: &ureq::Agent,
+    url: &str,
+    from: u64,
+) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
     // The bytes of a Range request must be the bytes of the file.
     let mut request = agent
         .get(url)
@@ -261,7 +291,12 @@ fn remove_file(path: &Path) -> std::io::Result<()> {
 }
 
 /// A small file (a license file). No resume: a stale `.partial` is replaced.
-fn fetch_small(agent: &ureq::Agent, url: &str, dest: &Path, cancel: &AtomicBool) -> Result<(), DownloadError> {
+fn fetch_small(
+    agent: &ureq::Agent,
+    url: &str,
+    dest: &Path,
+    cancel: &AtomicBool,
+) -> Result<(), DownloadError> {
     let partial = suffixed(dest, ".partial");
     let mut failures = 0;
     loop {
@@ -313,9 +348,15 @@ fn small_attempt(agent: &ureq::Agent, url: &str, partial: &Path) -> Result<Attem
 
 /// Delete a partial file that belongs to another revision or hash. Then write
 /// the info file for this model.
-fn prepare_partial(partial: &Path, info: &Path, model: &CleanupModelInfo) -> Result<(), DownloadError> {
+fn prepare_partial(
+    partial: &Path,
+    info: &Path,
+    model: &CleanupModelInfo,
+) -> Result<(), DownloadError> {
     let wanted = json!({ "revision": model.revision, "sha256": model.sha256 });
-    let current = fs::read(info).ok().and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+    let current = fs::read(info)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
     if current.as_ref() != Some(&wanted) {
         remove_file(partial)?;
         fs::write(info, serde_json::to_vec(&wanted).unwrap_or_default())?;
@@ -333,15 +374,24 @@ struct Reporter {
 
 impl Reporter {
     fn new(total: u64) -> Reporter {
-        Reporter { total, highest: 0, last: None }
+        Reporter {
+            total,
+            highest: 0,
+            last: None,
+        }
     }
 
     fn report(&mut self, done: u64, force: bool, progress: &mut dyn FnMut(Progress)) {
         self.highest = self.highest.max(done.min(self.total));
-        let due = self.last.is_none_or(|last| last.elapsed() >= PROGRESS_INTERVAL);
+        let due = self
+            .last
+            .is_none_or(|last| last.elapsed() >= PROGRESS_INTERVAL);
         if force || due {
             self.last = Some(Instant::now());
-            progress(Progress { bytes_done: self.highest, bytes_total: self.total });
+            progress(Progress {
+                bytes_done: self.highest,
+                bytes_total: self.total,
+            });
         }
     }
 }
@@ -366,7 +416,15 @@ fn fetch_model(
         if cancel.load(Ordering::SeqCst) {
             return Err(DownloadError::Cancelled);
         }
-        match model_attempt(agent, url, partial, model.size_bytes, cancel, reporter, progress)? {
+        match model_attempt(
+            agent,
+            url,
+            partial,
+            model.size_bytes,
+            cancel,
+            reporter,
+            progress,
+        )? {
             Attempt::Complete => return Ok(()),
             Attempt::Retry(error) => {
                 let now = file_len(partial);
@@ -410,7 +468,11 @@ fn model_attempt(
     options.create(true);
     match status {
         206 => {
-            let range = response.headers().get("content-range").and_then(|v| v.to_str().ok()).unwrap_or("");
+            let range = response
+                .headers()
+                .get("content-range")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
             if have == 0 || content_range_start(range) != Some(have) {
                 // Start again without a Range header.
                 remove_file(partial)?;
@@ -473,18 +535,29 @@ fn content_range_start(value: &str) -> Option<u64> {
 }
 
 /// Check the size and the hash of the partial file. A wrong file is deleted.
-fn verify(partial: &Path, info: &Path, model: &CleanupModelInfo, cancel: &AtomicBool) -> Result<(), DownloadError> {
+fn verify(
+    partial: &Path,
+    info: &Path,
+    model: &CleanupModelInfo,
+    cancel: &AtomicBool,
+) -> Result<(), DownloadError> {
     let got = file_len(partial);
     if got != model.size_bytes {
         remove_file(partial)?;
         remove_file(info)?;
-        return Err(DownloadError::WrongSize { expected: model.size_bytes, got });
+        return Err(DownloadError::WrongSize {
+            expected: model.size_bytes,
+            got,
+        });
     }
     let got = sha256_file(partial, cancel)?;
     if !got.eq_ignore_ascii_case(model.sha256) {
         remove_file(partial)?;
         remove_file(info)?;
-        return Err(DownloadError::WrongHash { expected: model.sha256.to_string(), got });
+        return Err(DownloadError::WrongHash {
+            expected: model.sha256.to_string(),
+            got,
+        });
     }
     Ok(())
 }
@@ -507,7 +580,12 @@ fn sha256_file(path: &Path, cancel: &AtomicBool) -> Result<String, DownloadError
 
 /// Ready is one step in the eyes of `is_ready`: the file gets its name, then
 /// `ready.json` appears through a rename.
-fn mark_ready(partial: &Path, info: &Path, path: &Path, model: &CleanupModelInfo) -> Result<(), DownloadError> {
+fn mark_ready(
+    partial: &Path,
+    info: &Path,
+    path: &Path,
+    model: &CleanupModelInfo,
+) -> Result<(), DownloadError> {
     fs::rename(partial, path)?;
     remove_file(info)?;
     let ready = json!({ "revision": model.revision, "sha256": model.sha256, "file": model.file });
@@ -524,7 +602,7 @@ fn mark_ready(partial: &Path, info: &Path, path: &Path, model: &CleanupModelInfo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sayso_core::cleanup::PromptFormat;
+    use sayso_cleanup_models::PromptFormat;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
@@ -535,7 +613,11 @@ mod tests {
         (0..len).map(|i| ((i * 31 + i / 7) % 251) as u8).collect()
     }
 
-    fn model_for(id: &'static str, body: &[u8], license_files: &'static [&'static str]) -> CleanupModelInfo {
+    fn model_for(
+        id: &'static str,
+        body: &[u8],
+        license_files: &'static [&'static str],
+    ) -> CleanupModelInfo {
         let sha256: &'static str = Box::leak(hex(&Sha256::digest(body)).into_boxed_str());
         CleanupModelInfo {
             id,
@@ -572,7 +654,8 @@ mod tests {
             for (offset, gate) in &self.stops {
                 if self.pos == *offset {
                     let start = Instant::now();
-                    while !gate.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(10) {
+                    while !gate.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(10)
+                    {
                         std::thread::sleep(Duration::from_millis(5));
                     }
                 } else if *offset > self.pos && !gate.load(Ordering::SeqCst) {
@@ -614,7 +697,10 @@ mod tests {
 
     impl Server {
         fn start(files: Vec<(String, Vec<u8>)>) -> Server {
-            let config = Arc::new(Config { honor_range: AtomicBool::new(true), ..Config::default() });
+            let config = Arc::new(Config {
+                honor_range: AtomicBool::new(true),
+                ..Config::default()
+            });
             config.files.lock().extend(files);
             let http = tiny_http::Server::http("127.0.0.1:0").unwrap();
             let port = http.server_addr().to_ip().unwrap().port();
@@ -629,7 +715,12 @@ mod tests {
                     }
                 })
             };
-            Server { url: format!("http://127.0.0.1:{port}"), config, stop, thread: Some(thread) }
+            Server {
+                url: format!("http://127.0.0.1:{port}"),
+                config,
+                stop,
+                thread: Some(thread),
+            }
         }
 
         fn seen(&self) -> Vec<Seen> {
@@ -639,7 +730,10 @@ mod tests {
         fn wait_for_requests(&self, count: usize) {
             let start = Instant::now();
             while self.config.count.load(Ordering::SeqCst) < count {
-                assert!(start.elapsed() < Duration::from_secs(10), "the server got no request");
+                assert!(
+                    start.elapsed() < Duration::from_secs(10),
+                    "the server got no request"
+                );
                 std::thread::sleep(Duration::from_millis(5));
             }
         }
@@ -668,7 +762,8 @@ mod tests {
             .iter()
             .any(|h| h.field.equiv("User-Agent") && h.value.as_str().starts_with("Sayso/"));
         if !from_client {
-            let _ = request.respond(tiny_http::Response::from_data(Vec::new()).with_status_code(404));
+            let _ =
+                request.respond(tiny_http::Response::from_data(Vec::new()).with_status_code(404));
             return;
         }
         let path = request.url().to_string();
@@ -677,8 +772,13 @@ mod tests {
             .iter()
             .find(|h| h.field.equiv("Range"))
             .map(|h| h.value.as_str().to_string());
-        let mut seen = Seen { path: path.clone(), range: range.clone(), sent: 0 };
-        let status_only = |status: u16| tiny_http::Response::from_data(Vec::new()).with_status_code(status);
+        let mut seen = Seen {
+            path: path.clone(),
+            range: range.clone(),
+            sent: 0,
+        };
+        let status_only =
+            |status: u16| tiny_http::Response::from_data(Vec::new()).with_status_code(status);
 
         let fail = {
             let mut fail = config.fail_with.lock();
@@ -703,7 +803,11 @@ mod tests {
                     .and_then(|r| r.strip_suffix('-'))
                     .and_then(|r| r.parse::<usize>().ok())
                     .filter(|_| config.honor_range.load(Ordering::SeqCst));
-                let stops = if path == FILE_PATH { std::mem::take(&mut *config.stops.lock()) } else { Vec::new() };
+                let stops = if path == FILE_PATH {
+                    std::mem::take(&mut *config.stops.lock())
+                } else {
+                    Vec::new()
+                };
                 let (status, data, mut headers) = match from {
                     Some(from) if from >= file.len() => {
                         config.seen.lock().push(seen);
@@ -713,7 +817,11 @@ mod tests {
                     }
                     Some(from) => {
                         let value = format!("bytes {from}-{}/{}", file.len() - 1, file.len());
-                        (206, file[from..].to_vec(), vec![header("Content-Range", &value)])
+                        (
+                            206,
+                            file[from..].to_vec(),
+                            vec![header("Content-Range", &value)],
+                        )
                     }
                     None => (200, file, Vec::new()),
                 };
@@ -722,7 +830,11 @@ mod tests {
                 config.seen.lock().push(seen);
                 config.count.fetch_add(1, Ordering::SeqCst);
                 let len = data.len();
-                let reader = Gated { data, pos: 0, stops };
+                let reader = Gated {
+                    data,
+                    pos: 0,
+                    stops,
+                };
                 request.respond(tiny_http::Response::new(
                     tiny_http::StatusCode(status),
                     headers,
@@ -782,7 +894,8 @@ mod tests {
         assert!(!folder.join("test.gguf.partial.json").exists());
         assert!(!folder.join("ready.json.tmp").exists());
 
-        let ready: Value = serde_json::from_slice(&fs::read(folder.join("ready.json")).unwrap()).unwrap();
+        let ready: Value =
+            serde_json::from_slice(&fs::read(folder.join("ready.json")).unwrap()).unwrap();
         assert_eq!(ready["revision"], "rev1");
         assert_eq!(ready["sha256"], model.sha256);
         assert_eq!(ready["file"], "test.gguf");
@@ -791,8 +904,18 @@ mod tests {
         let total = data.len() as u64;
         assert!(calls.iter().all(|p| p.bytes_total == total));
         assert!(calls.windows(2).all(|w| w[0].bytes_done <= w[1].bytes_done));
-        assert_eq!(calls.last(), Some(&Progress { bytes_done: total, bytes_total: total }));
-        assert!(calls.len() <= 4, "{} progress calls for a fast download", calls.len());
+        assert_eq!(
+            calls.last(),
+            Some(&Progress {
+                bytes_done: total,
+                bytes_total: total
+            })
+        );
+        assert!(
+            calls.len() <= 4,
+            "{} progress calls for a fast download",
+            calls.len()
+        );
     }
 
     #[test]
@@ -807,7 +930,13 @@ mod tests {
         let (result, calls) = run(dir.path(), &model, &server, &no_cancel());
         result.unwrap();
         assert_eq!(server.seen().len(), before);
-        assert_eq!(calls, vec![Progress { bytes_done: 5_000, bytes_total: 5_000 }]);
+        assert_eq!(
+            calls,
+            vec![Progress {
+                bytes_done: 5_000,
+                bytes_total: 5_000
+            }]
+        );
     }
 
     #[test]
@@ -949,7 +1078,10 @@ mod tests {
             let start = Instant::now();
             // The server buffers the last bytes before a stop, so wait for less.
             while file_len(&partial) < 30_000 {
-                assert!(start.elapsed() < Duration::from_secs(10), "the download did not start");
+                assert!(
+                    start.elapsed() < Duration::from_secs(10),
+                    "the download did not start"
+                );
                 std::thread::sleep(Duration::from_millis(5));
             }
             cancel.store(true, Ordering::SeqCst);
@@ -958,7 +1090,10 @@ mod tests {
             second.store(true, Ordering::SeqCst);
             result
         });
-        assert!(matches!(result, Err(DownloadError::Cancelled)), "{result:?}");
+        assert!(
+            matches!(result, Err(DownloadError::Cancelled)),
+            "{result:?}"
+        );
         let kept = file_len(&partial);
         assert!((30_000..100_000).contains(&kept), "kept {kept} bytes");
         assert!(!is_ready(dir.path(), &model));
@@ -987,7 +1122,10 @@ mod tests {
             let (second, calls) = run(dir.path(), &model, &server, &no_cancel());
             assert!(matches!(second, Err(DownloadError::Busy)), "{second:?}");
             assert!(calls.is_empty());
-            assert!(matches!(delete(dir.path(), &model), Err(DownloadError::Busy)));
+            assert!(matches!(
+                delete(dir.path(), &model),
+                Err(DownloadError::Busy)
+            ));
             gate.store(true, Ordering::SeqCst);
             handle.join().unwrap().0.unwrap();
         });
@@ -1003,7 +1141,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let (result, _) = run(dir.path(), &model, &server, &no_cancel());
-        assert!(matches!(result, Err(DownloadError::Http { status: 404 })), "{result:?}");
+        assert!(
+            matches!(result, Err(DownloadError::Http { status: 404 })),
+            "{result:?}"
+        );
         assert_eq!(server.seen().len(), 1);
         assert!(!is_ready(dir.path(), &model));
     }
@@ -1030,7 +1171,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let (result, _) = run(dir.path(), &model, &server, &no_cancel());
-        assert!(matches!(result, Err(DownloadError::Http { status: 503 })), "{result:?}");
+        assert!(
+            matches!(result, Err(DownloadError::Http { status: 503 })),
+            "{result:?}"
+        );
         assert_eq!(server.seen().len(), 3);
     }
 
@@ -1082,8 +1226,14 @@ mod tests {
         let model = model_for("license", &data, &["LICENSE", "NOTICE"]);
         let server = Server::start(vec![
             (FILE_PATH.to_string(), data.clone()),
-            ("/test/repo/resolve/rev1/LICENSE".to_string(), b"license text".to_vec()),
-            ("/test/repo/resolve/rev1/NOTICE".to_string(), b"notice text".to_vec()),
+            (
+                "/test/repo/resolve/rev1/LICENSE".to_string(),
+                b"license text".to_vec(),
+            ),
+            (
+                "/test/repo/resolve/rev1/NOTICE".to_string(),
+                b"notice text".to_vec(),
+            ),
         ]);
         let dir = tempfile::tempdir().unwrap();
         let folder = model_dir(dir.path(), &model);
@@ -1092,13 +1242,23 @@ mod tests {
         fs::write(folder.join("LICENSE.partial"), "old").unwrap();
 
         run(dir.path(), &model, &server, &no_cancel()).0.unwrap();
-        assert_eq!(fs::read_to_string(folder.join("LICENSE")).unwrap(), "license text");
-        assert_eq!(fs::read_to_string(folder.join("NOTICE")).unwrap(), "notice text");
+        assert_eq!(
+            fs::read_to_string(folder.join("LICENSE")).unwrap(),
+            "license text"
+        );
+        assert_eq!(
+            fs::read_to_string(folder.join("NOTICE")).unwrap(),
+            "notice text"
+        );
         assert!(!folder.join("LICENSE.partial").exists());
         let paths: Vec<String> = server.seen().into_iter().map(|s| s.path).collect();
         assert_eq!(
             paths,
-            ["/test/repo/resolve/rev1/LICENSE", "/test/repo/resolve/rev1/NOTICE", FILE_PATH]
+            [
+                "/test/repo/resolve/rev1/LICENSE",
+                "/test/repo/resolve/rev1/NOTICE",
+                FILE_PATH
+            ]
         );
     }
 
@@ -1110,7 +1270,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
 
         let (result, _) = run(dir.path(), &model, &server, &no_cancel());
-        assert!(matches!(result, Err(DownloadError::Http { status: 404 })), "{result:?}");
+        assert!(
+            matches!(result, Err(DownloadError::Http { status: 404 })),
+            "{result:?}"
+        );
         assert!(!is_ready(dir.path(), &model));
         assert!(server.seen().iter().all(|s| s.path != FILE_PATH));
     }
@@ -1124,7 +1287,10 @@ mod tests {
         let server = Server::start(Vec::new());
         let (result, _) = run(dir.path(), &model, &server, &no_cancel());
         assert!(matches!(result, Err(DownloadError::Io(_))), "{result:?}");
-        assert!(matches!(delete(dir.path(), &model), Err(DownloadError::Io(_))));
+        assert!(matches!(
+            delete(dir.path(), &model),
+            Err(DownloadError::Io(_))
+        ));
         assert!(server.seen().is_empty());
     }
 

@@ -10,7 +10,14 @@ fn spokenly() -> &'static CleanupModelInfo {
 
 #[test]
 fn s1_mini_gets_the_exact_format_of_its_model_card() {
-    let p = render(s1(), "so um send the report by uh friday", Settings::default(), Some("Slack"), None, 10);
+    let p = render(
+        s1(),
+        "so um send the report by uh friday",
+        Settings::default(),
+        Some("Slack"),
+        None,
+        10,
+    );
     assert_eq!(
         p.text,
         "<|im_start|>system\nYou are a text normalizer for speech-to-text transcripts. The input begins with a control line \
@@ -23,25 +30,88 @@ fn s1_mini_gets_the_exact_format_of_its_model_card() {
     // No app line: S1-mini reads no context.
     assert!(!p.text.contains("Slack"));
     // A casual tone does not reach S1-mini (the evaluation: it keeps filler words).
-    let casual = render(s1(), "x", Settings { tone: Tone::VeryCasual, ..Default::default() }, None, None, 1);
+    let casual = render(
+        s1(),
+        "x",
+        Settings {
+            tone: Tone::VeryCasual,
+            ..Default::default()
+        },
+        None,
+        None,
+        1,
+    );
     assert!(casual.text.contains("[Styling: semi-formal]"));
 }
 
 #[test]
 fn s1_mini_gets_lists_and_email_from_the_settings() {
-    let list = render(s1(), "x", Settings { layout: Layout::List, ..Default::default() }, None, None, 1);
-    assert!(list.text.contains("[Styling: semi-formal] [Structure: lists] [Context: general]\nx<|im_end|>"));
-    let email = render(s1(), "x", Settings { format: Format::Email, ..Default::default() }, None, None, 1);
+    let list = render(
+        s1(),
+        "x",
+        Settings {
+            layout: Layout::List,
+            ..Default::default()
+        },
+        None,
+        None,
+        1,
+    );
+    assert!(
+        list.text
+            .contains("[Styling: semi-formal] [Structure: lists] [Context: general]\nx<|im_end|>")
+    );
+    let email = render(
+        s1(),
+        "x",
+        Settings {
+            format: Format::Email,
+            ..Default::default()
+        },
+        None,
+        None,
+        1,
+    );
     assert!(email.text.contains("[Structure: prose] [Context: email]"));
 }
 
 #[test]
 fn cleanup_1_gets_key_value_lines_in_the_order_of_its_model_card() {
-    let p = render(spokenly(), "hey are we still on", Settings { tone: Tone::Casual, ..Default::default() }, Some("Slack"), Some("app.slack.com"), 5);
-    assert_eq!(p.text, "app: Slack\nsite: app.slack.com\ntone: casual\ntext: hey are we still on\nout:");
-    let plain = render(spokenly(), "um hi", Settings::default(), None, Some("  "), 2);
+    let p = render(
+        spokenly(),
+        "hey are we still on",
+        Settings {
+            tone: Tone::Casual,
+            ..Default::default()
+        },
+        Some("Slack"),
+        Some("app.slack.com"),
+        5,
+    );
+    assert_eq!(
+        p.text,
+        "app: Slack\nsite: app.slack.com\ntone: casual\ntext: hey are we still on\nout:"
+    );
+    let plain = render(
+        spokenly(),
+        "um hi",
+        Settings::default(),
+        None,
+        Some("  "),
+        2,
+    );
     assert_eq!(plain.text, "tone: formal\ntext: um hi\nout:");
-    let very = render(spokenly(), "x", Settings { tone: Tone::VeryCasual, ..Default::default() }, Some("My\nApp"), None, 1);
+    let very = render(
+        spokenly(),
+        "x",
+        Settings {
+            tone: Tone::VeryCasual,
+            ..Default::default()
+        },
+        Some("My\nApp"),
+        None,
+        1,
+    );
     assert_eq!(very.text, "app: My App\ntone: very casual\ntext: x\nout:");
 }
 
@@ -51,21 +121,35 @@ fn runs_matches_the_table_of_the_plan() {
     let message = CleanupSettings::new(Tone::Casual, Layout::Paragraphs, Format::Plain);
     let email = CleanupSettings::new(Tone::Formal, Layout::Paragraphs, Format::Email);
     let notes = CleanupSettings::new(Tone::Formal, Layout::List, Format::Plain);
-    for (settings, on_s1, on_spokenly) in [(&clean, true, true), (&message, true, true), (&email, true, false), (&notes, true, false)] {
+    for (settings, on_s1, on_spokenly) in [
+        (&clean, true, true),
+        (&message, true, true),
+        (&email, true, false),
+        (&notes, true, false),
+    ] {
         assert_eq!(s1().runs(settings), on_s1, "{settings:?}");
         assert_eq!(spokenly().runs(settings), on_spokenly, "{settings:?}");
     }
     // A value from a newer Sayso: no model runs the style, and nothing panics.
-    let newer = CleanupSettings { layout: Some("table".into()), ..Default::default() };
+    let newer = CleanupSettings {
+        layout: Some("table".into()),
+        ..Default::default()
+    };
     assert!(!s1().runs(&newer) && !spokenly().runs(&newer));
     assert_eq!(newer.known(), None);
 }
 
 #[test]
 fn settings_write_only_values_that_are_not_the_default() {
-    assert_eq!(CleanupSettings::new(Tone::Formal, Layout::Paragraphs, Format::Plain), CleanupSettings::default());
+    assert_eq!(
+        CleanupSettings::new(Tone::Formal, Layout::Paragraphs, Format::Plain),
+        CleanupSettings::default()
+    );
     let email = CleanupSettings::new(Tone::Formal, Layout::Paragraphs, Format::Email);
-    assert_eq!(toml::to_string(&email).unwrap().trim(), r#"format = "email""#);
+    assert_eq!(
+        toml::to_string(&email).unwrap().trim(),
+        r#"format = "email""#
+    );
     let parsed: CleanupSettings = toml::from_str("tone = \"very-casual\"").unwrap();
     assert_eq!(parsed.known().unwrap().tone, Tone::VeryCasual);
 }
@@ -92,7 +176,11 @@ fn plan(text: &str, max: u32) -> Vec<String> {
 }
 
 fn assert_whole(text: &str, parts: &[String]) {
-    assert_eq!(parts.concat(), text, "every character is in one part, in order");
+    assert_eq!(
+        parts.concat(),
+        text,
+        "every character is in one part, in order"
+    );
     assert!(parts.iter().all(|p| !p.is_empty()));
 }
 
@@ -104,7 +192,8 @@ fn a_short_text_is_one_part() {
 
 #[test]
 fn a_long_text_splits_after_sentence_ends() {
-    let text = "one two three four. five six seven eight. nine ten eleven twelve. thirteen fourteen.";
+    let text =
+        "one two three four. five six seven eight. nine ten eleven twelve. thirteen fourteen.";
     let parts = plan(text, 12);
     assert_whole(text, &parts);
     assert!(parts.len() > 1);
@@ -149,25 +238,46 @@ fn new_lines_stay_with_the_part_before_and_come_back_in_the_join() {
     let joined = join_answers(&parts, &answers);
     assert!(joined.contains("FIRST LINE HERE\nSECOND"), "{joined:?}");
     let sentences = vec!["One. ".to_string(), "Two.".to_string()];
-    assert_eq!(join_answers(&sentences, &["One.".into(), "Two.".into()]), "One. Two.");
+    assert_eq!(
+        join_answers(&sentences, &["One.".into(), "Two.".into()]),
+        "One. Two."
+    );
     // A part with only filler words gives an empty answer, and no double space.
-    assert_eq!(join_answers(&["um. ".into(), "Hi.".into()], &["".into(), "Hi.".into()]), "Hi.");
+    assert_eq!(
+        join_answers(&["um. ".into(), "Hi.".into()], &["".into(), "Hi.".into()]),
+        "Hi."
+    );
 }
 
 #[test]
 fn only_an_answer_that_ended_is_used() {
-    assert_eq!(check("um hi there", Stop::End, " Hi there.\n"), Ok("Hi there.".into()));
-    assert_eq!(check("um hi there", Stop::Limit, "Hi there"), Err(CheckFailure::Cut(Stop::Limit)));
-    assert_eq!(check("um hi there", Stop::Context, "Hi"), Err(CheckFailure::Cut(Stop::Context)));
+    assert_eq!(
+        check("um hi there", Stop::End, " Hi there.\n"),
+        Ok("Hi there.".into())
+    );
+    assert_eq!(
+        check("um hi there", Stop::Limit, "Hi there"),
+        Err(CheckFailure::Cut(Stop::Limit))
+    );
+    assert_eq!(
+        check("um hi there", Stop::Context, "Hi"),
+        Err(CheckFailure::Cut(Stop::Context))
+    );
     assert_eq!(check("hi", Stop::End, "Hi.<|im_end|>"), Ok("Hi.".into()));
-    assert_eq!(check("hi", Stop::End, "<think>\n\n</think>\n\nHi."), Ok("Hi.".into()));
+    assert_eq!(
+        check("hi", Stop::End, "<think>\n\n</think>\n\nHi."),
+        Ok("Hi.".into())
+    );
 }
 
 #[test]
 fn an_empty_answer_is_right_only_for_filler_words() {
     assert_eq!(check("um uh you know", Stop::End, ""), Ok(String::new()));
     assert_eq!(check("Äh ähm.", Stop::End, " "), Ok(String::new()));
-    assert_eq!(check("send the report by friday", Stop::End, ""), Err(CheckFailure::Empty));
+    assert_eq!(
+        check("send the report by friday", Stop::End, ""),
+        Err(CheckFailure::Empty)
+    );
     assert!(!is_filler_only("you"), "you alone is a word");
     assert!(!is_filler_only(""));
     assert!(is_filler_only("えっと、あのー"));
@@ -175,18 +285,35 @@ fn an_empty_answer_is_right_only_for_filler_words() {
 
 #[test]
 fn spoken_numbers_that_become_digits_are_not_too_short() {
-    let input = "the total is nine hundred and ninety nine thousand nine hundred and ninety nine dollars";
+    let input =
+        "the total is nine hundred and ninety nine thousand nine hundred and ninety nine dollars";
     assert!(check(input, Stop::End, "The total is $999,999.").is_ok());
 }
 
 #[test]
 fn an_answer_that_drops_most_of_the_text_fails() {
     let input = "so the plan for next week is that we finish the import screen on monday and test it on tuesday";
-    assert_eq!(check(input, Stop::End, "So the plan."), Err(CheckFailure::TooShort));
+    assert_eq!(
+        check(input, Stop::End, "So the plan."),
+        Err(CheckFailure::TooShort)
+    );
     let chinese = "我们下周的计划是周一完成导入界面然后周二用三个大文件测试它最后写发布说明";
-    assert_eq!(check(chinese, Stop::End, "我们下周。"), Err(CheckFailure::TooShort));
-    assert!(check(chinese, Stop::End, "我们下周的计划是：周一完成导入界面，然后周二用三个大文件测试它，最后写发布说明。").is_ok());
-    assert_eq!(check("hi", Stop::End, &"word ".repeat(100)), Err(CheckFailure::TooLong));
+    assert_eq!(
+        check(chinese, Stop::End, "我们下周。"),
+        Err(CheckFailure::TooShort)
+    );
+    assert!(
+        check(
+            chinese,
+            Stop::End,
+            "我们下周的计划是：周一完成导入界面，然后周二用三个大文件测试它，最后写发布说明。"
+        )
+        .is_ok()
+    );
+    assert_eq!(
+        check("hi", Stop::End, &"word ".repeat(100)),
+        Err(CheckFailure::TooLong)
+    );
 }
 
 fn terms(list: &[&str]) -> Vec<String> {
@@ -196,29 +323,59 @@ fn terms(list: &[&str]) -> Vec<String> {
 #[test]
 fn spelling_comes_back_only_for_terms_that_were_sent_with_it() {
     let t = terms(&["GPUI", "GitHub", "US"]);
-    assert_eq!(restore_spelling("open the GPUI docs", "Open the Gpui docs.", &t), "Open the GPUI docs.");
-    assert_eq!(restore_spelling("push it to GitHub", "push it to github", &t), "push it to GitHub");
+    assert_eq!(
+        restore_spelling("open the GPUI docs", "Open the Gpui docs.", &t),
+        "Open the GPUI docs."
+    );
+    assert_eq!(
+        restore_spelling("push it to GitHub", "push it to github", &t),
+        "push it to GitHub"
+    );
     // "US" was not in the text as "US", so "us" stays.
-    assert_eq!(restore_spelling("tell us more", "Tell us more.", &t), "Tell us more.");
+    assert_eq!(
+        restore_spelling("tell us more", "Tell us more.", &t),
+        "Tell us more."
+    );
     // Whole words only.
-    assert_eq!(restore_spelling("GPUI", "gpuis are fun", &t), "gpuis are fun");
+    assert_eq!(
+        restore_spelling("GPUI", "gpuis are fun", &t),
+        "gpuis are fun"
+    );
 }
 
 #[test]
 fn spelling_takes_longer_terms_first_and_handles_unicode() {
     let t = terms(&["Claude", "Claude Code", "Zoë"]);
-    assert_eq!(restore_spelling("ask Claude Code and Zoë", "Ask claude code and zoë.", &t), "Ask Claude Code and Zoë.");
+    assert_eq!(
+        restore_spelling("ask Claude Code and Zoë", "Ask claude code and zoë.", &t),
+        "Ask Claude Code and Zoë."
+    );
     // A very casual answer still gets names back.
-    assert_eq!(restore_spelling("ask Claude", "ask claude", &t), "ask Claude");
+    assert_eq!(
+        restore_spelling("ask Claude", "ask claude", &t),
+        "ask Claude"
+    );
 }
 
 #[test]
 fn the_language_comes_from_the_setting_then_the_model_then_the_text() {
     let never = |_: &str| -> Option<String> { panic!("no detection needed") };
-    assert_eq!(dictation_language("de", &["en", "de"], "x", never).as_deref(), Some("de"));
-    assert_eq!(dictation_language("auto", &["en"], "x", never).as_deref(), Some("en"));
-    assert_eq!(dictation_language("auto", &["en", "de"], "Guten Tag", |_| Some("de".into())).as_deref(), Some("de"));
-    assert_eq!(dictation_language("auto", &["en", "de"], "ok", |_| None), None);
+    assert_eq!(
+        dictation_language("de", &["en", "de"], "x", never).as_deref(),
+        Some("de")
+    );
+    assert_eq!(
+        dictation_language("auto", &["en"], "x", never).as_deref(),
+        Some("en")
+    );
+    assert_eq!(
+        dictation_language("auto", &["en", "de"], "Guten Tag", |_| Some("de".into())).as_deref(),
+        Some("de")
+    );
+    assert_eq!(
+        dictation_language("auto", &["en", "de"], "ok", |_| None),
+        None
+    );
 }
 
 #[test]
@@ -232,7 +389,13 @@ fn content_units_count_a_number_once() {
 
 #[test]
 fn the_detector_gives_a_language_only_when_it_is_sure() {
-    assert_eq!(detect_language("We need to fix the login bug and update the docs before the release on Friday.").as_deref(), Some("en"));
+    assert_eq!(
+        detect_language(
+            "We need to fix the login bug and update the docs before the release on Friday."
+        )
+        .as_deref(),
+        Some("en")
+    );
     assert_eq!(detect_language("Wir müssen den Fehler beim Anmelden beheben und die Dokumentation vor Freitag aktualisieren.").as_deref(), Some("de"));
     assert_eq!(detect_language("ok"), None);
 }
@@ -251,7 +414,16 @@ fn a_count_error_ends_the_split_at_once() {
 #[test]
 fn spelling_stays_when_the_text_had_the_word_in_two_cases() {
     let t = terms(&["May", "US"]);
-    assert_eq!(restore_spelling("we may ship in May", "We may ship in May.", &t), "We may ship in May.");
-    assert_eq!(restore_spelling("the US and us", "The us and us.", &t), "The us and us.");
-    assert_eq!(restore_spelling("ship in May", "Ship in may.", &t), "Ship in May.");
+    assert_eq!(
+        restore_spelling("we may ship in May", "We may ship in May.", &t),
+        "We may ship in May."
+    );
+    assert_eq!(
+        restore_spelling("the US and us", "The us and us.", &t),
+        "The us and us."
+    );
+    assert_eq!(
+        restore_spelling("ship in May", "Ship in may.", &t),
+        "Ship in May."
+    );
 }

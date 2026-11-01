@@ -8,3 +8,4 @@ Sayso is GPL-3.0-only. An extension that talks to Sayso over a socket is a separ
 - `sayso-ui` loses its dependencies on `sayso-core` and `sayso-i18n`, because an MIT crate cannot depend on a GPL crate. GPL crates can depend on the MIT crates.
 - The app icon and the tray icon stay out of the MIT crates. The name Sayso and the icon stay with Watzon Ventures LLC.
 - `sayso-ui` pins `gpui-kit` with `=`, so an extension that uses it is tied to the same GPUI version.
+- 2026-10-30: the cleanup logic moved to the MIT crates `sayso-cleanup-models` (the catalog, `render`, the plan of parts, `check`, the protocol) and `sayso-cleanup-client` (the client and the download), so `sayso-sdk` can offer it. Every author of that code is Chris (`git log`, checked on 2026-10-30). The cleanup runtime `sayso-cleanup` and the engines stay GPL, and an app ships them as separate programs.

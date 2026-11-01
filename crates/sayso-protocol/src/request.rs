@@ -56,7 +56,9 @@ impl Request {
     /// its own work, so `cancel_job` and `session_stop` need none.
     pub fn capabilities(&self) -> Vec<Capability> {
         match self {
-            Request::Hello(_) | Request::Bye | Request::CancelJob(_) | Request::SessionStop(_) => vec![],
+            Request::Hello(_) | Request::Bye | Request::CancelJob(_) | Request::SessionStop(_) => {
+                vec![]
+            }
             Request::ListModels(_) => vec![Capability::ModelsRead],
             Request::DownloadModel(_) => vec![Capability::ModelsDownload],
             Request::TranscribeFile(_) => vec![Capability::TranscribeFile],
@@ -150,6 +152,10 @@ pub struct SessionStart {
     /// A folder for one WAV file of each source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record_to: Option<PathBuf>,
+    /// Stop the audio of the session after this long with no speech in any
+    /// source. The event `silence_limit` says when that happens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub silence_limit_ms: Option<u64>,
 }
 
 /// Audio for the source `client`. It has no `id` and gets no reply.

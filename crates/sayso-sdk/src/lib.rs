@@ -49,7 +49,10 @@
 //! - [`Speech::connect`] waits for the answer of the user when Sayso asks about the app for
 //!   the first time. Call it on a thread that can wait.
 
+pub mod cleanup;
 pub mod client;
+pub mod deepgram;
+pub mod embedded;
 mod local;
 mod local_engine;
 mod local_models;
@@ -60,6 +63,7 @@ mod transport;
 mod wire;
 
 pub use paths::model_store;
+pub use sayso_capture::permission;
 pub use sayso_engine_sdk::find_engine;
 pub use sayso_protocol as protocol;
 pub use sayso_protocol::Fields;

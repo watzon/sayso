@@ -72,6 +72,18 @@ pub enum EnhanceError {
     Cli(String),
 }
 
+impl From<crate::cleanup::CleanError> for EnhanceError {
+    fn from(error: crate::cleanup::CleanError) -> EnhanceError {
+        use crate::cleanup::CleanError;
+        match error {
+            CleanError::Timeout(ms) => EnhanceError::Timeout(ms),
+            CleanError::NotConfigured(message) => EnhanceError::NotConfigured(message),
+            CleanError::Runtime(message) => EnhanceError::Cli(message),
+            CleanError::InvalidOutput(message) => EnhanceError::InvalidOutput(message),
+        }
+    }
+}
+
 /// One model a provider offers, for the model picker.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ModelChoice {
@@ -164,13 +176,15 @@ pub fn parse_output(raw: &str) -> Result<String, EnhanceError> {
         .and_then(|s| s.strip_suffix("```"))
         .unwrap_or(trimmed)
         .trim();
-    let value: serde_json::Value =
-        serde_json::from_str(body).map_err(|e| EnhanceError::InvalidOutput(format!("not JSON: {e}")))?;
+    let value: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| EnhanceError::InvalidOutput(format!("not JSON: {e}")))?;
     parse_value(&value)
 }
 
 pub fn parse_value(value: &serde_json::Value) -> Result<String, EnhanceError> {
-    let obj = value.as_object().ok_or_else(|| EnhanceError::InvalidOutput("not a JSON object".into()))?;
+    let obj = value
+        .as_object()
+        .ok_or_else(|| EnhanceError::InvalidOutput("not a JSON object".into()))?;
     let text = obj
         .get("text")
         .and_then(|t| t.as_str())
@@ -207,7 +221,10 @@ mod tests {
     #[test]
     fn parses_plain_and_fenced_json() {
         assert_eq!(parse_output(r#"{"text":"Hello."}"#).unwrap(), "Hello.");
-        assert_eq!(parse_output("```json\n{\"text\": \"Hi\"}\n```").unwrap(), "Hi");
+        assert_eq!(
+            parse_output("```json\n{\"text\": \"Hi\"}\n```").unwrap(),
+            "Hi"
+        );
     }
 
     #[test]

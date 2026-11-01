@@ -7274,6 +7274,7 @@ dependencies = [
  "libc",
  "log",
  "objc2 0.6.4",
+ "objc2-av-foundation",
  "objc2-core-audio",
  "objc2-core-audio-types",
  "objc2-core-foundation",
@@ -7290,7 +7291,7 @@ version = "0.14.1"
 dependencies = [
  "log",
  "parking_lot",
- "sayso-core",
+ "sayso-cleanup-models",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -7302,12 +7303,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-cleanup-models"
+version = "0.14.1"
+dependencies = [
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.21",
+ "toml 0.9.12+spec-1.1.0",
+ "whatlang",
+ "workspace-hack",
+]
+
+[[package]]
 name = "sayso-core"
 version = "0.14.1"
 dependencies = [
  "chrono",
  "log",
  "regex",
+ "sayso-cleanup-models",
  "sayso-i18n",
  "sayso-ink",
  "sayso-speech",
@@ -7318,7 +7334,6 @@ dependencies = [
  "thiserror 2.0.21",
  "toml 0.9.12+spec-1.1.0",
  "uuid",
- "whatlang",
  "workspace-hack",
 ]
 
@@ -7586,12 +7601,17 @@ dependencies = [
  "log",
  "parking_lot",
  "sayso-capture",
+ "sayso-cleanup-client",
+ "sayso-cleanup-models",
  "sayso-engine-sdk",
  "sayso-protocol",
  "sayso-speech",
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror 2.0.21",
+ "tiny_http",
+ "ureq 3.4.2",
  "windows-sys 0.61.2",
  "workspace-hack",
 ]
@@ -10714,6 +10734,9 @@ dependencies = [
  "objc2 0.6.4",
  "objc2-core-foundation",
  "objc2-core-graphics",
+ "objc2-core-image 0.3.2",
+ "objc2-foundation 0.3.2",
+ "objc2-quartz-core 0.3.2",
  "once_cell",
  "percent-encoding",
  "proc-macro2",

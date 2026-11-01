@@ -68,6 +68,9 @@ libc = { version = "0.2" }
 objc2 = { version = "0.6" }
 objc2-core-foundation = { version = "0.3" }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["CGColor", "CGColorSpace", "CGContext", "CGDirectDisplay", "CGEventTypes", "CGFont", "CGImage", "CGPath", "objc2", "std"] }
+objc2-core-image = { version = "0.3", default-features = false, features = ["CIBarcodeDescriptor", "CIColor", "CIContext", "CIFilter", "CIImage"] }
+objc2-foundation = { version = "0.3" }
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["CADisplayLink", "CALayer", "CAMediaTiming", "CAMediaTimingFunction", "CAOpenGLLayer"] }
 once_cell = { version = "1" }
 
 [target.aarch64-apple-darwin.build-dependencies]

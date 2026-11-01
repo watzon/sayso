@@ -21,7 +21,7 @@ The result is `target/release/sayso-cleanup` (`.exe` on Windows).
 
 ## Protocol
 
-NDJSON, protocol version 1: one JSON object per line on stdin, one reply line on stdout. The Rust types are in `crates/sayso-core/src/cleanup/protocol.rs`. Both sides use them.
+NDJSON, protocol version 1: one JSON object per line on stdin, one reply line on stdout. The Rust types are in `crates/sayso-cleanup-models/src/protocol.rs`. Both sides use them.
 
 - Every request has `v` and `id`. The reply has the same `id`.
 - Requests: `hello`, `load {model_id, path, n_ctx}`, `count {model_id, text}`, `complete {model_id, prompt, end, max_tokens}`, `unload`.

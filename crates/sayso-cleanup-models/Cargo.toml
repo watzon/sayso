@@ -1,0 +1,22 @@
+[package]
+name = "sayso-cleanup-models"
+description = "The catalog of Sayso cleanup models, the input format of each, how long text splits, the checks of an answer, and the messages of the cleanup runtime. No I/O."
+version.workspace = true
+edition.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT (docs/adr/0002-mit-sdk-gpl-app.md).
+license = "MIT"
+publish = true
+repository = "https://github.com/watzon/sayso"
+readme = "README.md"
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+regex.workspace = true
+whatlang = "0.18"
+workspace-hack.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+toml.workspace = true
+serde_json.workspace = true

@@ -3,9 +3,9 @@
 use super::*;
 use crate::basic_vad::BasicVad;
 use crate::{EngineEvent, SpeechPart, Turn};
-use sayso_protocol::SourceEndReason;
 use crossbeam_channel::Sender;
 use parking_lot::Condvar;
+use sayso_protocol::SourceEndReason;
 use sayso_protocol::{PartialEvent, Segment, SegmentEvent};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -46,7 +46,9 @@ struct EngineState {
 
 impl FakeEngine {
     fn emit(&self, event: EngineEvent) {
-        self.watchers.lock().retain(|w| w.send(event.clone()).is_ok());
+        self.watchers
+            .lock()
+            .retain(|w| w.send(event.clone()).is_ok());
     }
 
     fn open_now(&self) -> usize {
@@ -61,8 +63,15 @@ impl FakeEngine {
 
     fn emit_parts(&self, session: u64, parts: Vec<crate::basic_vad::Part>) {
         for part in parts {
-            self.emit(EngineEvent::SpeechStart { session, start_ms: part.start_ms });
-            self.emit(EngineEvent::SpeechEnd { session, start_ms: part.start_ms, end_ms: part.end_ms });
+            self.emit(EngineEvent::SpeechStart {
+                session,
+                start_ms: part.start_ms,
+            });
+            self.emit(EngineEvent::SpeechEnd {
+                session,
+                start_ms: part.start_ms,
+                end_ms: part.end_ms,
+            });
         }
     }
 }
@@ -73,17 +82,36 @@ impl SpeechEngine for FakeEngine {
         Ok(())
     }
 
-    fn transcribe(&self, _samples: &[f32], _model: &ModelId, _language: &str) -> Result<String, EngineError> {
+    fn transcribe(
+        &self,
+        _samples: &[f32],
+        _model: &ModelId,
+        _language: &str,
+    ) -> Result<String, EngineError> {
         Err(EngineError::new("a live session transcribes with segments"))
     }
 
-    fn detect_speech(&self, _model: &ModelId, _samples: &[f32]) -> Result<Vec<SpeechPart>, EngineError> {
-        Err(EngineError::new("a live session finds speech with a VAD session"))
+    fn detect_speech(
+        &self,
+        _model: &ModelId,
+        _samples: &[f32],
+    ) -> Result<Vec<SpeechPart>, EngineError> {
+        Err(EngineError::new(
+            "a live session finds speech with a VAD session",
+        ))
     }
 
-    fn start_stream(&self, session: u64, _model: &ModelId, _language: &str) -> Result<(), EngineError> {
+    fn start_stream(
+        &self,
+        session: u64,
+        _model: &ModelId,
+        _language: &str,
+    ) -> Result<(), EngineError> {
         if self.max_streams.is_some_and(|max| self.open_now() >= max) {
-            return Err(EngineError::with_code(ErrorCode::TooManyStreams, "8 streams are open; end one first"));
+            return Err(EngineError::with_code(
+                ErrorCode::TooManyStreams,
+                "8 streams are open; end one first",
+            ));
         }
         let mut state = self.state.lock();
         state.streams.push(session);
@@ -93,7 +121,10 @@ impl SpeechEngine for FakeEngine {
 
     fn start_vad(&self, session: u64, _model: &ModelId) -> Result<(), EngineError> {
         if self.max_streams.is_some_and(|max| self.open_now() >= max) {
-            return Err(EngineError::with_code(ErrorCode::TooManyStreams, "8 streams are open; end one first"));
+            return Err(EngineError::with_code(
+                ErrorCode::TooManyStreams,
+                "8 streams are open; end one first",
+            ));
         }
         let mut state = self.state.lock();
         state.vads.insert(session, BasicVad::new());
@@ -114,7 +145,11 @@ impl SpeechEngine for FakeEngine {
             (preview, parts, total)
         };
         if preview {
-            self.emit(EngineEvent::Partial { session, committed: String::new(), tentative: format!("{} ms", total * 1000 / RATE) });
+            self.emit(EngineEvent::Partial {
+                session,
+                committed: String::new(),
+                tentative: format!("{} ms", total * 1000 / RATE),
+            });
         }
         if let Some(parts) = parts {
             self.emit_parts(session, parts);
@@ -131,14 +166,21 @@ impl SpeechEngine for FakeEngine {
 
     fn end_vad(&self, session: u64) -> Result<(), EngineError> {
         let vad = self.state.lock().vads.remove(&session);
-        let Some(vad) = vad else { return Err(EngineError::new("not open")) };
+        let Some(vad) = vad else {
+            return Err(EngineError::new("not open"));
+        };
         if !self.vad_keeps_open_speech {
             self.emit_parts(session, vad.finish());
         }
         Ok(())
     }
 
-    fn transcribe_segments(&self, samples: &[f32], _model: &ModelId, _language: &str) -> Result<Vec<Segment>, EngineError> {
+    fn transcribe_segments(
+        &self,
+        samples: &[f32],
+        _model: &ModelId,
+        _language: &str,
+    ) -> Result<Vec<Segment>, EngineError> {
         self.state.lock().in_final_pass = true;
         {
             let mut hold = self.hold.lock();
@@ -149,18 +191,51 @@ impl SpeechEngine for FakeEngine {
         let mut state = self.state.lock();
         state.in_final_pass = false;
         state.transcribed += 1;
-        let loud: Vec<usize> = samples.iter().enumerate().filter(|(_, s)| s.abs() > 0.02).map(|(i, _)| i).collect();
-        let (Some(first), Some(last)) = (loud.first(), loud.last()) else { return Ok(Vec::new()) };
+        let loud: Vec<usize> = samples
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.abs() > 0.02)
+            .map(|(i, _)| i)
+            .collect();
+        let (Some(first), Some(last)) = (loud.first(), loud.last()) else {
+            return Ok(Vec::new());
+        };
         let text = match self.texts {
-            Some((loud_text, quiet_text)) => (if samples.iter().any(|s| s.abs() > 0.4) { loud_text } else { quiet_text }).to_string(),
+            Some((loud_text, quiet_text)) => (if samples.iter().any(|s| s.abs() > 0.4) {
+                loud_text
+            } else {
+                quiet_text
+            })
+            .to_string(),
             None => format!("part{}", state.transcribed),
         };
-        Ok(vec![Segment { start_ms: (first * 1000 / RATE) as u64, end_ms: (last * 1000 / RATE) as u64, text, words: None }])
+        Ok(vec![Segment {
+            start_ms: (first * 1000 / RATE) as u64,
+            end_ms: (last * 1000 / RATE) as u64,
+            text,
+            words: None,
+        }])
     }
 
-    fn diarize(&self, _model: &ModelId, samples: &[f32], _speakers: Option<u32>) -> Result<Vec<Turn>, EngineError> {
+    fn diarize(
+        &self,
+        _model: &ModelId,
+        samples: &[f32],
+        _speakers: Option<u32>,
+    ) -> Result<Vec<Turn>, EngineError> {
         self.state.lock().diarized.push(samples.len());
-        Ok(vec![Turn { start_ms: 900, end_ms: 3100, speaker: 1 }, Turn { start_ms: 3900, end_ms: 5600, speaker: 0 }])
+        Ok(vec![
+            Turn {
+                start_ms: 900,
+                end_ms: 3100,
+                speaker: 1,
+            },
+            Turn {
+                start_ms: 3900,
+                end_ms: 5600,
+                speaker: 0,
+            },
+        ])
     }
 
     fn events(&self) -> crossbeam_channel::Receiver<EngineEvent> {
@@ -185,11 +260,29 @@ impl Events {
     }
 
     fn segments(&self) -> Vec<SegmentEvent> {
-        self.all().into_iter().filter_map(|e| if let Event::Segment(s) = e { Some(s) } else { None }).collect()
+        self.all()
+            .into_iter()
+            .filter_map(|e| {
+                if let Event::Segment(s) = e {
+                    Some(s)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     fn partials(&self) -> Vec<PartialEvent> {
-        self.all().into_iter().filter_map(|e| if let Event::Partial(p) = e { Some(p) } else { None }).collect()
+        self.all()
+            .into_iter()
+            .filter_map(|e| {
+                if let Event::Partial(p) = e {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 }
 
@@ -243,7 +336,10 @@ struct FakeMic {
 impl FakeMic {
     fn send(&self, samples: Vec<f32>) {
         let feed = self.feed.lock();
-        feed.as_ref().expect("the microphone is open").send(FeedItem::Audio(CapturedAudio::untimed(samples))).unwrap();
+        feed.as_ref()
+            .expect("the microphone is open")
+            .send(FeedItem::Audio(CapturedAudio::untimed(samples)))
+            .unwrap();
     }
 
     fn is_open(&self) -> bool {
@@ -267,7 +363,11 @@ impl Microphone for MicHandle {
         let (tx, rx) = unbounded();
         *self.0.feed.lock() = Some(tx);
         self.0.opened.fetch_add(1, Ordering::SeqCst);
-        Ok(AudioFeed { items: rx, lease: Box::new(FakeLease(self.0.clone())), excludes: Vec::new() })
+        Ok(AudioFeed {
+            items: rx,
+            lease: Box::new(FakeLease(self.0.clone())),
+            excludes: Vec::new(),
+        })
     }
 }
 
@@ -289,7 +389,12 @@ struct FakeSystem {
 
 impl FakeSystem {
     fn send(&self, item: FeedItem) {
-        self.feed.lock().as_ref().expect("the capture runs").send(item).unwrap();
+        self.feed
+            .lock()
+            .as_ref()
+            .expect("the capture runs")
+            .send(item)
+            .unwrap();
     }
 
     fn audio(&self, samples: &[f32]) {
@@ -317,14 +422,21 @@ impl SystemAudio for SystemHandle {
             self.0.waiting.store(true, Ordering::SeqCst);
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert!(!self.0.panics.load(Ordering::SeqCst), "a panic in the capture");
+        assert!(
+            !self.0.panics.load(Ordering::SeqCst),
+            "a panic in the capture"
+        );
         if let Some(error) = self.0.refuse.lock().clone() {
             return Err(error);
         }
         *self.0.app_pid.lock() = app_pid;
         let (tx, rx) = unbounded();
         *self.0.feed.lock() = Some(tx);
-        Ok(AudioFeed { items: rx, lease: Box::new(SystemLease(self.0.clone())), excludes: vec!["sayso".into(), "app".into()] })
+        Ok(AudioFeed {
+            items: rx,
+            lease: Box::new(SystemLease(self.0.clone())),
+            excludes: vec!["sayso".into(), "app".into()],
+        })
     }
 }
 
@@ -360,7 +472,14 @@ fn fixture_with(engine: FakeEngine) -> Fixture {
         models: Arc::new(NoHold),
         recordings: Arc::new(RecordingFolder::new(temp.path().join("live"))),
     });
-    Fixture { engine, mic, system, dictation, sessions, temp }
+    Fixture {
+        engine,
+        mic,
+        system,
+        dictation,
+        sessions,
+        temp,
+    }
 }
 
 fn fixture() -> Fixture {
@@ -368,7 +487,11 @@ fn fixture() -> Fixture {
 }
 
 fn owner(connection: u64) -> Owner {
-    Owner { connection, app_id: "dev.example.notetaker".into(), pid: None }
+    Owner {
+        connection,
+        app_id: "dev.example.notetaker".into(),
+        pid: None,
+    }
 }
 
 fn spec(sources: &[Source]) -> SessionSpec {
@@ -380,6 +503,7 @@ fn spec(sources: &[Source]) -> SessionSpec {
         diarization: None,
         language: "en".into(),
         record_to: None,
+        silence_limit: None,
     }
 }
 
@@ -393,9 +517,15 @@ fn speech(ms: usize) -> Vec<f32> {
     (0..ms * RATE / 1000)
         .map(|n| {
             let t = n as f32 / RATE as f32;
-            let voice: f32 = (1..=5).map(|h| (2.0 * std::f32::consts::PI * 140.0 * h as f32 * t).sin() / h as f32).sum();
+            let voice: f32 = (1..=5)
+                .map(|h| (2.0 * std::f32::consts::PI * 140.0 * h as f32 * t).sin() / h as f32)
+                .sum();
             let syllable = (t * 5.0).fract();
-            let envelope = if syllable < 0.85 { (std::f32::consts::PI * syllable / 0.85).sin().max(0.3) } else { 0.05 };
+            let envelope = if syllable < 0.85 {
+                (std::f32::consts::PI * syllable / 0.85).sin().max(0.3)
+            } else {
+                0.05
+            };
             0.1 * voice * envelope
         })
         .collect()
@@ -409,7 +539,9 @@ fn pcm(samples: &[f32]) -> Vec<i16> {
 /// Send the audio in parts of 160 ms, as an extension does.
 fn send_client(sessions: &LiveSessions, connection: u64, session: u64, samples: &[i16]) {
     for chunk in samples.chunks(RATE * 160 / 1000) {
-        sessions.audio(connection, session, &sayso_protocol::pcm::encode_i16(chunk)).unwrap();
+        sessions
+            .audio(connection, session, &sayso_protocol::pcm::encode_i16(chunk))
+            .unwrap();
     }
 }
 
@@ -433,56 +565,136 @@ fn a_client_session_gives_partials_segments_a_recording_and_speakers() {
     let sink = Arc::new(Events::default());
     let observed = Arc::new(Observed::default());
     f.sessions.set_observer(observed.clone());
-    let spec = SessionSpec { diarization: Some(ModelId::new("speaker-diarization")), record_to: Some(record_to.clone()), ..spec(&[Source::Client]) };
-    let session = f.sessions.start(owner(1), spec, sink.clone()).unwrap().session;
-    assert_eq!(f.sessions.current().map(|l| (l.session, l.app_id, l.captures_mic)), Some((session, "dev.example.notetaker".to_string(), false)));
+    let spec = SessionSpec {
+        diarization: Some(ModelId::new("speaker-diarization")),
+        record_to: Some(record_to.clone()),
+        ..spec(&[Source::Client])
+    };
+    let session = f
+        .sessions
+        .start(owner(1), spec, sink.clone())
+        .unwrap()
+        .session;
+    assert_eq!(
+        f.sessions
+            .current()
+            .map(|l| (l.session, l.app_id, l.captures_mic)),
+        Some((session, "dev.example.notetaker".to_string(), false))
+    );
 
-    let audio = pcm(&[silence(1000), speech(2000), silence(1000), speech(1500), silence(1000)].concat());
+    let audio = pcm(&[
+        silence(1000),
+        speech(2000),
+        silence(1000),
+        speech(1500),
+        silence(1000),
+    ]
+    .concat());
     send_client(&f.sessions, 1, session, &audio);
     // The first part ends at a pause, and its segment comes while the session runs.
-    eventually("the first segment comes before the stop", || !sink.segments().is_empty());
+    eventually("the first segment comes before the stop", || {
+        !sink.segments().is_empty()
+    });
     let text = f.sessions.stop(1, session).unwrap();
     assert_eq!(text, "part1 part2");
 
     let partials = sink.partials();
     assert!(!partials.is_empty());
-    assert!(partials.iter().all(|p| p.session == session && p.source == Some(Source::Client)));
-    assert_eq!(partials.last().unwrap().tentative, "6500 ms", "the preview stream got all the audio");
+    assert!(
+        partials
+            .iter()
+            .all(|p| p.session == session && p.source == Some(Source::Client))
+    );
+    assert_eq!(
+        partials.last().unwrap().tentative,
+        "6500 ms",
+        "the preview stream got all the audio"
+    );
 
     let segments = sink.segments();
     assert_eq!(segments.len(), 2, "{segments:?}");
-    assert!(segments.iter().all(|s| s.session == Some(session) && s.source == Some(Source::Client) && s.job.is_none()));
+    assert!(segments.iter().all(|s| s.session == Some(session)
+        && s.source == Some(Source::Client)
+        && s.job.is_none()));
     // The times are from the start of the session, not from the start of the part.
-    assert!(near(segments[0].segment.start_ms, 1000, 60) && near(segments[0].segment.end_ms, 3000, 60), "{segments:?}");
-    assert!(near(segments[1].segment.start_ms, 4000, 60) && near(segments[1].segment.end_ms, 5500, 60), "{segments:?}");
+    assert!(
+        near(segments[0].segment.start_ms, 1000, 60) && near(segments[0].segment.end_ms, 3000, 60),
+        "{segments:?}"
+    );
+    assert!(
+        near(segments[1].segment.start_ms, 4000, 60) && near(segments[1].segment.end_ms, 5500, 60),
+        "{segments:?}"
+    );
 
     // The recording has every sample that the extension sent.
     let path = record_to.join("client.wav");
     let bytes = std::fs::read(&path).unwrap();
     assert_eq!(bytes.len(), 44 + audio.len() * 2);
-    assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()) as usize, audio.len() * 2);
-    assert_eq!(u32::from_le_bytes(bytes[24..28].try_into().unwrap()), 16_000);
+    assert_eq!(
+        u32::from_le_bytes(bytes[40..44].try_into().unwrap()) as usize,
+        audio.len() * 2
+    );
+    assert_eq!(
+        u32::from_le_bytes(bytes[24..28].try_into().unwrap()),
+        16_000
+    );
     assert_eq!(pcm(&wav::read(&path).unwrap()), audio);
-    assert_eq!(f.engine.state.lock().diarized, vec![audio.len()], "diarization ran on the whole recording");
+    assert_eq!(
+        f.engine.state.lock().diarized,
+        vec![audio.len()],
+        "diarization ran on the whole recording"
+    );
 
     // Speakers come after the last segment. Each segment has one speaker, and
     // the turns follow the segments, with labels in the order of first speech.
     let events = sink.all();
-    let speakers = events.iter().position(|e| matches!(e, Event::Speakers(_))).unwrap();
-    assert!(events[speakers + 1..].iter().all(|e| !matches!(e, Event::Segment(_) | Event::Partial(_))));
-    let Event::Speakers(speakers) = &events[speakers] else { unreachable!() };
-    assert_eq!((speakers.session, speakers.source.clone(), speakers.job), (Some(session), Some(Source::Client), None));
-    let labels: Vec<(u64, &str)> = speakers.turns.iter().map(|t| (t.start_ms, t.speaker.as_str())).collect();
-    assert_eq!(labels, vec![(segments[0].segment.start_ms, "1"), (segments[1].segment.start_ms, "2")]);
+    let speakers = events
+        .iter()
+        .position(|e| matches!(e, Event::Speakers(_)))
+        .unwrap();
+    assert!(
+        events[speakers + 1..]
+            .iter()
+            .all(|e| !matches!(e, Event::Segment(_) | Event::Partial(_)))
+    );
+    let Event::Speakers(speakers) = &events[speakers] else {
+        unreachable!()
+    };
+    assert_eq!(
+        (speakers.session, speakers.source.clone(), speakers.job),
+        (Some(session), Some(Source::Client), None)
+    );
+    let labels: Vec<(u64, &str)> = speakers
+        .turns
+        .iter()
+        .map(|t| (t.start_ms, t.speaker.as_str()))
+        .collect();
+    assert_eq!(
+        labels,
+        vec![
+            (segments[0].segment.start_ms, "1"),
+            (segments[1].segment.start_ms, "2")
+        ]
+    );
 
     // The engine sessions are closed, the slot is free, and the app heard both changes.
     assert_eq!(f.engine.open_now(), 0);
     assert_eq!(f.sessions.current(), None);
     let observed = observed.0.lock().clone();
-    assert_eq!(observed.first().cloned().flatten().map(|l| l.session), Some(session));
+    assert_eq!(
+        observed.first().cloned().flatten().map(|l| l.session),
+        Some(session)
+    );
     assert_eq!(observed.last(), Some(&None));
     let loads = f.engine.state.lock().loads.clone();
-    assert_eq!(loads, vec![ModelId::new("final"), ModelId::new("streaming"), ModelId::new("speaker-diarization")]);
+    assert_eq!(
+        loads,
+        vec![
+            ModelId::new("final"),
+            ModelId::new("streaming"),
+            ModelId::new("speaker-diarization")
+        ]
+    );
     // Jobs waited during the two final passes and the diarization.
     assert_eq!(f.dictation.engine_calls.load(Ordering::SeqCst), 3);
 }
@@ -490,31 +702,78 @@ fn a_client_session_gives_partials_segments_a_recording_and_speakers() {
 #[test]
 fn a_second_session_is_busy_until_the_first_ends() {
     let f = fixture();
-    let first = f.sessions.start(owner(1), spec(&[Source::Client]), Arc::new(Events::default())).unwrap().session;
-    let busy = f.sessions.start(owner(2), spec(&[Source::Client]), Arc::new(Events::default())).unwrap_err();
+    let first = f
+        .sessions
+        .start(
+            owner(1),
+            spec(&[Source::Client]),
+            Arc::new(Events::default()),
+        )
+        .unwrap()
+        .session;
+    let busy = f
+        .sessions
+        .start(
+            owner(2),
+            spec(&[Source::Client]),
+            Arc::new(Events::default()),
+        )
+        .unwrap_err();
     assert_eq!(busy.code, Some(ErrorCode::Busy));
     // Another connection cannot stop it or send it audio.
-    assert_eq!(f.sessions.stop(2, first).unwrap_err().code, Some(ErrorCode::BadRequest));
-    assert_eq!(f.sessions.audio(2, first, "").unwrap_err().code, Some(ErrorCode::BadRequest));
+    assert_eq!(
+        f.sessions.stop(2, first).unwrap_err().code,
+        Some(ErrorCode::BadRequest)
+    );
+    assert_eq!(
+        f.sessions.audio(2, first, "").unwrap_err().code,
+        Some(ErrorCode::BadRequest)
+    );
     assert_eq!(f.sessions.stop(1, first).unwrap(), "");
-    let second = f.sessions.start(owner(2), spec(&[Source::Client]), Arc::new(Events::default())).unwrap().session;
+    let second = f
+        .sessions
+        .start(
+            owner(2),
+            spec(&[Source::Client]),
+            Arc::new(Events::default()),
+        )
+        .unwrap()
+        .session;
     assert_ne!(first, second);
-    assert_eq!(f.sessions.stop(1, second).unwrap_err().code, Some(ErrorCode::BadRequest), "the first connection does not own it");
+    assert_eq!(
+        f.sessions.stop(1, second).unwrap_err().code,
+        Some(ErrorCode::BadRequest),
+        "the first connection does not own it"
+    );
     f.sessions.stop(2, second).unwrap();
 }
 
 #[test]
 fn engine_session_ids_are_above_the_ids_of_dictation_and_unique() {
     let f = fixture();
-    let spec = SessionSpec { vad: VadRun::Model(ModelId::new("silero-vad")), ..spec(&[Source::Mic, Source::Client]) };
+    let spec = SessionSpec {
+        vad: VadRun::Model(ModelId::new("silero-vad")),
+        ..spec(&[Source::Mic, Source::Client])
+    };
     for _ in 0..2 {
-        let session = f.sessions.start(owner(1), spec.clone(), Arc::new(Events::default())).unwrap().session;
-        assert_eq!(f.engine.open_now(), 4, "a preview stream and a VAD session for each source");
+        let session = f
+            .sessions
+            .start(owner(1), spec.clone(), Arc::new(Events::default()))
+            .unwrap()
+            .session;
+        assert_eq!(
+            f.engine.open_now(),
+            4,
+            "a preview stream and a VAD session for each source"
+        );
         f.sessions.stop(1, session).unwrap();
     }
     let opened = f.engine.state.lock().opened.clone();
     assert_eq!(opened.len(), 8);
-    assert!(opened.iter().all(|&id| id >= ENGINE_SESSION_BASE), "{opened:?}");
+    assert!(
+        opened.iter().all(|&id| id >= ENGINE_SESSION_BASE),
+        "{opened:?}"
+    );
     let mut unique = opened.clone();
     unique.dedup();
     assert_eq!(unique, opened);
@@ -523,42 +782,98 @@ fn engine_session_ids_are_above_the_ids_of_dictation_and_unique() {
 
 #[test]
 fn a_full_engine_gives_too_many_streams_and_closes_what_opened() {
-    let f = fixture_with(FakeEngine { max_streams: Some(3), ..FakeEngine::default() });
-    let spec = SessionSpec { vad: VadRun::Model(ModelId::new("silero-vad")), ..spec(&[Source::Mic, Source::Client]) };
-    let error = f.sessions.start(owner(1), spec, Arc::new(Events::default())).unwrap_err();
+    let f = fixture_with(FakeEngine {
+        max_streams: Some(3),
+        ..FakeEngine::default()
+    });
+    let spec = SessionSpec {
+        vad: VadRun::Model(ModelId::new("silero-vad")),
+        ..spec(&[Source::Mic, Source::Client])
+    };
+    let error = f
+        .sessions
+        .start(owner(1), spec, Arc::new(Events::default()))
+        .unwrap_err();
     assert_eq!(error.code, Some(ErrorCode::TooManyStreams), "{error:?}");
-    assert_eq!(f.engine.open_now(), 0, "the streams of the failed start are closed");
+    assert_eq!(
+        f.engine.open_now(),
+        0,
+        "the streams of the failed start are closed"
+    );
     assert!(!f.mic.is_open(), "the microphone is given back");
     assert_eq!(f.sessions.current(), None);
-    assert!(std::fs::read_dir(f.temp.path().join("live")).unwrap().next().is_none(), "no recording is left");
+    assert!(
+        std::fs::read_dir(f.temp.path().join("live"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "no recording is left"
+    );
 }
 
 #[test]
 fn sources_are_checked() {
     let f = fixture();
-    let start = |sources: &[Source]| f.sessions.start(owner(1), spec(sources), Arc::new(Events::default())).unwrap_err().code;
+    let start = |sources: &[Source]| {
+        f.sessions
+            .start(owner(1), spec(sources), Arc::new(Events::default()))
+            .unwrap_err()
+            .code
+    };
     assert_eq!(start(&[]), Some(ErrorCode::BadRequest));
-    assert_eq!(start(&[Source::Client, Source::Client]), Some(ErrorCode::BadRequest));
-    assert_eq!(start(&[Source::System, Source::System]), Some(ErrorCode::BadRequest));
-    assert_eq!(start(&[Source::Other("camera".into())]), Some(ErrorCode::BadRequest));
-    let relative = SessionSpec { record_to: Some(PathBuf::from("notes")), ..spec(&[Source::Client]) };
-    assert_eq!(f.sessions.start(owner(1), relative, Arc::new(Events::default())).unwrap_err().code, Some(ErrorCode::BadRequest));
-    assert_eq!(f.sessions.current(), None, "a refused start leaves the slot free");
+    assert_eq!(
+        start(&[Source::Client, Source::Client]),
+        Some(ErrorCode::BadRequest)
+    );
+    assert_eq!(
+        start(&[Source::System, Source::System]),
+        Some(ErrorCode::BadRequest)
+    );
+    assert_eq!(
+        start(&[Source::Other("camera".into())]),
+        Some(ErrorCode::BadRequest)
+    );
+    let relative = SessionSpec {
+        record_to: Some(PathBuf::from("notes")),
+        ..spec(&[Source::Client])
+    };
+    assert_eq!(
+        f.sessions
+            .start(owner(1), relative, Arc::new(Events::default()))
+            .unwrap_err()
+            .code,
+        Some(ErrorCode::BadRequest)
+    );
+    assert_eq!(
+        f.sessions.current(),
+        None,
+        "a refused start leaves the slot free"
+    );
 }
 
 #[test]
 fn a_mic_session_records_to_a_temporary_file_that_the_stop_deletes() {
     let f = fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), spec(&[Source::Mic]), sink.clone()).unwrap().session;
+    let session = f
+        .sessions
+        .start(owner(1), spec(&[Source::Mic]), sink.clone())
+        .unwrap()
+        .session;
     assert!(f.sessions.current().unwrap().captures_mic);
     let audio = [silence(500), speech(1500), silence(800)].concat();
     for frame in audio.chunks(320) {
         f.mic.send(frame.to_vec());
     }
-    let recording = std::fs::read_dir(f.temp.path().join("live")).unwrap().map(|e| e.unwrap().path()).collect::<Vec<_>>();
+    let recording = std::fs::read_dir(f.temp.path().join("live"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect::<Vec<_>>();
     assert_eq!(recording.len(), 1);
-    assert!(recording[0].to_string_lossy().ends_with("mic.wav"), "{recording:?}");
+    assert!(
+        recording[0].to_string_lossy().ends_with("mic.wav"),
+        "{recording:?}"
+    );
     assert_eq!(f.sessions.stop(1, session).unwrap(), "part1");
     assert!(!f.mic.is_open(), "the stop gives the microphone back");
     assert!(!recording[0].exists(), "the temporary recording is deleted");
@@ -572,47 +887,116 @@ fn a_mic_session_records_to_a_temporary_file_that_the_stop_deletes() {
 fn basic_vad_cuts_parts_at_pauses_and_the_stop_ends_the_open_part() {
     let f = fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), SessionSpec { preview_model: None, ..spec(&[Source::Client]) }, sink.clone()).unwrap().session;
+    let session = f
+        .sessions
+        .start(
+            owner(1),
+            SessionSpec {
+                preview_model: None,
+                ..spec(&[Source::Client])
+            },
+            sink.clone(),
+        )
+        .unwrap()
+        .session;
     // Speech, a pause of 300 ms that does not end it, a pause of 1 s that does,
     // and speech that still runs at the stop.
-    let audio = pcm(&[silence(500), speech(1000), silence(300), speech(700), silence(1000), speech(1200)].concat());
+    let audio = pcm(&[
+        silence(500),
+        speech(1000),
+        silence(300),
+        speech(700),
+        silence(1000),
+        speech(1200),
+    ]
+    .concat());
     send_client(&f.sessions, 1, session, &audio);
     assert_eq!(f.sessions.stop(1, session).unwrap(), "part1 part2");
-    let segments: Vec<(u64, u64)> = sink.segments().iter().map(|s| (s.segment.start_ms, s.segment.end_ms)).collect();
+    let segments: Vec<(u64, u64)> = sink
+        .segments()
+        .iter()
+        .map(|s| (s.segment.start_ms, s.segment.end_ms))
+        .collect();
     assert_eq!(segments.len(), 2, "{segments:?}");
-    assert!(near(segments[0].0, 500, 60) && near(segments[0].1, 2500, 60), "{segments:?}");
-    assert!(near(segments[1].0, 3500, 60) && near(segments[1].1, 4700, 60), "{segments:?}");
+    assert!(
+        near(segments[0].0, 500, 60) && near(segments[0].1, 2500, 60),
+        "{segments:?}"
+    );
+    assert!(
+        near(segments[1].0, 3500, 60) && near(segments[1].1, 4700, 60),
+        "{segments:?}"
+    );
     assert!(sink.partials().is_empty(), "no preview model, no partials");
 }
 
 #[test]
 fn an_engine_vad_gives_the_parts_and_the_stop_ends_speech_that_is_open() {
-    let f = fixture_with(FakeEngine { vad_keeps_open_speech: true, ..FakeEngine::default() });
+    let f = fixture_with(FakeEngine {
+        vad_keeps_open_speech: true,
+        ..FakeEngine::default()
+    });
     let sink = Arc::new(Events::default());
-    let spec = SessionSpec { vad: VadRun::Model(ModelId::new("silero-vad")), ..spec(&[Source::Client]) };
-    let session = f.sessions.start(owner(1), spec, sink.clone()).unwrap().session;
+    let spec = SessionSpec {
+        vad: VadRun::Model(ModelId::new("silero-vad")),
+        ..spec(&[Source::Client])
+    };
+    let session = f
+        .sessions
+        .start(owner(1), spec, sink.clone())
+        .unwrap()
+        .session;
     let audio = pcm(&[silence(500), speech(1000), silence(1000), speech(800)].concat());
     send_client(&f.sessions, 1, session, &audio);
     // The engine reports the start of the speech that is open, and never its end.
     let vad = *f.engine.state.lock().vads.keys().next().unwrap();
     eventually("the first part", || !sink.segments().is_empty());
-    f.engine.emit(EngineEvent::SpeechStart { session: vad, start_ms: 2500 });
+    f.engine.emit(EngineEvent::SpeechStart {
+        session: vad,
+        start_ms: 2500,
+    });
     std::thread::sleep(Duration::from_millis(50));
     assert_eq!(f.sessions.stop(1, session).unwrap(), "part1 part2");
-    let segments: Vec<(u64, u64)> = sink.segments().iter().map(|s| (s.segment.start_ms, s.segment.end_ms)).collect();
-    assert!(near(segments[0].0, 500, 60) && near(segments[0].1, 1500, 60), "{segments:?}");
-    assert!(near(segments[1].0, 2500, 60) && near(segments[1].1, 3300, 60), "the open speech goes to the end of the audio: {segments:?}");
-    assert!(f.engine.state.lock().loads.contains(&ModelId::new("silero-vad")));
+    let segments: Vec<(u64, u64)> = sink
+        .segments()
+        .iter()
+        .map(|s| (s.segment.start_ms, s.segment.end_ms))
+        .collect();
+    assert!(
+        near(segments[0].0, 500, 60) && near(segments[0].1, 1500, 60),
+        "{segments:?}"
+    );
+    assert!(
+        near(segments[1].0, 2500, 60) && near(segments[1].1, 3300, 60),
+        "the open speech goes to the end of the audio: {segments:?}"
+    );
+    assert!(
+        f.engine
+            .state
+            .lock()
+            .loads
+            .contains(&ModelId::new("silero-vad"))
+    );
 }
 
 #[test]
 fn a_stop_while_a_part_is_transcribed_waits_for_it_and_for_the_last_part() {
     let f = fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), spec(&[Source::Client]), sink.clone()).unwrap().session;
+    let session = f
+        .sessions
+        .start(owner(1), spec(&[Source::Client]), sink.clone())
+        .unwrap()
+        .session;
     f.engine.hold_final_pass(true);
-    send_client(&f.sessions, 1, session, &pcm(&[silence(300), speech(1000), silence(1000)].concat()));
-    eventually("the final pass of the first part runs", || f.engine.state.lock().in_final_pass);
+    send_client(
+        &f.sessions,
+        1,
+        session,
+        &pcm(&[silence(300), speech(1000), silence(1000)].concat()),
+    );
+    eventually("the final pass of the first part runs", || {
+        f.engine.state.lock().in_final_pass
+    });
     send_client(&f.sessions, 1, session, &pcm(&speech(800)));
     let stopping = {
         let sessions = f.sessions.clone();
@@ -621,8 +1005,22 @@ fn a_stop_while_a_part_is_transcribed_waits_for_it_and_for_the_last_part() {
     std::thread::sleep(Duration::from_millis(200));
     assert!(!stopping.is_finished(), "the stop waits for the final pass");
     assert!(f.sessions.current().unwrap().stopping);
-    assert_eq!(f.sessions.audio(1, session, "").unwrap_err().code, Some(ErrorCode::BadRequest), "no audio after the stop");
-    assert!(f.sessions.start(owner(2), spec(&[Source::Client]), Arc::new(Events::default())).unwrap_err().code == Some(ErrorCode::Busy));
+    assert_eq!(
+        f.sessions.audio(1, session, "").unwrap_err().code,
+        Some(ErrorCode::BadRequest),
+        "no audio after the stop"
+    );
+    assert!(
+        f.sessions
+            .start(
+                owner(2),
+                spec(&[Source::Client]),
+                Arc::new(Events::default())
+            )
+            .unwrap_err()
+            .code
+            == Some(ErrorCode::Busy)
+    );
     f.engine.hold_final_pass(false);
     assert_eq!(stopping.join().unwrap().unwrap(), "part1 part2");
     assert_eq!(sink.segments().len(), 2);
@@ -633,14 +1031,29 @@ fn a_stop_while_a_part_is_transcribed_waits_for_it_and_for_the_last_part() {
 fn final_passes_wait_while_a_dictation_runs_but_the_preview_does_not() {
     let f = fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), spec(&[Source::Client]), sink.clone()).unwrap().session;
+    let session = f
+        .sessions
+        .start(owner(1), spec(&[Source::Client]), sink.clone())
+        .unwrap()
+        .session;
     f.dictation.set(true);
-    send_client(&f.sessions, 1, session, &pcm(&[speech(1000), silence(1000)].concat()));
+    send_client(
+        &f.sessions,
+        1,
+        session,
+        &pcm(&[speech(1000), silence(1000)].concat()),
+    );
     eventually("the preview goes on", || sink.partials().len() >= 12);
     std::thread::sleep(Duration::from_millis(100));
-    assert_eq!(f.engine.state.lock().transcribed, 0, "the part waits for the dictation");
+    assert_eq!(
+        f.engine.state.lock().transcribed,
+        0,
+        "the part waits for the dictation"
+    );
     f.dictation.set(false);
-    eventually("the part runs after the dictation", || sink.segments().len() == 1);
+    eventually("the part runs after the dictation", || {
+        sink.segments().len() == 1
+    });
     f.sessions.stop(1, session).unwrap();
 }
 
@@ -648,19 +1061,38 @@ fn final_passes_wait_while_a_dictation_runs_but_the_preview_does_not() {
 fn a_closed_connection_stops_its_session_without_diarization() {
     let f = fixture();
     let sink = Arc::new(Events::default());
-    let spec = SessionSpec { diarization: Some(ModelId::new("speaker-diarization")), ..spec(&[Source::Mic]) };
-    let session = f.sessions.start(owner(7), spec, sink.clone()).unwrap().session;
+    let spec = SessionSpec {
+        diarization: Some(ModelId::new("speaker-diarization")),
+        ..spec(&[Source::Mic])
+    };
+    let session = f
+        .sessions
+        .start(owner(7), spec, sink.clone())
+        .unwrap()
+        .session;
     f.mic.send(speech(500));
     f.sessions.connection_closed(3);
-    assert!(f.sessions.current().is_some(), "another connection does not stop it");
+    assert!(
+        f.sessions.current().is_some(),
+        "another connection does not stop it"
+    );
     f.sessions.connection_closed(7);
     eventually("the session ends", || f.sessions.current().is_none());
     assert!(!f.mic.is_open());
     assert_eq!(f.engine.open_now(), 0);
     assert!(f.engine.state.lock().diarized.is_empty());
     assert!(!sink.all().iter().any(|e| matches!(e, Event::Speakers(_))));
-    assert!(std::fs::read_dir(f.temp.path().join("live")).unwrap().next().is_none(), "the temporary recording is deleted");
-    assert_eq!(f.sessions.stop(7, session).unwrap_err().code, Some(ErrorCode::BadRequest));
+    assert!(
+        std::fs::read_dir(f.temp.path().join("live"))
+            .unwrap()
+            .next()
+            .is_none(),
+        "the temporary recording is deleted"
+    );
+    assert_eq!(
+        f.sessions.stop(7, session).unwrap_err().code,
+        Some(ErrorCode::BadRequest)
+    );
 }
 
 #[test]
@@ -676,7 +1108,9 @@ fn a_host_without_system_audio_gets_unsupported() {
         recordings: Arc::new(RecordingFolder::new(temp.path().join("live"))),
     });
     for source in [Source::System, Source::Mic] {
-        let error = sessions.start(owner(1), spec(&[source]), Arc::new(Events::default())).unwrap_err();
+        let error = sessions
+            .start(owner(1), spec(&[source]), Arc::new(Events::default()))
+            .unwrap_err();
         assert_eq!(error.code, Some(ErrorCode::Unsupported));
     }
 }
@@ -690,11 +1124,17 @@ fn loud(ms: usize) -> Vec<f32> {
 }
 
 fn echo_fixture() -> Fixture {
-    fixture_with(FakeEngine { texts: Some((THE_CALL, THE_USER)), ..FakeEngine::default() })
+    fixture_with(FakeEngine {
+        texts: Some((THE_CALL, THE_USER)),
+        ..FakeEngine::default()
+    })
 }
 
 fn no_preview(sources: &[Source]) -> SessionSpec {
-    SessionSpec { preview_model: None, ..spec(sources) }
+    SessionSpec {
+        preview_model: None,
+        ..spec(sources)
+    }
 }
 
 fn mic_audio(f: &Fixture, samples: &[f32]) {
@@ -707,13 +1147,24 @@ fn mic_audio(f: &Fixture, samples: &[f32]) {
 fn a_microphone_segment_that_the_system_covers_is_dropped() {
     let f = echo_fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), no_preview(&[Source::Mic, Source::System]), sink.clone()).unwrap();
+    let session = f
+        .sessions
+        .start(
+            owner(1),
+            no_preview(&[Source::Mic, Source::System]),
+            sink.clone(),
+        )
+        .unwrap();
     assert_eq!(session.excludes, ["sayso", "app"]);
     // The call plays, and the microphone hears it.
     let audio = [silence(500), loud(2000), silence(1000)].concat();
     f.system.audio(&audio);
     mic_audio(&f, &audio);
-    assert_eq!(f.sessions.stop(1, session.session).unwrap(), THE_CALL, "one copy of the sentence");
+    assert_eq!(
+        f.sessions.stop(1, session.session).unwrap(),
+        THE_CALL,
+        "one copy of the sentence"
+    );
     let segments = sink.segments();
     assert_eq!(segments.len(), 1, "{segments:?}");
     assert_eq!(segments[0].source, Some(Source::System));
@@ -723,8 +1174,16 @@ fn a_microphone_segment_that_the_system_covers_is_dropped() {
 fn the_own_words_of_the_user_stay_while_the_call_speaks() {
     let f = echo_fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), no_preview(&[Source::Mic, Source::System]), sink.clone()).unwrap();
-    f.system.audio(&[silence(500), loud(2000), silence(1000)].concat());
+    let session = f
+        .sessions
+        .start(
+            owner(1),
+            no_preview(&[Source::Mic, Source::System]),
+            sink.clone(),
+        )
+        .unwrap();
+    f.system
+        .audio(&[silence(500), loud(2000), silence(1000)].concat());
     mic_audio(&f, &[silence(500), speech(2000), silence(1000)].concat());
     let text = f.sessions.stop(1, session.session).unwrap();
     assert!(text.contains(THE_CALL) && text.contains(THE_USER), "{text}");
@@ -735,9 +1194,18 @@ fn the_own_words_of_the_user_stay_while_the_call_speaks() {
 fn a_held_segment_comes_while_the_session_runs_when_the_system_catches_up() {
     let f = echo_fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), no_preview(&[Source::Mic, Source::System]), sink.clone()).unwrap();
+    let session = f
+        .sessions
+        .start(
+            owner(1),
+            no_preview(&[Source::Mic, Source::System]),
+            sink.clone(),
+        )
+        .unwrap();
     mic_audio(&f, &[silence(200), speech(1000), silence(1000)].concat());
-    eventually("the final pass of the microphone ran", || f.engine.state.lock().transcribed == 1);
+    eventually("the final pass of the microphone ran", || {
+        f.engine.state.lock().transcribed == 1
+    });
     // The system source hears silence, and its time goes past the segment.
     f.system.audio(&silence(4000));
     eventually("the segment comes", || {
@@ -752,7 +1220,10 @@ fn a_held_segment_comes_while_the_session_runs_when_the_system_catches_up() {
 fn a_session_with_one_captured_source_has_no_echo_rule() {
     let f = echo_fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), no_preview(&[Source::Mic]), sink.clone()).unwrap();
+    let session = f
+        .sessions
+        .start(owner(1), no_preview(&[Source::Mic]), sink.clone())
+        .unwrap();
     mic_audio(&f, &[silence(200), speech(1000), silence(1000)].concat());
     eventually("the segment comes at once", || !sink.segments().is_empty());
     f.sessions.stop(1, session.session).unwrap();
@@ -763,15 +1234,37 @@ fn a_gap_gives_an_event_and_silence_so_the_times_go_on() {
     let f = fixture();
     let sink = Arc::new(Events::default());
     let record_to = f.temp.path().join("meeting");
-    let session = f.sessions.start(owner(1), SessionSpec { record_to: Some(record_to.clone()), ..no_preview(&[Source::System]) }, sink.clone()).unwrap().session;
+    let session = f
+        .sessions
+        .start(
+            owner(1),
+            SessionSpec {
+                record_to: Some(record_to.clone()),
+                ..no_preview(&[Source::System])
+            },
+            sink.clone(),
+        )
+        .unwrap()
+        .session;
     f.system.audio(&silence(500));
     f.system.send(FeedItem::Gap { ms: 1000 });
     f.system.audio(&[speech(1000), silence(1000)].concat());
     f.sessions.stop(1, session).unwrap();
-    assert!(sink.all().contains(&Event::SourceGap { session, source: Source::System, ms: 1000 }));
+    assert!(sink.all().contains(&Event::SourceGap {
+        session,
+        source: Source::System,
+        ms: 1000
+    }));
     let segments = sink.segments();
-    assert!(near(segments[0].segment.start_ms, 1500, 60), "the speech comes after the gap: {segments:?}");
-    assert_eq!(wav::read(&record_to.join("system.wav")).unwrap().len(), 3500 * RATE / 1000, "the recording has the silence");
+    assert!(
+        near(segments[0].segment.start_ms, 1500, 60),
+        "the speech comes after the gap: {segments:?}"
+    );
+    assert_eq!(
+        wav::read(&record_to.join("system.wav")).unwrap().len(),
+        3500 * RATE / 1000,
+        "the recording has the silence"
+    );
 }
 
 #[test]
@@ -779,29 +1272,65 @@ fn a_very_long_gap_does_not_write_all_of_its_silence() {
     let f = fixture();
     let sink = Arc::new(Events::default());
     let record_to = f.temp.path().join("meeting");
-    let session = f.sessions.start(owner(1), SessionSpec { record_to: Some(record_to.clone()), ..no_preview(&[Source::System]) }, sink.clone()).unwrap().session;
+    let session = f
+        .sessions
+        .start(
+            owner(1),
+            SessionSpec {
+                record_to: Some(record_to.clone()),
+                ..no_preview(&[Source::System])
+            },
+            sink.clone(),
+        )
+        .unwrap()
+        .session;
     f.system.send(FeedItem::Gap { ms: 8 * 3_600_000 });
     f.sessions.stop(1, session).unwrap();
-    assert_eq!(wav::read(&record_to.join("system.wav")).unwrap().len(), 60 * RATE, "at most a minute");
+    assert_eq!(
+        wav::read(&record_to.join("system.wav")).unwrap().len(),
+        60 * RATE,
+        "at most a minute"
+    );
 }
 
 #[test]
 fn a_source_that_ends_tells_the_app_after_its_last_segment_and_the_others_go_on() {
     let f = echo_fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), no_preview(&[Source::Mic, Source::System]), sink.clone()).unwrap().session;
+    let session = f
+        .sessions
+        .start(
+            owner(1),
+            no_preview(&[Source::Mic, Source::System]),
+            sink.clone(),
+        )
+        .unwrap()
+        .session;
     f.system.audio(&[silence(200), loud(1000)].concat());
     f.system.send(FeedItem::Ended(SourceEnd::Permission));
-    let ended = Event::SourceEnded { session, source: Source::System, reason: SourceEndReason::Permission };
+    let ended = Event::SourceEnded {
+        session,
+        source: Source::System,
+        reason: SourceEndReason::Permission,
+    };
     eventually("the source ends", || sink.all().contains(&ended));
     let events = sink.all();
     let at = events.iter().position(|e| *e == ended).unwrap();
-    assert!(events[..at].iter().any(|e| matches!(e, Event::Segment(s) if s.source == Some(Source::System))), "the last segment comes first: {events:?}");
+    assert!(
+        events[..at]
+            .iter()
+            .any(|e| matches!(e, Event::Segment(s) if s.source == Some(Source::System))),
+        "the last segment comes first: {events:?}"
+    );
 
     // The microphone goes on, and its segments no longer wait.
     assert!(f.sessions.current().is_some());
     mic_audio(&f, &[silence(10_000), speech(1000), silence(1000)].concat());
-    eventually("the microphone segment comes", || sink.segments().iter().any(|s| s.source == Some(Source::Mic)));
+    eventually("the microphone segment comes", || {
+        sink.segments()
+            .iter()
+            .any(|s| s.source == Some(Source::Mic))
+    });
     let text = f.sessions.stop(1, session).unwrap();
     assert!(text.contains(THE_CALL) && text.contains(THE_USER), "{text}");
 }
@@ -810,9 +1339,19 @@ fn a_source_that_ends_tells_the_app_after_its_last_segment_and_the_others_go_on(
 fn a_capture_that_fails_for_good_ends_with_the_reason_failed() {
     let f = fixture();
     let sink = Arc::new(Events::default());
-    let session = f.sessions.start(owner(1), no_preview(&[Source::System]), sink.clone()).unwrap().session;
-    f.system.send(FeedItem::Ended(SourceEnd::Failed("the sound server is gone".into())));
-    let ended = Event::SourceEnded { session, source: Source::System, reason: SourceEndReason::Failed };
+    let session = f
+        .sessions
+        .start(owner(1), no_preview(&[Source::System]), sink.clone())
+        .unwrap()
+        .session;
+    f.system.send(FeedItem::Ended(SourceEnd::Failed(
+        "the sound server is gone".into(),
+    )));
+    let ended = Event::SourceEnded {
+        session,
+        source: Source::System,
+        reason: SourceEndReason::Failed,
+    };
     eventually("the source ends", || sink.all().contains(&ended));
     f.sessions.stop(1, session).unwrap();
 }
@@ -820,9 +1359,26 @@ fn a_capture_that_fails_for_good_ends_with_the_reason_failed() {
 #[test]
 fn a_refused_permission_and_an_old_system_stop_the_start_and_close_what_opened() {
     let f = fixture();
-    for (error, code) in [(OpenError::Permission("refused".into()), Some(ErrorCode::Permission)), (OpenError::Unsupported("macOS 14.1".into()), Some(ErrorCode::Unsupported)), (OpenError::Failed("no device".into()), None)] {
+    for (error, code) in [
+        (
+            OpenError::Permission("refused".into()),
+            Some(ErrorCode::Permission),
+        ),
+        (
+            OpenError::Unsupported("macOS 14.1".into()),
+            Some(ErrorCode::Unsupported),
+        ),
+        (OpenError::Failed("no device".into()), None),
+    ] {
         *f.system.refuse.lock() = Some(error);
-        let refused = f.sessions.start(owner(1), spec(&[Source::Mic, Source::System]), Arc::new(Events::default())).unwrap_err();
+        let refused = f
+            .sessions
+            .start(
+                owner(1),
+                spec(&[Source::Mic, Source::System]),
+                Arc::new(Events::default()),
+            )
+            .unwrap_err();
         assert_eq!(refused.code, code, "{refused:?}");
         assert_eq!(f.engine.open_now(), 0);
         assert!(!f.mic.is_open(), "the microphone is given back");
@@ -833,7 +1389,19 @@ fn a_refused_permission_and_an_old_system_stop_the_start_and_close_what_opened()
 #[test]
 fn the_pid_of_the_app_goes_to_the_capture() {
     let f = fixture();
-    let session = f.sessions.start(Owner { connection: 1, app_id: "app".into(), pid: Some(4242) }, no_preview(&[Source::System]), Arc::new(Events::default())).unwrap().session;
+    let session = f
+        .sessions
+        .start(
+            Owner {
+                connection: 1,
+                app_id: "app".into(),
+                pid: Some(4242),
+            },
+            no_preview(&[Source::System]),
+            Arc::new(Events::default()),
+        )
+        .unwrap()
+        .session;
     assert_eq!(*f.system.app_pid.lock(), Some(4242));
     f.sessions.stop(1, session).unwrap();
 }
@@ -843,25 +1411,69 @@ fn a_source_that_starts_late_gets_silence_so_the_sources_share_their_times() {
     let f = fixture();
     let sink = Arc::new(Events::default());
     let record_to = f.temp.path().join("meeting");
-    let session = f.sessions.start(owner(1), SessionSpec { record_to: Some(record_to.clone()), ..no_preview(&[Source::Mic, Source::System]) }, sink.clone()).unwrap().session;
-    let at = |ms: u64, samples: Vec<f32>| FeedItem::Audio(CapturedAudio { samples, time: Some(Duration::from_millis(5_000 + ms)) });
-    f.mic.feed.lock().as_ref().unwrap().send(at(0, silence(1000))).unwrap();
+    let session = f
+        .sessions
+        .start(
+            owner(1),
+            SessionSpec {
+                record_to: Some(record_to.clone()),
+                ..no_preview(&[Source::Mic, Source::System])
+            },
+            sink.clone(),
+        )
+        .unwrap()
+        .session;
+    let at = |ms: u64, samples: Vec<f32>| {
+        FeedItem::Audio(CapturedAudio {
+            samples,
+            time: Some(Duration::from_millis(5_000 + ms)),
+        })
+    };
+    f.mic
+        .feed
+        .lock()
+        .as_ref()
+        .unwrap()
+        .send(at(0, silence(1000)))
+        .unwrap();
     // The source handles its items in order, so this event says that it has the first audio.
-    f.mic.feed.lock().as_ref().unwrap().send(FeedItem::Gap { ms: 0 }).unwrap();
-    eventually("the first audio of the microphone arrives", || sink.all().iter().any(|e| matches!(e, Event::SourceGap { .. })));
+    f.mic
+        .feed
+        .lock()
+        .as_ref()
+        .unwrap()
+        .send(FeedItem::Gap { ms: 0 })
+        .unwrap();
+    eventually("the first audio of the microphone arrives", || {
+        sink.all()
+            .iter()
+            .any(|e| matches!(e, Event::SourceGap { .. }))
+    });
     // The first audio of the system comes 300 ms after the first of the microphone.
     f.system.send(at(300, silence(700)));
     f.sessions.stop(1, session).unwrap();
     assert_eq!(wav::read(&record_to.join("mic.wav")).unwrap().len(), RATE);
-    assert_eq!(wav::read(&record_to.join("system.wav")).unwrap().len(), RATE, "300 ms of silence and 700 ms of audio");
+    assert_eq!(
+        wav::read(&record_to.join("system.wav")).unwrap().len(),
+        RATE,
+        "300 ms of silence and 700 ms of audio"
+    );
 }
 
 /// A start on a thread of its own that waits in the capture of the system audio.
-fn start_that_waits(f: &Fixture, connection: u64, spec: SessionSpec) -> std::thread::JoinHandle<Result<Started, LiveError>> {
+fn start_that_waits(
+    f: &Fixture,
+    connection: u64,
+    spec: SessionSpec,
+) -> std::thread::JoinHandle<Result<Started, LiveError>> {
     f.system.hold.store(true, Ordering::SeqCst);
     let sessions = f.sessions.clone();
-    let start = std::thread::spawn(move || sessions.start(owner(connection), spec, Arc::new(Events::default())));
-    eventually("the capture waits", || f.system.waiting.load(Ordering::SeqCst));
+    let start = std::thread::spawn(move || {
+        sessions.start(owner(connection), spec, Arc::new(Events::default()))
+    });
+    eventually("the capture waits", || {
+        f.system.waiting.load(Ordering::SeqCst)
+    });
     start
 }
 
@@ -874,18 +1486,43 @@ fn a_start_whose_connection_closes_ends_when_the_question_ends_and_frees_the_slo
 
     f.sessions.connection_closed(2);
     f.sessions.connection_closed(1);
-    let other = f.sessions.start(owner(3), spec(&[Source::Client]), Arc::new(Events::default())).unwrap_err();
-    assert_eq!(other.code, Some(ErrorCode::Busy), "the slot stays taken while the question is open");
+    let other = f
+        .sessions
+        .start(
+            owner(3),
+            spec(&[Source::Client]),
+            Arc::new(Events::default()),
+        )
+        .unwrap_err();
+    assert_eq!(
+        other.code,
+        Some(ErrorCode::Busy),
+        "the slot stays taken while the question is open"
+    );
 
     f.system.hold.store(false, Ordering::SeqCst);
     let error = start.join().unwrap().unwrap_err();
     assert!(error.message.contains("closed"), "{error:?}");
     assert!(f.system.feed.lock().is_none(), "the capture closed");
-    assert_eq!(f.mic.opened.load(Ordering::SeqCst), 0, "the microphone did not open");
+    assert_eq!(
+        f.mic.opened.load(Ordering::SeqCst),
+        0,
+        "the microphone did not open"
+    );
     assert_eq!(f.engine.open_now(), 0);
     assert_eq!(f.sessions.current(), None);
-    assert!(observed.0.lock().is_empty(), "no recording state for a session that did not start");
-    let next = f.sessions.start(owner(3), spec(&[Source::Client]), Arc::new(Events::default())).unwrap();
+    assert!(
+        observed.0.lock().is_empty(),
+        "no recording state for a session that did not start"
+    );
+    let next = f
+        .sessions
+        .start(
+            owner(3),
+            spec(&[Source::Client]),
+            Arc::new(Events::default()),
+        )
+        .unwrap();
     f.sessions.stop(3, next.session).unwrap();
 }
 
@@ -908,18 +1545,34 @@ fn a_close_during_a_start_ends_it_and_no_session_starts_after_it() {
     assert!(start.join().unwrap().is_err());
     assert!(f.system.feed.lock().is_none());
     assert_eq!(f.sessions.current(), None);
-    assert!(f.sessions.start(owner(1), spec(&[Source::Client]), Arc::new(Events::default())).is_err(), "Sayso closes");
+    assert!(
+        f.sessions
+            .start(
+                owner(1),
+                spec(&[Source::Client]),
+                Arc::new(Events::default())
+            )
+            .is_err(),
+        "Sayso closes"
+    );
 }
 
 #[test]
 fn the_microphone_waits_for_the_question_of_the_system_also_when_it_is_first_in_the_list() {
     let f = fixture();
     let start = start_that_waits(&f, 1, spec(&[Source::Mic, Source::System]));
-    assert_eq!(f.mic.opened.load(Ordering::SeqCst), 0, "no microphone while the user answers");
+    assert_eq!(
+        f.mic.opened.load(Ordering::SeqCst),
+        0,
+        "no microphone while the user answers"
+    );
     f.system.hold.store(false, Ordering::SeqCst);
     let started = start.join().unwrap().unwrap();
     assert_eq!(f.mic.opened.load(Ordering::SeqCst), 1);
-    assert_eq!(f.sessions.current().map(|live| live.captures_mic), Some(true));
+    assert_eq!(
+        f.sessions.current().map(|live| live.captures_mic),
+        Some(true)
+    );
     f.mic.send(silence(100));
     f.sessions.stop(1, started.session).unwrap();
 }
@@ -929,22 +1582,43 @@ fn a_refused_system_audio_opens_no_microphone_and_leaves_no_recording() {
     let f = fixture();
     let folder = f.temp.path().join("recordings");
     *f.system.refuse.lock() = Some(OpenError::Permission("refused".into()));
-    let spec = SessionSpec { record_to: Some(folder.clone()), ..spec(&[Source::Mic, Source::System]) };
-    let error = f.sessions.start(owner(1), spec, Arc::new(Events::default())).unwrap_err();
+    let spec = SessionSpec {
+        record_to: Some(folder.clone()),
+        ..spec(&[Source::Mic, Source::System])
+    };
+    let error = f
+        .sessions
+        .start(owner(1), spec, Arc::new(Events::default()))
+        .unwrap_err();
     assert_eq!(error.code, Some(ErrorCode::Permission));
     assert_eq!(f.mic.opened.load(Ordering::SeqCst), 0);
     assert_eq!(f.engine.open_now(), 0);
-    assert!(std::fs::read_dir(&folder).unwrap().next().is_none(), "no WAV stays");
+    assert!(
+        std::fs::read_dir(&folder).unwrap().next().is_none(),
+        "no WAV stays"
+    );
 }
 
 #[test]
 fn a_start_that_fails_late_deletes_the_recordings_that_it_made() {
-    let f = fixture_with(FakeEngine { max_streams: Some(1), ..FakeEngine::default() });
+    let f = fixture_with(FakeEngine {
+        max_streams: Some(1),
+        ..FakeEngine::default()
+    });
     let folder = f.temp.path().join("recordings");
-    let spec = SessionSpec { record_to: Some(folder.clone()), ..spec(&[Source::Client, Source::Mic]) };
-    let error = f.sessions.start(owner(1), spec, Arc::new(Events::default())).unwrap_err();
+    let spec = SessionSpec {
+        record_to: Some(folder.clone()),
+        ..spec(&[Source::Client, Source::Mic])
+    };
+    let error = f
+        .sessions
+        .start(owner(1), spec, Arc::new(Events::default()))
+        .unwrap_err();
     assert_eq!(error.code, Some(ErrorCode::TooManyStreams), "{error:?}");
-    assert!(std::fs::read_dir(&folder).unwrap().next().is_none(), "no WAV stays");
+    assert!(
+        std::fs::read_dir(&folder).unwrap().next().is_none(),
+        "no WAV stays"
+    );
 }
 
 #[test]
@@ -952,10 +1626,23 @@ fn a_panic_in_a_start_frees_the_slot() {
     let f = fixture();
     f.system.panics.store(true, Ordering::SeqCst);
     let sessions = f.sessions.clone();
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| sessions.start(owner(1), spec(&[Source::System]), Arc::new(Events::default()))));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        sessions.start(
+            owner(1),
+            spec(&[Source::System]),
+            Arc::new(Events::default()),
+        )
+    }));
     assert!(result.is_err());
     f.system.panics.store(false, Ordering::SeqCst);
-    let started = f.sessions.start(owner(1), spec(&[Source::Client]), Arc::new(Events::default())).expect("the slot is free");
+    let started = f
+        .sessions
+        .start(
+            owner(1),
+            spec(&[Source::Client]),
+            Arc::new(Events::default()),
+        )
+        .expect("the slot is free");
     f.sessions.stop(1, started.session).unwrap();
 }
 
@@ -966,21 +1653,162 @@ fn a_recording_is_for_this_user_only() {
     let temp = tempfile::TempDir::new().unwrap();
     let path = temp.path().join("mic.wav");
     wav::WavWriter::create(&path).unwrap().finish().unwrap();
-    assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+    assert_eq!(
+        std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }
 
 /// These errors go to the app in both modes, and local mode has no Sayso.
 #[test]
 fn the_errors_of_a_session_do_not_name_sayso() {
     let f = fixture();
-    let first = f.sessions.start(owner(1), spec(&[Source::Client]), Arc::new(Events::default())).unwrap();
-    let busy = f.sessions.start(owner(2), spec(&[Source::Client]), Arc::new(Events::default())).unwrap_err();
+    let first = f
+        .sessions
+        .start(
+            owner(1),
+            spec(&[Source::Client]),
+            Arc::new(Events::default()),
+        )
+        .unwrap();
+    let busy = f
+        .sessions
+        .start(
+            owner(2),
+            spec(&[Source::Client]),
+            Arc::new(Events::default()),
+        )
+        .unwrap_err();
     assert_eq!(busy.code, Some(ErrorCode::Busy));
     f.sessions.stop(1, first.session).unwrap();
     let unsupported = check_sources(&[Source::Mic], false, false).unwrap_err();
     f.sessions.close();
-    let closed = f.sessions.start(owner(1), spec(&[Source::Client]), Arc::new(Events::default())).unwrap_err();
+    let closed = f
+        .sessions
+        .start(
+            owner(1),
+            spec(&[Source::Client]),
+            Arc::new(Events::default()),
+        )
+        .unwrap_err();
     for error in [busy, unsupported, closed] {
         assert!(!error.message.contains("Sayso"), "{error:?}");
     }
+}
+
+#[test]
+fn the_silence_limit_stops_the_audio_with_one_event_and_the_stop_gives_the_text() {
+    let f = fixture();
+    let sink = Arc::new(Events::default());
+    let spec = SessionSpec {
+        preview_model: None,
+        silence_limit: Some(std::time::Duration::from_secs(2)),
+        ..spec(&[Source::Mic])
+    };
+    let session = f.sessions.start(owner(1), spec, sink.clone()).unwrap().session;
+    // Speech of 1 s, then a pause under the limit, then more speech: the clock starts again.
+    for samples in [
+        silence(500),
+        speech(1000),
+        silence(1500),
+        speech(800),
+        silence(1500),
+    ] {
+        f.mic.send(samples);
+    }
+    assert!(f.mic.is_open(), "under the limit");
+    assert_eq!(limit_events(&sink), 0);
+    f.mic.send(silence(1500));
+    assert!(wait_until(|| limit_events(&sink) == 1), "{:?}", sink.all());
+    assert!(!f.mic.is_open(), "the limit gives the microphone back");
+    assert_eq!(limit_events(&sink), 1, "one event");
+    assert!(matches!(
+        sink.all()
+            .iter()
+            .find(|e| matches!(e, Event::SilenceLimit { .. })),
+        Some(Event::SilenceLimit {
+            silence_ms: 2000,
+            ..
+        })
+    ));
+    // The session ends as usual, and the last part still has its text.
+    assert_eq!(f.sessions.stop(1, session).unwrap(), "part1 part2");
+    assert_eq!(limit_events(&sink), 1, "no second event at the stop");
+    assert!(f.sessions.current().is_none());
+}
+
+#[test]
+fn the_silence_limit_counts_from_the_start_when_nobody_speaks() {
+    let f = fixture();
+    let sink = Arc::new(Events::default());
+    let spec = SessionSpec {
+        silence_limit: Some(std::time::Duration::from_secs(1)),
+        ..spec(&[Source::Client])
+    };
+    let session = f.sessions.start(owner(1), spec, sink.clone()).unwrap().session;
+    send_client(&f.sessions, 1, session, &pcm(&silence(1200)));
+    assert!(wait_until(|| limit_events(&sink) == 1));
+    assert_eq!(f.sessions.stop(1, session).unwrap(), "");
+}
+
+#[test]
+fn an_engine_vad_starts_the_silence_clock_at_the_end_of_the_speech() {
+    let f = fixture();
+    let sink = Arc::new(Events::default());
+    let spec = SessionSpec {
+        vad: VadRun::Model(ModelId::new("silero-vad")),
+        silence_limit: Some(std::time::Duration::from_secs(4)),
+        ..spec(&[Source::Client])
+    };
+    let session = f.sessions.start(owner(1), spec, sink.clone()).unwrap().session;
+    send_client(&f.sessions, 1, session, &pcm(&speech(2000)));
+    send_client(&f.sessions, 1, session, &pcm(&silence(1000)));
+    eventually("the part ends", || !sink.segments().is_empty());
+    // 3 s of audio so far. The speech ended at about 2 s, so 3.5 s more pass the limit, and 1.5 s more do not.
+    send_client(&f.sessions, 1, session, &pcm(&silence(1500)));
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    assert_eq!(
+        limit_events(&sink),
+        0,
+        "the clock starts at the end of the speech"
+    );
+    // The limit can end the source of the client during this audio, and then a send gets an error.
+    for chunk in pcm(&silence(1800)).chunks(RATE * 160 / 1000) {
+        let _ = f
+            .sessions
+            .audio(1, session, &sayso_protocol::pcm::encode_i16(chunk));
+    }
+    assert!(wait_until(|| limit_events(&sink) == 1));
+    f.sessions.stop(1, session).unwrap();
+}
+
+#[test]
+fn a_session_with_no_limit_has_no_event() {
+    let f = fixture();
+    let sink = Arc::new(Events::default());
+    let session = f
+        .sessions
+        .start(owner(1), spec(&[Source::Client]), sink.clone())
+        .unwrap()
+        .session;
+    send_client(&f.sessions, 1, session, &pcm(&silence(3000)));
+    f.sessions.stop(1, session).unwrap();
+    assert_eq!(limit_events(&sink), 0);
+}
+
+fn limit_events(sink: &Events) -> usize {
+    sink.all()
+        .iter()
+        .filter(|e| matches!(e, Event::SilenceLimit { .. }))
+        .count()
+}
+
+fn wait_until(done: impl Fn() -> bool) -> bool {
+    for _ in 0..500 {
+        if done() {
+            return true;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    done()
 }

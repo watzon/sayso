@@ -5,9 +5,11 @@
 //! passes its deadline kills the process. The next request starts it again, and
 //! a late reply cannot reach it. See `docs/cleanup-models.md`, "Runtime and protocol".
 
-use sayso_core::cpu::{self, Level};
 use parking_lot::Mutex;
-use sayso_core::cleanup::protocol::{ErrorCode, PROTOCOL_VERSION, Reply, ReplyLine, Request, RequestLine, Stop};
+use sayso_cleanup_models::protocol::{
+    ErrorCode, PROTOCOL_VERSION, Reply, ReplyLine, Request, RequestLine, Stop,
+};
+use sayso_cleanup_models::cpu::{self, Level};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -124,10 +126,15 @@ impl Runtime {
         if let Some(path) = std::env::var_os("SAYSO_CLEANUP_PATH").filter(|p| !p.is_empty()) {
             return PathBuf::from(path);
         }
-        if let Some(path) = std::env::current_exe().ok().and_then(|exe| cpu::best_in(exe.parent()?, PROGRAM)) {
+        if let Some(path) = std::env::current_exe()
+            .ok()
+            .and_then(|exe| cpu::best_in(exe.parent()?, PROGRAM))
+        {
             return path;
         }
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../native/cleanup/target/release").join(Level::Avx2.file_name(PROGRAM))
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../native/cleanup/target/release")
+            .join(Level::Avx2.file_name(PROGRAM))
     }
 
     /// True while the runtime process runs.
@@ -138,7 +145,13 @@ impl Runtime {
     /// Load `model_id` from `path` unless it is loaded. Gives the load time, or
     /// zero when it was loaded. `wait_until` bounds the wait for an earlier
     /// request (a load at the start of the dictation) to end.
-    pub fn ensure_loaded(self: &Arc<Self>, model_id: &str, path: &Path, n_ctx: u32, wait_until: Option<Instant>) -> Result<u64, RuntimeError> {
+    pub fn ensure_loaded(
+        self: &Arc<Self>,
+        model_id: &str,
+        path: &Path,
+        n_ctx: u32,
+        wait_until: Option<Instant>,
+    ) -> Result<u64, RuntimeError> {
         let mut guard = self.lock(wait_until)?;
         self.load_locked(&mut guard, model_id, path, n_ctx)
     }
@@ -156,7 +169,13 @@ impl Runtime {
     ) -> Result<(T, u64), RuntimeError> {
         let mut guard = self.lock(wait_until)?;
         let load_ms = self.load_locked(&mut guard, model_id, path, n_ctx)?;
-        let mut session = Session { runtime: self, process: &mut guard, model_id: model_id.to_string(), path: path.to_path_buf(), n_ctx };
+        let mut session = Session {
+            runtime: self,
+            process: &mut guard,
+            model_id: model_id.to_string(),
+            path: path.to_path_buf(),
+            n_ctx,
+        };
         let out = f(&mut session)?;
         Ok((out, load_ms))
     }
@@ -190,9 +209,15 @@ impl Runtime {
         self.gate.lock().blocked.remove(model_id);
     }
 
-    fn lock(self: &Arc<Self>, wait_until: Option<Instant>) -> Result<parking_lot::MutexGuard<'_, Option<Process>>, RuntimeError> {
+    fn lock(
+        self: &Arc<Self>,
+        wait_until: Option<Instant>,
+    ) -> Result<parking_lot::MutexGuard<'_, Option<Process>>, RuntimeError> {
         let guard = match wait_until {
-            Some(until) => self.process.try_lock_until(until).ok_or(RuntimeError::Timeout)?,
+            Some(until) => self
+                .process
+                .try_lock_until(until)
+                .ok_or(RuntimeError::Timeout)?,
             None => self.process.lock(),
         };
         *self.last_use.lock() = Instant::now();
@@ -200,14 +225,24 @@ impl Runtime {
         Ok(guard)
     }
 
-    fn load_locked(&self, process: &mut Option<Process>, model_id: &str, path: &Path, n_ctx: u32) -> Result<u64, RuntimeError> {
+    fn load_locked(
+        &self,
+        process: &mut Option<Process>,
+        model_id: &str,
+        path: &Path,
+        n_ctx: u32,
+    ) -> Result<u64, RuntimeError> {
         {
             let gate = self.gate.lock();
             if !self.enabled.load(Ordering::SeqCst) || gate.blocked.contains(model_id) {
                 return Err(RuntimeError::Closed);
             }
         }
-        if process.as_ref().and_then(|p| p.loaded.as_ref()).is_some_and(|(id, p)| id == model_id && p == path) {
+        if process
+            .as_ref()
+            .and_then(|p| p.loaded.as_ref())
+            .is_some_and(|(id, p)| id == model_id && p == path)
+        {
             return Ok(0);
         }
         // The runtime unloads the old model before it loads the new one, so
@@ -215,7 +250,11 @@ impl Runtime {
         if let Some(p) = process.as_mut() {
             p.loaded = None;
         }
-        let request = Request::Load { model_id: model_id.into(), path: path.to_string_lossy().into_owned(), n_ctx };
+        let request = Request::Load {
+            model_id: model_id.into(),
+            path: path.to_string_lossy().into_owned(),
+            n_ctx,
+        };
         match self.send(process, request, Some(Instant::now() + LOAD_LIMIT))? {
             Reply::Loaded { load_ms, .. } => {
                 if let Some(p) = process.as_mut() {
@@ -229,7 +268,12 @@ impl Runtime {
 
     /// Send one request and wait for its reply. Starts the process when it
     /// does not run. Kills it when the deadline passes or the reply is bad.
-    fn send(&self, process: &mut Option<Process>, request: Request, deadline: Option<Instant>) -> Result<Reply, RuntimeError> {
+    fn send(
+        &self,
+        process: &mut Option<Process>,
+        request: Request,
+        deadline: Option<Instant>,
+    ) -> Result<Reply, RuntimeError> {
         enum Outcome {
             Reply(Reply),
             Timeout,
@@ -239,15 +283,21 @@ impl Runtime {
             *process = Some(self.start()?);
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed).to_string();
-        let line = serde_json::to_string(&RequestLine::new(id.clone(), request)).expect("a request always serializes");
+        let line = serde_json::to_string(&RequestLine::new(id.clone(), request))
+            .expect("a request always serializes");
         let outcome = {
             let p = process.as_mut().expect("started above");
-            if writeln!(p.stdin, "{line}").and_then(|()| p.stdin.flush()).is_err() {
+            if writeln!(p.stdin, "{line}")
+                .and_then(|()| p.stdin.flush())
+                .is_err()
+            {
                 Outcome::Dead
             } else {
                 loop {
                     let next = match deadline {
-                        Some(deadline) => p.replies.recv_timeout(deadline.saturating_duration_since(Instant::now())),
+                        Some(deadline) => p
+                            .replies
+                            .recv_timeout(deadline.saturating_duration_since(Instant::now())),
                         None => p.replies.recv().map_err(|_| RecvTimeoutError::Disconnected),
                     };
                     match next {
@@ -285,8 +335,14 @@ impl Runtime {
         // at the first load. A path from SAYSO_CLEANUP_PATH can be any build,
         // so it starts.
         let from_env = std::env::var_os("SAYSO_CLEANUP_PATH").is_some_and(|p| !p.is_empty());
-        if let Some(build) = Level::of_file(PROGRAM, &self.path).filter(|b| !from_env && !b.runs_here()) {
-            return Err(RuntimeError::UnsupportedCpu(format!("{} needs {}", self.path.display(), build.needs())));
+        if let Some(build) =
+            Level::of_file(PROGRAM, &self.path).filter(|b| !from_env && !b.runs_here())
+        {
+            return Err(RuntimeError::UnsupportedCpu(format!(
+                "{} needs {}",
+                self.path.display(),
+                build.needs()
+            )));
         }
         let mut child = Command::new(&self.path)
             .stdin(Stdio::piped())
@@ -309,8 +365,13 @@ impl Runtime {
                                 break;
                             }
                         }
-                        Ok(reply) => log::warn!("cleanup runtime speaks protocol {}, not {PROTOCOL_VERSION}", reply.v),
-                        Err(e) => log::warn!("cleanup runtime sent a line that is not a reply: {e}"),
+                        Ok(reply) => log::warn!(
+                            "cleanup runtime speaks protocol {}, not {PROTOCOL_VERSION}",
+                            reply.v
+                        ),
+                        Err(e) => {
+                            log::warn!("cleanup runtime sent a line that is not a reply: {e}")
+                        }
                     }
                 }
             })
@@ -324,7 +385,12 @@ impl Runtime {
             })
             .map_err(|e| RuntimeError::Stopped(e.to_string()))?;
         log::info!("started the cleanup runtime {}", self.path.display());
-        Ok(Process { child, stdin, replies, loaded: None })
+        Ok(Process {
+            child,
+            stdin,
+            replies,
+            loaded: None,
+        })
     }
 
     /// One thread per runtime stops the process after [`IDLE_LIMIT`] with no request.
@@ -335,18 +401,26 @@ impl Runtime {
         }
         *started = true;
         let weak: Weak<Runtime> = Arc::downgrade(self);
-        let _ = std::thread::Builder::new().name("cleanup-runtime-idle".into()).spawn(move || {
-            loop {
-                std::thread::sleep(Duration::from_secs(30));
-                let Some(runtime) = weak.upgrade() else { break };
-                let idle = runtime.last_use.lock().elapsed() >= IDLE_LIMIT;
-                // `try_lock`: a request that runs now is a use.
-                if idle && let Some(mut guard) = runtime.process.try_lock() && let Some(process) = guard.take() {
-                    log::info!("stopped the cleanup runtime after {} minutes with no use", IDLE_LIMIT.as_secs() / 60);
-                    process.kill();
+        let _ = std::thread::Builder::new()
+            .name("cleanup-runtime-idle".into())
+            .spawn(move || {
+                loop {
+                    std::thread::sleep(Duration::from_secs(30));
+                    let Some(runtime) = weak.upgrade() else { break };
+                    let idle = runtime.last_use.lock().elapsed() >= IDLE_LIMIT;
+                    // `try_lock`: a request that runs now is a use.
+                    if idle
+                        && let Some(mut guard) = runtime.process.try_lock()
+                        && let Some(process) = guard.take()
+                    {
+                        log::info!(
+                            "stopped the cleanup runtime after {} minutes with no use",
+                            IDLE_LIMIT.as_secs() / 60
+                        );
+                        process.kill();
+                    }
                 }
-            }
-        });
+            });
     }
 }
 
@@ -362,15 +436,26 @@ impl Runtime {
     /// The error for a process that ended. An illegal instruction is a build
     /// that this processor cannot run.
     fn stopped(&self, process: Option<Process>) -> RuntimeError {
-        let Some(mut process) = process else { return RuntimeError::Stopped("no process".into()) };
+        let Some(mut process) = process else {
+            return RuntimeError::Stopped("no process".into());
+        };
         let status = match process.child.wait() {
             Ok(status) => status,
             Err(e) => return RuntimeError::Stopped(e.to_string()),
         };
         if cpu::illegal_instruction(&status) {
-            let needs = Level::of_file(PROGRAM, &self.path).map_or_else(|| "an instruction that it lacks".to_string(), |b| b.needs().to_string());
-            log::error!("the cleanup runtime {} stopped with an illegal instruction ({status})", self.path.display());
-            return RuntimeError::UnsupportedCpu(format!("{} needs {needs} ({status})", self.path.display()));
+            let needs = Level::of_file(PROGRAM, &self.path).map_or_else(
+                || "an instruction that it lacks".to_string(),
+                |b| b.needs().to_string(),
+            );
+            log::error!(
+                "the cleanup runtime {} stopped with an illegal instruction ({status})",
+                self.path.display()
+            );
+            return RuntimeError::UnsupportedCpu(format!(
+                "{} needs {needs} ({status})",
+                self.path.display()
+            ));
         }
         RuntimeError::Stopped(format!("the process ended ({status})"))
     }
@@ -394,7 +479,10 @@ impl Session<'_> {
     pub fn count_until(&mut self, text: &str, until: Option<Instant>) -> Result<u32, RuntimeError> {
         let short = Instant::now() + SHORT_LIMIT;
         let deadline = until.map_or(short, |until| until.min(short));
-        let request = Request::Count { model_id: self.model_id.clone(), text: text.into() };
+        let request = Request::Count {
+            model_id: self.model_id.clone(),
+            text: text.into(),
+        };
         match self.send(request, Some(deadline))? {
             Reply::Count { tokens } => Ok(tokens),
             _ => Err(RuntimeError::Unexpected),
@@ -402,10 +490,32 @@ impl Session<'_> {
     }
 
     /// `deadline` None waits as long as the answer takes.
-    pub fn complete(&mut self, prompt: &str, end: &[String], max_tokens: u32, deadline: Option<Instant>) -> Result<Completion, RuntimeError> {
-        let request = Request::Complete { model_id: self.model_id.clone(), prompt: prompt.into(), end: end.to_vec(), max_tokens };
+    pub fn complete(
+        &mut self,
+        prompt: &str,
+        end: &[String],
+        max_tokens: u32,
+        deadline: Option<Instant>,
+    ) -> Result<Completion, RuntimeError> {
+        let request = Request::Complete {
+            model_id: self.model_id.clone(),
+            prompt: prompt.into(),
+            end: end.to_vec(),
+            max_tokens,
+        };
         match self.send(request, deadline)? {
-            Reply::Completion { text, stop, tokens_in, tokens_out, .. } => Ok(Completion { text, stop, tokens_in, tokens_out }),
+            Reply::Completion {
+                text,
+                stop,
+                tokens_in,
+                tokens_out,
+                ..
+            } => Ok(Completion {
+                text,
+                stop,
+                tokens_in,
+                tokens_out,
+            }),
             _ => Err(RuntimeError::Unexpected),
         }
     }
@@ -415,8 +525,12 @@ impl Session<'_> {
     /// the model again and send the request one more time.
     fn send(&mut self, request: Request, deadline: Option<Instant>) -> Result<Reply, RuntimeError> {
         match self.runtime.send(self.process, request.clone(), deadline) {
-            Err(RuntimeError::Failed { code: ErrorCode::WrongModel | ErrorCode::NotLoaded, .. }) => {
-                self.runtime.load_locked(self.process, &self.model_id, &self.path, self.n_ctx)?;
+            Err(RuntimeError::Failed {
+                code: ErrorCode::WrongModel | ErrorCode::NotLoaded,
+                ..
+            }) => {
+                self.runtime
+                    .load_locked(self.process, &self.model_id, &self.path, self.n_ctx)?;
                 self.runtime.send(self.process, request, deadline)
             }
             other => other,

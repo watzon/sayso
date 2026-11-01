@@ -11,6 +11,8 @@ sayso-i18n.workspace = true
 sayso-ink.workspace = true
 # Basic VAD and the resampler (MIT, docs/sdk.md "Crates").
 sayso-speech.workspace = true
+# The catalog and the logic of cleanup models (MIT, docs/adr/0002-mit-sdk-gpl-app.md).
+sayso-cleanup-models.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
@@ -19,7 +21,6 @@ chrono.workspace = true
 uuid.workspace = true
 regex.workspace = true
 sha2.workspace = true
-whatlang = "0.18"
 log.workspace = true
 workspace-hack.workspace = true
 

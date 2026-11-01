@@ -3,7 +3,7 @@
 //! The rule is that text is never lost. Any AI failure returns the text after
 //! replacements, with the reason.
 
-use crate::cleanup::{CleanupModelInfo, CleanupRequest, Cleaner};
+use crate::cleanup::{Cleaner, CleanupModelInfo, CleanupRequest};
 use crate::dictionary::{AppliedReplacement, Replacer};
 use crate::enhance::{EnhanceError, EnhanceRequest, Enhancer};
 use crate::history::{CleanupTimings, EnhanceAttempt, EnhanceOutcome, EnhanceTimings};
@@ -45,7 +45,10 @@ pub enum CleanupNotice {
     /// The model could not run the style and did a cleanup only.
     CleanupOnly { model: &'static str },
     /// The model does not support the language, so it did not run.
-    Language { model: &'static str, language: String },
+    Language {
+        model: &'static str,
+        language: String,
+    },
     /// Sayso could not tell the language, so the model did not run.
     UnknownLanguage { model: &'static str },
 }
@@ -78,17 +81,35 @@ impl TextPipeline<'_> {
     }
 
     /// Run the style on text that already has replacements applied.
-    pub fn run_style(&self, replaced: String, replacements: Vec<AppliedReplacement>) -> PipelineOutput {
+    pub fn run_style(
+        &self,
+        replaced: String,
+        replacements: Vec<AppliedReplacement>,
+    ) -> PipelineOutput {
         if let Some(run) = self.cleaner {
             return self.run_cleanup(run, replaced, replacements);
         }
         // A model answers an empty transcript with a remark about it.
-        let Some(enhancer) = self.enhancer.filter(|_| self.style.uses_ai() && !replaced.trim().is_empty()) else {
-            return PipelineOutput { text: replaced, replacements, enhance: EnhanceOutcome::NotUsed, enhance_error: None, timings: None, notice: None };
+        let Some(enhancer) = self
+            .enhancer
+            .filter(|_| self.style.uses_ai() && !replaced.trim().is_empty())
+        else {
+            return PipelineOutput {
+                text: replaced,
+                replacements,
+                enhance: EnhanceOutcome::NotUsed,
+                enhance_error: None,
+                timings: None,
+                notice: None,
+            };
         };
         // The model gets spelled words as words. A failure returns the text without this step.
         let spoken = crate::spelled::apply(&replaced);
-        let timeout = self.style.timeout_ms.map(Duration::from_millis).unwrap_or(self.timeout);
+        let timeout = self
+            .style
+            .timeout_ms
+            .map(Duration::from_millis)
+            .unwrap_or(self.timeout);
         let mut request = EnhanceRequest {
             system_prompt: system_prompt(self.style, self.base_prompt, self.vocabulary, &spoken),
             transcript: spoken,
@@ -104,7 +125,9 @@ impl TextPipeline<'_> {
             let started = Instant::now();
             let result = enhancer.enhance(request).and_then(|response| {
                 if is_runaway(&replaced, &response.text) {
-                    return Err(EnhanceError::InvalidOutput("the reply is much longer than the text".into()));
+                    return Err(EnhanceError::InvalidOutput(
+                        "the reply is much longer than the text".into(),
+                    ));
                 }
                 Ok(response)
             });
@@ -134,7 +157,8 @@ impl TextPipeline<'_> {
         let elapsed_ms = attempts.iter().map(|a| a.elapsed_ms).sum();
         let timings = Some(EnhanceTimings {
             timeout_ms: timeout.as_millis() as u64,
-            prompt_chars: request.system_prompt.chars().count() + request.transcript.chars().count(),
+            prompt_chars: request.system_prompt.chars().count()
+                + request.transcript.chars().count(),
             attempts,
             ..Default::default()
         });
@@ -152,11 +176,18 @@ impl TextPipeline<'_> {
                 notice: None,
             },
             Err(err) => {
-                log::warn!("style {} failed with {}: {err}", self.style.id, enhancer.id());
+                log::warn!(
+                    "style {} failed with {}: {err}",
+                    self.style.id,
+                    enhancer.id()
+                );
                 PipelineOutput {
                     text: replaced,
                     replacements,
-                    enhance: EnhanceOutcome::Failed { provider_id: enhancer.id().to_string(), reason: err.to_string() },
+                    enhance: EnhanceOutcome::Failed {
+                        provider_id: enhancer.id().to_string(),
+                        reason: err.to_string(),
+                    },
                     enhance_error: Some((enhancer.id().to_string(), err)),
                     timings,
                     notice: None,
@@ -166,8 +197,20 @@ impl TextPipeline<'_> {
     }
 
     /// The style step with a cleanup model. See `docs/cleanup-models.md`, "Pipeline".
-    fn run_cleanup(&self, run: CleanerRun<'_>, replaced: String, replacements: Vec<AppliedReplacement>) -> PipelineOutput {
-        let not_used = |text: String, replacements, notice| PipelineOutput { text, replacements, enhance: EnhanceOutcome::NotUsed, enhance_error: None, timings: None, notice };
+    fn run_cleanup(
+        &self,
+        run: CleanerRun<'_>,
+        replaced: String,
+        replacements: Vec<AppliedReplacement>,
+    ) -> PipelineOutput {
+        let not_used = |text: String, replacements, notice| PipelineOutput {
+            text,
+            replacements,
+            enhance: EnhanceOutcome::NotUsed,
+            enhance_error: None,
+            timings: None,
+            notice,
+        };
         let settings = match run.plan {
             RunPlan::Cleanup(settings) => settings,
             RunPlan::CleanupOnly => Default::default(),
@@ -177,17 +220,39 @@ impl TextPipeline<'_> {
             return not_used(replaced, replacements, None);
         }
         let model = run.model.id;
-        let language = crate::cleanup::dictation_language(run.language_setting, run.final_model_languages, &replaced, crate::cleanup::detect_language);
+        let language = crate::cleanup::dictation_language(
+            run.language_setting,
+            run.final_model_languages,
+            &replaced,
+            crate::cleanup::detect_language,
+        );
         match &language {
-            None => return not_used(replaced, replacements, Some(CleanupNotice::UnknownLanguage { model })),
+            None => {
+                return not_used(
+                    replaced,
+                    replacements,
+                    Some(CleanupNotice::UnknownLanguage { model }),
+                );
+            }
             Some(code) if !run.model.supports_language(code) => {
-                return not_used(replaced, replacements, Some(CleanupNotice::Language { model, language: code.clone() }));
+                return not_used(
+                    replaced,
+                    replacements,
+                    Some(CleanupNotice::Language {
+                        model,
+                        language: code.clone(),
+                    }),
+                );
             }
             Some(_) => {}
         }
         // The model gets spelled words as words, as a language model does.
         let spoken = crate::spelled::apply(&replaced);
-        let timeout = self.style.timeout_ms.map(Duration::from_millis).unwrap_or(self.timeout);
+        let timeout = self
+            .style
+            .timeout_ms
+            .map(Duration::from_millis)
+            .unwrap_or(self.timeout);
         let request = CleanupRequest {
             model: model.to_string(),
             text: spoken.clone(),
@@ -197,40 +262,69 @@ impl TextPipeline<'_> {
             timeout,
         };
         let started = Instant::now();
-        let result = run.cleaner.clean(&request);
+        let result = run.cleaner.clean(&request).map_err(EnhanceError::from);
         let elapsed_ms = started.elapsed().as_millis() as u64;
         let cleanup_only = run.plan == RunPlan::CleanupOnly;
         let mut timings = EnhanceTimings {
             timeout_ms: timeout.as_millis() as u64,
             prompt_chars: spoken.chars().count(),
-            attempts: vec![EnhanceAttempt { elapsed_ms, error: result.as_ref().err().map(|e| e.to_string()), mode: Some("cleanup".into()), report: None }],
-            cleanup: Some(CleanupTimings { language: language.clone(), cleanup_only, ..Default::default() }),
+            attempts: vec![EnhanceAttempt {
+                elapsed_ms,
+                error: result.as_ref().err().map(|e| e.to_string()),
+                mode: Some("cleanup".into()),
+                report: None,
+            }],
+            cleanup: Some(CleanupTimings {
+                language: language.clone(),
+                cleanup_only,
+                ..Default::default()
+            }),
             ..Default::default()
         };
         match result {
             Ok(response) => {
                 if let Some(c) = timings.cleanup.as_mut() {
-                    (c.load_ms, c.parts, c.tokens_in, c.tokens_out) = (response.load_ms, response.parts, response.tokens_in, response.tokens_out);
+                    (c.load_ms, c.parts, c.tokens_in, c.tokens_out) = (
+                        response.load_ms,
+                        response.parts,
+                        response.tokens_in,
+                        response.tokens_out,
+                    );
                 }
                 // The models take no word list: put back the spelling of
                 // dictionary words and of the replacements that ran.
-                let terms: Vec<String> = self.vocabulary.iter().cloned().chain(replacements.iter().map(|r| r.to.clone())).collect();
+                let terms: Vec<String> = self
+                    .vocabulary
+                    .iter()
+                    .cloned()
+                    .chain(replacements.iter().map(|r| r.to.clone()))
+                    .collect();
                 let text = crate::cleanup::restore_spelling(&spoken, &response.text, &terms);
                 PipelineOutput {
                     text,
                     replacements,
-                    enhance: EnhanceOutcome::Applied { provider_id: run.provider_id.to_string(), model: response.model, elapsed_ms },
+                    enhance: EnhanceOutcome::Applied {
+                        provider_id: run.provider_id.to_string(),
+                        model: response.model,
+                        elapsed_ms,
+                    },
                     enhance_error: None,
                     timings: Some(timings),
                     notice: cleanup_only.then_some(CleanupNotice::CleanupOnly { model }),
                 }
             }
             Err(err) => {
-                log::warn!("style {} failed with cleanup model {model}: {err}", self.style.id);
+                log::warn!(
+                    "style {} failed with cleanup model {model}: {err}",
+                    self.style.id
+                );
                 PipelineOutput {
                     text: replaced,
                     replacements,
-                    enhance: EnhanceOutcome::Failed { provider_id: run.provider_id.to_string(), reason: err.to_string() },
+                    enhance: EnhanceOutcome::Failed {
+                        provider_id: run.provider_id.to_string(),
+                        reason: err.to_string(),
+                    },
                     enhance_error: Some((run.provider_id.to_string(), err)),
                     timings: Some(timings),
                     notice: None,
@@ -266,7 +360,10 @@ mod tests {
 
     impl Fake {
         fn new(replies: Vec<Result<EnhanceResponse, EnhanceError>>) -> Self {
-            Self { replies: Mutex::new(replies), seen: Mutex::new(vec![]) }
+            Self {
+                replies: Mutex::new(replies),
+                seen: Mutex::new(vec![]),
+            }
         }
     }
 
@@ -284,7 +381,14 @@ mod tests {
     }
 
     fn ok(text: &str) -> Result<EnhanceResponse, EnhanceError> {
-        Ok(EnhanceResponse { text: text.into(), provider_id: "fake".into(), model: "m".into(), elapsed_ms: 5, mode: "json_schema".into(), report: None })
+        Ok(EnhanceResponse {
+            text: text.into(),
+            provider_id: "fake".into(),
+            model: "m".into(),
+            elapsed_ms: 5,
+            mode: "json_schema".into(),
+            report: None,
+        })
     }
 
     fn style(id: &str) -> Style {
@@ -292,7 +396,13 @@ mod tests {
     }
 
     fn rules() -> Vec<Replacement> {
-        vec![Replacement { id: 1, from: "git hub".into(), to: "GitHub".into(), case_sensitive: false, uses: 0 }]
+        vec![Replacement {
+            id: 1,
+            from: "git hub".into(),
+            to: "GitHub".into(),
+            case_sensitive: false,
+            uses: 0,
+        }]
     }
 
     #[test]
@@ -300,10 +410,21 @@ mod tests {
         let fake = Fake::new(vec![ok("Open a GitHub issue.")]);
         let replacer = Replacer::new(&rules());
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), cleaner: None, timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: Some(&fake),
+            cleaner: None,
+            timeout: Duration::from_secs(4),
+        };
         let out = p.run("open a git hub issue");
         assert_eq!(out.text, "Open a GitHub issue.");
-        assert_eq!(fake.seen.lock().unwrap()[0].transcript, "open a GitHub issue");
+        assert_eq!(
+            fake.seen.lock().unwrap()[0].transcript,
+            "open a GitHub issue"
+        );
         assert_eq!(out.replacements.len(), 1);
     }
 
@@ -312,7 +433,15 @@ mod tests {
         let fake = Fake::new(vec![]);
         let replacer = Replacer::new(&[]);
         let raw = style("raw");
-        let p = TextPipeline { replacer: &replacer, style: &raw, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), cleaner: None, timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &raw,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: Some(&fake),
+            cleaner: None,
+            timeout: Duration::from_secs(4),
+        };
         assert!(!p.will_enhance());
         assert_eq!(p.run("hi there").enhance, EnhanceOutcome::NotUsed);
     }
@@ -322,19 +451,41 @@ mod tests {
         let fake = Fake::new(vec![Err(EnhanceError::Timeout(4000))]);
         let replacer = Replacer::new(&rules());
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), cleaner: None, timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: Some(&fake),
+            cleaner: None,
+            timeout: Duration::from_secs(4),
+        };
         let out = p.run("on git hub");
         assert_eq!(out.text, "on GitHub");
-        assert_eq!(out.enhance_error, Some(("fake".to_string(), EnhanceError::Timeout(4000))));
+        assert_eq!(
+            out.enhance_error,
+            Some(("fake".to_string(), EnhanceError::Timeout(4000)))
+        );
         assert!(matches!(out.enhance, EnhanceOutcome::Failed { .. }));
     }
 
     #[test]
     fn invalid_output_is_retried_once() {
-        let fake = Fake::new(vec![Err(EnhanceError::InvalidOutput("x".into())), ok("Fixed.")]);
+        let fake = Fake::new(vec![
+            Err(EnhanceError::InvalidOutput("x".into())),
+            ok("Fixed."),
+        ]);
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), cleaner: None, timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: Some(&fake),
+            cleaner: None,
+            timeout: Duration::from_secs(4),
+        };
         let out = p.run("fixed");
         assert_eq!(out.text, "Fixed.");
         assert_eq!(fake.seen.lock().unwrap().len(), 2);
@@ -342,8 +493,19 @@ mod tests {
         let timings = out.timings.unwrap();
         assert_eq!(timings.timeout_ms, 4000);
         assert_eq!(timings.attempts.len(), 2);
-        assert!(timings.attempts[0].error.as_deref().is_some_and(|e| e.contains("schema")));
-        assert_eq!((timings.attempts[1].error.as_deref(), timings.attempts[1].mode.as_deref()), (None, Some("json_schema")));
+        assert!(
+            timings.attempts[0]
+                .error
+                .as_deref()
+                .is_some_and(|e| e.contains("schema"))
+        );
+        assert_eq!(
+            (
+                timings.attempts[1].error.as_deref(),
+                timings.attempts[1].mode.as_deref()
+            ),
+            (None, Some("json_schema"))
+        );
     }
 
     /// A provider that answers with the wrong shape after `delay`, and keeps
@@ -376,34 +538,71 @@ mod tests {
         // The first attempt takes half of the limit, so a slow CI runner has
         // 1 s of margin before no time is left for a retry. With 300 ms of
         // 400 ms the margin was 100 ms, and a macOS runner took 517 ms.
-        let slow = SlowInvalid { delay: Duration::from_millis(1000), timeouts: Mutex::new(vec![]) };
+        let slow = SlowInvalid {
+            delay: Duration::from_millis(1000),
+            timeouts: Mutex::new(vec![]),
+        };
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
         let timeout = Duration::from_millis(2000);
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&slow), cleaner: None, timeout };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: Some(&slow),
+            cleaner: None,
+            timeout,
+        };
         let started = Instant::now();
         let out = p.run("keep this text");
         // Two full attempts would take 3 s.
-        assert!(started.elapsed() < timeout + Duration::from_millis(600), "took {:?}", started.elapsed());
+        assert!(
+            started.elapsed() < timeout + Duration::from_millis(600),
+            "took {:?}",
+            started.elapsed()
+        );
         assert_eq!(out.text, "keep this text");
-        assert_eq!(out.enhance_error, Some(("slow".to_string(), EnhanceError::Timeout(2000))), "the limit of the whole step");
+        assert_eq!(
+            out.enhance_error,
+            Some(("slow".to_string(), EnhanceError::Timeout(2000))),
+            "the limit of the whole step"
+        );
         let timeouts = slow.timeouts.lock().unwrap();
         assert_eq!(timeouts.len(), 2);
         assert_eq!(timeouts[0], timeout);
-        assert!(timeouts[1] <= Duration::from_millis(1000), "the retry got {:?}", timeouts[1]);
+        assert!(
+            timeouts[1] <= Duration::from_millis(1000),
+            "the retry got {:?}",
+            timeouts[1]
+        );
         assert_eq!(out.timings.unwrap().timeout_ms, 2000);
     }
 
     #[test]
     fn no_retry_when_the_time_is_gone() {
-        let fake = Fake::new(vec![Err(EnhanceError::InvalidOutput("x".into())), ok("Too late.")]);
+        let fake = Fake::new(vec![
+            Err(EnhanceError::InvalidOutput("x".into())),
+            ok("Too late."),
+        ]);
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), cleaner: None, timeout: Duration::from_nanos(1) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: Some(&fake),
+            cleaner: None,
+            timeout: Duration::from_nanos(1),
+        };
         let out = p.run("keep this text");
         assert_eq!(out.text, "keep this text");
         assert_eq!(fake.seen.lock().unwrap().len(), 1);
-        assert!(matches!(out.enhance_error, Some((_, EnhanceError::InvalidOutput(_)))));
+        assert!(matches!(
+            out.enhance_error,
+            Some((_, EnhanceError::InvalidOutput(_)))
+        ));
     }
 
     #[test]
@@ -413,7 +612,15 @@ mod tests {
         let mut s = style("email");
         s.model = Some("big".into());
         s.timeout_ms = Some(9000);
-        let p = TextPipeline { replacer: &replacer, style: &s, base_prompt: "- Shared rule.", vocabulary: &["Dana".into()], enhancer: Some(&fake), cleaner: None, timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &s,
+            base_prompt: "- Shared rule.",
+            vocabulary: &["Dana".into()],
+            enhancer: Some(&fake),
+            cleaner: None,
+            timeout: Duration::from_secs(4),
+        };
         p.run("hi dana");
         let req = &fake.seen.lock().unwrap()[0];
         assert_eq!(req.model.as_deref(), Some("big"));
@@ -424,14 +631,34 @@ mod tests {
 
     #[test]
     fn the_model_gets_spelled_words_as_words() {
-        let fake = Fake::new(vec![ok("Send it to Dana Katz."), Err(EnhanceError::Timeout(4000))]);
+        let fake = Fake::new(vec![
+            ok("Send it to Dana Katz."),
+            Err(EnhanceError::Timeout(4000)),
+        ]);
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), cleaner: None, timeout: Duration::from_secs(4) };
-        assert_eq!(p.run("send it to dana cats that's k a t z").text, "Send it to Dana Katz.");
-        assert_eq!(fake.seen.lock().unwrap()[0].transcript, "send it to dana katz");
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: Some(&fake),
+            cleaner: None,
+            timeout: Duration::from_secs(4),
+        };
+        assert_eq!(
+            p.run("send it to dana cats that's k a t z").text,
+            "Send it to Dana Katz."
+        );
+        assert_eq!(
+            fake.seen.lock().unwrap()[0].transcript,
+            "send it to dana katz"
+        );
         // A failure returns what the speaker said.
-        assert_eq!(p.run("send it to dana cats that's k a t z").text, "send it to dana cats that's k a t z");
+        assert_eq!(
+            p.run("send it to dana cats that's k a t z").text,
+            "send it to dana cats that's k a t z"
+        );
     }
 
     #[test]
@@ -439,7 +666,15 @@ mod tests {
         let fake = Fake::new(vec![]);
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), cleaner: None, timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: Some(&fake),
+            cleaner: None,
+            timeout: Duration::from_secs(4),
+        };
         assert_eq!(p.run("  ").enhance, EnhanceOutcome::NotUsed);
     }
 
@@ -449,33 +684,69 @@ mod tests {
         let fake = Fake::new(vec![ok(&answer), ok(&answer)]);
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: Some(&fake), cleaner: None, timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: Some(&fake),
+            cleaner: None,
+            timeout: Duration::from_secs(4),
+        };
         let out = p.run("what time is it in tokyo");
         assert_eq!(out.text, "what time is it in tokyo");
         assert!(matches!(out.enhance, EnhanceOutcome::Failed { .. }));
         assert_eq!(fake.seen.lock().unwrap().len(), 2, "one retry");
         // An email adds a greeting and a sign-off to a short text.
-        assert!(!is_runaway("send dana the report", "Hi Dana,\n\nPlease send me the report.\n\nBest regards,"));
+        assert!(!is_runaway(
+            "send dana the report",
+            "Hi Dana,\n\nPlease send me the report.\n\nBest regards,"
+        ));
     }
 
     struct FakeCleaner {
-        reply: Result<String, EnhanceError>,
+        reply: Result<String, crate::cleanup::CleanError>,
         seen: Mutex<Vec<crate::cleanup::CleanupRequest>>,
     }
 
     impl crate::cleanup::Cleaner for FakeCleaner {
-        fn clean(&self, request: &crate::cleanup::CleanupRequest) -> Result<crate::cleanup::CleanupResponse, EnhanceError> {
+        fn clean(
+            &self,
+            request: &crate::cleanup::CleanupRequest,
+        ) -> Result<crate::cleanup::CleanupResponse, crate::cleanup::CleanError> {
             self.seen.lock().unwrap().push(request.clone());
-            self.reply.clone().map(|text| crate::cleanup::CleanupResponse { text, model: request.model.clone(), parts: 1, ..Default::default() })
+            self.reply
+                .clone()
+                .map(|text| crate::cleanup::CleanupResponse {
+                    text,
+                    model: request.model.clone(),
+                    parts: 1,
+                    ..Default::default()
+                })
         }
     }
 
-    fn fake_cleaner(reply: Result<&str, EnhanceError>) -> FakeCleaner {
-        FakeCleaner { reply: reply.map(str::to_string), seen: Mutex::new(vec![]) }
+    fn fake_cleaner(reply: Result<&str, crate::cleanup::CleanError>) -> FakeCleaner {
+        FakeCleaner {
+            reply: reply.map(str::to_string),
+            seen: Mutex::new(vec![]),
+        }
     }
 
-    fn run_on<'a>(cleaner: &'a FakeCleaner, model: &str, style: &'a Style, setting: &'a str, languages: &'a [&'a str]) -> CleanerRun<'a> {
-        let provider = crate::config::Provider { id: "s1".into(), name: "S1".into(), kind: crate::config::ProviderKind::CleanupModel { model: model.into() } };
+    fn run_on<'a>(
+        cleaner: &'a FakeCleaner,
+        model: &str,
+        style: &'a Style,
+        setting: &'a str,
+        languages: &'a [&'a str],
+    ) -> CleanerRun<'a> {
+        let provider = crate::config::Provider {
+            id: "s1".into(),
+            name: "S1".into(),
+            kind: crate::config::ProviderKind::CleanupModel {
+                model: model.into(),
+            },
+        };
         CleanerRun {
             cleaner,
             provider_id: "s1",
@@ -494,17 +765,30 @@ mod tests {
         let replacer = Replacer::new(&[]);
         let email = style("email");
         let run = run_on(&cleaner, "s1-mini", &email, "en", &["en"]);
-        let p = TextPipeline { replacer: &replacer, style: &email, base_prompt: "", vocabulary: &[], enhancer: None, cleaner: Some(run), timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &email,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: None,
+            cleaner: Some(run),
+            timeout: Duration::from_secs(4),
+        };
         assert!(p.will_enhance());
         let out = p.run("hi dana the report thanks");
         assert_eq!(out.text, "Hi Dana,\n\nThe report.\n\nThanks,");
-        assert!(matches!(out.enhance, EnhanceOutcome::Applied { ref model, .. } if model == "s1-mini"));
+        assert!(
+            matches!(out.enhance, EnhanceOutcome::Applied { ref model, .. } if model == "s1-mini")
+        );
         assert_eq!(out.notice, None);
         let seen = cleaner.seen.lock().unwrap();
         assert_eq!(seen[0].settings.format, crate::cleanup::Format::Email);
         assert_eq!(seen[0].app.as_deref(), Some("Slack"));
         let cleanup = out.timings.unwrap().cleanup.unwrap();
-        assert_eq!((cleanup.language.as_deref(), cleanup.cleanup_only), (Some("en"), false));
+        assert_eq!(
+            (cleanup.language.as_deref(), cleanup.cleanup_only),
+            (Some("en"), false)
+        );
     }
 
     #[test]
@@ -513,11 +797,27 @@ mod tests {
         let replacer = Replacer::new(&[]);
         let rambling = style("rambling");
         let run = run_on(&cleaner, "spokenly-cleanup-1", &rambling, "en", &["en"]);
-        let p = TextPipeline { replacer: &replacer, style: &rambling, base_prompt: "", vocabulary: &[], enhancer: None, cleaner: Some(run), timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &rambling,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: None,
+            cleaner: Some(run),
+            timeout: Duration::from_secs(4),
+        };
         let out = p.run("is the server up");
         assert_eq!(out.text, "Is the server up?");
-        assert_eq!(out.notice, Some(CleanupNotice::CleanupOnly { model: "spokenly-cleanup-1" }));
-        assert_eq!(cleaner.seen.lock().unwrap()[0].settings, crate::cleanup::Settings::default());
+        assert_eq!(
+            out.notice,
+            Some(CleanupNotice::CleanupOnly {
+                model: "spokenly-cleanup-1"
+            })
+        );
+        assert_eq!(
+            cleaner.seen.lock().unwrap()[0].settings,
+            crate::cleanup::Settings::default()
+        );
         assert!(out.timings.unwrap().cleanup.unwrap().cleanup_only);
     }
 
@@ -527,11 +827,25 @@ mod tests {
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
         let run = run_on(&cleaner, "s1-mini", &clean, "de", &["en", "de"]);
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: None, cleaner: Some(run), timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: None,
+            cleaner: Some(run),
+            timeout: Duration::from_secs(4),
+        };
         let out = p.run("äh das meeting ist am mittwoch");
         assert_eq!(out.text, "äh das meeting ist am mittwoch");
         assert_eq!(out.enhance, EnhanceOutcome::NotUsed);
-        assert_eq!(out.notice, Some(CleanupNotice::Language { model: "s1-mini", language: "de".into() }));
+        assert_eq!(
+            out.notice,
+            Some(CleanupNotice::Language {
+                model: "s1-mini",
+                language: "de".into()
+            })
+        );
         assert!(cleaner.seen.lock().unwrap().is_empty());
     }
 
@@ -541,20 +855,49 @@ mod tests {
         let replacer = Replacer::new(&[]);
         let clean = style("clean");
         // "auto", a final model with many languages, and a text too short to detect.
-        let run = run_on(&cleaner, "spokenly-cleanup-1", &clean, "auto", &["en", "de", "fr"]);
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: None, cleaner: Some(run), timeout: Duration::from_secs(4) };
+        let run = run_on(
+            &cleaner,
+            "spokenly-cleanup-1",
+            &clean,
+            "auto",
+            &["en", "de", "fr"],
+        );
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: None,
+            cleaner: Some(run),
+            timeout: Duration::from_secs(4),
+        };
         let out = p.run("ok");
-        assert_eq!(out.notice, Some(CleanupNotice::UnknownLanguage { model: "spokenly-cleanup-1" }));
+        assert_eq!(
+            out.notice,
+            Some(CleanupNotice::UnknownLanguage {
+                model: "spokenly-cleanup-1"
+            })
+        );
         assert!(cleaner.seen.lock().unwrap().is_empty());
     }
 
     #[test]
     fn a_cleanup_failure_keeps_the_replaced_text() {
-        let cleaner = fake_cleaner(Err(EnhanceError::InvalidOutput("the answer stopped early".into())));
+        let cleaner = fake_cleaner(Err(crate::cleanup::CleanError::InvalidOutput(
+            "the answer stopped early".into(),
+        )));
         let replacer = Replacer::new(&rules());
         let clean = style("clean");
         let run = run_on(&cleaner, "s1-mini", &clean, "en", &["en"]);
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &[], enhancer: None, cleaner: Some(run), timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: None,
+            cleaner: Some(run),
+            timeout: Duration::from_secs(4),
+        };
         let out = p.run("um on git hub");
         assert_eq!(out.text, "um on GitHub");
         assert!(matches!(out.enhance, EnhanceOutcome::Failed { .. }));
@@ -568,7 +911,15 @@ mod tests {
         let clean = style("clean");
         let run = run_on(&cleaner, "s1-mini", &clean, "en", &["en"]);
         let vocabulary = ["GPUI".to_string()];
-        let p = TextPipeline { replacer: &replacer, style: &clean, base_prompt: "", vocabulary: &vocabulary, enhancer: None, cleaner: Some(run), timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &clean,
+            base_prompt: "",
+            vocabulary: &vocabulary,
+            enhancer: None,
+            cleaner: Some(run),
+            timeout: Duration::from_secs(4),
+        };
         let out = p.run("open a git hub issue about GPUI");
         assert_eq!(out.text, "Open a GitHub issue about GPUI.");
     }
@@ -579,7 +930,15 @@ mod tests {
         let replacer = Replacer::new(&[]);
         let raw = style("raw");
         let run = run_on(&cleaner, "s1-mini", &raw, "en", &["en"]);
-        let p = TextPipeline { replacer: &replacer, style: &raw, base_prompt: "", vocabulary: &[], enhancer: None, cleaner: Some(run), timeout: Duration::from_secs(4) };
+        let p = TextPipeline {
+            replacer: &replacer,
+            style: &raw,
+            base_prompt: "",
+            vocabulary: &[],
+            enhancer: None,
+            cleaner: Some(run),
+            timeout: Duration::from_secs(4),
+        };
         assert!(!p.will_enhance());
         assert_eq!(p.run("um hi").enhance, EnhanceOutcome::NotUsed);
         assert!(cleaner.seen.lock().unwrap().is_empty());

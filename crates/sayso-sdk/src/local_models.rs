@@ -11,6 +11,7 @@ use crate::protocol::{ErrorCode, ErrorReply, ModelInfo, ModelState, Role, Sessio
 use sayso_speech::jobs::VadRun;
 use sayso_speech::{JobSpec, ModelId, ModelResolver, Refusal, SessionSpec, Timestamps};
 use std::collections::HashMap;
+use std::time::Duration;
 
 /// The id of Basic VAD, which is no model.
 const BASIC_VAD: &str = "basic";
@@ -247,6 +248,7 @@ impl ModelResolver for LocalModels {
             diarization: self.diarization(request.diarize, request.diarization_model.as_deref())?,
             language,
             record_to: request.record_to.clone(),
+            silence_limit: request.silence_limit_ms.map(Duration::from_millis),
         })
     }
 }

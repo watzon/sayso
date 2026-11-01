@@ -8,7 +8,7 @@
 pub use sayso_speech::basic_vad;
 pub mod cleanup;
 pub mod config;
-pub mod cpu;
+pub use sayso_cleanup_models::cpu;
 pub mod dictation;
 pub mod dictionary;
 pub mod engine_catalog;

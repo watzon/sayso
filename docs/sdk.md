@@ -163,7 +163,9 @@ All MIT, with `publish = true`.
 | `sayso-protocol` | Kept. The messages of the engine protocol and the Host API. |
 | `sayso-engine-sdk` | Kept. Start an engine and talk to it over stdio. |
 | `sayso-capture` | New. The microphone (cpal) and the system audio, as 16 kHz mono frames with capture times. |
-| `sayso-speech` | New. Jobs and live sessions over an engine (see below). |
+| `sayso-speech` | New. Jobs and live sessions over an engine (see below). A session can have a silence limit (`SessionSpec.silence_limit`), with one `silence_limit` event. |
+| `sayso_sdk::embedded` | A session in the process of the app with an engine layer of the app, for Consort. It has `ProgramEngine`, `CaptureMicrophone`, and `DeepgramFinal` for the final role. |
+| `sayso-cleanup-models`, `sayso-cleanup-client` | The cleanup logic, the client, and the download, from `sayso-core` and the app. MIT since 2026-10-30 (ADR 0002). |
 | `sayso-sdk` | New. Replaces `sayso-extension`. `Speech` with the three modes. |
 
 `sayso-speech` has the code of `crates/sayso-host/src/jobs/` and `src/live/`: VAD chunking, the final pass of each part, diarization with the speaker rules, the echo rule, Basic VAD, the resampler, and the file decoder (`symphonia`). It reads the files of jobs and writes recordings, so it does file I/O. It owns its types, and it gets the rest through traits:

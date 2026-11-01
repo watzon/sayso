@@ -4,7 +4,7 @@
 //! processor), and `LIMIT` stops at the token limit. A load of a path with
 //! `missing` fails.
 
-use sayso_core::cleanup::protocol::{ErrorCode, Reply, ReplyLine, Request, RequestLine, Stop};
+use sayso_cleanup_models::protocol::{ErrorCode, Reply, ReplyLine, Request, RequestLine, Stop};
 use std::io::{BufRead, Write};
 
 fn text_of(prompt: &str) -> String {
@@ -23,9 +23,16 @@ fn main() {
         let Ok(RequestLine { id, request, .. }) = serde_json::from_str::<RequestLine>(&line) else {
             continue;
         };
-        let error = |code, message: &str| Reply::Error { code, message: message.into() };
+        let error = |code, message: &str| Reply::Error {
+            code,
+            message: message.into(),
+        };
         let reply = match request {
-            Request::Hello => Reply::Hello { version: 1, llama_cpp: "fake".into(), backend: "cpu".into() },
+            Request::Hello => Reply::Hello {
+                version: 1,
+                llama_cpp: "fake".into(),
+                backend: "cpu".into(),
+            },
             // Like the real runtime: the old model is unloaded before the load.
             Request::Load { path, .. } if path.contains("missing") => {
                 loaded = None;
@@ -33,12 +40,26 @@ fn main() {
             }
             Request::Load { model_id, .. } => {
                 loaded = Some(model_id.clone());
-                Reply::Loaded { model_id, load_ms: 1 }
+                Reply::Loaded {
+                    model_id,
+                    load_ms: 1,
+                }
             }
-            Request::Count { model_id, .. } | Request::Complete { model_id, .. } if loaded.as_deref() != Some(model_id.as_str()) => {
-                error(if loaded.is_none() { ErrorCode::NotLoaded } else { ErrorCode::WrongModel }, "load it first")
+            Request::Count { model_id, .. } | Request::Complete { model_id, .. }
+                if loaded.as_deref() != Some(model_id.as_str()) =>
+            {
+                error(
+                    if loaded.is_none() {
+                        ErrorCode::NotLoaded
+                    } else {
+                        ErrorCode::WrongModel
+                    },
+                    "load it first",
+                )
             }
-            Request::Count { text, .. } => Reply::Count { tokens: text.len().div_ceil(4) as u32 },
+            Request::Count { text, .. } => Reply::Count {
+                tokens: text.len().div_ceil(4) as u32,
+            },
             Request::Complete { prompt, .. } => {
                 if prompt.contains("CRASH") {
                     std::process::exit(3);
@@ -49,8 +70,18 @@ fn main() {
                 if prompt.contains("SLEEP") {
                     std::thread::sleep(std::time::Duration::from_secs(10));
                 }
-                let stop = if prompt.contains("LIMIT") { Stop::Limit } else { Stop::End };
-                Reply::Completion { text: format!(" {}", text_of(&prompt).to_uppercase()), stop, tokens_in: 10, tokens_out: 5, ms: 1 }
+                let stop = if prompt.contains("LIMIT") {
+                    Stop::Limit
+                } else {
+                    Stop::End
+                };
+                Reply::Completion {
+                    text: format!(" {}", text_of(&prompt).to_uppercase()),
+                    stop,
+                    tokens_in: 10,
+                    tokens_out: 5,
+                    ms: 1,
+                }
             }
             Request::Unload => {
                 loaded = None;
@@ -58,7 +89,11 @@ fn main() {
             }
         };
         let mut out = stdout.lock();
-        let _ = writeln!(out, "{}", serde_json::to_string(&ReplyLine::new(id, reply)).unwrap());
+        let _ = writeln!(
+            out,
+            "{}",
+            serde_json::to_string(&ReplyLine::new(id, reply)).unwrap()
+        );
         let _ = out.flush();
     }
 }
