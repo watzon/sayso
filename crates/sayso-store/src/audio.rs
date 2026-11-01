@@ -88,8 +88,15 @@ fn encode_flac(samples: &[f32]) -> Result<Vec<u8>> {
         .into_verified()
         .map_err(|e| StoreError::Audio(format!("encoder config: {e:?}")))?;
     let source = flacenc::source::MemSource::from_samples(&pcm, 1, 16, AUDIO_SAMPLE_RATE as usize);
-    let stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size)
+    let mut stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size)
         .map_err(|e| StoreError::Audio(format!("FLAC encode failed: {e:?}")))?;
+    // flacenc counts the short last block in the minimum block size. The
+    // format leaves it out, and Apple's decoder refuses a stream whose minimum
+    // and maximum differ (ExtAudioFileRead -50). Write what libFLAC writes.
+    stream
+        .stream_info_mut()
+        .set_block_sizes(config.block_size, config.block_size)
+        .map_err(|e| StoreError::Audio(format!("FLAC block size: {e:?}")))?;
     let mut sink = flacenc::bitsink::ByteSink::new();
     stream.write(&mut sink).map_err(|e| StoreError::Audio(format!("FLAC write failed: {e:?}")))?;
     Ok(sink.as_slice().to_vec())
@@ -148,6 +155,37 @@ mod tests {
         let name = store.save_audio(&[2.0, -2.0, 0.0, 0.5]).unwrap();
         let out = store.load_audio(&name).unwrap();
         assert!(out[0] > 0.99 && out[1] < -0.99 && out[2].abs() < 1e-6);
+    }
+
+    #[test]
+    fn streaminfo_leaves_the_short_last_block_out_of_the_minimum() {
+        let (_dir, store) = temp_store();
+        // 25 920 samples: six full blocks of 4096 and a last block of 1344.
+        for seconds in [1.62, 0.5, 0.001] {
+            let name = store.save_audio(&sine(seconds)).unwrap();
+            let bytes = std::fs::read(store.audio_path(&name)).unwrap();
+            let info = claxon::FlacReader::new(&bytes[..]).unwrap().streaminfo();
+            assert_eq!(info.min_block_size, info.max_block_size, "{seconds} s");
+        }
+    }
+
+    /// Apple's decoder is stricter than claxon. `afplay` and SaysoEngine fail
+    /// on a stored file with a short last block (issue #67).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn apple_audio_toolbox_decodes_the_file() {
+        let (dir, store) = temp_store();
+        let input = sine(1.62);
+        let name = store.save_audio(&input).unwrap();
+        let wav = dir.path().join("out.wav");
+        let out = std::process::Command::new("afconvert")
+            .args(["-f", "WAVE", "-d", "LEI16"])
+            .arg(store.audio_path(&name))
+            .arg(&wav)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "afconvert: {}", String::from_utf8_lossy(&out.stderr));
+        assert!(std::fs::metadata(&wav).unwrap().len() as usize >= input.len() * 2);
     }
 
     #[test]
