@@ -62,7 +62,15 @@ $engineBuilds = @(
     @{ Name = 'sayso-engine-avx.exe'; Dir = 'target\engine-avx'; Off = $avxOff },
     @{ Name = 'sayso-engine-baseline.exe'; Dir = 'target\engine-baseline'; Off = $baselineOff }
 )
-Invoke-Builds 'engine' $engineBuilds { param($dir) cargo build -p sayso-engine --release --target-dir $dir }
+# whisper-rs-sys does not run its build script again when a GGML_* variable
+# changes, so a whisper.cpp built before in the folder (by cargo build, or from
+# the CI cache) would keep its instructions. Build it again each time.
+Invoke-Builds 'engine' $engineBuilds {
+    param($dir)
+    cargo clean -p whisper-rs-sys --release --target-dir $dir
+    if ($LASTEXITCODE -ne 0) { return }
+    cargo build -p sayso-engine --release --target-dir $dir
+}
 # llama.cpp is slow in a debug build, so the runtime is always a release build.
 $cleanupBuilds = @(
     @{ Name = 'sayso-cleanup.exe'; Dir = 'native\cleanup\target'; Off = @() },
