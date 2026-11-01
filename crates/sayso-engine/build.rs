@@ -72,6 +72,16 @@ mod parakeet_cpp {
             .define("PARAKEET_BUILD_SERVER", "OFF")
             .define("PARAKEET_BUILD_TESTS", "OFF")
             .define("GGML_NATIVE", "OFF") // the release binaries run on other CPUs
+            // With GGML_NATIVE off, ggml turns on SSE 4.2, AVX, AVX2, BMI2, FMA, and F16C, and a processor
+            // without them stops the engine with SIGILL when the CPU backend starts (issue #37). The model runs
+            // on the GPU, and the CPU backend only takes the few operations that Vulkan lacks, so it is built
+            // for x86-64 only. The options do nothing on aarch64.
+            .define("GGML_SSE42", "OFF")
+            .define("GGML_AVX", "OFF")
+            .define("GGML_AVX2", "OFF")
+            .define("GGML_BMI2", "OFF")
+            .define("GGML_FMA", "OFF")
+            .define("GGML_F16C", "OFF")
             .define("GGML_OPENMP", "OFF") // else the engine needs libgomp at run time
             .build_target("parakeet")
             .build();

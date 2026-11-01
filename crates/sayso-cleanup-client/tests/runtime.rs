@@ -2,6 +2,7 @@
 
 use sayso_cleanup_client::runtime::{Runtime, RuntimeError};
 use sayso_core::cleanup::protocol::{ErrorCode, Stop};
+use sayso_core::cpu::Level;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -70,6 +71,31 @@ fn a_crash_is_an_error_and_the_next_request_works() {
     assert!(matches!(error, RuntimeError::Stopped(_)), "{error:?}");
     let (answer, _) = rt.with_model("a", model(), 2048, None, |s| s.complete("text: fine\nout:", &[], 40, None)).unwrap();
     assert_eq!(answer.text, " FINE");
+}
+
+#[test]
+fn an_illegal_instruction_is_a_processor_that_cannot_run_the_build() {
+    let rt = runtime();
+    let error = rt.with_model("a", model(), 2048, None, |s| s.complete("text: ILLEGAL\nout:", &[], 40, None)).unwrap_err();
+    assert!(matches!(error, RuntimeError::UnsupportedCpu(_)), "{error:?}");
+    assert!(sayso_cleanup_client::runtime::is_unsupported_cpu(&error.to_string()), "{error}");
+    // Another request starts the process again, as after any crash.
+    let (answer, _) = rt.with_model("a", model(), 2048, None, |s| s.complete("text: fine\nout:", &[], 40, None)).unwrap();
+    assert_eq!(answer.text, " FINE");
+}
+
+#[test]
+fn a_build_that_this_processor_cannot_run_does_not_start() {
+    // The build of the packages that this processor lacks the instructions
+    // for. Only on x86_64 without AVX, or on another system, is there one.
+    let Some(build) = Level::ALL.into_iter().find(|b| !b.runs_here()) else { return };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(build.file_name("sayso-cleanup"));
+    std::fs::copy(env!("CARGO_BIN_EXE_fake-cleanup-runtime"), &path).unwrap();
+    let rt = Runtime::new(path);
+    let error = rt.ensure_loaded("a", model(), 2048, None).unwrap_err();
+    assert!(matches!(error, RuntimeError::UnsupportedCpu(_)), "{error:?}");
+    assert!(!rt.is_running());
 }
 
 #[test]

@@ -106,6 +106,7 @@ settings:
     cleanup_download_failed: "Le téléchargement a échoué"
     cleanup_download_failed_detail: "Sayso n’a pas pu télécharger %{name}. Vérifiez votre connexion internet, puis réessayez."
     cleanup_test_failed_detail: "Le modèle n’a pas répondu au test. Réessayez, ou supprimez le téléchargement et téléchargez-le à nouveau."
+    cleanup_test_failed_cpu_detail: "Le processeur de cet ordinateur ne peut pas exécuter le modèle local dans cette version de Sayso. Mettez Sayso à jour, ou utilisez un fournisseur cloud."
     suggest_cleanup: "S’exécute sur votre %{computer} · %{languages} · %{size}"
     cleanup_runs: "Exécute %{styles}"
     cleanup_needs: "%{styles} demandent un fournisseur qui lit les prompts."

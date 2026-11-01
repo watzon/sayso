@@ -107,7 +107,7 @@ To change the package without a new Sayso version (for example a new dependency)
 
 ### Windows signing (optional)
 
-The Windows job signs the installer and the three exes (`Sayso.exe`, `sayso-engine.exe`, and `sayso-cleanup.exe`) when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
+The Windows job signs the installer and the exes (`Sayso.exe`, the three builds of the speech engine: `sayso-engine.exe`, `sayso-engine-avx.exe`, and `sayso-engine-baseline.exe`, and the three builds of the cleanup runtime: `sayso-cleanup.exe`, `sayso-cleanup-avx.exe`, and `sayso-cleanup-baseline.exe`) when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
 
 | Secret | Contents |
 |---|---|
@@ -164,7 +164,7 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    The AUR package `sayso-bin` must also have the new version.
 
-7. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before. The Nix package installs `sayso-cleanup` only when the tarball has it, so it also works with a release before the cleanup runtime. After the first release that has the runtime, remove that test from `packaging/nix/package.nix`.
+7. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before. The Nix package installs every `bin/sayso-cleanup*` file of the tarball, so it needs a release with the cleanup runtime (0.11.0 or later).
 
    ```sh
    scripts/after-release.sh v0.3.0
@@ -185,6 +185,8 @@ The workflow does not change a release that users already get: each job stops wh
 
 Each release file holds three programs: the app, the speech engine, and the cleanup runtime `sayso-cleanup` (`native/cleanup`, its own Cargo workspace, which builds llama.cpp with CMake). The app finds the runtime in the folder of its own executable (`Runtime::default_path` in `crates/sayso-cleanup-client/src/runtime.rs`). So the runtime goes where the app executable is. No release file is new: the runtime is inside the 12 that exist.
 
+On x86_64 (Windows and Linux) the runtime has three builds, because llama.cpp compiles its kernels for one instruction set and a processor without it stops the runtime with SIGILL (issue #37): `sayso-cleanup` (AVX2, FMA, F16C, and BMI2), `sayso-cleanup-avx` (AVX and SSE 4.2), and `sayso-cleanup-baseline` (x86-64 only). Each one goes beside `sayso-cleanup`, and the app starts the best one that the processor runs (`crates/sayso-core/src/cpu.rs`). `scripts/build-cleanup.sh` and `scripts/bundle-windows.ps1` build them. macOS and Linux aarch64 have one build. The Windows speech engine has the same three builds for whisper.cpp (`sayso-engine.exe`, `sayso-engine-avx.exe`, `sayso-engine-baseline.exe`, from `scripts/bundle-windows.ps1`), and the app picks one the same way (`crates/sayso-engine/NOTES.md`).
+
 | Release file | Where `sayso-cleanup` is | Signing |
 |---|---|---|
 | macOS DMG | `Sayso.app/Contents/MacOS/sayso-cleanup`, beside `Sayso` and `SaysoEngine` | Developer ID, hardened runtime, no entitlements, identifier `dev.sayso.Sayso.cleanup`. The notarization of the app covers it. |
@@ -198,7 +200,7 @@ Each release file holds three programs: the app, the speech engine, and the clea
 
 The Linux tarball and the packages made from its `bin` folder (the Flatpak and the AppImage) also have `sayso-bridge`, a static program. Only a Sayso in a Flatpak starts it ([sdk.md](sdk.md), "Flatpak").
 
-`scripts/bundle.sh`, `scripts/bundle-windows.ps1`, and `scripts/bundle-linux.sh` build the runtime in release mode, also for a debug app, because llama.cpp is slow in a debug build. Every other Linux format takes the binary from the tarball.
+`scripts/bundle.sh`, `scripts/bundle-windows.ps1`, and `scripts/bundle-linux.sh` (through `scripts/build-cleanup.sh`) build the runtime in release mode, also for a debug app, because llama.cpp is slow in a debug build. Every other Linux format takes the binary from the tarball.
 
 The CI job **Cleanup runtime** (`ci.yml`, start it with `gh workflow run ci.yml`) builds, tests, and lints the runtime on the four targets: macOS arm64, Windows x86_64, Linux x86_64, and Linux arm64. It prints the size and the libraries of the binary, and fails when the binary needs OpenMP. `linux.yml` also starts the installed runtime in the `.deb` test and checks that it answers `hello` with the `cpu` backend.
 
@@ -226,7 +228,7 @@ Each release also has the speech engine as a separate file for each system, for 
 |---|---|---|
 | `sayso-engine-<version>-macos-arm64.tar.gz` | `scripts/package-engine.sh`, in the **macOS** job after `scripts/release.sh` | `dist/Sayso.app/Contents/MacOS/SaysoEngine`, signed and notarized with the app |
 | `sayso-engine-<version>-macos-x86_64.tar.gz` | `scripts/package-engine.sh --require-signed`, in the **macOS** job after `scripts/build-engine-x86_64.sh` | `dist/engine-x86_64/SaysoEngine`, a cross-compile of the Swift engine for Intel Macs. The script signs and notarizes it like the engine of the app. |
-| `sayso-engine-<version>-windows-x64.zip` | `scripts/package-engine.ps1`, in the **Windows** job after `scripts\bundle-windows.ps1` | `sayso-engine.exe` of the app folder, signed when the certificate is set, with every DLL of that folder |
+| `sayso-engine-<version>-windows-x64.zip` | `scripts/package-engine.ps1`, in the **Windows** job after `scripts\bundle-windows.ps1` | The three builds of the engine in the app folder (`sayso-engine.exe`, `sayso-engine-avx.exe`, `sayso-engine-baseline.exe`), signed when the certificate is set, with every DLL of that folder |
 | `sayso-engine-<version>-linux-x86_64.tar.gz` and `-linux-arm64.tar.gz` | `scripts/package-engine.sh`, in the `build` job of `linux.yml` after `scripts/bundle-linux.sh` | `bin/sayso-engine` of the Linux tarball |
 
 The packing scripts copy the engine. They never build one, so the file has the binary that was signed. Only the Intel engine has its own build script, because Sayso has no Intel app that holds an engine. Each file has the folder `sayso-engine-<version>/` with `sayso-engine` (`sayso-engine.exe` on Windows), the DLLs on Windows, `README.md` (from `packaging/engine/README.md.in`), `LICENSE`, and `licenses/`. The licenses are the ones that the app ships for the engine. On macOS, where the app ships none, the file has the licenses of the two Swift packages that the engine links (FluidAudio and WhisperKit). The Linux engine needs the Vulkan loader (`libvulkan.so.1`) from the system, and the README says so.

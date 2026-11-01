@@ -6,11 +6,13 @@
 #   dist\sayso-engine-<version>-windows-x64.zip
 #   dist\sayso-engine-<version>-windows-x64.zip.sha256
 #
-# The zip holds the folder sayso-engine-<version>\ with sayso-engine.exe, its
+# The zip holds the folder sayso-engine-<version>\ with sayso-engine.exe and
+# its AVX and baseline builds (sayso-engine-avx.exe, sayso-engine-baseline.exe;
+# whisper.cpp is compiled for one instruction set, issue #37), its
 # DLLs (sherpa-onnx, ONNX Runtime, and the Visual C++ runtime), README.md,
 # LICENSE, and licenses\. The script copies these files from the app folder
 # that scripts\bundle-windows.ps1 makes (build\windows\Sayso, or Sayso in
-# SAYSO_BUNDLE_DIR), so the exe is the one that was signed there. It never
+# SAYSO_BUNDLE_DIR), so the exes are the ones that were signed there. It never
 # builds an engine. The zip is better than a tarball here: Windows opens a zip
 # without another program. The macOS and Linux files are made by
 # scripts/package-engine.sh.
@@ -32,8 +34,10 @@ if (-not $Folder) {
 }
 if (-not $Out) { $Out = Join-Path $root 'dist' }
 
-$exe = Join-Path $Folder 'sayso-engine.exe'
-if (-not (Test-Path $exe)) { throw "the engine $exe does not exist. Run scripts\bundle-windows.ps1 first." }
+$exes = 'sayso-engine.exe', 'sayso-engine-avx.exe', 'sayso-engine-baseline.exe' | ForEach-Object { Join-Path $Folder $_ }
+foreach ($exe in $exes) {
+    if (-not (Test-Path $exe)) { throw "the engine $exe does not exist. Run scripts\bundle-windows.ps1 first." }
+}
 
 $name = "sayso-engine-$version"
 $file = "$name-windows-x64.zip"
@@ -43,7 +47,7 @@ try {
     New-Item -ItemType Directory -Force (Join-Path $dir 'licenses') | Out-Null
     New-Item -ItemType Directory -Force $Out | Out-Null
 
-    Copy-Item $exe $dir
+    Copy-Item $exes $dir
     # Every DLL of the app folder: the sherpa-onnx and ONNX Runtime DLLs, and the
     # Visual C++ runtime that bundle-windows.ps1 ships app-local.
     Get-ChildItem $Folder -Filter '*.dll' | Copy-Item -Destination $dir
@@ -68,7 +72,7 @@ $env:SAYSO_MODELS_DIR = "$env:LOCALAPPDATA\sayso-models"
 $env:SAYSO_MODELS_DIR = "$env:LOCALAPPDATA\sayso-models"
 & { '{"v":1,"id":"1","type":"hello"}'; Start-Sleep 2 } | .\sayso-engine.exe
 '@
-    $requirements = '64-bit Windows. Keep the DLLs in this folder next to `sayso-engine.exe`. They include the Visual C++ runtime, so the computer needs no other install.'
+    $requirements = '64-bit Windows. Keep the DLLs in this folder next to `sayso-engine.exe`. They include the Visual C++ runtime, so the computer needs no other install. `sayso-engine.exe` needs a processor with AVX2 (2013 and later). On an older one, run `sayso-engine-avx.exe` (AVX), or `sayso-engine-baseline.exe`, which runs on any 64-bit processor.'
     $readme = (Get-Content -Raw 'packaging\engine\README.md.in').TrimEnd()
     $readme = $readme.Replace('@VERSION@', $version).Replace('@SYSTEM@', 'Windows').Replace('@REQUIREMENTS@', $requirements).Replace('@RUN@', $run.TrimEnd()).Replace('@HELLO@', $hello.TrimEnd())
     [IO.File]::WriteAllText((Join-Path $dir 'README.md'), $readme + "`n", (New-Object Text.UTF8Encoding $false))

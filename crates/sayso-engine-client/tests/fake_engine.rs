@@ -513,6 +513,50 @@ fn crash_restarts_the_engine_and_loads_models_again() {
 }
 
 #[test]
+fn a_model_that_stops_the_engine_with_an_illegal_instruction_fails_for_good() {
+    let f = fixture();
+    let events = f.client.subscribe();
+    let loaded = default_model();
+    f.client.load(&loaded).unwrap();
+    let model = ModelId::new("whisper-small");
+    std::fs::write(f.models.path().join(format!("downloaded-{model}")), "").unwrap();
+    std::fs::write(f.models.path().join(format!("illegal-{model}")), "").unwrap();
+
+    let err = f.client.load(&model).expect_err("the engine stops at the load");
+    assert!(err.to_string().contains("the processor of this computer cannot run this model"), "{err}");
+    let message = wait_for(&events, "Crashed", |e| match e {
+        EngineEvent::Crashed { message } => Some(message.clone()),
+        _ => None,
+    });
+    assert!(message.contains("illegal instruction"), "{message}");
+    wait_for(&events, "Restarted", |e| matches!(e, EngineEvent::Restarted).then_some(()));
+
+    // The restart loads the other model again, not this one, and the status
+    // stays failed although the files are there.
+    assert_eq!(f.client.status(&loaded), ModelStatus::Ready);
+    assert!(
+        matches!(f.client.status(&model), ModelStatus::Failed { reason: Some(EngineReason::UnsupportedCpu), .. }),
+        "{:?}",
+        f.client.status(&model)
+    );
+    let loads_of = |id: &ModelId| {
+        requests(&f.models)
+            .iter()
+            .filter(|r| r.contains(r#""type":"load""#) && r.contains(&format!(r#""model":"{id}""#)))
+            .count()
+    };
+    assert_eq!(loads_of(&model), 1);
+
+    // The next load and transcribe fail at once, and the engine keeps running.
+    let pid = std::fs::read_to_string(f.models.path().join("pid")).unwrap();
+    assert!(f.client.load(&model).is_err());
+    assert!(f.client.transcribe(&[0.0; 160], &options_for(model.as_str())).is_err());
+    assert_eq!(loads_of(&model), 1, "no request reached the engine");
+    assert_eq!(std::fs::read_to_string(f.models.path().join("pid")).unwrap(), pid);
+    assert!(events.try_iter().all(|e| !matches!(e, EngineEvent::Crashed { .. })));
+}
+
+#[test]
 fn wait_ready_wakes_when_the_model_is_ready() {
     let f = fixture();
     let model = default_model();

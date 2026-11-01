@@ -32,6 +32,9 @@ on:
       - '.github/workflows/linux.yml'
       - 'packaging/linux/**'
       - 'scripts/bundle-linux.sh'
+      - 'scripts/build-cleanup.sh'
+      - 'scripts/test-cleanup-cpus.sh'
+      - 'scripts/tiny-gguf.py'
       - 'scripts/package-linux.sh'
       - 'scripts/package-engine.sh'
       - 'packaging/engine/**'
@@ -233,20 +236,28 @@ jobs:
           done
 
       # The cleanup runtime needs no model to answer hello, and its backend
-      # is the CPU on Linux. It must not need libgomp (OpenMP is off).
+      # is the CPU on Linux. It must not need libgomp (OpenMP is off). On
+      # x86_64 there are three builds (scripts/build-cleanup.sh).
       - name: Start the installed cleanup runtime
         shell: bash
         run: |
-          runtime=/usr/lib/sayso/sayso-cleanup
-          deps=$(ldd "$runtime")
-          echo "$deps"
-          if grep -qE 'libgomp|not found' <<< "$deps"; then
-            echo "::error::The cleanup runtime has a library that it must not have, or one that is missing."
-            exit 1
+          for runtime in /usr/lib/sayso/sayso-cleanup*; do
+            echo "== $runtime"
+            deps=$(ldd "$runtime")
+            echo "$deps"
+            if grep -qE 'libgomp|not found' <<< "$deps"; then
+              echo "::error::$runtime has a library that it must not have, or one that is missing."
+              exit 1
+            fi
+            reply=$(printf '{"v":1,"id":"1","type":"hello"}\n' | timeout 20 "$runtime")
+            echo "$reply"
+            [[ "$reply" == *'"type":"hello"'*'"backend":"cpu"'* ]] || { echo "::error::$runtime gave no hello reply with the cpu backend."; exit 1; }
+          done
+          if [[ "${{ matrix.arch }}" == x86_64 ]]; then
+            for build in sayso-cleanup-avx sayso-cleanup-baseline; do
+              [[ -x /usr/lib/sayso/$build ]] || { echo "::error::The package has no $build."; exit 1; }
+            done
           fi
-          reply=$(printf '{"v":1,"id":"1","type":"hello"}\n' | timeout 20 "$runtime")
-          echo "$reply"
-          [[ "$reply" == *'"type":"hello"'*'"backend":"cpu"'* ]] || { echo "::error::The cleanup runtime gave no hello reply with the cpu backend."; exit 1; }
 
       - name: Keep the packages
         uses: actions/upload-artifact@v4
@@ -260,3 +271,43 @@ jobs:
             dist/*.flatpak
           if-no-files-found: error
           overwrite: true
+
+  # Each x86_64 build of the cleanup runtime loads a model and completes text
+  # on the oldest processor that it is for, under QEMU, and the AVX2 build
+  # stops on a processor without AVX2 (issue #37). This job runs on Ubuntu
+  # 24.04 for its QEMU 8.2: QEMU emulates AVX and AVX2 from 7.2 on, and the
+  # QEMU 6.2 of Ubuntu 22.04 cannot run the AVX and AVX2 builds. The binaries
+  # of the tarball, built on 22.04, run on the newer glibc.
+  cleanup-cpus:
+    name: Cleanup runtime on older processors
+    needs: build
+    if: ${{ inputs.skip_packages != true }}
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    timeout-minutes: 20
+    steps:
+      - name: Install the tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git python3 python3-venv qemu-user
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Get the tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux-x86_64
+          path: dist
+
+      - name: Run the cleanup runtime builds on older processors
+        shell: bash
+        run: |
+          qemu-x86_64 --version
+          tar -xzf dist/sayso-*-linux-x86_64.tar.gz -C "$RUNNER_TEMP"
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet gguf==0.19.0 numpy
+          "$RUNNER_TEMP/venv/bin/python" scripts/tiny-gguf.py "$RUNNER_TEMP/tiny.gguf"
+          scripts/test-cleanup-cpus.sh "$RUNNER_TEMP"/sayso-*-linux-x86_64/bin "$RUNNER_TEMP/tiny.gguf"

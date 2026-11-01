@@ -19,6 +19,7 @@ pub fn describe(reason: Option<EngineReason>, detail: &str) -> String {
         Some(EngineReason::LoadFailed) => t!("engine.load_failed", detail = detail),
         Some(EngineReason::NoGpu) => t!("engine.no_gpu"),
         Some(EngineReason::FormatChanged) => t!("engine.format_changed"),
+        Some(EngineReason::UnsupportedCpu) => t!("engine.unsupported_cpu"),
         Some(EngineReason::DeviceNotEligible) => t!("engine.device_not_eligible"),
         Some(EngineReason::IntelligenceOff) => t!("engine.intelligence_off"),
         Some(EngineReason::ModelNotReady) => t!("engine.model_not_ready"),
