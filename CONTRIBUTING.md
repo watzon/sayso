@@ -149,6 +149,7 @@ A pull request that changes the Linux packaging (`packaging/linux`, `scripts/bun
 | `crates/sayso-platform-linux` | Linux implementations for X11 and Wayland: key grabs, the shortcuts portal, evdev, clipboard paste, key injection, the tray icon, window glue. |
 | `crates/sayso-platform-windows` | Windows implementations: RegisterHotKey chords, low-level keyboard hook, clipboard paste with delayed rendering, privacy settings, cpal capture, Win32 window glue. |
 | `crates/sayso-engine-client` | Rust client for the engine sidecar (NDJSON over stdio, restart on crash). |
+| `crates/sayso-bridge` | A small static program for a Sayso in a Flatpak: it runs on the host, identifies connected apps, and gives their connections to Sayso (`docs/sdk.md`, "Flatpak"). The host uses its identity and socket code on each Unix system. |
 | `native/macos/SaysoEngine` | Swift sidecar for the local models on macOS: Parakeet, Nemotron, Cohere, Canary, SenseVoice, Paraformer (FluidAudio), Whisper (WhisperKit), and Apple Speech (macOS 26). |
 | `crates/sayso-engine` | Rust sidecar for the local models on Windows and Linux: Parakeet, Whisper, SenseVoice, Moonshine, and a streaming Zipformer on sherpa-onnx, Whisper on whisper.cpp (Windows), and Parakeet on parakeet.cpp (Linux GPU). Same protocol as the Swift sidecar. |
 | `crates/sayso-store` | SQLite history and dictionary, FLAC audio, retention. |

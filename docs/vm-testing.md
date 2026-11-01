@@ -31,7 +31,7 @@ Get the files of the last release with `gh release download`.
 3. The log has `moved to the model store`. Each hash is in `models/v1/artifacts`. Onboarding shows the model as downloaded.
 4. Run the example app `transcribe` against Sayso, with no engine in its folder. Answer the question on the screen. Check the text, `apps.toml`, **Don't allow**, and a second run that gets no question.
 5. Run the ignored tests of `crates/sayso-capture/tests/system_real.rs`.
-6. On Linux, start the `.flatpak` as well. The table in [sdk.md](sdk.md), "Flatpak", must stay true.
+6. On Linux, start the `.flatpak` as well, and run the example app outside and in a test Flatpak with `--filesystem=xdg-run/sayso:ro`. Do both against Sayso outside as well. The table in [sdk.md](sdk.md), "Flatpak", must stay true.
 7. After a release, take the macOS clone back to the snapshot and let the 0.13 app update itself, then install the notarized DMG on a clean clone.
 
 ## What is different in a VM
@@ -42,13 +42,15 @@ Get the files of the last release with `gh release download`.
 - The screen locks when the VM is idle. Turn that off in the clone, or use `vmpal sign-in`.
 - A macOS 14 VM has no VMPal Tools, so drive it with `vmpal ui` and a read-only shared folder.
 - The test programs of Windows need the DLLs of the install folder in `PATH`.
+- `vmpal exec` as a user has no `sudo`. Use `vmpal exec --admin`, for example for `flatpak install --system`.
+- Ubuntu shows a crash dialog of `spice-vdagent` in a clone. It is not from Sayso, but it covers the question: click **Don't send**.
 
 ## Results for 0.14.0 (2026-10-31)
 
 | Check | macOS 27.2 | macOS 14.6.1 | Windows 11 | Ubuntu 24.04 | Fedora 44 |
 |---|---|---|---|---|---|
 | Package installs | DMG | DMG | Installer, over 0.13 | `.deb`, over 0.13; `.flatpak`; `.AppImage` | `.rpm` |
-| The app starts | Pass | Pass | Pass | Pass | **Crash**, see below |
+| The app starts | Pass | Pass | Pass | Pass | **Crash** in 0.14.0, pass with the fix for 0.14.1, see below |
 | A real 0.13 models folder moves | Pass | Clean install | Pass | Pass | Not run |
 | Connected app, Allow | Pass | Pass, up to the job | Pass | Pass | Not run |
 | Don't allow | Not run | Not run | Pass | Pass | Not run |
@@ -62,7 +64,23 @@ Get the files of the last release with `gh release download`.
 
 Problems found, none new in 0.14.0:
 
-- **Fedora 44 in a VM.** Sayso ends with SIGSEGV one second after the start, in `libLLVM.so.22.1`, when Mesa compiles a shader for the software renderer llvmpipe on aarch64. The released 0.13.0 does the same. The VM has only that renderer, because the virgl adapter does not pass the limits of `wgpu`. Ubuntu has llvmpipe with LLVM 20 and works. A computer with a real GPU does not use this path.
+- **Shortcut question on GNOME (fixed for 0.14.1).** GNOME 50 has the GlobalShortcuts portal, and binding the keys at the start put its dialog over the welcome page. Sayso now binds the keys at the shortcut step of onboarding. In the Fedora 44 VM the labels of that dialog are blank. The dialog comes from the system, and this was not checked with a real GPU.
+- **Fedora 44 in a VM (fixed for 0.14.1).** The released 0.13.0 and 0.14.0 end with SIGSEGV one second after the start, in `libLLVM.so.22.1`, when Mesa compiles a fragment shader for the software renderer llvmpipe on Vulkan (lavapipe). The VM has only that renderer, because the virgl adapter has no compute and no storage buffers, so it does not pass the limits that GPUI asks for. Mesa 26.0.3 calls `llvm.masked.gather` with an alignment argument that LLVM 22 removed: the LLVM verifier rejects the module (`Intrinsic has incorrect argument type!`). A copy of the module as text compiles, because the LLVM parser updates the old call. LLVM 22.1.1 and 22.1.8 both crash. Sayso now keeps the instance data in a texture on llvmpipe with LLVM 22 or later ([vendor/gpui-pre-wgpu/SAYSO.md](../vendor/gpui-pre-wgpu/SAYSO.md)). Ubuntu 24.04 has LLVM 20 and keeps the storage buffer. A computer with a real GPU does not use this path. x86_64 was not tested: the call to Mesa is the same there, so we expect the same crash and the same fix.
 - **macOS.** At the first start the system asks for Accessibility or Events access before onboarding explains why.
 - **Windows.** The log has `Invalid window handle` and `window not found` when the question closes. Nothing else goes wrong.
 - **Windows.** A silent install stops with exit code 1 while Sayso runs, because the installer cannot ask to close it. An install with its window asks.
+
+## Results for connected apps across the Flatpak sandbox (2026-10-31)
+
+A test build of the 0.14.1 work on Ubuntu 24.04.5 on aarch64, in a clone of `Desktop Test Ubuntu`. The full table and what stays open are in [sdk.md](sdk.md), "Flatpak". The logs are in `/Volumes/SHARED/VMs/evidence/sayso-0.14.1/flatpak/`.
+
+| Sayso | App | Allow | Don't allow | Spoofs refused |
+|---|---|---|---|---|
+| `.flatpak` | Outside | Text in Sayso mode | Local mode | Pass |
+| `.flatpak` | Test Flatpak, own id | Text in Sayso mode | Local mode | Pass |
+| Test copy of the `.flatpak`, with the example | Same id | Text in Sayso mode | Local mode | Pass |
+| `.deb` | Test Flatpak | Text in Sayso mode | Local mode | Pass |
+| `.deb` | Outside | Text in Sayso mode | Local mode | Pass |
+| Test copy, system install | Test Flatpak, system install | Text in Sayso mode | Local mode | Not repeated, except a false `.flatpak-info` |
+
+The clean quit, `kill -9` of Sayso, a killed bridge, a stale socket, a Sayso outside and one in a Flatpak in both orders, and an app that starts before the folder exists gave the results that [sdk.md](sdk.md) describes.

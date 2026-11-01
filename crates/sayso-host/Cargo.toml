@@ -22,6 +22,7 @@ workspace-hack.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+sayso-bridge.workspace = true
 
 # The code signature of the peer (the identity check on macOS).
 [target.'cfg(target_os = "macos")'.dependencies]

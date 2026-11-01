@@ -27,3 +27,8 @@ platforms = [
 third-party = [
     { name = "gpui-kit" },
 ]
+
+# sayso-bridge links statically and runs outside the Flatpak sandbox, so it
+# builds no dependency of the other crates.
+[final-excludes]
+workspace-members = ["sayso-bridge"]

@@ -77,7 +77,7 @@ fn engine_with_own_folders(program: PathBuf, data: &Path) -> Engine {
 Send `hello` to the engine on its standard input. The engine writes its version and features. It needs `SAYSO_MODELS_DIR`:
 
 ```sh
-printf '{"v":1,"type":"hello","id":"1","protocol":1}\n{"v":1,"type":"shutdown","id":"2"}\n' | SAYSO_MODELS_DIR=/tmp/engine-check ./engine/sayso-engine-0.14.0/sayso-engine
+printf '{"v":1,"type":"hello","id":"1","protocol":1}\n{"v":1,"type":"shutdown","id":"2"}\n' | SAYSO_MODELS_DIR=/tmp/engine-check ./engine/sayso-engine-0.14.1/sayso-engine
 ```
 
 The output has a `hello` line with `"protocol":1` and the list of features. For the SDK, the list must have `catalog`.

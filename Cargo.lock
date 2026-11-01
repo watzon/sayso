@@ -3543,8 +3543,6 @@ dependencies = [
 [[package]]
 name = "gpui-pre-wgpu"
 version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b1cdb26c1503bf9662ee8fbc5ab0b44b2deeee4b5c12dc67491ba6fb5fc544b"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -7212,7 +7210,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-app"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "anyhow",
  "ash",
@@ -7257,8 +7255,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sayso-bridge"
+version = "0.14.1"
+dependencies = [
+ "libc",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "sayso-capture"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "block2 0.6.2",
  "cpal 0.18.2",
@@ -7279,7 +7286,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-cleanup-client"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "log",
  "parking_lot",
@@ -7296,7 +7303,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-core"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "chrono",
  "log",
@@ -7317,7 +7324,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-engine"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7345,7 +7352,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-engine-client"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "base64 0.22.1",
  "crossbeam-channel",
@@ -7361,7 +7368,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-engine-conformance"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "base64 0.22.1",
  "serde_json",
@@ -7372,7 +7379,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-engine-sdk"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "crossbeam-channel",
  "sayso-protocol",
@@ -7384,7 +7391,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-enhance"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "keyring",
  "log",
@@ -7404,7 +7411,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-extension"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "crossbeam-channel",
  "sayso-protocol",
@@ -7416,7 +7423,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-host"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "chrono",
  "core-foundation 0.10.1",
@@ -7424,6 +7431,7 @@ dependencies = [
  "libc",
  "log",
  "parking_lot",
+ "sayso-bridge",
  "sayso-core",
  "sayso-engine-client",
  "sayso-platform",
@@ -7441,7 +7449,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-i18n"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "chrono",
  "regex",
@@ -7452,7 +7460,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-ink"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "serde",
  "toml 0.9.12+spec-1.1.0",
@@ -7461,7 +7469,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "crossbeam-channel",
  "sayso-core",
@@ -7471,7 +7479,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform-common"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "crossbeam-channel",
  "log",
@@ -7484,7 +7492,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform-linux"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "ashpd",
  "async-channel",
@@ -7515,7 +7523,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform-macos"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "block2 0.6.2",
  "core-foundation 0.10.1",
@@ -7539,7 +7547,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-platform-windows"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "cpal 0.18.2",
  "crossbeam-channel",
@@ -7560,7 +7568,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-protocol"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "base64 0.22.1",
  "libc",
@@ -7572,7 +7580,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-sdk"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "crossbeam-channel",
  "log",
@@ -7590,7 +7598,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-speech"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "crossbeam-channel",
  "log",
@@ -7603,7 +7611,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-store"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "chrono",
  "claxon",
@@ -7623,7 +7631,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-transcribe"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "log",
  "sayso-core",
@@ -7635,7 +7643,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-ui"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "anyhow",
  "gpui-kit",
@@ -7648,7 +7656,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-update"
-version = "0.14.0"
+version = "0.14.1"
 dependencies = [
  "base64 0.22.1",
  "crossbeam-channel",

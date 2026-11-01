@@ -136,7 +136,8 @@ package_appimage() {
 # The permissions (docs/linux.md, "Flatpak"): Sayso sends keys to other apps
 # and reads the keyboard (X11, /dev/uinput, /dev/input), and it starts the
 # `claude` and `codex` tools and `gsettings` of the host. It pauses media
-# players through MPRIS.
+# players through MPRIS. `xdg-run/sayso:ro` lets a second sandbox of Sayso reach
+# `sayso-bridge`: read-only, so no app in a sandbox can replace the socket.
 flatpak_id=dev.sayso.Sayso
 flatpak_runtime=26.08
 package_flatpak() {
@@ -149,7 +150,8 @@ package_flatpak() {
   flatpak build-finish "$app" --command=sayso \
     --socket=wayland --socket=x11 --share=ipc --socket=pulseaudio --share=network --device=all \
     --talk-name=org.freedesktop.secrets --talk-name=org.kde.StatusNotifierWatcher \
-    --talk-name=org.freedesktop.Flatpak '--talk-name=org.mpris.MediaPlayer2.*' --filesystem=xdg-config/autostart:create
+    --talk-name=org.freedesktop.Flatpak '--talk-name=org.mpris.MediaPlayer2.*' --filesystem=xdg-config/autostart:create \
+    --filesystem=xdg-run/sayso:ro
   flatpak build-export --disable-sandbox --arch="$arch" "$repo" "$app" stable
   flatpak build-bundle --arch="$arch" --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
     "$repo" "$out/$name.flatpak" "$flatpak_id" stable

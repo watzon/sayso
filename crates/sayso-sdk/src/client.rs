@@ -139,14 +139,14 @@ impl Client {
     /// Connect to the socket of `sayso_protocol::socket` (`SAYSO_HOST_SOCKET`,
     /// or the default path of this system) and send `hello`.
     pub fn connect() -> Result<Client, Error> {
-        Client::connect_to(protocol::socket::host_socket_path()?)
+        Client::connect_to(protocol::socket::client_socket_path()?)
     }
 
     /// Connect as [`Client::connect`] does. When Sayso does not run, start it
     /// ([`start_sayso`]) and wait up to [`START_WAIT`] for its socket.
     /// `connect` never starts Sayso.
     pub fn connect_or_start() -> Result<Client, Error> {
-        Client::connect_or_start_with(protocol::socket::host_socket_path()?, START_WAIT, start_sayso)
+        Client::connect_or_start_with(protocol::socket::client_socket_path()?, START_WAIT, start_sayso)
     }
 
     /// [`Client::connect_or_start`] with the socket at `path`, a time to

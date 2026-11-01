@@ -1,6 +1,6 @@
 # Host API reference
 
-This page describes the Host API: the messages between a connected app and Sayso, and the way the SDK shows them. The names come from the crates `sayso-protocol` and `sayso-sdk` at version 0.14.0. When this page and the code differ, the code is right.
+This page describes the Host API: the messages between a connected app and Sayso, and the way the SDK shows them. The names come from the crates `sayso-protocol` and `sayso-sdk` at version 0.14.1. When this page and the code differ, the code is right.
 
 An app that uses `sayso-sdk` does not write these messages. It calls methods of `Speech` and reads `Event` values. [The SDK on top of the Host API](#the-sdk-on-top-of-the-host-api) maps one to the other.
 
@@ -17,10 +17,10 @@ An app that uses `sayso-sdk` does not write these messages. It calls methods of 
 
 ## Transport
 
-The app connects to a local socket. Sayso listens on it. The SDK finds the socket with `sayso_protocol::socket::host_socket_path`, in this order:
+The app connects to a local socket. Sayso listens on it. The SDK finds the socket with `sayso_protocol::socket::client_socket_path`, in this order:
 
 1. The path in the environment variable `SAYSO_HOST_SOCKET`, when it is set and not empty.
-2. Linux: `$XDG_RUNTIME_DIR/sayso/host.sock`. In a Flatpak: `$XDG_RUNTIME_DIR/app/<FLATPAK_ID>/host.sock`. Without `XDG_RUNTIME_DIR`: `/tmp/sayso-<uid>/host.sock`.
+2. Linux: `$XDG_RUNTIME_DIR/sayso/host.sock`, also in a Flatpak ([How to run your app in a Flatpak](run-in-a-flatpak.md)). Without `XDG_RUNTIME_DIR`: `/tmp/sayso-<uid>/host.sock`.
 3. macOS: `sayso/host.sock` in the temporary folder of the user (`confstr(_CS_DARWIN_USER_TEMP_DIR)`). Without it: `/tmp/sayso-<uid>/host.sock`.
 4. Other Unix systems: `/tmp/sayso-<uid>/host.sock`.
 5. Windows: the named pipe `\\.\pipe\sayso-host-<user SID>`.
@@ -79,7 +79,7 @@ A request that needs a capability that the user did not grant gets `error {code:
 
 | Field | Type | Meaning |
 |---|---|---|
-| `sdk` | string, optional | The name and version of the client, for example `sayso-sdk 0.14.0`. |
+| `sdk` | string, optional | The name and version of the client, for example `sayso-sdk 0.14.1`. |
 | `protocol` | integer | The protocol version the client speaks. `1`. |
 | `features` | array of strings | The optional parts of the protocol that the client knows. Default: empty. |
 | `app` | `{name}`, optional | What the app says about itself. The host does not check it. It shows the name as a quote of the app, cuts it to 40 characters, and removes control characters. |
@@ -120,7 +120,7 @@ Errors: `unknown_model`, `declined` (the user said no), `unsupported` (the engin
 
 A field that is missing takes the choice of the user in Sayso mode, and the choice of the app (`Options::models`) in local mode. The reply `ok {job}` comes at once. The file formats are WAV, FLAC, MP3, AAC, and M4A.
 
-The request checks its models before the reply. Errors: `unknown_model`, `wrong_role`, `model_not_downloaded` (also for `diarize` without a diarization model on disk), `unsupported` (the engine does not run or lacks the feature `vad` or `diarization`), and `bad_request` (a path that is not absolute, or `speakers: 0`). A file that cannot be read ends the job with `job_failed`, with a message that names the file and the formats.
+The request checks its models before the reply. Errors: `unknown_model`, `wrong_role`, `model_not_downloaded` (also for `diarize` without a diarization model on disk), `unsupported` (the engine does not run or lacks the feature `vad` or `diarization`), and `bad_request` (a path that is not absolute, or `speakers: 0`). A file that cannot be read ends the job with `job_failed`, with a message that names the file and the formats. Across a Flatpak sandbox the host opens the file first, in the view of the app, so a file that cannot be opened gives `bad_request`.
 
 ### `cancel_job`
 
@@ -141,7 +141,7 @@ The reply is `ok`, also for a job of this connection that ended already. The job
 | `language` | string, optional | A code such as `en`. |
 | `diarize` | boolean, optional | Run diarization on each source when the session stops. |
 | `diarization_model` | string, optional | A diarization model. |
-| `record_to` | string, optional | An absolute path of a folder. The host makes it and writes one 16 kHz mono WAV for each source: `mic.wav`, `system.wav`, `client.wav`. |
+| `record_to` | string, optional | An absolute path of a folder. The host makes it and writes one 16 kHz mono WAV for each source: `mic.wav`, `system.wav`, `client.wav`. Across a Flatpak sandbox it gives `unsupported`, because the two sides see other files. |
 
 The reply is `ok {session, excludes}`. `excludes` lists what the capture of the source `system` leaves out: `sayso`, `app`, or both. It is empty without that source and on Windows and Linux.
 

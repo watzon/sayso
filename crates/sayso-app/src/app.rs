@@ -204,6 +204,21 @@ fn init_logging(paths: &Paths, level: Option<&str>) {
     // The D-Bus library (Linux) logs each connection step at info.
     let filter = format!("{level},zbus=warn,tracing=warn");
     let mut builder = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(filter));
+    // GPUI logs its errors without a module. The file and the line say where they come from.
+    builder.format(|out, record| {
+        use std::io::Write;
+        // The vsync thread of GPUI on Windows asks each window to redraw, also
+        // one that the main thread destroyed a moment ago. Nothing goes wrong,
+        // and Sayso cannot prevent it, so this one line stays out of the log.
+        if record.file().is_some_and(|file| file.contains("gpui-pre-windows")) && record.args().to_string().starts_with("Invalid window handle") {
+            return Ok(());
+        }
+        let source = match (record.target(), record.file(), record.line()) {
+            ("", Some(file), Some(line)) => format!("{file}:{line}"),
+            (target, ..) => target.to_owned(),
+        };
+        writeln!(out, "[{} {:<5} {source}] {}", out.timestamp(), record.level(), record.args())
+    });
     if let Ok(file) = std::fs::File::create(paths.log_dir().join("sayso.log")) {
         builder.target(env_logger::Target::Pipe(Box::new(file)));
     }
@@ -314,6 +329,26 @@ fn titlebar() -> Option<TitlebarOptions> {
 /// focus change.
 pub fn appkit_later(cx: &App, f: impl FnOnce() + 'static) {
     cx.foreground_executor().spawn(async move { f() }).detach();
+}
+
+/// Close a window that the user answered. Windows tells GPUI that the window
+/// lost focus after GPUI removed it, and GPUI logs an error for that. So on
+/// Windows the window hides first, and goes when that message has come.
+pub fn close_question_window(window: &mut Window, cx: &mut App) {
+    #[cfg(windows)]
+    if let Some(ns) = crate::shell::native(window) {
+        let handle = window.window_handle();
+        // After this update: hiding the window calls into GPUI at once.
+        cx.spawn(async move |cx| {
+            crate::shell::order_out(ns);
+            cx.background_executor().timer(std::time::Duration::from_millis(50)).await;
+            let _ = handle.update(cx, |_, window, _| window.remove_window());
+        })
+        .detach();
+        return;
+    }
+    let _ = cx;
+    window.remove_window();
 }
 
 pub fn open_hub(model: &Entity<AppModel>, route: Route, cx: &mut App) {

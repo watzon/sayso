@@ -32,6 +32,7 @@ Ship the engine of the same commit or release (see [How to ship the engine in yo
 - [How to react to mode changes](react-to-mode-changes.md)
 - [How to ship the engine in your app](ship-the-engine.md)
 - [How to prepare a macOS app](prepare-a-macos-app.md)
+- [How to run your app in a Flatpak](run-in-a-flatpak.md)
 - [How to handle errors and the end of each piece of work](handle-errors-and-ends.md)
 
 ## Look something up

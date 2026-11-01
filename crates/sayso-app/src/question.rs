@@ -127,7 +127,7 @@ impl QuestionView {
             return;
         }
         self.answer.give(yes, cx);
-        window.remove_window();
+        crate::app::close_question_window(window, cx);
     }
 
     fn top_bar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
@@ -138,7 +138,7 @@ impl QuestionView {
             return crate::chrome::drag_area(header)
                 .child(crate::chrome::window_controls(window, cx, move |window, cx| {
                     answer.give(false, cx);
-                    window.remove_window();
+                    crate::app::close_question_window(window, cx);
                 }))
                 .into_any_element();
         }

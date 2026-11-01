@@ -834,6 +834,16 @@ pub struct Onboarding {
     pub step: u8,
 }
 
+impl Onboarding {
+    /// The step that sets the shortcuts.
+    const KEYS_STEP: u8 = 4;
+
+    /// True from the step that sets the shortcuts on.
+    pub fn reached_keys(&self) -> bool {
+        self.completed || self.step >= Self::KEYS_STEP
+    }
+}
+
 /// A problem in config.toml. The app keeps running with the default for that value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigIssue {
@@ -1097,6 +1107,16 @@ fn back_up_before_cleanup_models(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shortcuts_wait_for_their_onboarding_step() {
+        let at = |step, completed| Onboarding { completed, step }.reached_keys();
+        assert!(!at(0, false));
+        assert!(!at(3, false));
+        assert!(at(4, false));
+        assert!(at(6, false));
+        assert!(at(0, true));
+    }
 
     #[test]
     fn a_file_that_cannot_be_read_is_reported_and_not_replaced() {

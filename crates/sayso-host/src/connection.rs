@@ -9,6 +9,7 @@
 use crate::approval::{self, HelloStep};
 use crate::identity::{Caller, Peer};
 use crate::responder::{Notifier, Outgoing, Responder};
+use crate::sandbox::{Attested, FileAccess};
 use crate::transport::Conn;
 use crate::Shared;
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -17,11 +18,23 @@ use sayso_protocol::{Capability, DecodeError, Decoded, ErrorCode, ErrorReply, Ev
 use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 /// A longer line is not a request. Audio comes in small parts.
 const MAX_LINE: u64 = 16 * 1024 * 1024;
+
+/// The line before the identity of the writer is known. A `hello` is small.
+const MAX_FIRST_LINE: u64 = 64 * 1024;
+
+/// A program that says nothing for this long loses its connection. It has no
+/// identity yet, so nobody can ask it to stop.
+const FIRST_LINE_WAIT: Duration = Duration::from_secs(5);
+
+/// More connections than any real set of apps. Each one holds file handles of
+/// Sayso, and a program in a sandbox can open them without any approval.
+pub(crate) const MAX_CONNECTIONS: usize = 64;
 
 /// The event after each insert of a dictation.
 pub(crate) const DICTATION_DONE: &str = "dictation_done";
@@ -54,7 +67,7 @@ impl Entry {
 }
 
 pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
-    let Conn { reader, writer, closer, peer } = conn;
+    let Conn { reader, writer, closer, peer, attested } = conn;
     let (outgoing, messages) = unbounded();
     // False when the reader ends. Work for this connection stops then.
     let open = Arc::new(AtomicBool::new(true));
@@ -84,12 +97,28 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
         connections.insert(number, Entry::new(outgoing.clone(), writer));
     }
 
-    let mut connection = Connection { shared, number, caller: None, writer: None, notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
+    let mut connection = Connection { shared, number, caller: None, writer: None, attested, files: FileAccess::Same, jobs_with_file: Arc::default(), notifier, jobs: Mutex::new(HashSet::new()), open: open.clone(), asking: Arc::new(AtomicBool::new(false)) };
+    // Dropped at the first line or at the end of the connection, and the wait
+    // ends with it. The weak closer: the thread must not keep the connection open.
+    let (first_line, no_first_line) = crossbeam_channel::bounded::<()>(0);
+    let mut first_line = Some(first_line);
+    {
+        let closer = Arc::downgrade(&closer);
+        let _ = std::thread::Builder::new().name("sayso-host-first-line".into()).spawn(move || {
+            if no_first_line.recv_timeout(FIRST_LINE_WAIT) == Err(crossbeam_channel::RecvTimeoutError::Timeout)
+                && let Some(closer) = closer.upgrade()
+            {
+                log::debug!("host: a program said nothing, and its connection closes");
+                closer();
+            }
+        });
+    }
     let mut reader = BufReader::new(reader);
     let mut line = Vec::new();
     loop {
         line.clear();
-        match (&mut reader).take(MAX_LINE + 1).read_until(b'\n', &mut line) {
+        let limit = if connection.caller.is_some() { MAX_LINE } else { MAX_FIRST_LINE };
+        match (&mut reader).take(limit + 1).read_until(b'\n', &mut line) {
             Ok(0) => break,
             Ok(_) => {}
             Err(e) => {
@@ -97,11 +126,16 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
                 break;
             }
         }
-        if line.len() as u64 > MAX_LINE {
+        first_line = None;
+        if line.len() as u64 > limit {
             let _ = outgoing.send(Outgoing::Line(encode(None, &Reply::error(Some(ErrorCode::BadRequest), "the line is longer than 16 MiB"))));
             break;
         }
-        let text = String::from_utf8_lossy(&line);
+        // Strict: the bridge reads the line as JSON too, and both must read the same thing.
+        let Ok(text) = std::str::from_utf8(&line) else {
+            let _ = outgoing.send(Outgoing::Line(encode(None, &Reply::error(Some(ErrorCode::BadRequest), "the line is not UTF-8"))));
+            break;
+        };
         let text = text.trim_end_matches(['\n', '\r']);
         if text.trim().is_empty() {
             continue;
@@ -115,6 +149,7 @@ pub(crate) fn serve(shared: &Arc<Shared>, number: u64, conn: Conn) {
         }
     }
 
+    drop(first_line);
     open.store(false, Ordering::SeqCst);
     // The jobs and the live session of an app end with its connection.
     if let Some(jobs) = &shared.jobs {
@@ -161,6 +196,12 @@ struct Connection<'a> {
     caller: Option<Caller>,
     /// The process that wrote the first line.
     writer: Option<Peer>,
+    /// What `sayso-bridge` says about the app, until the first line.
+    attested: Option<Attested>,
+    /// How the host opens a file that the app names.
+    files: FileAccess,
+    /// See `job_requests::MAX_JOBS_WITH_FILE`.
+    jobs_with_file: Arc<AtomicUsize>,
     notifier: Notifier,
     /// The jobs that this connection started.
     jobs: Mutex<HashSet<u64>>,
@@ -196,8 +237,19 @@ impl Connection<'_> {
     }
 
     fn identify(&mut self, peer: Result<Peer, String>) {
+        let attested = self.attested.take();
         let caller = peer.and_then(|peer| {
-            let caller = self.shared.identify.identify(&peer)?;
+            let caller = match attested {
+                Some(attested) => {
+                    self.files = attested.files;
+                    attested.caller?
+                }
+                None => {
+                    let caller = self.shared.identify.identify(&peer)?;
+                    self.files = FileAccess::of(&caller, &peer)?;
+                    caller
+                }
+            };
             self.writer = Some(peer);
             Ok(caller)
         });
@@ -272,8 +324,23 @@ impl Connection<'_> {
             Request::DownloadModel(request) => {
                 self.spawn("download", responder, move |shared, app_id, responder| crate::download::download_model(shared, app_id, &request, responder));
             }
-            Request::TranscribeFile(request) => crate::job_requests::transcribe_file(self.shared, self.number, &self.jobs, &request, responder),
+            Request::TranscribeFile(mut request) => {
+                let file = match self.files.open(&request.path) {
+                    Ok(file) => file,
+                    Err(message) => {
+                        responder.reply(Reply::error(Some(ErrorCode::BadRequest), message));
+                        return false;
+                    }
+                };
+                if let Some(file) = &file {
+                    request.path = file.path.clone();
+                }
+                crate::job_requests::transcribe_file(self.shared, self.number, &self.jobs, &self.jobs_with_file, &request, file, responder);
+            }
             Request::CancelJob(request) => crate::job_requests::cancel_job(self.shared, self.number, &self.jobs, &request, responder),
+            Request::SessionStart(request) if request.record_to.is_some() && self.files.has_another_view() => {
+                responder.reply(Reply::error(Some(ErrorCode::Unsupported), "record_to does not work across a Flatpak sandbox, because Sayso and the app see other files. Start the session without it, and write the audio in the app"));
+            }
             Request::SessionStart(request) => {
                 let number = self.number;
                 let pid = self.writer.as_ref().and_then(Peer::pid);

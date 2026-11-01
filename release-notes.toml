@@ -20,6 +20,34 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.14.1"
+title = "Fixes for Fedora, Flatpak, and the first start"
+
+[[release.item]]
+icon = "shield"
+title = "Connected apps and Flatpak"
+text = "Connected apps now reach Sayso across a Flatpak sandbox, in both directions. An app in a sandbox needs one permission, and Sayso asks you as it asks for any app."
+systems = ["linux"]
+
+[[release.item]]
+icon = "sparkle"
+title = "No crash at the start on Fedora 44"
+text = "Sayso crashed at the start with software drawing on LLVM 22, for example on Fedora 44 without a usable GPU. Now it starts."
+systems = ["linux"]
+
+[[release.item]]
+icon = "keyboard"
+title = "No shortcut question over the welcome page"
+text = "On GNOME, the system asked about Sayso's shortcuts as soon as Sayso first started. It now asks on the shortcut step of the setup."
+systems = ["linux"]
+
+[[release.item]]
+icon = "lock"
+title = "macOS asks at the right time"
+text = "At the first start, macOS no longer asks for access before Sayso says why it needs it."
+systems = ["macos"]
+
+[[release]]
 version = "0.14.0"
 title = "Connect your own apps to Sayso"
 
