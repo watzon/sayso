@@ -26,7 +26,7 @@ mod win_shim;
 
 pub use auth::{AuthStatus, SIGN_IN_LIMIT, SignIn, SignInEvent, auth_status};
 pub use chatgpt::ChatGpt;
-pub use claude::ClaudeCli;
+pub use claude::{ClaudeCli, SPARE_LIFETIME, prepare, stop_spares};
 pub use engine::EngineModel;
 pub use detect::{detect_claude_cli, detect_ollama, detect_ollama_at, list_models, test_provider};
 pub use models::list_provider_models;

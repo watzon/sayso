@@ -5,7 +5,7 @@ use sayso_core::enhance::EnhanceError;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
-use std::process::{Child, ChildStdin, Command, ExitStatus, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, channel};
 use std::time::{Duration, Instant};
 use wait_timeout::ChildExt;
@@ -25,7 +25,6 @@ pub(crate) struct Invocation<'a> {
 }
 
 pub(crate) struct Output {
-    pub status: ExitStatus,
     pub stdout: String,
     pub stderr: String,
 }
@@ -128,8 +127,8 @@ pub(crate) fn run(inv: &Invocation) -> Result<Output, EnhanceError> {
     let stdout = drain(child.stdout.take());
     let stderr = drain(child.stderr.take());
 
-    let status = match child.wait_timeout(inv.timeout) {
-        Ok(Some(status)) => status,
+    match child.wait_timeout(inv.timeout) {
+        Ok(Some(_)) => {}
         Ok(None) => {
             let _ = child.kill();
             let _ = child.wait();
@@ -140,8 +139,8 @@ pub(crate) fn run(inv: &Invocation) -> Result<Output, EnhanceError> {
             let _ = child.wait();
             return Err(EnhanceError::Cli(format!("could not wait for {}: {e}", inv.program.display())));
         }
-    };
-    Ok(Output { status, stdout: collect(stdout), stderr: collect(stderr) })
+    }
+    Ok(Output { stdout: collect(stdout), stderr: collect(stderr) })
 }
 
 /// True when an error message from a tool says the user is not signed in.
@@ -159,17 +158,41 @@ pub(crate) struct Session {
     child: Child,
     stdin: Option<ChildStdin>,
     lines: Receiver<String>,
+    /// The last few KB of the error output, for an error message.
+    stderr: std::sync::Arc<parking_lot::Mutex<String>>,
     deadline: Instant,
     timeout: Duration,
 }
 
+/// How much error output a session keeps.
+const STDERR_KEEP: usize = 4096;
+
 impl Session {
     /// Start the tool. The deadline is `inv.timeout` from now. `inv.stdin` is
-    /// ignored: use [`Session::send`]. Error output of the tool is discarded.
+    /// ignored: use [`Session::send`]. The end of the error output is kept for [`Session::stderr_tail`].
     pub fn start(inv: &Invocation) -> Result<Self, EnhanceError> {
-        let mut child = spawn(inv, true, true)?;
+        let mut child = spawn(inv, true, false)?;
         let stdin = child.stdin.take();
         let stdout = child.stdout.take();
+        let stderr = std::sync::Arc::new(parking_lot::Mutex::new(String::new()));
+        if let Some(mut pipe) = child.stderr.take() {
+            let kept = stderr.clone();
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                while let Ok(n) = pipe.read(&mut buf) {
+                    if n == 0 {
+                        break;
+                    }
+                    let mut kept = kept.lock();
+                    kept.push_str(&String::from_utf8_lossy(&buf[..n]));
+                    if kept.len() > STDERR_KEEP {
+                        let cut = kept.len() - STDERR_KEEP;
+                        let cut = (cut..kept.len()).find(|&i| kept.is_char_boundary(i)).unwrap_or(kept.len());
+                        kept.drain(..cut);
+                    }
+                }
+            });
+        }
         let (tx, lines) = channel();
         if let Some(stdout) = stdout {
             std::thread::spawn(move || {
@@ -181,7 +204,24 @@ impl Session {
                 }
             });
         }
-        Ok(Self { child, stdin, lines, deadline: Instant::now() + inv.timeout, timeout: inv.timeout })
+        Ok(Self { child, stdin, lines, stderr, deadline: Instant::now() + inv.timeout, timeout: inv.timeout })
+    }
+
+    /// Start a new deadline, `timeout` from now. For a tool that was started
+    /// before the request that uses it.
+    pub fn restart_deadline(&mut self, timeout: Duration) {
+        self.deadline = Instant::now() + timeout;
+        self.timeout = timeout;
+    }
+
+    /// True while the tool runs.
+    pub fn is_running(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
+    /// The last lines of the error output of the tool.
+    pub fn stderr_tail(&self) -> String {
+        tail(&self.stderr.lock())
     }
 
     /// Write one line to the tool. The input stays open afterwards.
