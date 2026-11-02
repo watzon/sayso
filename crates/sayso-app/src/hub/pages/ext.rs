@@ -89,6 +89,8 @@ pub fn provider_detail(p: &Provider) -> String {
         // The time depends on the model: about 1.8 s with Haiku.
         ProviderKind::ClaudeCli { .. } => t!("hub.provider.claude_cli"),
         ProviderKind::ChatGpt { .. } => t!("hub.provider.chatgpt"),
+        // The command of the agent, until the Providers page has a row for ACP agents.
+        ProviderKind::Acp { command, args, .. } => std::iter::once(command).chain(args).cloned().collect::<Vec<_>>().join(" "),
         ProviderKind::AppleIntelligence => t!("hub.provider.apple_intelligence"),
         // The model id, until the cleanup models have a row of their own.
         ProviderKind::CleanupModel { model } => model.clone(),
