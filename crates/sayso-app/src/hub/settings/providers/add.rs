@@ -1,0 +1,619 @@
+//! A new provider: the gallery of every kind, grouped by how it is paid for
+//! or where it runs, the step that sets up a server, and the centered page of
+//! a Sayso with no provider yet. Apple Intelligence is never the first choice:
+//! the larger models clean up better.
+
+use super::logo::{self, Mark};
+use super::*;
+use sayso_core::config::is_local_url;
+use sayso_core::models::format_size;
+
+/// A server that the server step knows the address of.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Preset {
+    OpenRouter,
+    OpenAi,
+    Ollama,
+    LmStudio,
+    Other,
+}
+
+impl Preset {
+    fn name(self) -> &'static str {
+        match self {
+            Preset::OpenRouter => "OpenRouter",
+            Preset::OpenAi => "OpenAI",
+            Preset::Ollama => "Ollama",
+            Preset::LmStudio => "LM Studio",
+            Preset::Other => "",
+        }
+    }
+
+    fn url(self) -> &'static str {
+        match self {
+            Preset::OpenRouter => "https://openrouter.ai/api/v1",
+            Preset::OpenAi => "https://api.openai.com/v1",
+            Preset::Ollama => "http://localhost:11434/v1",
+            Preset::LmStudio => "http://localhost:1234/v1",
+            Preset::Other => "",
+        }
+    }
+
+    fn mark(self) -> Mark {
+        match self {
+            Preset::Other => logo::SERVER,
+            preset => logo::server(preset.url()),
+        }
+    }
+}
+
+/// Where the flow is.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Step {
+    Gallery,
+    Server(Preset),
+}
+
+/// Why a server was not saved. The flow keeps this, not the text, so the
+/// message changes with the interface language.
+#[derive(Clone, Copy)]
+enum AddError {
+    NoName,
+    BadUrl,
+}
+
+impl AddError {
+    fn text(self) -> String {
+        match self {
+            AddError::NoName => t!("settings.providers.error_no_name"),
+            AddError::BadUrl => t!("settings.providers.error_bad_url"),
+        }
+    }
+}
+
+/// The open gallery, or the step after it.
+pub(super) struct AddFlow {
+    step: Step,
+    search: Entity<InputState>,
+    name: Entity<InputState>,
+    url: Entity<InputState>,
+    key: Entity<InputState>,
+    error: Option<AddError>,
+    focus: FocusHandle,
+    _subs: Vec<Subscription>,
+}
+
+impl AddFlow {
+    /// Put the placeholders in the interface language again.
+    pub(super) fn relabel(&self, window: &mut Window, cx: &mut App) {
+        self.search.update(cx, |s, cx| s.set_placeholder(t!("settings.providers.search"), window, cx));
+        self.name.update(cx, |s, cx| s.set_placeholder(t!("settings.providers.name_placeholder"), window, cx));
+        self.key.update(cx, |s, cx| s.set_placeholder(t!(crate::shell::os_text!("settings.providers.key_placeholder_mac", "settings.providers.key_placeholder_windows", "settings.providers.key_placeholder_other")), window, cx));
+    }
+}
+
+/// What a tile of the gallery does.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Action {
+    ChatGpt,
+    Claude,
+    Cleanup(&'static str),
+    Apple,
+    /// Ollama runs here: add it with its first model.
+    Ollama,
+    Server(Preset),
+}
+
+/// A tile of the gallery.
+struct Entry {
+    key: String,
+    name: String,
+    detail: String,
+    mark: Mark,
+    /// A small label at the top right, and whether it is good news.
+    tag: Option<(String, bool)>,
+    enabled: bool,
+    action: Action,
+}
+
+impl ProviderSettings {
+    /// Open the gallery, or a step of it.
+    pub(super) fn open_add(&mut self, step: Option<Step>, window: &mut Window, cx: &mut Context<Self>) {
+        let search = cx.new(|cx| InputState::new(window, cx).placeholder(t!("settings.providers.search")));
+        let name = cx.new(|cx| InputState::new(window, cx).placeholder(t!("settings.providers.name_placeholder")));
+        let url = cx.new(|cx| InputState::new(window, cx).placeholder("https://openrouter.ai/api/v1"));
+        let key = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(t!(crate::shell::os_text!("settings.providers.key_placeholder_mac", "settings.providers.key_placeholder_windows", "settings.providers.key_placeholder_other")))
+                .masked(true)
+        });
+        let subs = vec![cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify()), cx.subscribe_in(&url, window, |_, _, _: &InputEvent, _, cx| cx.notify())];
+        let focus = cx.focus_handle();
+        let mut flow = AddFlow { step: Step::Gallery, search, name, url, key, error: None, focus, _subs: subs };
+        if let Some(step) = step {
+            Self::enter(&mut flow, step, window, cx);
+        } else {
+            flow.search.update(cx, |s, cx| s.focus(window, cx));
+        }
+        self.add = Some(flow);
+        cx.notify();
+    }
+
+    /// Go to a step, with its fields filled in.
+    fn enter(flow: &mut AddFlow, step: Step, window: &mut Window, cx: &mut Context<Self>) {
+        flow.step = step;
+        flow.error = None;
+        if let Step::Server(preset) = step {
+            flow.name.update(cx, |s, cx| s.set_value(preset.name(), window, cx));
+            flow.url.update(cx, |s, cx| s.set_value(preset.url(), window, cx));
+            flow.key.update(cx, |s, cx| s.set_value("", window, cx));
+            let first = if preset == Preset::Other { &flow.name } else { &flow.key };
+            first.update(cx, |s, cx| s.focus(window, cx));
+        }
+    }
+
+    fn close_add(&mut self, cx: &mut Context<Self>) {
+        self.add = None;
+        cx.notify();
+    }
+
+    /// The tiles of the gallery, in their groups.
+    fn entries(&self, cx: &App) -> Vec<(String, Vec<Entry>)> {
+        let m = self.model.read(cx);
+        let providers = &m.config.ai.providers;
+        let detected = &m.detected;
+        let has = |f: &dyn Fn(&ProviderKind) -> bool| providers.iter().any(|p| f(&p.kind));
+        let added = || Some((t!("settings.providers.tag_added"), false));
+        let found = || Some((t!("settings.providers.tag_found"), true));
+
+        let chatgpt = Entry {
+            key: "chatgpt".into(),
+            name: "ChatGPT".into(),
+            detail: t!("settings.providers.gallery_chatgpt"),
+            mark: logo::OPENAI,
+            tag: has(&|k| matches!(k, ProviderKind::ChatGpt { .. })).then(added).flatten(),
+            enabled: true,
+            action: Action::ChatGpt,
+        };
+        let has_claude = has(&|k| matches!(k, ProviderKind::ClaudeCli { .. }));
+        let claude = Entry {
+            key: "claude".into(),
+            name: "Claude Code".into(),
+            detail: if detected.claude_cli.is_some() { t!("settings.providers.gallery_claude") } else { t!("settings.providers.gallery_claude_missing") },
+            mark: logo::CLAUDE,
+            tag: if has_claude { added() } else if detected.claude_cli.is_some() { found() } else { None },
+            enabled: detected.claude_cli.is_some() && !has_claude,
+            action: Action::Claude,
+        };
+
+        let mut local: Vec<Entry> = cleanup::catalog()
+            .iter()
+            .map(|info| {
+                let have = providers.iter().any(|p| cleanup_info(p).is_some_and(|i| i.id == info.id));
+                Entry {
+                    key: info.id.into(),
+                    name: info.name.into(),
+                    detail: t!("settings.providers.gallery_cleanup", size = format_size(info.size_bytes)),
+                    mark: logo::cleanup(info.id),
+                    tag: have.then(added).flatten(),
+                    enabled: !have,
+                    action: Action::Cleanup(info.id),
+                }
+            })
+            .collect();
+        let ollama_running = detected.ollama.as_ref();
+        local.push(Entry {
+            key: "ollama".into(),
+            name: "Ollama".into(),
+            detail: match ollama_running {
+                Some(models) if !models.is_empty() => t!("settings.providers.gallery_ollama", count = models.len()),
+                Some(_) => t!("settings.providers.gallery_ollama_empty"),
+                None => t!("settings.providers.gallery_server_local"),
+            },
+            mark: logo::OLLAMA,
+            tag: ollama_running.and_then(|_| found()),
+            enabled: true,
+            action: if ollama_running.is_some() { Action::Ollama } else { Action::Server(Preset::Ollama) },
+        });
+        local.push(Entry {
+            key: "lm-studio".into(),
+            name: "LM Studio".into(),
+            detail: t!("settings.providers.gallery_server_local"),
+            mark: logo::LM_STUDIO,
+            tag: None,
+            enabled: true,
+            action: Action::Server(Preset::LmStudio),
+        });
+        let has_apple = has(&|k| matches!(k, ProviderKind::AppleIntelligence));
+        local.push(Entry {
+            key: "apple".into(),
+            name: "Apple Intelligence".into(),
+            detail: if detected.apple_intelligence.is_some() { t!("settings.providers.gallery_apple") } else { t!("settings.providers.gallery_apple_unavailable") },
+            mark: logo::APPLE,
+            tag: has_apple.then(added).flatten(),
+            enabled: detected.apple_intelligence.is_some() && !has_apple,
+            action: Action::Apple,
+        });
+
+        let servers = vec![
+            Entry { key: "openrouter".into(), name: "OpenRouter".into(), detail: t!("settings.providers.gallery_openrouter"), mark: logo::OPENROUTER, tag: None, enabled: true, action: Action::Server(Preset::OpenRouter) },
+            Entry { key: "openai".into(), name: "OpenAI".into(), detail: t!("settings.providers.gallery_openai"), mark: logo::OPENAI, tag: None, enabled: true, action: Action::Server(Preset::OpenAi) },
+            Entry { key: "other".into(), name: t!("settings.providers.gallery_other"), detail: t!("settings.providers.gallery_other_detail"), mark: logo::SERVER, tag: None, enabled: true, action: Action::Server(Preset::Other) },
+        ];
+        vec![
+            (t!("settings.providers.gallery_group_plans"), vec![chatgpt, claude]),
+            (t!("settings.providers.group_on_this_computer", computer = crate::shell::computer()), local),
+            (t!("settings.providers.gallery_group_keys"), servers),
+        ]
+    }
+
+    /// Do what a tile says.
+    fn pick(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
+        let detected = self.model.read(cx).detected.clone();
+        let make = |m: &AppModel, name: &str, kind: ProviderKind| Provider { id: m.new_provider_id(name), name: name.to_string(), kind };
+        let id = match action {
+            Action::Server(preset) => {
+                if let Some(flow) = self.add.as_mut() {
+                    Self::enter(flow, Step::Server(preset), window, cx);
+                } else {
+                    self.open_add(Some(Step::Server(preset)), window, cx);
+                }
+                cx.notify();
+                return;
+            }
+            Action::Cleanup(model) => {
+                self.model.update(cx, |m, cx| {
+                    let make_default = m.config.ai.default_provider.is_none();
+                    m.add_cleanup_model(model, make_default, cx);
+                });
+                model.to_string()
+            }
+            Action::ChatGpt => {
+                let p = make(self.model.read(cx), "ChatGPT", ProviderKind::ChatGpt { model: None, thinking: None });
+                let id = p.id.clone();
+                self.model.update(cx, |m, cx| {
+                    m.save_provider(p, None, false, cx);
+                    m.sign_in_provider(&id, cx);
+                });
+                id
+            }
+            Action::Claude => {
+                // Haiku is the fast choice for cleanup; the picker offers the rest.
+                let kind = ProviderKind::ClaudeCli { path: detected.claude_cli.map(|p| p.display().to_string()), model: "haiku".into(), config_dir: None, thinking: None };
+                let p = make(self.model.read(cx), "Claude Code", kind);
+                let id = p.id.clone();
+                self.model.update(cx, |m, cx| m.save_provider(p, None, false, cx));
+                id
+            }
+            Action::Apple => {
+                let p = make(self.model.read(cx), "Apple Intelligence", ProviderKind::AppleIntelligence);
+                let id = p.id.clone();
+                self.model.update(cx, |m, cx| m.save_provider(p, None, false, cx));
+                id
+            }
+            Action::Ollama => {
+                // With no model pulled, the picker opens after Add instead.
+                let first = detected.ollama.and_then(|models| models.first().cloned()).unwrap_or_default();
+                let kind = ProviderKind::OpenAiCompatible { base_url: Preset::Ollama.url().into(), model: first, api_key_account: None, zero_data_retention: false, thinking: None };
+                let p = make(self.model.read(cx), "Ollama", kind);
+                let id = p.id.clone();
+                self.model.update(cx, |m, cx| m.save_provider(p, None, false, cx));
+                id
+            }
+        };
+        self.after_add(&id, window, cx);
+    }
+
+    /// Close the flow, show the new provider, fetch its models, and open the
+    /// picker when it cannot run without a model.
+    fn after_add(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.add = None;
+        self.open_row(id, window, cx);
+        let needs_model = self.provider(id, cx).is_some_and(|p| p.needs_model());
+        let key = id.to_string();
+        self.model.update(cx, |m, cx| m.load_provider_models(&key, true, cx));
+        if needs_model {
+            // The trigger records its place when it is drawn; open after that.
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor().timer(std::time::Duration::from_millis(120)).await;
+                let _ = this.update(cx, |this, cx| this.open_models(&key, cx));
+            })
+            .detach();
+        }
+        cx.notify();
+    }
+
+    /// Save the server of the server step.
+    fn save_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(flow) = self.add.as_mut() else { return };
+        let name = flow.name.read(cx).value().trim().to_string();
+        let url = flow.url.read(cx).value().trim().trim_end_matches('/').to_string();
+        if name.is_empty() {
+            flow.error = Some(AddError::NoName);
+        } else if !(url.starts_with("http://") || url.starts_with("https://")) {
+            flow.error = Some(AddError::BadUrl);
+        }
+        if flow.error.is_some() {
+            cx.notify();
+            return;
+        }
+        let key = Some(flow.key.read(cx).value().trim().to_string()).filter(|k| !k.is_empty());
+        let id = self.model.read(cx).new_provider_id(&name);
+        let kind = ProviderKind::OpenAiCompatible {
+            api_key_account: key.as_ref().map(|_| format!("provider.{id}")),
+            zero_data_retention: url.contains("openrouter.ai"),
+            base_url: url,
+            model: String::new(),
+            thinking: None,
+        };
+        let provider = Provider { id: id.clone(), name, kind };
+        self.model.update(cx, |m, cx| m.save_provider(provider, key, false, cx));
+        self.after_add(&id, window, cx);
+    }
+
+    /// The flow over the page. Escape, the backdrop, or Close dismiss it.
+    pub(super) fn add_modal(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        let Some(flow) = self.add.as_ref() else { return div().into_any_element() };
+        let (title, body, width) = match flow.step {
+            Step::Gallery => (t!("settings.providers.add_title"), self.gallery(flow, cx), 720.),
+            Step::Server(preset) => (if preset == Preset::Other { t!("settings.providers.gallery_other") } else { preset.name().to_string() }, self.server_step(flow, preset, cx), 560.),
+        };
+        let crumb = match flow.step {
+            Step::Gallery => None,
+            Step::Server(_) => Some(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .child(pkit::link("add-back", t!("settings.providers.add_title"), 13., cx).on_click(cx.listener(|this, _, window, cx| {
+                        if let Some(flow) = this.add.as_mut() {
+                            Self::enter(flow, Step::Gallery, window, cx);
+                            flow.search.update(cx, |s, cx| s.focus(window, cx));
+                        }
+                        cx.notify();
+                    })))
+                    .child(plain("›", 13., 16., FontWeight::MEDIUM, c.pencil))
+                    .child(plain(title.clone(), 13., 16., FontWeight::SEMIBOLD, c.ink)),
+            ),
+        };
+        let close = pkit::icon_button("add-close", Icon::Close, 14., cx).label(t!("settings.providers.close")).on_click(cx.listener(|this, _, _, cx| this.close_add(cx)));
+        let top = match crumb {
+            Some(crumb) => div().flex().items_center().justify_between().child(crumb).child(close),
+            None => div().flex().items_center().justify_between().child(text::display(title.clone(), 26., &c)).child(close),
+        };
+        div()
+            .id("add-backdrop")
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(c.shadow(0.22))
+            .occlude()
+            .capture_key_down(cx.listener(|this, ev: &KeyDownEvent, _, cx| {
+                if ev.keystroke.key == "escape" {
+                    cx.stop_propagation();
+                    this.close_add(cx);
+                }
+            }))
+            // A click outside the sheet closes it. Close is the keyboard way.
+            .child(Pressable::new("add-scrim").label(t!("settings.providers.close")).tab_stop(false).absolute().inset_0().on_click(cx.listener(|this, _, _, cx| this.close_add(cx))))
+            .child(
+                div()
+                    .id("add-modal")
+                    .role(Role::Dialog)
+                    .aria_label(title)
+                    .track_focus(&flow.focus)
+                    .occlude()
+                    .flex()
+                    .flex_col()
+                    .w(px(width))
+                    .max_h(relative(0.88))
+                    .px(px(26.))
+                    .pt(px(22.))
+                    .pb(px(24.))
+                    .rounded(px(16.))
+                    .bg(c.sheet_raised)
+                    .shadow(sayso_ui::paper::floating(&c))
+                    .child(top)
+                    .child(div().id("add-body").flex_1().min_h_0().overflow_y_scroll().child(body)),
+            )
+            .into_any_element()
+    }
+
+    /// The search field and the groups of tiles.
+    fn gallery(&self, flow: &AddFlow, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        let query = flow.search.read(cx).value().trim().to_lowercase();
+        let mut col = div().flex().flex_col().child(div().pt(px(14.)).child(pkit::input_well_named(&flow.search, Some(t!("settings.providers.search").into()), cx)));
+        let mut any = false;
+        for (title, entries) in self.entries(cx) {
+            let shown: Vec<Entry> = entries.into_iter().filter(|e| query.is_empty() || e.name.to_lowercase().contains(&query) || e.detail.to_lowercase().contains(&query)).collect();
+            if shown.is_empty() {
+                continue;
+            }
+            any = true;
+            col = col.child(div().pt(px(18.)).pb(px(8.)).child(pkit::caps(title, 11., c.graphite)));
+            for chunk in shown.chunks(3) {
+                let mut row = div().flex().gap(px(10.)).pb(px(10.));
+                for entry in chunk {
+                    row = row.child(self.tile(entry, cx));
+                }
+                for _ in chunk.len()..3 {
+                    row = row.child(div().flex_1().min_w_0());
+                }
+                col = col.child(row);
+            }
+        }
+        if !any {
+            col = col.child(div().py(px(28.)).child(ui(t!("settings.providers.search_none"), 13., 18., FontWeight::NORMAL, c.graphite)));
+        }
+        col.into_any_element()
+    }
+
+    fn tile(&self, entry: &Entry, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        let action = entry.action;
+        let tag = entry.tag.clone().map(|(label, good)| {
+            let (bg, fg) = if good { (c.success.opacity(0.14), c.success) } else { (c.deboss, c.graphite) };
+            div().ml_auto().px(px(6.)).py(px(2.)).rounded(px(5.)).bg(bg).child(pkit::caps(label, 10., fg))
+        });
+        let mut tile = Pressable::new(SharedString::from(format!("gallery-{}", entry.key)))
+            .label(format!("{}, {}", entry.name, entry.detail))
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .gap(px(8.))
+            .p(px(12.))
+            .rounded(px(12.))
+            .bg(c.sheet)
+            .border_1()
+            .border_color(c.rule)
+            .child(div().flex().items_center().child(logo::tile(entry.mark, 30., cx)).children(tag))
+            .child(div().flex().flex_col().gap(px(2.)).child(plain(entry.name.clone(), 14., 18., FontWeight::SEMIBOLD, c.ink)).child(plain(entry.detail.clone(), 12., 16., FontWeight::NORMAL, c.graphite)));
+        if entry.enabled {
+            tile = tile.cursor_pointer().on_click(cx.listener(move |this, _, window, cx| this.pick(action, window, cx)));
+        } else {
+            tile = tile.opacity(0.6).disabled(true);
+        }
+        tile.into_any_element()
+    }
+
+    /// Name, address, and key of a server.
+    fn server_step(&self, flow: &AddFlow, preset: Preset, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        let url = flow.url.read(cx).value().to_string();
+        let cloud = !url.trim().is_empty() && !is_local_url(&url);
+        let about = match preset {
+            Preset::OpenRouter => t!("settings.providers.server_openrouter"),
+            Preset::OpenAi => t!("settings.providers.server_openai"),
+            Preset::Ollama | Preset::LmStudio => t!("settings.providers.server_local", name = preset.name()),
+            Preset::Other => t!("settings.providers.server_other"),
+        };
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(px(16.))
+            .pt(px(16.))
+            .child(div().flex().items_center().gap(px(14.)).child(logo::tile(preset.mark(), 44., cx)).child(ui(about, 13., 18., FontWeight::NORMAL, c.graphite).flex_1()))
+            .child(pkit::field(&t!("settings.providers.name"), pkit::input_well_named(&flow.name, Some(t!("settings.providers.name").into()), cx), None, cx))
+            .child(pkit::field(&t!("settings.providers.base_url"), pkit::input_well_named(&flow.url, Some(t!("settings.providers.base_url").into()), cx).font_family(sayso_ui::fonts::MONO), None, cx))
+            .child(pkit::field(&t!("settings.providers.api_key"), pkit::secret_well_named(&flow.key, t!("settings.providers.api_key").into(), cx), Some(&t!("settings.providers.api_key_hint")), cx));
+        if cloud {
+            col = col.child(Banner::new(BannerKind::Info, t!("settings.providers.cloud_notice")));
+        }
+        if let Some(error) = flow.error {
+            col = col.child(Banner::new(BannerKind::Warning, error.text()));
+        }
+        col.child(
+            div()
+                .flex()
+                .justify_end()
+                .gap(px(8.))
+                .child(Button::new("add-server-back", t!("settings.providers.back")).ghost().on_click(cx.listener(|this, _, window, cx| {
+                    if let Some(flow) = this.add.as_mut() {
+                        Self::enter(flow, Step::Gallery, window, cx);
+                    }
+                    cx.notify();
+                })))
+                .child(Button::new("add-server-save", t!("settings.providers.add_provider")).primary().on_click(cx.listener(|this, _, window, cx| this.save_server(window, cx)))),
+        )
+        .into_any_element()
+    }
+
+    /// The page of a Sayso with no provider: three places to start, and the gallery.
+    pub(super) fn empty_state(&self, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        let detected = self.model.read(cx).detected.clone();
+        // A subscription first. Apple Intelligence last, when it can run here.
+        let mut cards: Vec<(Mark, String, String, String, Option<String>, Action)> = Vec::new();
+        if detected.claude_cli.is_some() {
+            cards.push((logo::CLAUDE, t!("settings.providers.start_plan"), "Claude Code".into(), t!("settings.providers.start_claude"), Some(t!("settings.providers.tag_found")), Action::Claude));
+        }
+        cards.push((logo::OPENAI, t!("settings.providers.start_plan"), "ChatGPT".into(), t!("settings.providers.start_chatgpt"), None, Action::ChatGpt));
+        if detected.claude_cli.is_none() {
+            cards.push((logo::OPENROUTER, t!("settings.providers.start_key"), "OpenRouter".into(), t!("settings.providers.start_openrouter"), None, Action::Server(Preset::OpenRouter)));
+        }
+        if detected.apple_intelligence.is_some() {
+            cards.push((logo::APPLE, t!("settings.providers.start_private"), "Apple Intelligence".into(), t!("settings.providers.start_apple"), None, Action::Apple));
+        }
+        let mut row = div().flex().justify_center().gap(px(16.)).pt(px(34.));
+        for (i, (mark, kicker, name, detail, tag, action)) in cards.into_iter().enumerate() {
+            let label = match action {
+                Action::ChatGpt => t!("settings.providers.sign_in"),
+                Action::Claude => t!("settings.providers.start_add", name = name),
+                Action::Apple => t!("settings.providers.start_use", name = name),
+                _ => t!("settings.providers.start_set_up"),
+            };
+            let mut button = Button::new(SharedString::from(format!("start-{i}")), label.clone()).a11y_label(format!("{label}, {name}"));
+            if i == 0 {
+                button = button.primary();
+            }
+            let button = button.on_click(cx.listener(move |this, _, window, cx| this.pick(action, window, cx)));
+            let tag = tag.map(|tag| div().px(px(6.)).py(px(2.)).rounded(px(5.)).bg(c.success.opacity(0.14)).child(pkit::caps(tag, 10., c.success)));
+            row = row.child(
+                div()
+                    .id(SharedString::from(format!("start-card-{i}")))
+                    .role(Role::Group)
+                    .aria_label(name.clone())
+                    .flex()
+                    .flex_col()
+                    .items_center()
+                    .gap(px(14.))
+                    .w(px(236.))
+                    .px(px(18.))
+                    .pt(px(24.))
+                    .pb(px(20.))
+                    .rounded(px(16.))
+                    .bg(c.sheet_raised)
+                    .shadow(sayso_ui::paper::raised(&c))
+                    .child(logo::tile(mark, 48., cx))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .items_center()
+                            .gap(px(4.))
+                            .child(div().flex().items_center().gap(px(6.)).h(px(16.)).child(pkit::caps(kicker, 11., c.pencil)).children(tag))
+                            .child(plain(name, 18., 22., FontWeight::SEMIBOLD, c.ink))
+                            .child(plain(detail, 13., 18., FontWeight::NORMAL, c.graphite).text_center()),
+                    )
+                    .child(button),
+            );
+        }
+        let marks = div().flex().children([logo::cleanup("s1-mini"), logo::OLLAMA, logo::OPENROUTER, logo::LM_STUDIO, logo::AGENT].into_iter().enumerate().map(|(i, mark)| {
+            div().when(i > 0, |d| d.ml(px(-6.))).child(logo::tile(mark, 24., cx))
+        }));
+        let more = div()
+            .flex()
+            .items_center()
+            .gap(px(12.))
+            .mt(px(30.))
+            .pl(px(14.))
+            .pr(px(8.))
+            .py(px(8.))
+            .rounded_full()
+            .debossed(&c)
+            .child(marks)
+            .child(ui(t!("settings.providers.start_more"), 13., 16., FontWeight::NORMAL, c.graphite))
+            .child(Button::new("start-see-all", t!("settings.providers.see_all")).small().on_click(cx.listener(|this, _, window, cx| this.open_add(None, window, cx))));
+        div()
+            .id("providers-empty")
+            .size_full()
+            .flex()
+            .flex_col()
+            .items_center()
+            .justify_center()
+            .px(px(44.))
+            .pb(px(24.))
+            .overflow_y_scroll()
+            .child(pkit::caps(t!("settings.providers.title"), 12., c.graphite))
+            .child(div().pt(px(14.)).child(text::display(t!("settings.providers.start_title"), 44., &c).text_center()))
+            .child(div().pt(px(14.)).max_w(px(600.)).child(text::body(t!("settings.providers.start_body"), &c).text_center()))
+            .child(row)
+            .child(more)
+            .into_any_element()
+    }
+}

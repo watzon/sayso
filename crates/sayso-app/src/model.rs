@@ -1316,6 +1316,23 @@ impl AppModel {
         });
     }
 
+    /// Save changes to a provider that exists, in its place. `api_key`
+    /// replaces the saved key of an OpenAI-compatible provider.
+    pub fn replace_provider(&mut self, provider: Provider, api_key: Option<String>, cx: &mut Context<Self>) {
+        if let (Some(key), ProviderKind::OpenAiCompatible { api_key_account: Some(account), .. }) = (&api_key, &provider.kind)
+            && let Err(e) = self.services.secrets.set(account, key)
+        {
+            log::error!("could not store API key: {e:?}");
+        }
+        // The address or key may have changed, so the old list may be wrong.
+        self.model_lists.remove(&provider.id);
+        self.edit_config(cx, move |c| {
+            if let Some(slot) = c.ai.providers.iter_mut().find(|p| p.id == provider.id) {
+                *slot = provider;
+            }
+        });
+    }
+
     pub fn remove_provider(&mut self, id: &str, cx: &mut Context<Self>) {
         let id = id.to_string();
         self.model_lists.remove(&id);
