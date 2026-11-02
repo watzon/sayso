@@ -1,7 +1,7 @@
 //! Windows: start command line tools without a console window, and look
 //! through npm's `.cmd` shims.
 //!
-//! npm installs `claude` and `codex` as `claude.cmd` and `codex.cmd`, which
+//! npm installs a tool such as `claude` as `claude.cmd`, which
 //! run `node <package>\cli.js %*`. A batch file goes through `cmd.exe`, and
 //! `cmd.exe` cannot pass a multi-line system prompt or a JSON schema intact.
 //! So Sayso reads the shim and runs node with the script itself.

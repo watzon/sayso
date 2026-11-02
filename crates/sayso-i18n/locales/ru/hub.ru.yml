@@ -39,7 +39,7 @@ hub:
     cloud_host: "Облако · %{host}"
     local_host: "Локально · %{host}"
     claude_cli: "Облако · ваш вход в Claude"
-    codex_cli: "Облако · около 5 с на вызов"
+    chatgpt: "Облако · ваш тариф ChatGPT"
     apple_intelligence: "Локально · работает на этом Mac"
   duration:
     seconds: "%{seconds} с"

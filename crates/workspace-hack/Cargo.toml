@@ -103,6 +103,7 @@ uuid = { version = "1", features = ["serde", "v4"] }
 winnow-dff4ba8e3ae991db = { package = "winnow", version = "1" }
 zbus = { version = "5" }
 zeroize = { version = "1", features = ["zeroize_derive"] }
+zip = { version = "2" }
 
 [target.aarch64-unknown-linux-gnu.build-dependencies]
 bitflags = { version = "2", default-features = false, features = ["std"] }
@@ -126,6 +127,7 @@ toml_parser = { version = "1" }
 ureq = { version = "3", features = ["json"] }
 winnow-dff4ba8e3ae991db = { package = "winnow", version = "1" }
 zeroize = { version = "1", features = ["zeroize_derive"] }
+zip = { version = "2" }
 
 [target.x86_64-unknown-linux-gnu.dependencies]
 bitflags = { version = "2", default-features = false, features = ["std"] }
@@ -154,6 +156,7 @@ uuid = { version = "1", features = ["serde", "v4"] }
 winnow-dff4ba8e3ae991db = { package = "winnow", version = "1" }
 zbus = { version = "5" }
 zeroize = { version = "1", features = ["zeroize_derive"] }
+zip = { version = "2" }
 
 [target.x86_64-unknown-linux-gnu.build-dependencies]
 bitflags = { version = "2", default-features = false, features = ["std"] }
@@ -177,11 +180,13 @@ toml_parser = { version = "1" }
 ureq = { version = "3", features = ["json"] }
 winnow-dff4ba8e3ae991db = { package = "winnow", version = "1" }
 zeroize = { version = "1", features = ["zeroize_derive"] }
+zip = { version = "2" }
 
 [target.x86_64-pc-windows-msvc.dependencies]
 bitflags = { version = "2", default-features = false, features = ["serde"] }
 byteorder = { version = "1" }
 digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["mac", "std"] }
+flate2 = { version = "1" }
 getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3", default-features = false, features = ["std", "wasm_js"] }
 getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4", default-features = false, features = ["std"] }
 once_cell = { version = "1" }
@@ -191,6 +196,7 @@ windows = { version = "0.62", features = ["Foundation_Collections", "Media_Contr
 windows-core = { version = "0.62" }
 windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security_Authorization", "Win32_Security_Credentials", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
+zip = { version = "2" }
 
 [target.x86_64-pc-windows-msvc.build-dependencies]
 bitflags = { version = "2", default-features = false, features = ["serde"] }
@@ -198,6 +204,7 @@ byteorder = { version = "1" }
 cc = { version = "1", default-features = false, features = ["parallel"] }
 crc32fast = { version = "1" }
 digest-93f6ce9d446188ac = { package = "digest", version = "0.10", features = ["mac", "std"] }
+flate2 = { version = "1" }
 getrandom-468e82937335b1c9 = { package = "getrandom", version = "0.3", default-features = false, features = ["std", "wasm_js"] }
 getrandom-9fbad63c4bcf4a8f = { package = "getrandom", version = "0.4", default-features = false, features = ["std"] }
 once_cell = { version = "1" }
@@ -208,5 +215,6 @@ syn-f595c2ba2a3f28df = { package = "syn", version = "2", default-features = fals
 time = { version = "0.3", features = ["formatting", "parsing"] }
 windows-sys = { version = "0.61", features = ["Win32_Globalization", "Win32_Graphics_Gdi", "Win32_Security_Authorization", "Win32_Security_Credentials", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_LibraryLoader", "Win32_System_Pipes", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_Accessibility", "Win32_UI_Controls", "Win32_UI_HiDpi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 zeroize = { version = "1", features = ["zeroize_derive"] }
+zip = { version = "2" }
 
 ### END HAKARI SECTION

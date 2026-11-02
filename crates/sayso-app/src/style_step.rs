@@ -93,7 +93,7 @@ impl StyleStep {
                 p.run_style(text, replacements)
             }
             None => {
-                let enhancer = sayso_enhance::build_enhancer(provider, self.secrets.as_ref(), &self.ai, self.engine.clone());
+                let enhancer = sayso_enhance::build_enhancer(provider, &self.secrets, &self.ai, self.engine.clone());
                 let setup_ms = started.elapsed().as_millis() as u64;
                 let p = TextPipeline { replacer: &replacer, style, base_prompt, vocabulary, enhancer: Some(enhancer.as_ref()), cleaner: None, timeout };
                 let mut out = p.run_style(text, replacements);

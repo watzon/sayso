@@ -176,7 +176,7 @@ fn other_servers_get_no_routing_fields() {
 #[test]
 fn authorization_header_comes_from_the_secret_store() {
     let server = MockServer::start(|_, _| Reply::text("ok"));
-    let secrets = MemoryStore::new();
+    let secrets: std::sync::Arc<dyn SecretStore> = std::sync::Arc::new(MemoryStore::new());
     secrets.set("my-account", "sk-test-123").unwrap();
     let config = Provider {
         id: "p".into(),

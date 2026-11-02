@@ -7408,6 +7408,9 @@ dependencies = [
 name = "sayso-enhance"
 version = "0.14.1"
 dependencies = [
+ "base64 0.23.1",
+ "bzip2 0.6.1",
+ "flate2",
  "keyring",
  "log",
  "parking_lot",
@@ -7415,13 +7418,19 @@ dependencies = [
  "sayso-core",
  "sayso-engine-client",
  "sayso-i18n",
+ "serde",
  "serde_json",
+ "sha2 0.10.9",
+ "tar",
  "tempfile",
  "thiserror 2.0.21",
  "tiny_http",
  "ureq 3.4.2",
+ "url",
+ "uuid",
  "wait-timeout",
  "workspace-hack",
+ "zip",
 ]
 
 [[package]]
@@ -10716,6 +10725,7 @@ dependencies = [
  "digest 0.10.7",
  "digest 0.11.3",
  "dispatch2",
+ "flate2",
  "futures-channel",
  "futures-core",
  "futures-io",
@@ -10766,6 +10776,7 @@ dependencies = [
  "winnow 1.0.4",
  "zbus",
  "zeroize",
+ "zip",
 ]
 
 [[package]]

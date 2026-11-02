@@ -32,7 +32,6 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, Default)]
 pub struct Detected {
     pub claude_cli: Option<PathBuf>,
-    pub codex_cli: Option<PathBuf>,
     /// Model names when Ollama is running.
     pub ollama: Option<Vec<String>>,
     /// The name of the model when Apple Intelligence can run on this Mac.
@@ -42,7 +41,12 @@ pub struct Detected {
     pub done: bool,
 }
 
-/// The login of a CLI provider, as last read from the tool.
+/// True for a provider with a login: the Claude CLI, ChatGPT, and an ACP agent.
+pub fn has_login(p: &Provider) -> bool {
+    matches!(p.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::ChatGpt { .. } | ProviderKind::Acp { .. })
+}
+
+/// The login of a provider, as last read from the tool or the saved sign-in.
 #[derive(Clone, Default)]
 pub struct ProviderLogin {
     /// None until the first check ends.
@@ -96,6 +100,8 @@ pub struct AppModel {
     pub services: Services,
     /// The downloads of cleanup models. See `cleanup_models.rs`.
     pub cleanup: crate::cleanup_models::CleanupModels,
+    /// The ACP agent registry, agent downloads, and the check of a command.
+    pub agents: crate::agents::Agents,
 
     pub machine: Machine,
     pub live: Arc<LiveAudio>,
@@ -278,6 +284,7 @@ impl AppModel {
             services,
             machine: Machine::new(timing),
             cleanup: Default::default(),
+            agents: Default::default(),
             live: Arc::new(LiveAudio::default()),
             preview: (String::new(), String::new()),
             last_text: None,
@@ -357,7 +364,7 @@ impl AppModel {
             .ai
             .providers
             .iter()
-            .filter(|p| !matches!(p.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::CodexCli { .. }))
+            .filter(|p| !matches!(p.kind, ProviderKind::ClaudeCli { .. }))
             .map(|p| p.id.clone())
             .collect();
         for id in ids {
@@ -1312,16 +1319,43 @@ impl AppModel {
         });
     }
 
+    /// Save changes to a provider that exists, in its place. `api_key`
+    /// replaces the saved key of an OpenAI-compatible provider.
+    pub fn replace_provider(&mut self, provider: Provider, api_key: Option<String>, cx: &mut Context<Self>) {
+        if let (Some(key), ProviderKind::OpenAiCompatible { api_key_account: Some(account), .. }) = (&api_key, &provider.kind)
+            && let Err(e) = self.services.secrets.set(account, key)
+        {
+            log::error!("could not store API key: {e:?}");
+        }
+        // The address or key may have changed, so the old list may be wrong.
+        self.model_lists.remove(&provider.id);
+        self.edit_config(cx, move |c| {
+            if let Some(slot) = c.ai.providers.iter_mut().find(|p| p.id == provider.id) {
+                *slot = provider;
+            }
+        });
+    }
+
     pub fn remove_provider(&mut self, id: &str, cx: &mut Context<Self>) {
         let id = id.to_string();
         self.model_lists.remove(&id);
         if let Some(sign_in) = self.logins.remove(&id).and_then(|l| l.sign_in) {
             sign_in.cancel();
         }
-        if let Some(Provider { kind: ProviderKind::OpenAiCompatible { api_key_account: Some(acc), .. }, .. }) =
-            self.config.ai.providers.iter().find(|p| p.id == id)
-        {
-            let _ = self.services.secrets.delete(acc);
+        match self.config.ai.providers.iter().find(|p| p.id == id).map(|p| &p.kind) {
+            Some(ProviderKind::OpenAiCompatible { api_key_account: Some(acc), .. }) => {
+                let _ = self.services.secrets.delete(acc);
+            }
+            Some(ProviderKind::ChatGpt { .. }) => {
+                let _ = sayso_enhance::chatgpt_sign_out(self.services.secrets.as_ref(), &id);
+            }
+            Some(ProviderKind::Acp { secret_env, .. }) => {
+                sayso_enhance::stop_acp_agent(&id);
+                for name in secret_env {
+                    let _ = self.services.secrets.delete(&sayso_enhance::acp_secret_account(&id, name));
+                }
+            }
+            _ => {}
         }
         self.edit_config(cx, move |c| {
             c.ai.providers.retain(|p| p.id != id);
@@ -1354,7 +1388,7 @@ impl AppModel {
         let key = id.to_string();
         self.edit_config(cx, move |c| {
             if let Some(p) = c.ai.providers.iter_mut().find(|p| p.id == key)
-                && let ProviderKind::ClaudeCli { config_dir, .. } | ProviderKind::CodexCli { config_dir, .. } = &mut p.kind
+                && let ProviderKind::ClaudeCli { config_dir, .. } = &mut p.kind
             {
                 *config_dir = dir;
             }
@@ -1373,14 +1407,14 @@ impl AppModel {
 
     /// The thinking levels to offer for the model of a provider, from the
     /// least thinking to the most. They come from the model list of the
-    /// provider. Until the list is here, a CLI provider offers the levels
-    /// that all its models with levels take. Empty for a model without levels.
+    /// provider. Until the list is here, Claude and ChatGPT offer the levels
+    /// that all their models with levels take. Empty for a model without levels.
     pub fn thinking_choices(&self, provider: &Provider) -> Vec<String> {
         let listed = match self.model_lists.get(&provider.id) {
             Some(ModelList::Ready(list)) => list.iter().find(|m| Some(m.id.as_str()) == provider.model()).map(|m| m.thinking.clone()),
             _ => None,
         };
-        let cli = matches!(provider.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::CodexCli { .. });
+        let cli = matches!(provider.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::ChatGpt { .. });
         let mut levels = listed.unwrap_or_else(|| {
             if cli { [sayso_core::config::DEFAULT_CLI_THINKING, "medium", "high"].map(String::from).to_vec() } else { Vec::new() }
         });
@@ -1391,13 +1425,15 @@ impl AppModel {
         levels
     }
 
-    /// Ask the tool of a CLI provider if it is signed in. Does nothing for
-    /// other providers, and while a check or a sign-in runs.
+    /// Read the login of a provider that has one: the Claude CLI asks its
+    /// tool, ChatGPT reads its saved sign-in. Does nothing for other
+    /// providers, and while a check or a sign-in runs.
     pub fn check_provider_login(&mut self, id: &str, cx: &mut Context<Self>) {
         let Some(provider) = self.config.ai.providers.iter().find(|p| p.id == id).cloned() else { return };
-        if !matches!(provider.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::CodexCli { .. }) {
+        if !has_login(&provider) {
             return;
         }
+        let secrets = self.services.secrets.clone();
         let login = self.logins.entry(id.to_string()).or_default();
         if login.checking || login.sign_in.is_some() {
             return;
@@ -1407,7 +1443,7 @@ impl AppModel {
         let key = id.to_string();
         let checked = provider.config_dir().map(str::to_string);
         cx.spawn(async move |this, cx| {
-            let status = cx.background_spawn(async move { sayso_enhance::auth_status(&provider, Duration::from_secs(10)) }).await;
+            let status = cx.background_spawn(async move { sayso_enhance::auth_status(&provider, secrets.as_ref(), Duration::from_secs(10)) }).await;
             let _ = this.update(cx, |m, cx| {
                 // The folder changed while the tool ran: the answer is about the old folder.
                 let stale = m.config.ai.providers.iter().find(|p| p.id == key).is_none_or(|p| p.config_dir() != checked.as_deref());
@@ -1429,8 +1465,8 @@ impl AppModel {
         .detach();
     }
 
-    /// Start the sign-in of the tool of a CLI provider. The tool opens the
-    /// sign-in page in the browser.
+    /// Start the sign-in of a provider. The Claude CLI opens the sign-in page
+    /// in the browser itself. For ChatGPT, Sayso opens it.
     pub fn sign_in_provider(&mut self, id: &str, cx: &mut Context<Self>) {
         let Some(provider) = self.config.ai.providers.iter().find(|p| p.id == id).cloned() else { return };
         let login = self.logins.entry(id.to_string()).or_default();
@@ -1440,7 +1476,7 @@ impl AppModel {
         login.url = None;
         login.error = None;
         cx.notify();
-        let sign_in = match sayso_enhance::SignIn::start(&provider) {
+        let sign_in = match sayso_enhance::SignIn::start(&provider, self.services.secrets.clone()) {
             Ok(sign_in) => Arc::new(sign_in),
             Err(e) => {
                 login.error = Some(LoginError::Start(e.to_string()));
@@ -1471,6 +1507,9 @@ impl AppModel {
         match event {
             Some(SignInEvent::Url(url)) => {
                 if current {
+                    if !sign_in.opens_browser() {
+                        AppModel::open_url(&url);
+                    }
                     login.url = Some(url);
                 }
             }
@@ -1497,6 +1536,22 @@ impl AppModel {
                 }
             }
         }
+        cx.notify();
+    }
+
+    /// Remove the ChatGPT sign-in that Sayso keeps for a provider. The Claude
+    /// CLI keeps its own login, so this does nothing for it.
+    pub fn sign_out_provider(&mut self, id: &str, cx: &mut Context<Self>) {
+        if !self.config.ai.providers.iter().any(|p| p.id == id && matches!(p.kind, ProviderKind::ChatGpt { .. })) {
+            return;
+        }
+        self.cancel_sign_in(id, cx);
+        if let Err(e) = sayso_enhance::chatgpt_sign_out(self.services.secrets.as_ref(), id) {
+            log::warn!("could not remove the ChatGPT sign-in of {id}: {e}");
+        }
+        self.model_lists.remove(id);
+        self.logins.remove(id);
+        self.check_provider_login(id, cx);
         cx.notify();
     }
 
@@ -1621,7 +1676,7 @@ impl AppModel {
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_spawn(async move {
-                    let enhancer = sayso_enhance::build_enhancer(&provider, secrets.as_ref(), &ai, engine);
+                    let enhancer = sayso_enhance::build_enhancer(&provider, &secrets, &ai, engine);
                     sayso_enhance::test_provider(enhancer.as_ref()).map_err(|e| e.to_string())
                 })
                 .await;
@@ -1640,7 +1695,6 @@ impl AppModel {
                         apple_intelligence: apple.as_ref().and_then(|a| a.as_ref().ok().cloned()),
                         apple_unavailable: apple.and_then(|a| a.err()),
                         claude_cli: sayso_enhance::detect_claude_cli(),
-                        codex_cli: sayso_enhance::detect_codex_cli(),
                         ollama: sayso_enhance::detect_ollama(Duration::from_millis(600)),
                         done: true,
                     }

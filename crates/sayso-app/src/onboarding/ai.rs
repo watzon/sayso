@@ -229,10 +229,15 @@ impl OnboardingView {
     }
 
     /// The selected option. None when the user has not chosen one: Continue
-    /// is then off, and Skip is the way on.
+    /// is then off, and Skip is the way on. Claude Code comes first when it
+    /// is on this computer: a larger model cleans up better.
     pub(super) fn ai_choice(&self, cx: &App) -> Option<AiChoice> {
         let m = self.model.read(cx);
-        self.ai.choice.or_else(|| self.suggested_cleanup(cx)).or_else(|| m.detected.ollama.as_ref().is_some_and(|l| !l.is_empty()).then_some(AiChoice::Local))
+        self.ai
+            .choice
+            .or_else(|| m.detected.claude_cli.is_some().then_some(AiChoice::Claude))
+            .or_else(|| self.suggested_cleanup(cx))
+            .or_else(|| m.detected.ollama.as_ref().is_some_and(|l| !l.is_empty()).then_some(AiChoice::Local))
     }
 
     /// The first cleanup model that knows the dictation language. The speech
@@ -407,17 +412,19 @@ impl OnboardingView {
         let d = self.model.read(cx).detected.clone();
         let home = sayso_core::paths::PathEnv::home(&sayso_core::paths::SystemEnv);
 
-        // The choices that this computer has, in the order of the list.
-        let mut order: Vec<AiChoice> = (0..cleanup::catalog().len()).map(AiChoice::Cleanup).collect();
-        if d.apple_intelligence.is_some() {
-            order.push(AiChoice::Apple);
+        // The choices that this computer has, in the order of the list: the
+        // larger models first, Apple Intelligence last.
+        let mut order: Vec<AiChoice> = Vec::new();
+        if d.claude_cli.is_some() {
+            order.push(AiChoice::Claude);
         }
+        order.push(AiChoice::Cloud);
         if d.ollama.is_some() {
             order.push(AiChoice::Local);
         }
-        order.push(AiChoice::Cloud);
-        if d.claude_cli.is_some() {
-            order.push(AiChoice::Claude);
+        order.extend((0..cleanup::catalog().len()).map(AiChoice::Cleanup));
+        if d.apple_intelligence.is_some() {
+            order.push(AiChoice::Apple);
         }
         let selected_index = order.iter().position(|x| Some(*x) == choice);
         let keys = order.clone();
@@ -449,36 +456,38 @@ impl OnboardingView {
         if !d.done {
             rows = rows.child(text::ui(t!("onboarding.ai.looking", computer = crate::shell::computer()), 13., FontWeight::NORMAL, c.graphite).px(px(4.)));
         }
-        for (i, info) in cleanup::catalog().iter().enumerate() {
+        // Claude Code and an API first; Apple Intelligence last.
+        if let Some(path) = &d.claude_cli {
+            let shown = sayso_core::paths::Paths::display(path, &home);
             rows = rows.child(self.ai_row(
-                AiChoice::Cleanup(i),
+                AiChoice::Claude,
                 choice,
                 &order,
-                info.name.into(),
-                Some(t!("onboarding.ai.by", publisher = info.publisher)),
-                cleanup_desc(info),
-                Some(size_badge(info, &c)),
+                "Claude CLI".into(),
+                None,
+                t!("onboarding.ai.claude_desc", path = shown),
+                Some(Badge::new(t!("onboarding.ai.cloud"), BadgeTone::Accent).into_any_element()),
                 None,
                 None,
                 &c,
                 cx,
             ));
         }
-        if let Some(model) = &d.apple_intelligence {
-            rows = rows.child(self.ai_row(
-                AiChoice::Apple,
-                choice,
-                &order,
-                "Apple Intelligence".into(),
-                None,
-                t!("onboarding.ai.apple_desc", model = model),
-                None,
-                None,
-                None,
-                &c,
-                cx,
-            ));
-        }
+
+        let cloud_extra = (choice == Some(AiChoice::Cloud)).then(|| self.cloud_form(&c, cx));
+        rows = rows.child(self.ai_row(
+            AiChoice::Cloud,
+            choice,
+            &order,
+            t!("onboarding.ai.cloud_api"),
+            None,
+            t!("onboarding.ai.cloud_desc", store = crate::shell::secret_store()),
+            Some(Badge::new(t!("onboarding.ai.cloud"), BadgeTone::Accent).into_any_element()),
+            None,
+            cloud_extra,
+            &c,
+            cx,
+        ));
         if d.ollama.as_ref().is_some_and(|l| l.is_empty()) {
             rows = rows.child(self.ai_row(
                 AiChoice::Local,
@@ -578,37 +587,36 @@ impl OnboardingView {
                 cx,
             ));
         }
-        let cloud_extra = (choice == Some(AiChoice::Cloud)).then(|| self.cloud_form(&c, cx));
-        rows = rows.child(self.ai_row(
-            AiChoice::Cloud,
-            choice,
-            &order,
-            t!("onboarding.ai.cloud_api"),
-            None,
-            t!("onboarding.ai.cloud_desc", store = crate::shell::secret_store()),
-            Some(Badge::new(t!("onboarding.ai.cloud"), BadgeTone::Accent).into_any_element()),
-            None,
-            cloud_extra,
-            &c,
-            cx,
-        ));
-        if let Some(path) = &d.claude_cli {
-            let shown = sayso_core::paths::Paths::display(path, &home);
+        for (i, info) in cleanup::catalog().iter().enumerate() {
             rows = rows.child(self.ai_row(
-                AiChoice::Claude,
+                AiChoice::Cleanup(i),
                 choice,
                 &order,
-                "Claude CLI".into(),
-                None,
-                t!("onboarding.ai.claude_desc", path = shown),
-                Some(Badge::new(t!("onboarding.ai.cloud"), BadgeTone::Accent).into_any_element()),
+                info.name.into(),
+                Some(t!("onboarding.ai.by", publisher = info.publisher)),
+                cleanup_desc(info),
+                Some(size_badge(info, &c)),
                 None,
                 None,
                 &c,
                 cx,
             ));
         }
-
+        if let Some(model) = &d.apple_intelligence {
+            rows = rows.child(self.ai_row(
+                AiChoice::Apple,
+                choice,
+                &order,
+                "Apple Intelligence".into(),
+                None,
+                t!("onboarding.ai.apple_desc", model = model),
+                None,
+                None,
+                None,
+                &c,
+                cx,
+            ));
+        }
         let mut col = div()
             .flex()
             .flex_col()

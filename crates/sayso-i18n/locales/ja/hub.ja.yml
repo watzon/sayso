@@ -39,7 +39,7 @@ hub:
     cloud_host: "クラウド · %{host}"
     local_host: "ローカル · %{host}"
     claude_cli: "クラウド · Claude のログインを使用"
-    codex_cli: "クラウド · 1回あたり約5秒"
+    chatgpt: "クラウド · ChatGPT のプランを使用"
     apple_intelligence: "ローカル · この Mac で実行"
   duration:
     seconds: "%{seconds}秒"

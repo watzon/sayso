@@ -164,7 +164,7 @@ The step that changes the English commands "comma", "period", "question mark", "
 A word that the speaker spells after a cue: "Dana Cats, that's K A T Z". Before the model of a style runs, code puts the spelled word in place of the cue and of the words that it corrects.
 
 **Enhancer**
-The trait that sends a transcript and a style prompt to an AI provider and returns schema-checked JSON. The implementations are the OpenAI-compatible endpoint, the Claude CLI, the Codex CLI, and the language model of the engine. A cleanup model is not an enhancer: it runs through `Cleaner`.
+The trait that sends a transcript and a style prompt to an AI provider and returns schema-checked JSON. The implementations are the OpenAI-compatible endpoint, the Claude CLI, the ChatGPT plan, and the language model of the engine. A cleanup model is not an enhancer: it runs through `Cleaner`.
 
 **Cleanup model**
 A local model that cleans up text with fixed settings and reads no prompt: S1-mini by Superwhisper (English) and Cleanup 1 by Spokenly (seven languages). It is a provider of a style, like Apple Intelligence, with the badge "No prompts". It runs a style only when the style has cleanup settings that the model supports; else it does a cleanup only, and the overlay says so. It runs only when Sayso knows the language of the dictation and the model supports it. The text stays on the computer. [docs/cleanup-models.md](docs/cleanup-models.md) has the design.
@@ -179,7 +179,7 @@ How a cleanup model writes capital letters and the final period: very casual, ca
 The process `sayso-cleanup` (`native/cleanup`) that runs a cleanup model with llama.cpp. It knows no model: it loads a GGUF file and completes text. Sayso starts it at the first use and stops it after 10 minutes with no use.
 
 **Thinking level**
-How much the model of a provider thinks before it answers, for example low, medium, or high. A higher level is slower. The levels are those that the provider reports for the model, with its model list: the Claude tool, the Codex tool, and OpenRouter do. The user sets the level for each provider in Settings. With no choice, a CLI provider gets low, and an OpenAI-compatible provider gets no level, so the model uses its own default. When the user chooses another model, a level that the model does not have becomes its lowest level. The level goes out as `--effort` (Claude), `model_reasoning_effort` (Codex), `reasoning.effort` (OpenRouter), or `reasoning_effort` (other servers).
+How much the model of a provider thinks before it answers, for example low, medium, or high. A higher level is slower. The levels are those that the provider reports for the model, with its model list: the Claude tool, the ChatGPT backend, and OpenRouter do. The user sets the level for each provider in Settings. With no choice, Claude and ChatGPT get low, and an OpenAI-compatible provider gets no level, so the model uses its own default. When the user chooses another model, a level that the model does not have becomes its lowest level. The level goes out as `--effort` (Claude), `reasoning.effort` (ChatGPT and OpenRouter), or `reasoning_effort` (other servers).
 
 **Apple Intelligence**
 The provider of a style that runs the language model of macOS (macOS 26 and later) in the engine. The transcript stays on the Mac. macOS chooses the model and owns its files, so there is no download and no model choice. It is not a model in the sense of this file, because it does not transcribe speech.

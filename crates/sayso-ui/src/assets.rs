@@ -6,6 +6,8 @@ use std::borrow::Cow;
 #[derive(rust_embed::RustEmbed)]
 #[folder = "assets"]
 #[include = "icons/*.svg"]
+#[include = "logos/*.svg"]
+#[include = "logos/*.png"]
 #[include = "textures/*.png"]
 #[include = "sounds/*.wav"]
 struct SaysoAssets;
@@ -42,14 +44,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn embeds_icons_textures_and_sounds_only() {
+    fn embeds_icons_logos_textures_and_sounds_only() {
         assert!(bytes("icons/mic.svg").is_some());
         assert!(bytes("textures/board-light.png").is_some());
         assert!(bytes("sounds/start.wav").is_some());
         // The Sayso name and the app icon belong to Watzon Ventures LLC. This crate is MIT.
         assert!(bytes("app/tray.png").is_none());
         assert!(bytes("app/icon-64.png").is_none());
-        assert!(SaysoAssets::iter().all(|name| ["icons/", "textures/", "sounds/"].iter().any(|dir| name.starts_with(dir))));
+        assert!(bytes("logos/openai.svg").is_some());
+        assert!(bytes("logos/README.md").is_none());
+        assert!(SaysoAssets::iter().all(|name| ["icons/", "logos/", "textures/", "sounds/"].iter().any(|dir| name.starts_with(dir))));
     }
 }
 

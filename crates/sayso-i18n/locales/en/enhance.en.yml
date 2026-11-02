@@ -4,3 +4,8 @@ _version: 1
 enhance:
   # The note under Apple Intelligence in the model list of a style provider.
   runs_on_this_mac: "Runs on this Mac"
+  # The page of the browser at the end of the ChatGPT sign-in.
+  sign_in_done_title: "You are signed in"
+  sign_in_done_body: "Sayso can use your ChatGPT plan now. You can close this page."
+  sign_in_failed_title: "The sign-in did not finish"
+  sign_in_failed_body: "Go back to Sayso and try again."

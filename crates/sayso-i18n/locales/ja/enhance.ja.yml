@@ -4,3 +4,7 @@ _version: 1
 enhance:
   # The note under Apple Intelligence in the model list of a style provider.
   runs_on_this_mac: "この Mac で実行"
+  sign_in_done_title: "サインインしました"
+  sign_in_done_body: "Sayso で ChatGPT のプランを使用できるようになりました。このページは閉じてかまいません。"
+  sign_in_failed_title: "サインインが完了しませんでした"
+  sign_in_failed_body: "Sayso に戻って、もう一度お試しください。"

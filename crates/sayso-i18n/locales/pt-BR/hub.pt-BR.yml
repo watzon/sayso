@@ -39,7 +39,7 @@ hub:
     cloud_host: "Nuvem · %{host}"
     local_host: "Local · %{host}"
     claude_cli: "Nuvem · seu login do Claude"
-    codex_cli: "Nuvem · cerca de 5 s por chamada"
+    chatgpt: "Nuvem · seu plano do ChatGPT"
     apple_intelligence: "Local · roda neste Mac"
   duration:
     seconds: "%{seconds} s"

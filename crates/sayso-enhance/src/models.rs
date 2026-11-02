@@ -4,14 +4,15 @@
 //! - Claude Code has no "list models" command, but its stream-JSON control
 //!   protocol answers an `initialize` request with the model list. No prompt
 //!   is sent, so this costs nothing.
-//! - Codex: the `codex app-server` JSON-RPC `model/list` method.
+//! - ChatGPT: the model list of the Codex backend (see `chatgpt`).
+//! - ACP agents: the models of a new session (see `acp`).
 //! - Apple Intelligence: the one model that the engine reports.
 //!
 //! All calls block: run them on a background thread.
 
 use crate::auth::{Tool, config_env, push_config_env};
 use crate::cli::{Invocation, Session, looks_like_login_problem, workdir};
-use crate::detect::{detect_claude_cli, detect_codex_cli, fetch_model_choices};
+use crate::detect::{detect_claude_cli, fetch_model_choices};
 use crate::secrets::SecretStore;
 use sayso_core::config::{Provider, ProviderKind, sort_thinking};
 use sayso_core::enhance::{EnhanceError, LanguageModel, ModelChoice};
@@ -21,9 +22,6 @@ use std::time::Duration;
 
 /// The request id of the Claude `initialize` request. The answer carries it back.
 const CLAUDE_REQUEST_ID: &str = "sayso-models";
-
-/// The most pages of `model/list` that Sayso reads from Codex.
-const CODEX_MAX_PAGES: u64 = 5;
 
 /// The models `provider` offers. `timeout` bounds the whole call.
 ///
@@ -53,10 +51,8 @@ pub fn list_provider_models(
             let program = program(path.as_deref(), detect_claude_cli, "claude")?;
             list_claude_models(&program, provider.config_dir(), timeout)
         }
-        ProviderKind::CodexCli { path, .. } => {
-            let program = program(path.as_deref(), detect_codex_cli, "codex")?;
-            list_codex_models(&program, provider.config_dir(), timeout)
-        }
+        ProviderKind::ChatGpt { .. } => crate::chatgpt::list_models(secrets, &provider.id, timeout),
+        ProviderKind::Acp { .. } => crate::acp::list_models(provider, secrets, timeout),
         // macOS chooses the model, so the list has one entry.
         ProviderKind::AppleIntelligence => {
             let engine = engine.ok_or_else(|| EnhanceError::NotConfigured("the engine does not run".into()))?;
@@ -158,98 +154,6 @@ fn parse_claude_models(message: &Value) -> Result<Vec<ModelChoice>, EnhanceError
     Ok(dedup(choices))
 }
 
-fn list_codex_models(
-    program: &std::path::Path,
-    config_dir: Option<&str>,
-    timeout: Duration,
-) -> Result<Vec<ModelChoice>, EnhanceError> {
-    let workdir = workdir()?;
-    let dir_env = config_env(Tool::Codex, config_dir);
-    let mut envs = Vec::new();
-    push_config_env(&mut envs, &dir_env);
-    let mut session = Session::start(&Invocation {
-        program,
-        args: vec!["app-server".into()],
-        envs,
-        cwd: workdir.path(),
-        stdin: None,
-        timeout,
-    })?;
-    let hello = json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": { "clientInfo": { "name": "sayso", "version": env!("CARGO_PKG_VERSION") } },
-    });
-    session.send(&hello.to_string())?;
-    session.read_until(|line| rpc_reply(line, 1))??;
-    session.send(&json!({ "jsonrpc": "2.0", "method": "initialized" }).to_string())?;
-
-    let mut choices = Vec::new();
-    let mut cursor: Option<String> = None;
-    for page in 0..CODEX_MAX_PAGES {
-        let id = 2 + page;
-        let params = cursor
-            .as_ref()
-            .map_or_else(|| json!({}), |c| json!({ "cursor": c }));
-        let request =
-            json!({ "jsonrpc": "2.0", "id": id, "method": "model/list", "params": params });
-        session.send(&request.to_string())?;
-        let result = session.read_until(|line| rpc_reply(line, id))??;
-        let (mut found, next) = parse_codex_page(&result)?;
-        choices.append(&mut found);
-        match next {
-            Some(next) => cursor = Some(next),
-            None => break,
-        }
-    }
-    Ok(dedup(choices))
-}
-
-/// The reply to request `id`: its `result`, or the error it carries. None for
-/// notifications, requests from the server, and replies to other requests.
-fn rpc_reply(line: &str, id: u64) -> Option<Result<Value, EnhanceError>> {
-    let value: Value = serde_json::from_str(line).ok()?;
-    if value.get("method").is_some() || value["id"].as_u64() != Some(id) {
-        return None;
-    }
-    if let Some(error) = value.get("error") {
-        let text = error["message"].as_str().unwrap_or("no reason given");
-        return Some(Err(if looks_like_login_problem(text) {
-            EnhanceError::NotConfigured(format!("codex is not signed in: {text}"))
-        } else {
-            EnhanceError::Cli(format!("codex reported an error: {text}"))
-        }));
-    }
-    Some(Ok(value["result"].clone()))
-}
-
-/// Read the `result` of one `model/list` reply: the visible models, and the
-/// cursor of the next page when there is one.
-fn parse_codex_page(result: &Value) -> Result<(Vec<ModelChoice>, Option<String>), EnhanceError> {
-    let data = result["data"]
-        .as_array()
-        .ok_or_else(|| EnhanceError::InvalidOutput("codex answered without a model list".into()))?;
-    let choices = data
-        .iter()
-        .filter(|m| m["hidden"].as_bool() != Some(true))
-        .filter_map(|m| {
-            let id = m["model"]
-                .as_str()
-                .or_else(|| m["id"].as_str())
-                .filter(|v| !v.is_empty())?;
-            let mut choice = choice(id, m["displayName"].as_str(), m["description"].as_str());
-            choice.thinking = levels(&m["supportedReasoningEfforts"], |level| level["reasoningEffort"].as_str());
-            Some(choice)
-        })
-        .collect();
-    let next = result["nextCursor"]
-        .as_str()
-        .filter(|c| !c.is_empty())
-        .map(str::to_string);
-    Ok((choices, next))
-}
-
 /// A choice. An empty or missing name becomes the id, an empty note becomes none.
 fn choice(id: &str, name: Option<&str>, description: Option<&str>) -> ModelChoice {
     ModelChoice {
@@ -330,75 +234,5 @@ mod tests {
             claude_answer(empty).unwrap(),
             Err(EnhanceError::InvalidOutput(_))
         ));
-    }
-
-    #[test]
-    fn codex_page_skips_hidden_and_applies_field_rules() {
-        let result = json!({
-            "data": [
-                { "id": "gpt-a", "model": "gpt-a-model", "displayName": "GPT A", "description": "Fast.", "hidden": false,
-                  "supportedReasoningEfforts": [{ "reasoningEffort": "low", "description": "Fast" }, { "reasoningEffort": "high" }] },
-                { "id": "gpt-b", "model": "gpt-b", "displayName": "GPT B", "hidden": true },
-                { "id": "gpt-c", "displayName": "", "description": "" },
-                { "displayName": "No id" },
-            ],
-            "nextCursor": "page2",
-        });
-        let (choices, next) = parse_codex_page(&result).unwrap();
-        assert_eq!(next.as_deref(), Some("page2"));
-        assert_eq!(
-            choices,
-            [
-                ModelChoice {
-                    id: "gpt-a-model".into(),
-                    name: "GPT A".into(),
-                    description: Some("Fast.".into()),
-                    thinking: vec!["low".into(), "high".into()],
-                },
-                ModelChoice {
-                    id: "gpt-c".into(),
-                    name: "gpt-c".into(),
-                    description: None,
-                    thinking: vec![],
-                },
-            ]
-        );
-        let (_, last) = parse_codex_page(&json!({ "data": [], "nextCursor": null })).unwrap();
-        assert_eq!(last, None);
-        assert!(matches!(
-            parse_codex_page(&json!({})),
-            Err(EnhanceError::InvalidOutput(_))
-        ));
-    }
-
-    #[test]
-    fn rpc_reply_matches_only_its_own_id() {
-        assert!(
-            rpc_reply(
-                r#"{"jsonrpc":"2.0","method":"thread/started","params":{}}"#,
-                1
-            )
-            .is_none()
-        );
-        assert!(
-            rpc_reply(r#"{"jsonrpc":"2.0","id":1,"method":"ask","params":{}}"#, 1).is_none(),
-            "server request"
-        );
-        assert!(rpc_reply(r#"{"jsonrpc":"2.0","id":2,"result":{}}"#, 1).is_none());
-        assert!(rpc_reply("junk", 1).is_none());
-        assert_eq!(
-            rpc_reply(r#"{"jsonrpc":"2.0","id":1,"result":{"a":1}}"#, 1)
-                .unwrap()
-                .unwrap(),
-            json!({"a":1})
-        );
-        let login = rpc_reply(
-            r#"{"id":1,"error":{"code":-1,"message":"please log in"}}"#,
-            1,
-        )
-        .unwrap();
-        assert!(matches!(login, Err(EnhanceError::NotConfigured(_))));
-        let other = rpc_reply(r#"{"id":1,"error":{"code":-1,"message":"bad"}}"#, 1).unwrap();
-        assert!(matches!(other, Err(EnhanceError::Cli(_))));
     }
 }

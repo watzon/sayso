@@ -3,18 +3,22 @@
 //!
 //! - [`OpenAiCompatible`]: HTTP to OpenRouter, OpenAI, Ollama, LM Studio, llama.cpp.
 //! - [`ClaudeCli`]: the user's own `claude` command.
-//! - [`CodexCli`]: the user's own `codex` command (experimental).
+//! - [`ChatGpt`]: the user's ChatGPT plan, with a sign-in that Sayso keeps.
+//! - [`AcpAgent`]: any agent that speaks the Agent Client Protocol, for
+//!   example `opencode acp`. The [`registry`] lists the known agents.
 //! - [`EngineModel`]: the language model that the engine runs on this computer
 //!   (Apple Intelligence on macOS).
 //!
 //! Use [`build_enhancer`] to turn a provider from `config.toml` into an
-//! `Enhancer`. API keys come from a [`SecretStore`], never from the config.
+//! `Enhancer`. API keys and the ChatGPT sign-in come from a [`SecretStore`],
+//! never from the config.
 //! All calls block: run them on a background thread.
 
+mod acp;
 mod auth;
+mod chatgpt;
 mod claude;
 mod cli;
-mod codex;
 mod detect;
 mod engine;
 mod models;
@@ -23,13 +27,17 @@ mod secrets;
 #[cfg(windows)]
 mod win_shim;
 
+pub use acp::registry;
+pub use acp::{AcpAgent, AgentCheck, IDLE_LIMIT as ACP_IDLE_LIMIT, check_agent, secret_account as acp_secret_account, stop_agent as stop_acp_agent};
 pub use auth::{AuthStatus, SIGN_IN_LIMIT, SignIn, SignInEvent, auth_status};
-pub use claude::ClaudeCli;
-pub use codex::CodexCli;
+pub use chatgpt::ChatGpt;
+pub use claude::{ClaudeCli, SPARE_LIFETIME, stop_spares};
 pub use engine::EngineModel;
-pub use detect::{detect_claude_cli, detect_codex_cli, detect_ollama, detect_ollama_at, list_models, test_provider};
+pub use detect::{detect_claude_cli, detect_ollama, detect_ollama_at, list_models, test_provider};
 pub use models::list_provider_models;
 pub use openai::{OpenAiCompatible, clear_mode_cache};
+/// Remove the saved ChatGPT sign-in of a provider.
+pub use chatgpt::sign_out as chatgpt_sign_out;
 pub use secrets::{KEYCHAIN_SERVICE, KeychainStore, MemoryStore, SecretError, SecretStore};
 
 use sayso_core::config::{Ai, Provider, ProviderKind};
@@ -37,6 +45,17 @@ use sayso_core::enhance::{EnhanceError, EnhanceRequest, EnhanceResponse, Enhance
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Start what a provider runs before its request comes: a spare `claude`
+/// process, or the agent of an ACP provider. Call it when the microphone
+/// opens. Does nothing for other kinds. Returns at once.
+pub fn prepare(provider: &Provider, secrets: &dyn SecretStore) {
+    match provider.kind {
+        ProviderKind::ClaudeCli { .. } => claude::prepare(provider),
+        ProviderKind::Acp { .. } => acp::warm(provider, secrets),
+        _ => {}
+    }
+}
 
 /// Build the enhancer for a configured provider.
 ///
@@ -47,7 +66,7 @@ use std::time::Duration;
 /// `engine` is the language model of the engine, None when the engine does not run.
 pub fn build_enhancer(
     provider: &Provider,
-    secrets: &dyn SecretStore,
+    secrets: &Arc<dyn SecretStore>,
     cfg: &Ai,
     engine: Option<Arc<dyn LanguageModel>>,
 ) -> Box<dyn Enhancer> {
@@ -76,12 +95,14 @@ pub fn build_enhancer(
                 .with_config_dir(provider.config_dir().map(PathBuf::from))
                 .with_default_timeout(cli_timeout),
         ),
-        ProviderKind::CodexCli { path, model, .. } => Box::new(
-            CodexCli::new(&provider.id, path.as_ref().map(PathBuf::from), model.clone())
+        // A network call like the HTTP providers, but the backend thinks first, so it gets the longer CLI timeout.
+        ProviderKind::ChatGpt { model, .. } => Box::new(
+            ChatGpt::new(&provider.id, model.clone(), secrets.clone())
                 .with_thinking(provider.thinking_sent())
-                .with_config_dir(provider.config_dir().map(PathBuf::from))
                 .with_default_timeout(cli_timeout),
         ),
+        // The agent thinks and may run a turn of its own, so it gets the CLI timeout.
+        ProviderKind::Acp { .. } => Box::new(AcpAgent::new(provider, secrets.as_ref()).with_default_timeout(cli_timeout)),
         ProviderKind::AppleIntelligence => Box::new(EngineModel::new(&provider.id, engine).with_default_timeout(http_timeout)),
         // A cleanup model reads no prompt: the app runs it as a `Cleaner`
         // (`sayso-cleanup-client`), never through this function.
@@ -128,10 +149,14 @@ mod tests {
         }
     }
 
+    fn store() -> Arc<dyn SecretStore> {
+        Arc::new(MemoryStore::new())
+    }
+
     #[test]
     fn factory_sets_id_and_cloud_flag() {
         let cfg = Ai::default();
-        let secrets = MemoryStore::new();
+        let secrets = store();
         let local = provider(ProviderKind::OpenAiCompatible {
             base_url: "http://localhost:11434/v1".into(),
             model: "llama".into(),
@@ -152,8 +177,29 @@ mod tests {
         assert!(build_enhancer(&cloud, &secrets, &cfg, None).is_cloud());
         let claude = provider(ProviderKind::ClaudeCli { path: Some("/nowhere/claude".into()), model: "haiku".into(), config_dir: None, thinking: Default::default() });
         assert!(build_enhancer(&claude, &secrets, &cfg, None).is_cloud());
-        let codex = provider(ProviderKind::CodexCli { path: Some("/nowhere/codex".into()), model: None, config_dir: None, thinking: Default::default() });
-        assert!(build_enhancer(&codex, &secrets, &cfg, None).is_cloud());
+        let chatgpt = provider(ProviderKind::ChatGpt { model: None, thinking: None });
+        assert!(build_enhancer(&chatgpt, &secrets, &cfg, None).is_cloud());
+        assert!(build_enhancer(&acp(vec!["KEY".into()]), &secrets, &cfg, None).is_cloud());
+    }
+
+    fn acp(secret_env: Vec<String>) -> Provider {
+        provider(ProviderKind::Acp {
+            command: "/nowhere/agent".into(),
+            args: vec!["acp".into()],
+            env: Default::default(),
+            secret_env,
+            registry: None,
+            model: None,
+            keep_running: false,
+        })
+    }
+
+    #[test]
+    fn acp_without_a_secret_value_or_a_command_gives_not_configured() {
+        let e = build_enhancer(&acp(vec!["AGENT_KEY".into()]), &store(), &Ai::default(), None);
+        assert!(matches!(e.enhance(&request()), Err(EnhanceError::NotConfigured(m)) if m.contains("AGENT_KEY")));
+        let e = build_enhancer(&acp(Vec::new()), &store(), &Ai::default(), None);
+        assert!(matches!(e.enhance(&request()), Err(EnhanceError::NotConfigured(m)) if m.contains("could not start")));
     }
 
     #[test]
@@ -165,7 +211,7 @@ mod tests {
             zero_data_retention: false,
             thinking: None,
         });
-        let e = build_enhancer(&p, &MemoryStore::new(), &Ai::default(), None);
+        let e = build_enhancer(&p, &store(), &Ai::default(), None);
         assert!(matches!(e.enhance(&request()), Err(EnhanceError::NotConfigured(m)) if m.contains("openrouter")));
     }
 
@@ -189,7 +235,7 @@ mod tests {
         let p = provider(ProviderKind::AppleIntelligence);
         let run = |reply| {
             let engine: Arc<dyn LanguageModel> = Arc::new(Scripted(reply));
-            build_enhancer(&p, &MemoryStore::new(), &Ai::default(), Some(engine)).enhance(&request())
+            build_enhancer(&p, &store(), &Ai::default(), Some(engine)).enhance(&request())
         };
         let done = run(Ok(" Hello. ")).unwrap();
         assert_eq!((done.text.as_str(), done.provider_id.as_str(), done.model.as_str()), ("Hello.", "p", "Scripted"));
@@ -197,7 +243,7 @@ mod tests {
         assert!(matches!(run(Ok("  ")), Err(EnhanceError::InvalidOutput(_))));
         assert_eq!(run(Err(EnhanceError::Refused("no".into()))), Err(EnhanceError::Refused("no".into())));
 
-        let stopped = build_enhancer(&p, &MemoryStore::new(), &Ai::default(), None);
+        let stopped = build_enhancer(&p, &store(), &Ai::default(), None);
         assert!(!stopped.is_cloud());
         assert!(matches!(stopped.enhance(&request()), Err(EnhanceError::NotConfigured(_))));
     }
@@ -205,7 +251,14 @@ mod tests {
     #[test]
     fn missing_cli_binary_gives_not_configured() {
         let p = provider(ProviderKind::ClaudeCli { path: Some("/nowhere/claude".into()), model: "haiku".into(), config_dir: None, thinking: Default::default() });
-        let e = build_enhancer(&p, &MemoryStore::new(), &Ai::default(), None);
+        let e = build_enhancer(&p, &store(), &Ai::default(), None);
         assert!(matches!(e.enhance(&request()), Err(EnhanceError::NotConfigured(_))));
+    }
+
+    #[test]
+    fn chatgpt_without_a_sign_in_gives_not_configured() {
+        let p = provider(ProviderKind::ChatGpt { model: Some("gpt-mini".into()), thinking: None });
+        let e = build_enhancer(&p, &store(), &Ai::default(), None);
+        assert!(matches!(e.enhance(&request()), Err(EnhanceError::NotConfigured(m)) if m.contains("ChatGPT")));
     }
 }

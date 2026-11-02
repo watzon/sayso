@@ -1,6 +1,6 @@
 [package]
 name = "sayso-enhance"
-description = "Sayso AI enhancement providers: OpenAI-compatible HTTP, Claude CLI, Codex CLI."
+description = "Sayso AI enhancement providers: OpenAI-compatible HTTP, Claude CLI, ChatGPT plan, ACP agents."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,8 +14,20 @@ thiserror.workspace = true
 log.workspace = true
 parking_lot.workspace = true
 tempfile.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+base64 = "0.23"
+url = "2"
+# The callback of the ChatGPT sign-in.
+tiny_http = "0.12"
 ureq = { version = "3", features = ["json"] }
 wait-timeout = "0.2"
+serde.workspace = true
+# The downloads of the ACP registry.
+flate2 = "1"
+tar = "0.4"
+bzip2 = "0.6"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 workspace-hack.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -29,7 +41,6 @@ keyring = { version = "4", features = ["windows-native-keyring-store"] }
 keyring = "4"
 
 [dev-dependencies]
-tiny_http = "0.12"
 # The style evaluation also runs the cleanup models through the cleanup runtime.
 sayso-cleanup-client.workspace = true
 

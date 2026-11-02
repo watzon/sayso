@@ -1,8 +1,8 @@
 //! Sayso in a Flatpak sandbox (Linux).
 //!
 //! The sandbox has its own file system and its own programs. The tools that
-//! Sayso starts for the user (`gsettings`, and the `claude` and `codex`
-//! command line tools) are on the host, so they run through
+//! Sayso starts for the user (`gsettings`, and the `claude` command line
+//! tool) are on the host, so they run through
 //! `flatpak-spawn --host`. The Flatpak has the permission for that
 //! (`--talk-name=org.freedesktop.Flatpak`).
 

@@ -1,13 +1,20 @@
-//! The login of the CLI providers: read the state, and run the sign-in of the
-//! tool. Sayso never reads or stores credentials. The tool keeps them in its
-//! config folder, and `config_dir` of the provider says where that is.
+//! The login of the providers that have one: read the state, and run the sign-in.
 //!
-//! A Dock launch has no shell environment, so a user who set `CLAUDE_CONFIG_DIR`
-//! or `CODEX_HOME` in the shell would look signed out. Every run of a tool gets
-//! the folder from the config instead.
+//! - Claude CLI: Sayso runs the tool's own sign-in, and never reads or stores
+//!   its credentials. The tool keeps them in its config folder, and `config_dir`
+//!   of the provider says where that is. A Dock launch has no shell environment,
+//!   so a user who set `CLAUDE_CONFIG_DIR` in the shell would look signed out.
+//!   Every run of the tool gets the folder from the config instead.
+//! - ChatGPT: Sayso runs the sign-in itself and keeps the tokens in the secret
+//!   store (see `chatgpt`).
+//! - ACP agents: the agent keeps its own sign-in. Sayso asks it to run the
+//!   sign-in with an `authenticate` request (see `acp`).
 
+use crate::acp::AcpSignIn;
+use crate::chatgpt::{ChatGptSignIn, Endpoints};
 use crate::cli::{self, Invocation, tail};
-use crate::detect::{detect_claude_cli, detect_codex_cli};
+use crate::detect::detect_claude_cli;
+use crate::secrets::SecretStore;
 use sayso_core::config::{Provider, ProviderKind};
 use sayso_core::enhance::EnhanceError;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -18,13 +25,13 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-/// How long the sign-in of a tool may run before Sayso stops it.
+/// How long a sign-in may run before Sayso stops it.
 pub const SIGN_IN_LIMIT: Duration = Duration::from_secs(600);
 
 /// How long Sayso waits for the tool when it reads the state at the end of a sign-in.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The login state of a CLI provider.
+/// The login state of a provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuthStatus {
     /// `account` is a short label for the UI, for example "Max plan · a@b.com", "ChatGPT plan", "API key". None when the tool gives nothing.
@@ -37,18 +44,16 @@ pub enum AuthStatus {
     Unknown { detail: String },
 }
 
-/// The two tools that have a login.
+/// The tools that have a login.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tool {
     Claude,
-    Codex,
 }
 
 impl Tool {
     fn of(kind: &ProviderKind) -> Option<(Tool, Option<&str>)> {
         match kind {
             ProviderKind::ClaudeCli { path, .. } => Some((Tool::Claude, path.as_deref())),
-            ProviderKind::CodexCli { path, .. } => Some((Tool::Codex, path.as_deref())),
             _ => None,
         }
     }
@@ -56,7 +61,6 @@ impl Tool {
     fn name(self) -> &'static str {
         match self {
             Tool::Claude => "claude",
-            Tool::Codex => "codex",
         }
     }
 
@@ -64,21 +68,18 @@ impl Tool {
     fn env_name(self) -> &'static str {
         match self {
             Tool::Claude => "CLAUDE_CONFIG_DIR",
-            Tool::Codex => "CODEX_HOME",
         }
     }
 
     fn status_args(self) -> Vec<std::ffi::OsString> {
         match self {
             Tool::Claude => vec!["auth".into(), "status".into()],
-            Tool::Codex => vec!["login".into(), "status".into()],
         }
     }
 
     fn sign_in_args(self) -> Vec<std::ffi::OsString> {
         match self {
             Tool::Claude => vec!["auth".into(), "login".into()],
-            Tool::Codex => vec!["login".into()],
         }
     }
 
@@ -86,7 +87,6 @@ impl Tool {
     fn program(self, path: Option<&str>) -> Option<PathBuf> {
         path.map(PathBuf::from).or_else(match self {
             Tool::Claude => detect_claude_cli,
-            Tool::Codex => detect_codex_cli,
         })
     }
 }
@@ -132,8 +132,21 @@ fn folder_missing(dir: &Path) -> bool {
     !dir.exists()
 }
 
-/// The login state of a CLI provider. None for a kind that has no login (OpenAI-compatible, Apple Intelligence). Blocks; `timeout` bounds the call.
-pub fn auth_status(provider: &Provider, timeout: Duration) -> Option<AuthStatus> {
+/// The login state of a provider. None for a kind that has no login (OpenAI-compatible, Apple Intelligence). Blocks; `timeout` bounds the call.
+/// `secrets` holds the ChatGPT sign-in and the secret variables of ACP agents.
+/// An ACP agent is started (or the running one is used) and asked for a
+/// session: it is signed in when it opens one.
+pub fn auth_status(provider: &Provider, secrets: &dyn SecretStore, timeout: Duration) -> Option<AuthStatus> {
+    match provider.kind {
+        ProviderKind::ChatGpt { .. } => return Some(crate::chatgpt::status(secrets, &provider.id)),
+        ProviderKind::Acp { .. } => return Some(crate::acp::status(provider, secrets, timeout)),
+        _ => {}
+    }
+    cli_auth_status(provider, timeout)
+}
+
+/// The login state of a CLI provider, from its tool.
+fn cli_auth_status(provider: &Provider, timeout: Duration) -> Option<AuthStatus> {
     let (tool, path) = Tool::of(&provider.kind)?;
     let dir = provider.config_dir();
     if let Some(missing) = dir.map(expand_dir).filter(|d| folder_missing(d)) {
@@ -161,7 +174,6 @@ fn read_status(tool: Tool, program: &Path, dir: Option<&str>, timeout: Duration)
                 let text = if out.stdout.trim().is_empty() { &out.stderr } else { &out.stdout };
                 parse_claude_status(text)
             }
-            Tool::Codex => parse_codex_status(&format!("{}\n{}", out.stdout, out.stderr), out.status.success()),
         },
         Err(EnhanceError::NotConfigured(_)) => AuthStatus::NotInstalled,
         Err(EnhanceError::Timeout(ms)) => {
@@ -200,32 +212,12 @@ fn parse_claude_status(stdout: &str) -> AuthStatus {
     AuthStatus::SignedIn { account }
 }
 
-/// Read the text of `codex login status`. "Not logged in" contains "logged in", so it is checked first.
-fn parse_codex_status(text: &str, success: bool) -> AuthStatus {
-    let lower = text.to_lowercase();
-    if lower.contains("not logged in") {
-        let line = text.lines().find(|l| l.to_lowercase().contains("not logged in")).unwrap_or_default();
-        return AuthStatus::SignedOut { detail: format!("codex login status: {}", line.trim()) };
-    }
-    if success && lower.contains("logged in") {
-        let account = if lower.contains("api key") {
-            Some("API key".to_string())
-        } else if lower.contains("chatgpt") {
-            Some("ChatGPT plan".to_string())
-        } else {
-            None
-        };
-        return AuthStatus::SignedIn { account };
-    }
-    AuthStatus::Unknown { detail: format!("codex login status: {}", tail(text.trim())) }
-}
-
 /// What a running sign-in reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignInEvent {
-    /// The sign-in page, the first http(s) URL the tool printed.
+    /// The sign-in page: the first http(s) URL the tool printed, or the page of the ChatGPT sign-in.
     Url(String),
-    /// The tool ended, or the sign-in was cancelled or ran out of time. The status is read again from the tool: that result decides, not the exit code.
+    /// The sign-in ended, was cancelled, or ran out of time. The status is read again: that result decides, not the exit code.
     Finished(AuthStatus),
 }
 
@@ -240,23 +232,93 @@ struct Shared {
     _workdir: tempfile::TempDir,
 }
 
-/// A running sign-in of a CLI provider. Dropping it kills the tool.
+/// A running sign-in. Dropping it stops the sign-in.
 pub struct SignIn {
+    inner: Inner,
+}
+
+enum Inner {
+    Cli(CliSignIn),
+    ChatGpt(ChatGptSignIn),
+    Acp(AcpSignIn),
+}
+
+impl SignIn {
+    /// Start the sign-in of a provider. For the Claude CLI this is the tool's
+    /// own `claude auth login`, with the provider's config folder, which it
+    /// creates when it does not exist. For ChatGPT, Sayso runs the sign-in and
+    /// saves the tokens in `secrets`. For an ACP agent, the agent runs the
+    /// sign-in of its first method that it runs itself; an agent with only a
+    /// terminal sign-in gives `NotConfigured` with the command to run. Err for
+    /// a kind with no login, or when the tool is not found or does not start.
+    /// This blocks while an ACP agent starts.
+    pub fn start(provider: &Provider, secrets: Arc<dyn SecretStore>) -> Result<SignIn, EnhanceError> {
+        Self::start_with_limit(provider, secrets, SIGN_IN_LIMIT)
+    }
+
+    /// Like [`SignIn::start`], with another time limit. For tests.
+    #[doc(hidden)]
+    pub fn start_with_limit(provider: &Provider, secrets: Arc<dyn SecretStore>, limit: Duration) -> Result<SignIn, EnhanceError> {
+        let inner = match provider.kind {
+            ProviderKind::ChatGpt { .. } => Inner::ChatGpt(ChatGptSignIn::start(secrets, &provider.id, limit, Endpoints::default())?),
+            ProviderKind::Acp { .. } => Inner::Acp(AcpSignIn::start(provider, secrets, limit)?),
+            _ => Inner::Cli(CliSignIn::start(provider, limit)?),
+        };
+        Ok(SignIn { inner })
+    }
+
+    /// True when the tool takes a code on its input (Claude).
+    pub fn takes_code(&self) -> bool {
+        match &self.inner {
+            Inner::Cli(cli) => cli.takes_code,
+            Inner::ChatGpt(_) | Inner::Acp(_) => false,
+        }
+    }
+
+    /// True when the sign-in opens its page in the browser itself, as the
+    /// Claude CLI and ACP agents do. Otherwise the caller opens the page of the `Url` event.
+    pub fn opens_browser(&self) -> bool {
+        matches!(self.inner, Inner::Cli(_) | Inner::Acp(_))
+    }
+
+    /// Blocks until the next event. None after `Finished` was returned.
+    pub fn next_event(&self) -> Option<SignInEvent> {
+        match &self.inner {
+            Inner::Cli(cli) => cli.next_event(),
+            Inner::ChatGpt(chatgpt) => chatgpt.next_event(),
+            Inner::Acp(acp) => acp.next_event(),
+        }
+    }
+
+    /// Write the code from the browser to the tool, with a line end.
+    pub fn send_code(&self, code: &str) -> Result<(), EnhanceError> {
+        match &self.inner {
+            Inner::Cli(cli) => cli.send_code(code),
+            Inner::ChatGpt(_) => Err(EnhanceError::Cli("the ChatGPT sign-in takes no code".into())),
+            Inner::Acp(_) => Err(EnhanceError::Cli("the sign-in of the agent takes no code".into())),
+        }
+    }
+
+    /// Stop the sign-in. `next_event` then returns `Finished` with the current status.
+    pub fn cancel(&self) {
+        match &self.inner {
+            Inner::Cli(cli) => cli.cancel(),
+            Inner::ChatGpt(chatgpt) => chatgpt.cancel(),
+            Inner::Acp(acp) => acp.cancel(),
+        }
+    }
+}
+
+/// A running sign-in of a CLI tool. Dropping it kills the tool.
+struct CliSignIn {
     shared: Arc<Shared>,
     /// None after `Finished` was returned.
     events: Mutex<Option<Receiver<SignInEvent>>>,
     takes_code: bool,
 }
 
-impl SignIn {
-    /// Start the tool's own sign-in: `claude auth login` or `codex login`, with the provider's config folder. Creates the configured folder when it does not exist. Err for a kind with no login, or when the tool is not found or does not start.
-    pub fn start(provider: &Provider) -> Result<SignIn, EnhanceError> {
-        Self::start_with_limit(provider, SIGN_IN_LIMIT)
-    }
-
-    /// Like [`SignIn::start`], with another time limit. For tests.
-    #[doc(hidden)]
-    pub fn start_with_limit(provider: &Provider, limit: Duration) -> Result<SignIn, EnhanceError> {
+impl CliSignIn {
+    fn start(provider: &Provider, limit: Duration) -> Result<CliSignIn, EnhanceError> {
         let (tool, path) = Tool::of(&provider.kind)
             .ok_or_else(|| EnhanceError::NotConfigured("this provider has no sign-in".into()))?;
         let program = tool
@@ -302,16 +364,10 @@ impl SignIn {
         });
         let supervisor = Supervisor { shared: shared.clone(), provider: provider.clone(), limit, tx, done: done_rx, readers };
         std::thread::spawn(move || supervisor.run());
-        Ok(SignIn { shared, events: Mutex::new(Some(rx)), takes_code })
+        Ok(CliSignIn { shared, events: Mutex::new(Some(rx)), takes_code })
     }
 
-    /// True when the tool takes a code on its input (Claude). False for Codex.
-    pub fn takes_code(&self) -> bool {
-        self.takes_code
-    }
-
-    /// Blocks until the next event. None after `Finished` was returned.
-    pub fn next_event(&self) -> Option<SignInEvent> {
+    fn next_event(&self) -> Option<SignInEvent> {
         let mut events = self.events.lock().unwrap_or_else(|e| e.into_inner());
         let event = events.as_ref()?.recv().ok();
         if !matches!(event, Some(SignInEvent::Url(_))) {
@@ -320,8 +376,7 @@ impl SignIn {
         event
     }
 
-    /// Write the code from the browser to the tool, with a line end.
-    pub fn send_code(&self, code: &str) -> Result<(), EnhanceError> {
+    fn send_code(&self, code: &str) -> Result<(), EnhanceError> {
         let mut stdin = self.shared.stdin.lock().unwrap_or_else(|e| e.into_inner());
         let pipe = stdin.as_mut().ok_or_else(|| EnhanceError::Cli("the tool takes no code".into()))?;
         pipe.write_all(code.trim().as_bytes())
@@ -330,14 +385,13 @@ impl SignIn {
             .map_err(|e| EnhanceError::Cli(format!("could not write to the tool: {e}")))
     }
 
-    /// Stop the tool. `next_event` then returns `Finished` with the current status.
-    pub fn cancel(&self) {
+    fn cancel(&self) {
         self.shared.cancelled.store(true, Ordering::SeqCst);
         let _ = self.shared.child.lock().unwrap_or_else(|e| e.into_inner()).kill();
     }
 }
 
-impl Drop for SignIn {
+impl Drop for CliSignIn {
     fn drop(&mut self) {
         self.shared.dropped.store(true, Ordering::SeqCst);
         let mut child = self.shared.child.lock().unwrap_or_else(|e| e.into_inner());
@@ -384,7 +438,7 @@ impl Supervisor {
         if self.shared.dropped.load(Ordering::SeqCst) {
             return;
         }
-        let status = auth_status(&self.provider, STATUS_TIMEOUT)
+        let status = cli_auth_status(&self.provider, STATUS_TIMEOUT)
             .unwrap_or(AuthStatus::Unknown { detail: "this provider has no sign-in".into() });
         let _ = self.tx.send(SignInEvent::Finished(status));
     }
@@ -475,22 +529,6 @@ mod tests {
     }
 
     #[test]
-    fn codex_states() {
-        assert_eq!(account(parse_codex_status("Logged in using ChatGPT\n", true)).as_deref(), Some("ChatGPT plan"));
-        assert_eq!(account(parse_codex_status("Logged in using an API key - sk-***abc", true)).as_deref(), Some("API key"));
-        assert_eq!(account(parse_codex_status("Logged in", true)), None);
-        // "not logged in" wins over "logged in", in any case.
-        assert_eq!(
-            parse_codex_status("Not logged in\n", false),
-            AuthStatus::SignedOut { detail: "codex login status: Not logged in".into() }
-        );
-        assert!(matches!(parse_codex_status("NOT LOGGED IN", true), AuthStatus::SignedOut { .. }));
-        let broken = "Error loading configuration: CODEX_HOME points to \"/x\", but that path does not exist";
-        assert!(matches!(parse_codex_status(broken, false), AuthStatus::Unknown { detail } if detail.contains("CODEX_HOME")));
-        assert!(matches!(parse_codex_status("", true), AuthStatus::Unknown { .. }));
-    }
-
-    #[test]
     fn home_folder_is_expanded() {
         let home = Path::new("/home/u");
         assert_eq!(expand_with("~/.claude-work", Some(home)), Path::new("/home/u/.claude-work"));
@@ -503,8 +541,7 @@ mod tests {
     #[test]
     fn config_env_names_the_variable_of_the_tool() {
         assert_eq!(config_env(Tool::Claude, Some("/a")), Some(("CLAUDE_CONFIG_DIR", "/a".into())));
-        assert_eq!(config_env(Tool::Codex, Some("/a")), Some(("CODEX_HOME", "/a".into())));
-        assert_eq!(config_env(Tool::Codex, None), None);
+        assert_eq!(config_env(Tool::Claude, None), None);
         assert_eq!(config_env(Tool::Claude, Some("  ")), None);
     }
 
