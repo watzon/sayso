@@ -4,6 +4,8 @@
 //! - [`OpenAiCompatible`]: HTTP to OpenRouter, OpenAI, Ollama, LM Studio, llama.cpp.
 //! - [`ClaudeCli`]: the user's own `claude` command.
 //! - [`ChatGpt`]: the user's ChatGPT plan, with a sign-in that Sayso keeps.
+//! - [`AcpAgent`]: any agent that speaks the Agent Client Protocol, for
+//!   example `opencode acp`. The [`registry`] lists the known agents.
 //! - [`EngineModel`]: the language model that the engine runs on this computer
 //!   (Apple Intelligence on macOS).
 //!
@@ -12,6 +14,7 @@
 //! never from the config.
 //! All calls block: run them on a background thread.
 
+mod acp;
 mod auth;
 mod chatgpt;
 mod claude;
@@ -24,6 +27,8 @@ mod secrets;
 #[cfg(windows)]
 mod win_shim;
 
+pub use acp::registry;
+pub use acp::{AcpAgent, AgentCheck, IDLE_LIMIT as ACP_IDLE_LIMIT, check_agent, secret_account as acp_secret_account, stop_agent as stop_acp_agent};
 pub use auth::{AuthStatus, SIGN_IN_LIMIT, SignIn, SignInEvent, auth_status};
 pub use chatgpt::ChatGpt;
 pub use claude::ClaudeCli;
@@ -85,6 +90,8 @@ pub fn build_enhancer(
                 .with_thinking(provider.thinking_sent())
                 .with_default_timeout(cli_timeout),
         ),
+        // The agent thinks and may run a turn of its own, so it gets the CLI timeout.
+        ProviderKind::Acp { .. } => Box::new(AcpAgent::new(provider, secrets.as_ref()).with_default_timeout(cli_timeout)),
         ProviderKind::AppleIntelligence => Box::new(EngineModel::new(&provider.id, engine).with_default_timeout(http_timeout)),
         // A cleanup model reads no prompt: the app runs it as a `Cleaner`
         // (`sayso-cleanup-client`), never through this function.
@@ -161,6 +168,27 @@ mod tests {
         assert!(build_enhancer(&claude, &secrets, &cfg, None).is_cloud());
         let chatgpt = provider(ProviderKind::ChatGpt { model: None, thinking: None });
         assert!(build_enhancer(&chatgpt, &secrets, &cfg, None).is_cloud());
+        assert!(build_enhancer(&acp(vec!["KEY".into()]), &secrets, &cfg, None).is_cloud());
+    }
+
+    fn acp(secret_env: Vec<String>) -> Provider {
+        provider(ProviderKind::Acp {
+            command: "/nowhere/agent".into(),
+            args: vec!["acp".into()],
+            env: Default::default(),
+            secret_env,
+            registry: None,
+            model: None,
+            keep_running: false,
+        })
+    }
+
+    #[test]
+    fn acp_without_a_secret_value_or_a_command_gives_not_configured() {
+        let e = build_enhancer(&acp(vec!["AGENT_KEY".into()]), &store(), &Ai::default(), None);
+        assert!(matches!(e.enhance(&request()), Err(EnhanceError::NotConfigured(m)) if m.contains("AGENT_KEY")));
+        let e = build_enhancer(&acp(Vec::new()), &store(), &Ai::default(), None);
+        assert!(matches!(e.enhance(&request()), Err(EnhanceError::NotConfigured(m)) if m.contains("could not start")));
     }
 
     #[test]

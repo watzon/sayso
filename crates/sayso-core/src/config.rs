@@ -10,6 +10,7 @@ use crate::models::{ModelId, default_model};
 use crate::speech::{Speech, SpeechProviderKind};
 use crate::style::DEFAULT_STYLE_ID;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -456,6 +457,32 @@ pub enum ProviderKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thinking: Option<String>,
     },
+    /// An agent that speaks the Agent Client Protocol (ACP) on its standard
+    /// input and output, for example `opencode acp`. In `config.toml` it is in
+    /// `[[ai.agents]]`, not in `[[ai.providers]]`.
+    Acp {
+        /// The program. A bare name is searched in `PATH` and the usual install folders.
+        command: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        args: Vec<String>,
+        /// Environment variables that are not secret.
+        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+        env: BTreeMap<String, String>,
+        /// Names of environment variables whose values are secret. The values
+        /// are in the secret store under `acp.<provider id>.<NAME>`, never in this file.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        secret_env: Vec<String>,
+        /// The entry of the ACP registry that the agent came from. None for an agent that the user added.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        registry: Option<RegistryRef>,
+        /// None uses the agent's own default model.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        model: Option<String>,
+        /// Keep the agent running between requests. It stops after 10 minutes
+        /// without use. False starts it for each request.
+        #[serde(default = "default_true")]
+        keep_running: bool,
+    },
     /// The language model of macOS, which the engine runs on this Mac.
     AppleIntelligence,
     /// A local model that cleans the text and reads no prompt. `model` is the
@@ -471,6 +498,7 @@ impl ProviderKind {
             ProviderKind::OpenAiCompatible { .. } => "open_ai_compatible",
             ProviderKind::ClaudeCli { .. } => "claude_cli",
             ProviderKind::ChatGpt { .. } => "chat_gpt",
+            ProviderKind::Acp { .. } => "acp",
             ProviderKind::AppleIntelligence => "apple_intelligence",
             ProviderKind::CleanupModel { .. } => "cleanup_model",
         }
@@ -479,6 +507,17 @@ impl ProviderKind {
 
 fn default_claude_model() -> String {
     "haiku".into()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// An agent of the ACP registry, by id and version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RegistryRef {
+    pub id: String,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -495,7 +534,7 @@ impl Provider {
     pub fn model(&self) -> Option<&str> {
         let model = match &self.kind {
             ProviderKind::OpenAiCompatible { model, .. } | ProviderKind::ClaudeCli { model, .. } => Some(model.as_str()),
-            ProviderKind::ChatGpt { model, .. } => model.as_deref(),
+            ProviderKind::ChatGpt { model, .. } | ProviderKind::Acp { model, .. } => model.as_deref(),
             ProviderKind::AppleIntelligence => None,
             ProviderKind::CleanupModel { model } => Some(model.as_str()),
         };
@@ -517,7 +556,7 @@ impl Provider {
             ProviderKind::OpenAiCompatible { thinking, .. }
             | ProviderKind::ClaudeCli { thinking, .. }
             | ProviderKind::ChatGpt { thinking, .. } => thinking.as_deref().filter(|level| !level.trim().is_empty()),
-            ProviderKind::AppleIntelligence | ProviderKind::CleanupModel { .. } => None,
+            ProviderKind::Acp { .. } | ProviderKind::AppleIntelligence | ProviderKind::CleanupModel { .. } => None,
         }
     }
 
@@ -551,7 +590,7 @@ impl Provider {
     pub fn set_model(&mut self, id: String) {
         match &mut self.kind {
             ProviderKind::OpenAiCompatible { model, .. } | ProviderKind::ClaudeCli { model, .. } => *model = id,
-            ProviderKind::ChatGpt { model, .. } => *model = Some(id),
+            ProviderKind::ChatGpt { model, .. } | ProviderKind::Acp { model, .. } => *model = Some(id),
             // macOS chooses the model.
             ProviderKind::AppleIntelligence => {}
             // The catalog fixes the model.
@@ -559,8 +598,8 @@ impl Provider {
         }
     }
 
-    /// True when the provider cannot run until a model is chosen. Claude and
-    /// ChatGPT have their own default; an HTTP server has none.
+    /// True when the provider cannot run until a model is chosen. Claude,
+    /// ChatGPT and ACP agents have their own default; an HTTP server has none.
     pub fn needs_model(&self) -> bool {
         matches!(self.kind, ProviderKind::OpenAiCompatible { .. }) && self.model().is_none()
     }
@@ -569,7 +608,8 @@ impl Provider {
     pub fn is_cloud(&self) -> bool {
         match &self.kind {
             ProviderKind::OpenAiCompatible { base_url, .. } => !is_local_url(base_url),
-            ProviderKind::ClaudeCli { .. } | ProviderKind::ChatGpt { .. } => true,
+            // An ACP agent may run a local model, but Sayso cannot tell.
+            ProviderKind::ClaudeCli { .. } | ProviderKind::ChatGpt { .. } | ProviderKind::Acp { .. } => true,
             ProviderKind::AppleIntelligence | ProviderKind::CleanupModel { .. } => false,
         }
     }
@@ -627,7 +667,8 @@ impl Ai {
 /// An older Sayso reads `[ai]` in one piece, and a provider of a kind that it
 /// does not know makes it use the default for the whole section. So a cleanup
 /// model is not in `providers`. It is in `cleanup_models`, which an older
-/// Sayso ignores. A ChatGPT provider is in `chatgpt_accounts` for the same reason.
+/// Sayso ignores. A ChatGPT provider is in `chatgpt_accounts` and an ACP
+/// agent is in `agents` for the same reason.
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 struct AiFile {
@@ -644,6 +685,9 @@ struct AiFile {
     /// The ChatGPT providers, in their own list for the same reason as the cleanup models.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     chatgpt_accounts: Vec<ChatGptEntry>,
+    /// The ACP agents, in their own list for the same reason.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    agents: Vec<AcpEntry>,
 }
 
 impl Default for AiFile {
@@ -712,6 +756,43 @@ struct ChatGptEntry {
     thinking: Option<String>,
 }
 
+/// An entry of `[[ai.agents]]`. The secret values are in the secret store.
+/// The tables (`env`, `registry`) come last, because TOML writes plain values before tables.
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
+struct AcpEntry {
+    id: String,
+    name: String,
+    command: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    args: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    secret_env: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    keep_running: bool,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    env: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    registry: Option<RegistryRef>,
+}
+
+impl Default for AcpEntry {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            command: String::new(),
+            args: Vec::new(),
+            secret_env: Vec::new(),
+            model: None,
+            keep_running: true,
+            env: BTreeMap::new(),
+            registry: None,
+        }
+    }
+}
+
 /// An entry of `[[ai.cleanup_models]]`.
 #[derive(Serialize, Deserialize, Default)]
 #[serde(default)]
@@ -746,6 +827,14 @@ impl From<AiFile> for Ai {
             }
             providers.push(Provider { id: entry.id, name: entry.name, kind: ProviderKind::ChatGpt { model: entry.model, thinking: entry.thinking } });
         }
+        for entry in file.agents {
+            if entry.id.is_empty() || entry.command.trim().is_empty() {
+                log::warn!("skipped an ACP agent with an empty id or command");
+                continue;
+            }
+            let AcpEntry { id, name, command, args, secret_env, model, keep_running, env, registry } = entry;
+            providers.push(Provider { id, name, kind: ProviderKind::Acp { command, args, env, secret_env, registry, model, keep_running } });
+        }
         Ai {
             enabled: file.enabled,
             active_style: file.active_style,
@@ -764,10 +853,14 @@ impl From<Ai> for AiFile {
         let mut providers = Vec::new();
         let mut cleanup_models = Vec::new();
         let mut chatgpt_accounts = Vec::new();
+        let mut agents = Vec::new();
         for provider in ai.providers {
             match provider.kind {
                 ProviderKind::CleanupModel { model } => cleanup_models.push(CleanupModelEntry { id: provider.id, name: provider.name, model }),
                 ProviderKind::ChatGpt { model, thinking } => chatgpt_accounts.push(ChatGptEntry { id: provider.id, name: provider.name, model, thinking }),
+                ProviderKind::Acp { command, args, env, secret_env, registry, model, keep_running } => {
+                    agents.push(AcpEntry { id: provider.id, name: provider.name, command, args, secret_env, model, keep_running, env, registry });
+                }
                 kind => providers.push(ProviderEntry::Known(Provider { id: provider.id, name: provider.name, kind })),
             }
         }
@@ -782,6 +875,7 @@ impl From<Ai> for AiFile {
             style_rules: ai.style_rules,
             cleanup_models,
             chatgpt_accounts,
+            agents,
         }
     }
 }
@@ -1744,6 +1838,68 @@ mod tests {
 
         let renamed = old.replace("name = \"Codex CLI\"", "name = \"Work\"");
         assert_eq!(Config::parse(&renamed).config.ai.providers[0].name, "Work", "a name the user chose stays");
+    }
+
+    fn acp_agent() -> Provider {
+        Provider {
+            id: "opencode".into(),
+            name: "OpenCode".into(),
+            kind: ProviderKind::Acp {
+                command: "opencode".into(),
+                args: vec!["acp".into()],
+                env: BTreeMap::from([("OPENCODE_LOG".to_string(), "warn".to_string())]),
+                secret_env: vec!["OPENROUTER_API_KEY".into()],
+                registry: Some(RegistryRef { id: "opencode".into(), version: "2.2.5".into() }),
+                model: Some("openrouter/haiku".into()),
+                keep_running: false,
+            },
+        }
+    }
+
+    #[test]
+    fn an_acp_agent_round_trips_in_its_own_list() {
+        let mut config = config_with_cleanup_model();
+        config.ai.providers.push(acp_agent());
+        let text = config.to_toml();
+        let loaded = Config::parse(&text);
+        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert_eq!(loaded.config, config);
+        let ai = ai_table(&text);
+        assert_eq!(kinds_of(ai.get("providers")), ["apple_intelligence"]);
+        let agents = ai.get("agents").and_then(toml::Value::as_array).expect("agents is written");
+        let entry = &agents[0];
+        assert_eq!(entry.get("command").and_then(toml::Value::as_str), Some("opencode"));
+        assert!(entry.get("kind").is_none(), "the list says the kind");
+        assert_eq!(entry.get("env").and_then(|env| env.get("OPENCODE_LOG")).and_then(toml::Value::as_str), Some("warn"));
+        assert_eq!(entry.get("registry").and_then(|r| r.get("version")).and_then(toml::Value::as_str), Some("2.2.5"));
+        assert!(!text.contains("sk-"), "no secret value is written");
+        // An older reader does not see it, and keeps the rest of the section.
+        let old: OldAi = ai.clone().try_into().expect("the older version parses [ai]");
+        assert_eq!(old.providers.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["apple-intelligence"]);
+    }
+
+    #[test]
+    fn an_acp_agent_has_defaults_and_its_own_model() {
+        let text = "[[ai.agents]]\nid = \"gemini\"\nname = \"Gemini\"\ncommand = \"gemini\"\n\n[[ai.agents]]\nid = \"\"\ncommand = \"x\"\n";
+        let parsed = Config::parse(text);
+        assert!(parsed.issues.is_empty(), "{:?}", parsed.issues);
+        assert_eq!(parsed.config.ai.providers.len(), 1, "an entry without an id is skipped");
+        let mut p = parsed.config.ai.providers[0].clone();
+        let ProviderKind::Acp { args, env, secret_env, registry, keep_running, .. } = &p.kind else { panic!("{:?}", p.kind) };
+        assert!(args.is_empty() && env.is_empty() && secret_env.is_empty() && registry.is_none());
+        assert!(keep_running, "an agent keeps running by default");
+        assert_eq!(p.kind.name(), "acp");
+        assert_eq!(p.model(), None);
+        assert!(!p.needs_model(), "the agent has its own default model");
+        assert!(p.is_cloud());
+        p.set_model("big".into());
+        assert_eq!(p.model(), Some("big"));
+        p.set_thinking(Some("high".into()));
+        assert_eq!((p.thinking(), p.thinking_sent()), (None, None), "no thinking levels for now");
+        assert_eq!(p.config_dir(), None);
+        let saved = toml::to_string(&parsed.config).unwrap();
+        assert!(saved.contains("keep_running = true"), "{saved}");
+        assert!(!saved.contains("secret_env") && !saved.contains("[ai.agents.env]"), "{saved}");
     }
 
     /// The `[ai]` section of the version before cleanup models. Its provider

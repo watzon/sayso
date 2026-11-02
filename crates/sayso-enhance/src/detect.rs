@@ -105,6 +105,42 @@ pub fn detect_claude_cli() -> Option<PathBuf> {
     detect("claude")
 }
 
+/// The folders of node version managers: the newest nvm version, and volta.
+/// `npx` is often only there, and a Dock-launched app does not have them in `PATH`.
+fn node_dirs(home: &std::path::Path) -> Vec<PathBuf> {
+    let mut versions: Vec<(Vec<u64>, PathBuf)> = std::fs::read_dir(home.join(".nvm").join("versions").join("node"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .filter_map(|path| {
+                    let name = path.file_name()?.to_str()?.trim_start_matches('v').to_string();
+                    let rank = name.split('.').map(|part| part.parse().unwrap_or(0)).collect();
+                    Some((rank, path.join("bin")))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    versions.sort();
+    let mut dirs: Vec<PathBuf> = versions.into_iter().rev().map(|(_, dir)| dir).collect();
+    dirs.push(home.join(".volta").join("bin"));
+    dirs
+}
+
+/// A command by name, for the ACP agents: `PATH`, the usual install folders,
+/// then the folders of node version managers.
+pub(crate) fn detect_command(name: &str) -> Option<PathBuf> {
+    if let Some(found) = detect(name) {
+        return Some(found);
+    }
+    #[cfg(not(windows))]
+    if sayso_core::flatpak::app_id().is_some() {
+        return None;
+    }
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(PathBuf::from)?;
+    find_executable(name, &node_dirs(&home))
+}
+
 /// Ask a local Ollama for its models. None when Ollama does not answer within `timeout`.
 pub fn detect_ollama(timeout: Duration) -> Option<Vec<String>> {
     detect_ollama_at(OLLAMA_URL, timeout)
@@ -250,6 +286,20 @@ mod tests {
         assert_eq!(search("claude", a.path(), b.path()), (true, c.path().join("claude").display().to_string()));
         assert_eq!(search("codex", c.path(), b.path()), (true, c.path().join("codex").display().to_string()));
         assert_eq!(search("no-such-tool", a.path(), b.path()), (false, String::new()));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn the_newest_nvm_version_comes_first() {
+        let home = tempfile::tempdir().unwrap();
+        for version in ["v9.1.0", "v24.2.1", "v24.10.0"] {
+            std::fs::create_dir_all(home.path().join(".nvm/versions/node").join(version).join("bin")).unwrap();
+        }
+        let dirs = node_dirs(home.path());
+        let names: Vec<String> = dirs.iter().map(|d| d.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["v24.10.0", "v24.2.1", "v9.1.0", ".volta"]);
+        touch(&dirs[1], "npx", 0o755);
+        assert_eq!(find_executable("npx", &dirs), Some(dirs[1].join("npx")));
     }
 
     #[test]

@@ -7,7 +7,10 @@
 //!   Every run of the tool gets the folder from the config instead.
 //! - ChatGPT: Sayso runs the sign-in itself and keeps the tokens in the secret
 //!   store (see `chatgpt`).
+//! - ACP agents: the agent keeps its own sign-in. Sayso asks it to run the
+//!   sign-in with an `authenticate` request (see `acp`).
 
+use crate::acp::AcpSignIn;
 use crate::chatgpt::{ChatGptSignIn, Endpoints};
 use crate::cli::{self, Invocation, tail};
 use crate::detect::detect_claude_cli;
@@ -130,10 +133,14 @@ fn folder_missing(dir: &Path) -> bool {
 }
 
 /// The login state of a provider. None for a kind that has no login (OpenAI-compatible, Apple Intelligence). Blocks; `timeout` bounds the call.
-/// `secrets` holds the ChatGPT sign-in.
+/// `secrets` holds the ChatGPT sign-in and the secret variables of ACP agents.
+/// An ACP agent is started (or the running one is used) and asked for a
+/// session: it is signed in when it opens one.
 pub fn auth_status(provider: &Provider, secrets: &dyn SecretStore, timeout: Duration) -> Option<AuthStatus> {
-    if matches!(provider.kind, ProviderKind::ChatGpt { .. }) {
-        return Some(crate::chatgpt::status(secrets, &provider.id));
+    match provider.kind {
+        ProviderKind::ChatGpt { .. } => return Some(crate::chatgpt::status(secrets, &provider.id)),
+        ProviderKind::Acp { .. } => return Some(crate::acp::status(provider, secrets, timeout)),
+        _ => {}
     }
     cli_auth_status(provider, timeout)
 }
@@ -233,14 +240,18 @@ pub struct SignIn {
 enum Inner {
     Cli(CliSignIn),
     ChatGpt(ChatGptSignIn),
+    Acp(AcpSignIn),
 }
 
 impl SignIn {
     /// Start the sign-in of a provider. For the Claude CLI this is the tool's
     /// own `claude auth login`, with the provider's config folder, which it
     /// creates when it does not exist. For ChatGPT, Sayso runs the sign-in and
-    /// saves the tokens in `secrets`. Err for a kind with no login, or when the
-    /// tool is not found or does not start.
+    /// saves the tokens in `secrets`. For an ACP agent, the agent runs the
+    /// sign-in of its first method that it runs itself; an agent with only a
+    /// terminal sign-in gives `NotConfigured` with the command to run. Err for
+    /// a kind with no login, or when the tool is not found or does not start.
+    /// This blocks while an ACP agent starts.
     pub fn start(provider: &Provider, secrets: Arc<dyn SecretStore>) -> Result<SignIn, EnhanceError> {
         Self::start_with_limit(provider, secrets, SIGN_IN_LIMIT)
     }
@@ -250,6 +261,7 @@ impl SignIn {
     pub fn start_with_limit(provider: &Provider, secrets: Arc<dyn SecretStore>, limit: Duration) -> Result<SignIn, EnhanceError> {
         let inner = match provider.kind {
             ProviderKind::ChatGpt { .. } => Inner::ChatGpt(ChatGptSignIn::start(secrets, &provider.id, limit, Endpoints::default())?),
+            ProviderKind::Acp { .. } => Inner::Acp(AcpSignIn::start(provider, secrets, limit)?),
             _ => Inner::Cli(CliSignIn::start(provider, limit)?),
         };
         Ok(SignIn { inner })
@@ -259,14 +271,14 @@ impl SignIn {
     pub fn takes_code(&self) -> bool {
         match &self.inner {
             Inner::Cli(cli) => cli.takes_code,
-            Inner::ChatGpt(_) => false,
+            Inner::ChatGpt(_) | Inner::Acp(_) => false,
         }
     }
 
     /// True when the sign-in opens its page in the browser itself, as the
-    /// Claude CLI does. Otherwise the caller opens the page of the `Url` event.
+    /// Claude CLI and ACP agents do. Otherwise the caller opens the page of the `Url` event.
     pub fn opens_browser(&self) -> bool {
-        matches!(self.inner, Inner::Cli(_))
+        matches!(self.inner, Inner::Cli(_) | Inner::Acp(_))
     }
 
     /// Blocks until the next event. None after `Finished` was returned.
@@ -274,6 +286,7 @@ impl SignIn {
         match &self.inner {
             Inner::Cli(cli) => cli.next_event(),
             Inner::ChatGpt(chatgpt) => chatgpt.next_event(),
+            Inner::Acp(acp) => acp.next_event(),
         }
     }
 
@@ -282,6 +295,7 @@ impl SignIn {
         match &self.inner {
             Inner::Cli(cli) => cli.send_code(code),
             Inner::ChatGpt(_) => Err(EnhanceError::Cli("the ChatGPT sign-in takes no code".into())),
+            Inner::Acp(_) => Err(EnhanceError::Cli("the sign-in of the agent takes no code".into())),
         }
     }
 
@@ -290,6 +304,7 @@ impl SignIn {
         match &self.inner {
             Inner::Cli(cli) => cli.cancel(),
             Inner::ChatGpt(chatgpt) => chatgpt.cancel(),
+            Inner::Acp(acp) => acp.cancel(),
         }
     }
 }

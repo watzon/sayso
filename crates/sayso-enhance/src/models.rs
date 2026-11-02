@@ -5,6 +5,7 @@
 //!   protocol answers an `initialize` request with the model list. No prompt
 //!   is sent, so this costs nothing.
 //! - ChatGPT: the model list of the Codex backend (see `chatgpt`).
+//! - ACP agents: the models of a new session (see `acp`).
 //! - Apple Intelligence: the one model that the engine reports.
 //!
 //! All calls block: run them on a background thread.
@@ -51,6 +52,7 @@ pub fn list_provider_models(
             list_claude_models(&program, provider.config_dir(), timeout)
         }
         ProviderKind::ChatGpt { .. } => crate::chatgpt::list_models(secrets, &provider.id, timeout),
+        ProviderKind::Acp { .. } => crate::acp::list_models(provider, secrets, timeout),
         // macOS chooses the model, so the list has one entry.
         ProviderKind::AppleIntelligence => {
             let engine = engine.ok_or_else(|| EnhanceError::NotConfigured("the engine does not run".into()))?;

@@ -1,6 +1,6 @@
 [package]
 name = "sayso-enhance"
-description = "Sayso AI enhancement providers: OpenAI-compatible HTTP, Claude CLI, ChatGPT plan."
+description = "Sayso AI enhancement providers: OpenAI-compatible HTTP, Claude CLI, ChatGPT plan, ACP agents."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -22,6 +22,12 @@ url = "2"
 tiny_http = "0.12"
 ureq = { version = "3", features = ["json"] }
 wait-timeout = "0.2"
+serde.workspace = true
+# The downloads of the ACP registry.
+flate2 = "1"
+tar = "0.4"
+bzip2 = "0.6"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 workspace-hack.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
