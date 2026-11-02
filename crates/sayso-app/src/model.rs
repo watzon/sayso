@@ -41,9 +41,9 @@ pub struct Detected {
     pub done: bool,
 }
 
-/// True for a provider with a login: the Claude CLI, and ChatGPT.
+/// True for a provider with a login: the Claude CLI, ChatGPT, and an ACP agent.
 pub fn has_login(p: &Provider) -> bool {
-    matches!(p.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::ChatGpt { .. })
+    matches!(p.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::ChatGpt { .. } | ProviderKind::Acp { .. })
 }
 
 /// The login of a provider, as last read from the tool or the saved sign-in.
@@ -100,6 +100,8 @@ pub struct AppModel {
     pub services: Services,
     /// The downloads of cleanup models. See `cleanup_models.rs`.
     pub cleanup: crate::cleanup_models::CleanupModels,
+    /// The ACP agent registry, agent downloads, and the check of a command.
+    pub agents: crate::agents::Agents,
 
     pub machine: Machine,
     pub live: Arc<LiveAudio>,
@@ -282,6 +284,7 @@ impl AppModel {
             services,
             machine: Machine::new(timing),
             cleanup: Default::default(),
+            agents: Default::default(),
             live: Arc::new(LiveAudio::default()),
             preview: (String::new(), String::new()),
             last_text: None,
@@ -1345,6 +1348,12 @@ impl AppModel {
             }
             Some(ProviderKind::ChatGpt { .. }) => {
                 let _ = sayso_enhance::chatgpt_sign_out(self.services.secrets.as_ref(), &id);
+            }
+            Some(ProviderKind::Acp { secret_env, .. }) => {
+                sayso_enhance::stop_acp_agent(&id);
+                for name in secret_env {
+                    let _ = self.services.secrets.delete(&sayso_enhance::acp_secret_account(&id, name));
+                }
             }
             _ => {}
         }

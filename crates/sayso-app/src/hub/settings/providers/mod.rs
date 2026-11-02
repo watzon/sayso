@@ -57,6 +57,8 @@ struct Open {
 enum Edit {
     Address,
     ApiKey,
+    /// The command line of an ACP agent.
+    Command,
 }
 
 /// What is wrong with a provider: a sentence for the user, and the words of
@@ -80,6 +82,7 @@ enum Group {
     Subscriptions,
     OnThisMac,
     Servers,
+    Agents,
 }
 
 impl Group {
@@ -88,6 +91,7 @@ impl Group {
             ProviderKind::ClaudeCli { .. } | ProviderKind::ChatGpt { .. } => Group::Subscriptions,
             ProviderKind::CleanupModel { .. } | ProviderKind::AppleIntelligence => Group::OnThisMac,
             ProviderKind::OpenAiCompatible { .. } => Group::Servers,
+            ProviderKind::Acp { .. } => Group::Agents,
         }
     }
 
@@ -96,6 +100,7 @@ impl Group {
             Group::Subscriptions => t!("settings.providers.group_subscriptions"),
             Group::OnThisMac => t!("settings.providers.group_on_this_computer", computer = crate::shell::computer()),
             Group::Servers => t!("settings.providers.group_servers"),
+            Group::Agents => t!("settings.providers.group_agents"),
         }
     }
 }
@@ -131,6 +136,8 @@ pub struct ProviderSettings {
     open: Option<Open>,
     confirm_remove: Option<String>,
     add: Option<add::AddFlow>,
+    /// A provider that was added outside a render: it is selected at the next one.
+    pending: Option<String>,
     tests: HashMap<String, Test>,
     /// The locale of the text in the placeholders of the input fields.
     locale: String,
@@ -207,7 +214,7 @@ impl ProviderSettings {
                 m.check_provider_login(id, cx);
             }
         });
-        Self { model, open: None, confirm_remove: None, add: None, tests: HashMap::new(), locale: sayso_i18n::locale(), _observe: observe }
+        Self { model, open: None, confirm_remove: None, add: None, pending: None, tests: HashMap::new(), locale: sayso_i18n::locale(), _observe: observe }
     }
 
     fn provider(&self, id: &str, cx: &App) -> Option<Provider> {
@@ -355,7 +362,9 @@ impl ProviderSettings {
                     });
                 }
                 Some(AuthStatus::SignedOut { detail }) => {
-                    let message = if matches!(p.kind, ProviderKind::ChatGpt { .. }) {
+                    let message = if matches!(p.kind, ProviderKind::Acp { .. }) {
+                        t!("settings.providers.signed_out_agent", name = p.name)
+                    } else if matches!(p.kind, ProviderKind::ChatGpt { .. }) {
                         t!("settings.providers.signed_out_chatgpt")
                     } else if self.sayso_login(p, cx) {
                         t!("settings.providers.signed_out_sayso", tool = name)
@@ -368,7 +377,11 @@ impl ProviderSettings {
                     return bad(
                         t!("settings.providers.not_installed"),
                         Some(Problem {
-                            message: t!("settings.providers.not_installed_detail", tool = name),
+                            message: if matches!(p.kind, ProviderKind::Acp { .. }) {
+                                t!("settings.providers.agent_missing", name = p.name)
+                            } else {
+                                t!("settings.providers.not_installed_detail", tool = name)
+                            },
                             details: None,
                         }),
                     );
@@ -376,7 +389,14 @@ impl ProviderSettings {
                 Some(AuthStatus::Unknown { detail }) => {
                     return bad(
                         t!("settings.providers.login_unknown"),
-                        Some(Problem { message: t!("settings.providers.login_unknown_detail", tool = name), details: Some(detail.clone()) }),
+                        Some(Problem {
+                            message: if matches!(p.kind, ProviderKind::Acp { .. }) {
+                                t!("settings.providers.agent_unknown", name = p.name)
+                            } else {
+                                t!("settings.providers.login_unknown_detail", tool = name)
+                            },
+                            details: Some(detail.clone()),
+                        }),
                     );
                 }
             }
@@ -442,6 +462,24 @@ impl ProviderSettings {
         }
     }
 
+    /// The mark of a provider. An agent of the registry without a bundled
+    /// mark uses its downloaded icon, which loads the first time.
+    fn mark(&self, p: &Provider, cx: &mut Context<Self>) -> logo::Mark {
+        let mark = logo::of(p);
+        if mark != logo::AGENT {
+            return mark;
+        }
+        let ProviderKind::Acp { registry: Some(entry), .. } = &p.kind else { return mark };
+        let id = entry.id.clone();
+        self.model
+            .update(cx, |m, cx| {
+                let agent = m.registry_agent(&id).cloned()?;
+                m.agent_icon(&agent, cx)
+            })
+            .map(|path| logo::Mark::External(path.to_string_lossy().into_owned().into()))
+            .unwrap_or(mark)
+    }
+
     /// The model and thinking level of a provider, for its row: "Haiku 5.5 · Low".
     fn summary(&self, p: &Provider, cx: &App) -> String {
         let m = self.model.read(cx);
@@ -491,7 +529,7 @@ impl ProviderSettings {
             .rounded(px(10.))
             .cursor_pointer()
             .on_click(cx.listener(move |this, _, window, cx| this.open_row(&id, window, cx)))
-            .child(logo::tile(logo::of(p), 30., cx))
+            .child(logo::tile(self.mark(p, cx), 30., cx))
             .child(
                 div()
                     .flex()
@@ -619,6 +657,9 @@ impl Render for ProviderSettings {
             return div().relative().size_full().child(self.empty_state(cx)).children(modal).into_any_element();
         }
 
+        if let Some(id) = self.pending.take() {
+            self.open_row(&id, window, cx);
+        }
         // A provider that is gone shows the default instead.
         let current = self.open.as_ref().map(|o| o.id.clone()).filter(|id| providers.iter().any(|p| &p.id == id));
         let selected = match current {

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 
 /// How a mark is drawn.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub(super) enum Mark {
     /// A one-color SVG, tinted with the ink.
     Tinted(&'static str),
@@ -23,6 +23,8 @@ pub(super) enum Mark {
     AppIcon(&'static str),
     /// No mark of its own: an icon of Sayso.
     Glyph(Icon),
+    /// A one-color SVG file that Sayso downloaded: the icon of a registry agent.
+    External(SharedString),
 }
 
 pub(super) const OPENAI: Mark = Mark::Tinted("logos/openai.svg");
@@ -54,7 +56,22 @@ pub(super) fn server(base_url: &str) -> Mark {
     }
 }
 
-/// The mark of a provider.
+/// The bundled mark of a well-known agent of the ACP registry, by its id.
+pub(super) fn agent(registry_id: &str) -> Option<Mark> {
+    Some(match registry_id {
+        "claude-acp" => CLAUDE,
+        "codex-acp" => OPENAI,
+        "gemini" => Mark::Colored("logos/gemini-color.svg"),
+        "opencode" | "opencode-v2" => Mark::Tinted("logos/opencode.svg"),
+        "cursor" => Mark::Tinted("logos/cursor.svg"),
+        "qwen-code" => Mark::Colored("logos/qwen-color.svg"),
+        "kimi" => Mark::Colored("logos/kimi-color.svg"),
+        _ => return None,
+    })
+}
+
+/// The mark of a provider. An agent from the registry without a bundled
+/// mark gets [`AGENT`] here; the page uses its downloaded icon when it has one.
 pub(super) fn of(p: &Provider) -> Mark {
     match &p.kind {
         ProviderKind::ChatGpt { .. } => OPENAI,
@@ -62,6 +79,7 @@ pub(super) fn of(p: &Provider) -> Mark {
         ProviderKind::AppleIntelligence => APPLE,
         ProviderKind::OpenAiCompatible { base_url, .. } => server(base_url),
         ProviderKind::CleanupModel { model } => cleanup(model),
+        ProviderKind::Acp { registry, .. } => registry.as_ref().and_then(|r| agent(&r.id)).unwrap_or(AGENT),
     }
 }
 
@@ -101,20 +119,22 @@ pub(super) fn tile(mark: Mark, size: f32, cx: &App) -> Div {
         }
         Mark::Tinted(path) => plate.bg(c.sheet_raised).shadow(paper::raised_small(&c)).child(svg().path(path).size(px(inner)).text_color(c.ink)),
         Mark::Glyph(glyph) => plate.bg(c.sheet_raised).shadow(paper::raised_small(&c)).child(icon(glyph, (size * 0.5).round(), c.ink)),
+        Mark::External(path) => plate.bg(c.sheet_raised).shadow(paper::raised_small(&c)).child(svg().external_path(path).size(px(inner)).text_color(c.ink)),
     }
 }
 
 #[cfg(test)]
 mod tests {
     // No glob import: `gpui_kit::*` has its own `test` attribute.
-    use super::{APPLE, CLAUDE, LM_STUDIO, Mark, OLLAMA, OPENAI, OPENROUTER, SERVER, cleanup, server};
+    use super::{APPLE, CLAUDE, LM_STUDIO, Mark, OLLAMA, OPENAI, OPENROUTER, SERVER, agent, cleanup, server};
 
     #[test]
     fn every_mark_file_is_embedded() {
-        for mark in [OPENAI, CLAUDE, APPLE, OPENROUTER, OLLAMA, LM_STUDIO, cleanup("s1-mini"), cleanup("spokenly-cleanup-1")] {
+        let agents = ["claude-acp", "codex-acp", "gemini", "opencode", "cursor", "qwen-code", "kimi"].map(|id| agent(id).unwrap());
+        for mark in [OPENAI, CLAUDE, APPLE, OPENROUTER, OLLAMA, LM_STUDIO, cleanup("s1-mini"), cleanup("spokenly-cleanup-1")].into_iter().chain(agents) {
             let path = match mark {
                 Mark::Tinted(p) | Mark::Colored(p) | Mark::AppIcon(p) => p,
-                Mark::Glyph(_) => continue,
+                Mark::Glyph(_) | Mark::External(_) => continue,
             };
             assert!(sayso_ui::assets::bytes(path).is_some(), "{path} is not embedded");
         }

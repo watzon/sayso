@@ -217,7 +217,7 @@ fn refill(launch: &Launch) {
 
 /// Start a process for a provider, so that the next request finds it ready.
 /// Call it when a dictation starts. Does nothing for other kinds.
-pub fn prepare(provider: &Provider) {
+pub(crate) fn prepare(provider: &Provider) {
     if let ProviderKind::ClaudeCli { path, model, .. } = &provider.kind
         && let Some(launch) = ClaudeCli::new(&provider.id, path.as_ref().map(PathBuf::from), model)
             .with_thinking(provider.thinking_sent())

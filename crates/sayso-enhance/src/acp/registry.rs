@@ -377,6 +377,41 @@ fn make_executable(_program: &Path) -> Result<(), EnhanceError> {
     Ok(())
 }
 
+/// The largest icon that Sayso keeps.
+const MAX_ICON: usize = 256 * 1024;
+
+/// The SVG icon of an agent, downloaded once into `cache` (a folder) and kept
+/// there. A file that is not an SVG, or is larger than 256 KB, is refused.
+pub fn icon(agent: &RegistryAgent, cache: &Path, timeout: Duration) -> Result<PathBuf, EnhanceError> {
+    let safe: String = agent.id.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    let path = cache.join(format!("{safe}.svg"));
+    if path.is_file() {
+        return Ok(path);
+    }
+    let url = agent.icon.as_deref().filter(|u| u.starts_with("https://")).ok_or_else(|| EnhanceError::NotConfigured(format!("{} has no icon", agent.name)))?;
+    let timeout_ms = timeout.as_millis() as u64;
+    let mut response = crate::openai::agent(url)
+        .get(url)
+        .config()
+        .timeout_global(Some(timeout))
+        .http_status_as_error(false)
+        .build()
+        .call()
+        .map_err(|e| crate::openai::map_ureq_error(e, timeout_ms))?;
+    let status = response.status().as_u16();
+    let text = response.body_mut().with_config().limit(MAX_ICON as u64).read_to_string().map_err(|e| crate::openai::map_ureq_error(e, timeout_ms))?;
+    if status >= 400 {
+        return Err(EnhanceError::Http { status, body: text.chars().take(200).collect() });
+    }
+    if !text.contains("<svg") || text.contains("<script") {
+        return Err(EnhanceError::InvalidOutput(format!("the icon of {} is not an SVG", agent.name)));
+    }
+    std::fs::create_dir_all(cache).map_err(|e| EnhanceError::Cli(format!("could not create {}: {e}", cache.display())))?;
+    let partial = path.with_extension("svg.part");
+    std::fs::write(&partial, &text).and_then(|()| std::fs::rename(&partial, &path)).map_err(|e| EnhanceError::Cli(format!("could not save the icon: {e}")))?;
+    Ok(path)
+}
+
 /// Agents whose own command speaks ACP, by registry id: the command and its
 /// arguments. Each one was checked with the tool's help and an `initialize`
 /// handshake.

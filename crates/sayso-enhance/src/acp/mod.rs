@@ -47,6 +47,20 @@ pub fn secret_account(provider_id: &str, name: &str) -> String {
     format!("acp.{provider_id}.{name}")
 }
 
+/// Start the agent of a provider in the background, so the next request does
+/// not wait for it to start. Does nothing when the agent does not stay running.
+pub fn warm(provider: &Provider, secrets: &dyn SecretStore) {
+    let Ok(target) = target(provider, secrets) else { return };
+    if !target.keep_running {
+        return;
+    }
+    std::thread::spawn(move || {
+        if let Err(e) = POOL.run(&target.key, &target.spec, true, Deadline::after(START_LIMIT), |_| Ok(())) {
+            log::debug!("could not start the agent of {}: {e}", target.key);
+        }
+    });
+}
+
 /// Stop the running agent of a provider, for example after the provider was removed.
 pub fn stop_agent(provider_id: &str) {
     POOL.stop(provider_id);

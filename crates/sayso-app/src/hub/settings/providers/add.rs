@@ -5,8 +5,12 @@
 
 use super::logo::{self, Mark};
 use super::*;
+use crate::agents::{AgentWay, RegistryState, join_command, parse_env, split_command};
 use sayso_core::config::is_local_url;
 use sayso_core::models::format_size;
+
+/// The agents of the registry that the gallery shows first, when the registry has them.
+const FEATURED_AGENTS: [&str; 5] = ["claude-acp", "codex-acp", "opencode", "gemini", "cursor"];
 
 /// A server that the server step knows the address of.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -48,10 +52,16 @@ impl Preset {
 }
 
 /// Where the flow is.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub(super) enum Step {
     Gallery,
     Server(Preset),
+    /// The list of the agents of the registry.
+    Agents,
+    /// The setup of one registry agent, by its id.
+    Agent(String),
+    /// An agent from a command of the user's.
+    CustomAgent,
 }
 
 /// Why a server was not saved. The flow keeps this, not the text, so the
@@ -78,6 +88,10 @@ pub(super) struct AddFlow {
     name: Entity<InputState>,
     url: Entity<InputState>,
     key: Entity<InputState>,
+    /// The command line of a custom agent.
+    command: Entity<InputState>,
+    /// The variables of a custom agent: `KEY=value`, one or more.
+    env: Entity<InputState>,
     error: Option<AddError>,
     focus: FocusHandle,
     _subs: Vec<Subscription>,
@@ -93,8 +107,11 @@ impl AddFlow {
 }
 
 /// What a tile of the gallery does.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 enum Action {
+    /// The setup of a registry agent.
+    Agent(String),
+    MoreAgents,
     ChatGpt,
     Claude,
     Cleanup(&'static str),
@@ -127,9 +144,17 @@ impl ProviderSettings {
                 .placeholder(t!(crate::shell::os_text!("settings.providers.key_placeholder_mac", "settings.providers.key_placeholder_windows", "settings.providers.key_placeholder_other")))
                 .masked(true)
         });
-        let subs = vec![cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify()), cx.subscribe_in(&url, window, |_, _, _: &InputEvent, _, cx| cx.notify())];
+        let command = cx.new(|cx| InputState::new(window, cx).placeholder("kiro-cli acp"));
+        let env = cx.new(|cx| InputState::new(window, cx).placeholder("KIRO_PROFILE=work"));
+        let subs = vec![
+            cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify()),
+            cx.subscribe_in(&url, window, |_, _, _: &InputEvent, _, cx| cx.notify()),
+            cx.subscribe_in(&name, window, |_, _, _: &InputEvent, _, cx| cx.notify()),
+            cx.subscribe_in(&command, window, |_, _, _: &InputEvent, _, cx| cx.notify()),
+        ];
         let focus = cx.focus_handle();
-        let mut flow = AddFlow { step: Step::Gallery, search, name, url, key, error: None, focus, _subs: subs };
+        let mut flow = AddFlow { step: Step::Gallery, search, name, url, key, command, env, error: None, focus, _subs: subs };
+        self.model.update(cx, |m, cx| m.load_registry(false, cx));
         if let Some(step) = step {
             Self::enter(&mut flow, step, window, cx);
         } else {
@@ -141,8 +166,19 @@ impl ProviderSettings {
 
     /// Go to a step, with its fields filled in.
     fn enter(flow: &mut AddFlow, step: Step, window: &mut Window, cx: &mut Context<Self>) {
-        flow.step = step;
+        flow.step = step.clone();
         flow.error = None;
+        match &step {
+            Step::Agents => flow.search.update(cx, |s, cx| s.focus(window, cx)),
+            Step::Agent(_) => {}
+            Step::CustomAgent => {
+                flow.name.update(cx, |s, cx| s.set_value("", window, cx));
+                flow.command.update(cx, |s, cx| s.set_value("", window, cx));
+                flow.env.update(cx, |s, cx| s.set_value("", window, cx));
+                flow.name.update(cx, |s, cx| s.focus(window, cx));
+            }
+            _ => {}
+        }
         if let Step::Server(preset) = step {
             flow.name.update(cx, |s, cx| s.set_value(preset.name(), window, cx));
             flow.url.update(cx, |s, cx| s.set_value(preset.url(), window, cx));
@@ -244,7 +280,55 @@ impl ProviderSettings {
             (t!("settings.providers.gallery_group_plans"), vec![chatgpt, claude]),
             (t!("settings.providers.group_on_this_computer", computer = crate::shell::computer()), local),
             (t!("settings.providers.gallery_group_keys"), servers),
+            (t!("settings.providers.gallery_group_agents"), self.agent_entries(cx)),
         ]
+    }
+
+    /// The agents that the gallery shows: the featured agents that the
+    /// registry has, the ones found on this computer first, and More agents.
+    fn agent_entries(&self, cx: &App) -> Vec<Entry> {
+        let m = self.model.read(cx);
+        let added: Vec<&str> = m.config.ai.providers.iter().filter_map(|p| match &p.kind {
+            ProviderKind::Acp { registry: Some(r), .. } => Some(r.id.as_str()),
+            _ => None,
+        }).collect();
+        let mut entries: Vec<(bool, Entry)> = FEATURED_AGENTS
+            .iter()
+            .filter_map(|id| m.registry_agent(id))
+            .map(|agent| {
+                let way = m.agents.ways.get(&agent.id);
+                let have = added.contains(&agent.id.as_str());
+                let tag = if have {
+                    Some((t!("settings.providers.tag_added"), false))
+                } else if matches!(way, Some(AgentWay::Local(_))) {
+                    Some((t!("settings.providers.tag_found"), true))
+                } else {
+                    None
+                };
+                let entry = Entry {
+                    key: format!("agent-{}", agent.id),
+                    name: agent.name.clone(),
+                    detail: way_text(way),
+                    mark: logo::agent(&agent.id).unwrap_or(logo::AGENT),
+                    tag,
+                    enabled: !have && !matches!(way, Some(AgentWay::Unavailable)),
+                    action: Action::Agent(agent.id.clone()),
+                };
+                (matches!(way, Some(AgentWay::Local(_))), entry)
+            })
+            .collect();
+        entries.sort_by_key(|(found, _)| !*found);
+        let mut entries: Vec<Entry> = entries.into_iter().map(|(_, e)| e).take(5).collect();
+        entries.push(Entry {
+            key: "more-agents".into(),
+            name: t!("settings.providers.gallery_more_agents"),
+            detail: t!("settings.providers.gallery_more_agents_detail"),
+            mark: Mark::Glyph(Icon::More),
+            tag: None,
+            enabled: true,
+            action: Action::MoreAgents,
+        });
+        entries
     }
 
     /// Do what a tile says.
@@ -252,6 +336,23 @@ impl ProviderSettings {
         let detected = self.model.read(cx).detected.clone();
         let make = |m: &AppModel, name: &str, kind: ProviderKind| Provider { id: m.new_provider_id(name), name: name.to_string(), kind };
         let id = match action {
+            Action::Agent(agent) => {
+                let name = self.model.read(cx).registry_agent(&agent).map(|a| a.name.clone()).unwrap_or_default();
+                if let Some(flow) = self.add.as_mut() {
+                    flow.name.update(cx, |s, cx| s.set_value(name, window, cx));
+                    Self::enter(flow, Step::Agent(agent), window, cx);
+                }
+                cx.notify();
+                return;
+            }
+            Action::MoreAgents => {
+                if let Some(flow) = self.add.as_mut() {
+                    flow.search.update(cx, |s, cx| s.set_value("", window, cx));
+                    Self::enter(flow, Step::Agents, window, cx);
+                }
+                cx.notify();
+                return;
+            }
             Action::Server(preset) => {
                 if let Some(flow) = self.add.as_mut() {
                     Self::enter(flow, Step::Server(preset), window, cx);
@@ -355,13 +456,19 @@ impl ProviderSettings {
     pub(super) fn add_modal(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let c = cx.paper().colors;
         let Some(flow) = self.add.as_ref() else { return div().into_any_element() };
-        let (title, body, width) = match flow.step {
+        let (title, body, width) = match flow.step.clone() {
             Step::Gallery => (t!("settings.providers.add_title"), self.gallery(flow, cx), 720.),
             Step::Server(preset) => (if preset == Preset::Other { t!("settings.providers.gallery_other") } else { preset.name().to_string() }, self.server_step(flow, preset, cx), 560.),
+            Step::Agents => (t!("settings.providers.agents_title"), self.agents_step(flow, cx), 640.),
+            Step::Agent(id) => {
+                let name = self.model.read(cx).registry_agent(&id).map(|a| a.name.clone()).unwrap_or_else(|| id.clone());
+                (name, self.agent_step(flow, &id, cx), 560.)
+            }
+            Step::CustomAgent => (t!("settings.providers.custom_agent_title"), self.custom_agent_step(flow, cx), 580.),
         };
         let crumb = match flow.step {
             Step::Gallery => None,
-            Step::Server(_) => Some(
+            _ => Some(
                 div()
                     .flex()
                     .items_center()
@@ -454,7 +561,7 @@ impl ProviderSettings {
 
     fn tile(&self, entry: &Entry, cx: &mut Context<Self>) -> AnyElement {
         let c = cx.paper().colors;
-        let action = entry.action;
+        let action = entry.action.clone();
         let tag = entry.tag.clone().map(|(label, good)| {
             let (bg, fg) = if good { (c.success.opacity(0.14), c.success) } else { (c.deboss, c.graphite) };
             div().ml_auto().px(px(6.)).py(px(2.)).rounded(px(5.)).bg(bg).child(pkit::caps(label, 10., fg))
@@ -471,10 +578,10 @@ impl ProviderSettings {
             .bg(c.sheet)
             .border_1()
             .border_color(c.rule)
-            .child(div().flex().items_center().child(logo::tile(entry.mark, 30., cx)).children(tag))
+            .child(div().flex().items_center().child(logo::tile(entry.mark.clone(), 30., cx)).children(tag))
             .child(div().flex().flex_col().gap(px(2.)).child(plain(entry.name.clone(), 14., 18., FontWeight::SEMIBOLD, c.ink)).child(plain(entry.detail.clone(), 12., 16., FontWeight::NORMAL, c.graphite)));
         if entry.enabled {
-            tile = tile.cursor_pointer().on_click(cx.listener(move |this, _, window, cx| this.pick(action, window, cx)));
+            tile = tile.cursor_pointer().on_click(cx.listener(move |this, _, window, cx| this.pick(action.clone(), window, cx)));
         } else {
             tile = tile.opacity(0.6).disabled(true);
         }
@@ -547,11 +654,12 @@ impl ProviderSettings {
                 Action::Apple => t!("settings.providers.start_use", name = name),
                 _ => t!("settings.providers.start_set_up"),
             };
+            let action = action.clone();
             let mut button = Button::new(SharedString::from(format!("start-{i}")), label.clone()).a11y_label(format!("{label}, {name}"));
             if i == 0 {
                 button = button.primary();
             }
-            let button = button.on_click(cx.listener(move |this, _, window, cx| this.pick(action, window, cx)));
+            let button = button.on_click(cx.listener(move |this, _, window, cx| this.pick(action.clone(), window, cx)));
             let tag = tag.map(|tag| div().px(px(6.)).py(px(2.)).rounded(px(5.)).bg(c.success.opacity(0.14)).child(pkit::caps(tag, 10., c.success)));
             row = row.child(
                 div()
@@ -616,4 +724,310 @@ impl ProviderSettings {
             .child(more)
             .into_any_element()
     }
+}
+
+/// How a registry agent starts here, in a few words.
+fn way_text(way: Option<&AgentWay>) -> String {
+    match way {
+        None => t!("settings.providers.agent_way_unknown"),
+        Some(AgentWay::Local(_)) => t!("settings.providers.agent_way_found"),
+        Some(AgentWay::Installed) => t!("settings.providers.agent_way_installed"),
+        Some(AgentWay::Package(tool)) => t!("settings.providers.agent_way_package", tool = tool),
+        Some(AgentWay::Download) => t!("settings.providers.agent_way_download"),
+        Some(AgentWay::Needs(tool)) => t!("settings.providers.agent_way_needs", tool = tool),
+        Some(AgentWay::Unavailable) => t!("settings.providers.agent_way_unavailable"),
+    }
+}
+
+impl ProviderSettings {
+    /// The mark of a registry agent: a bundled mark, else its downloaded icon.
+    fn registry_mark(&self, agent: &sayso_enhance::registry::RegistryAgent, cx: &mut Context<Self>) -> Mark {
+        if let Some(mark) = logo::agent(&agent.id) {
+            return mark;
+        }
+        let agent = agent.clone();
+        self.model
+            .update(cx, |m, cx| m.agent_icon(&agent, cx))
+            .map(|path| Mark::External(path.to_string_lossy().into_owned().into()))
+            .unwrap_or(logo::AGENT)
+    }
+
+    /// A line in a colored box: good news, a problem, or a note.
+    fn note_line(text: String, tone: Tone, cx: &App) -> Div {
+        let c = cx.paper().colors;
+        let (bg, fg) = match tone {
+            Tone::Good => (c.success.opacity(0.12), c.success),
+            Tone::Bad => (c.danger_wash, c.danger),
+            Tone::Info => (c.accent_wash, c.accent),
+        };
+        div().flex().items_center().gap(px(8.)).px(px(12.)).py(px(9.)).rounded(px(10.)).bg(bg).child(div().flex_none().size(px(8.)).rounded_full().bg(fg)).child(ui(text, 13., 18., FontWeight::MEDIUM, fg).flex_1())
+    }
+
+    /// The agents of the registry, with a search, and Your own command at the end.
+    fn agents_step(&self, flow: &AddFlow, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        let query = flow.search.read(cx).value().trim().to_lowercase();
+        let (state, ways, added) = {
+            let m = self.model.read(cx);
+            let added: Vec<String> = m.config.ai.providers.iter().filter_map(|p| match &p.kind {
+                ProviderKind::Acp { registry: Some(r), .. } => Some(r.id.clone()),
+                _ => None,
+            }).collect();
+            (m.agents.registry.clone(), m.agents.ways.clone(), added)
+        };
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .pt(px(10.))
+            .child(ui(t!("settings.providers.agents_intro"), 13., 18., FontWeight::NORMAL, c.graphite))
+            .child(pkit::input_well_named(&flow.search, Some(t!("settings.providers.search_agents").into()), cx));
+        match state {
+            RegistryState::NotLoaded | RegistryState::Loading => {
+                col = col.child(div().py(px(18.)).child(ui(t!("settings.providers.agents_loading"), 13., 18., FontWeight::NORMAL, c.graphite)));
+            }
+            RegistryState::Failed(error) => {
+                col = col.child(Self::note_line(t!("settings.providers.agents_failed"), Tone::Bad, cx)).child(div().child(
+                    Button::new("registry-retry", t!("settings.providers.try_again")).small().on_click(cx.listener(|this, _, _, cx| this.model.update(cx, |m, cx| m.load_registry(true, cx)))),
+                ));
+                log::debug!("registry: {error}");
+            }
+            RegistryState::Ready(registry) => {
+                let rank = |id: &str| match ways.get(id) {
+                    Some(AgentWay::Local(_)) => 0,
+                    Some(AgentWay::Installed | AgentWay::Package(_)) => 1,
+                    Some(AgentWay::Download) => 2,
+                    _ => 3,
+                };
+                let mut agents: Vec<_> = registry
+                    .agents
+                    .iter()
+                    .filter(|a| query.is_empty() || a.name.to_lowercase().contains(&query) || a.description.to_lowercase().contains(&query) || a.authors.iter().any(|x| x.to_lowercase().contains(&query)))
+                    .collect();
+                agents.sort_by_key(|a| (rank(&a.id), a.name.to_lowercase()));
+                let mut list = div().id("agent-list").flex().flex_col();
+                for agent in agents {
+                    let way = ways.get(&agent.id);
+                    let have = added.contains(&agent.id);
+                    let usable = !matches!(way, Some(AgentWay::Unavailable | AgentWay::Needs(_)));
+                    let by = if agent.authors.is_empty() { agent.description.clone() } else { agent.authors.join(", ") };
+                    let id = agent.id.clone();
+                    let right = if have {
+                        div().child(pkit::caps(t!("settings.providers.tag_added"), 10., c.graphite))
+                    } else {
+                        let mut right = div().flex().items_center().gap(px(10.)).child(plain(way_text(way), 12., 16., FontWeight::NORMAL, if matches!(way, Some(AgentWay::Local(_))) { c.success } else { c.graphite }));
+                        if usable {
+                            right = right.child(Button::new(SharedString::from(format!("add-agent-{}", agent.id)), t!("settings.providers.add")).small().a11y_label(format!("{}, {}", t!("settings.providers.add"), agent.name)).on_click(cx.listener(move |this, _, window, cx| this.pick(Action::Agent(id.clone()), window, cx))));
+                        }
+                        right
+                    };
+                    list = list.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(12.))
+                            .py(px(9.))
+                            .border_b_1()
+                            .border_color(c.rule)
+                            .child(logo::tile(self.registry_mark(agent, cx), 30., cx))
+                            .child(div().flex().flex_col().flex_1().min_w_0().gap(px(1.)).child(plain(agent.name.clone(), 14., 18., FontWeight::SEMIBOLD, c.ink)).child(plain(by, 12., 16., FontWeight::NORMAL, c.graphite).truncate()))
+                            .child(right),
+                    );
+                }
+                col = col.child(list);
+            }
+        }
+        let own = pkit::dashed("own-agent", cx)
+            .label(t!("settings.providers.custom_agent_title"))
+            .justify_start()
+            .gap(px(12.))
+            .p(px(12.))
+            .rounded(px(12.))
+            .on_click(cx.listener(|this, _, window, cx| {
+                if let Some(flow) = this.add.as_mut() {
+                    Self::enter(flow, Step::CustomAgent, window, cx);
+                }
+                cx.notify();
+            }))
+            .child(logo::tile(logo::AGENT, 30., cx))
+            .child(div().flex().flex_col().flex_1().gap(px(1.)).child(plain(t!("settings.providers.custom_agent_title"), 14., 18., FontWeight::SEMIBOLD, c.ink)).child(plain(t!("settings.providers.custom_agent_short"), 12., 16., FontWeight::NORMAL, c.graphite)));
+        col.child(own).into_any_element()
+    }
+
+    /// The setup of one registry agent: where it comes from, its name, and Add.
+    fn agent_step(&self, flow: &AddFlow, id: &str, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        let (agent, way, installing, error, launch) = {
+            let m = self.model.read(cx);
+            let agent = m.registry_agent(id).cloned();
+            let launch = agent.as_ref().and_then(|a| m.agent_launch(a));
+            (agent, m.agents.ways.get(id).cloned(), m.agents.installing.contains(id), m.agents.errors.get(id).cloned(), launch)
+        };
+        let Some(agent) = agent else { return ui(t!("settings.providers.agents_loading"), 13., 18., FontWeight::NORMAL, c.graphite).into_any_element() };
+        let where_from = match &way {
+            Some(AgentWay::Local(path)) => Self::note_line(t!("settings.providers.agent_found_at", path = path), Tone::Good, cx),
+            Some(AgentWay::Installed) => Self::note_line(t!("settings.providers.agent_way_installed"), Tone::Good, cx),
+            Some(AgentWay::Package(tool)) => Self::note_line(t!("settings.providers.agent_runs_with", tool = tool), Tone::Info, cx),
+            Some(AgentWay::Download) => Self::note_line(t!("settings.providers.agent_will_download", version = agent.version.clone()), Tone::Info, cx),
+            Some(AgentWay::Needs(tool)) => Self::note_line(t!("settings.providers.agent_needs", tool = tool), Tone::Bad, cx),
+            Some(AgentWay::Unavailable) | None => Self::note_line(t!("settings.providers.agent_way_unavailable"), Tone::Bad, cx),
+        };
+        let can_add = !installing && matches!(way, Some(AgentWay::Local(_) | AgentWay::Installed | AgentWay::Package(_) | AgentWay::Download));
+        let label = if installing {
+            t!("settings.providers.agent_downloading")
+        } else if matches!(way, Some(AgentWay::Download)) {
+            t!("settings.providers.agent_download_add")
+        } else {
+            t!("settings.providers.agent_add")
+        };
+        let key = id.to_string();
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .pt(px(16.))
+            .child(div().flex().items_center().gap(px(14.)).child(logo::tile(self.registry_mark(&agent, cx), 44., cx)).child(ui(agent.description.clone(), 13., 18., FontWeight::NORMAL, c.graphite).flex_1()))
+            .child(where_from)
+            .child(pkit::field(&t!("settings.providers.name"), pkit::input_well_named(&flow.name, Some(t!("settings.providers.name").into()), cx), None, cx));
+        if let Some(launch) = launch {
+            col = col.child(pkit::field(
+                &t!("settings.providers.command"),
+                div().px(px(12.)).py(px(9.)).rounded(px(10.)).debossed(&c).child(text::mono(join_command(&launch.command, &launch.args), 12., c.graphite).font_weight(FontWeight::NORMAL)),
+                Some(&t!("settings.providers.command_registry")),
+                cx,
+            ));
+        }
+        col = col.child(Banner::new(BannerKind::Info, t!("settings.providers.agent_notice")));
+        if let Some(error) = error {
+            col = col.child(Self::note_line(error, Tone::Bad, cx));
+        }
+        col.child(
+            div()
+                .flex()
+                .justify_end()
+                .gap(px(8.))
+                .child(Button::new("agent-back", t!("settings.providers.back")).ghost().on_click(cx.listener(|this, _, window, cx| {
+                    if let Some(flow) = this.add.as_mut() {
+                        Self::enter(flow, Step::Agents, window, cx);
+                    }
+                    cx.notify();
+                })))
+                .child(Button::new("agent-add", label).primary().disabled(!can_add).on_click(cx.listener(move |this, _, _, cx| this.add_agent(&key, cx)))),
+        )
+        .into_any_element()
+    }
+
+    /// Add the agent of the agent step. A download runs first when it needs one.
+    fn add_agent(&mut self, id: &str, cx: &mut Context<Self>) {
+        let Some(flow) = self.add.as_ref() else { return };
+        let Some(agent) = self.model.read(cx).registry_agent(id).cloned() else { return };
+        let name = Some(flow.name.read(cx).value().trim().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(|| agent.name.clone());
+        let page = cx.entity().downgrade();
+        self.model.update(cx, |m, cx| {
+            m.add_registry_agent(agent, name, cx, move |_, id, cx| {
+                // This can run inside the click on this page: select after it.
+                cx.defer(move |cx| {
+                    let _ = page.update(cx, |this, cx| {
+                        this.add = None;
+                        this.pending = Some(id);
+                        cx.notify();
+                    });
+                });
+            })
+        });
+        cx.notify();
+    }
+
+    /// An agent from a command: its name, its command line, its variables, Check, and Add.
+    fn custom_agent_step(&self, flow: &AddFlow, cx: &mut Context<Self>) -> AnyElement {
+        let c = cx.paper().colors;
+        let (checking, check) = {
+            let m = self.model.read(cx);
+            (m.agents.checking, m.agents.check.clone())
+        };
+        let has_command = split_command(&flow.command.read(cx).value()).is_some();
+        let has_name = !flow.name.read(cx).value().trim().is_empty();
+        let mut col = div()
+            .flex()
+            .flex_col()
+            .gap(px(14.))
+            .pt(px(12.))
+            .child(ui(t!("settings.providers.custom_agent_intro"), 13., 18., FontWeight::NORMAL, c.graphite))
+            .child(pkit::field(&t!("settings.providers.name"), pkit::input_well_named(&flow.name, Some(t!("settings.providers.name").into()), cx), None, cx))
+            .child(pkit::field(
+                &t!("settings.providers.command"),
+                pkit::input_well_named(&flow.command, Some(t!("settings.providers.command").into()), cx).font_family(sayso_ui::fonts::MONO),
+                Some(&t!("settings.providers.command_hint")),
+                cx,
+            ))
+            .child(pkit::field(
+                &t!("settings.providers.environment"),
+                pkit::input_well_named(&flow.env, Some(t!("settings.providers.environment").into()), cx).font_family(sayso_ui::fonts::MONO),
+                Some(&t!(crate::shell::os_text!("settings.providers.environment_hint_mac", "settings.providers.environment_hint_windows", "settings.providers.environment_hint_other"))),
+                cx,
+            ));
+        if checking {
+            col = col.child(Self::note_line(t!("settings.providers.agent_checking"), Tone::Info, cx));
+        } else if let Some(check) = check {
+            col = col.child(match check {
+                Ok(found) => {
+                    let mut parts = vec![format!("{}{}", found.name, found.version.map(|v| format!(" {v}")).unwrap_or_default()), format!("ACP {}", found.protocol_version)];
+                    parts.push(if found.signed_in { t!("settings.providers.signed_in") } else { t!("settings.providers.not_signed_in") });
+                    if !found.models.is_empty() {
+                        parts.push(t!("settings.providers.agent_models", count = found.models.len()));
+                    }
+                    Self::note_line(t!("settings.providers.agent_answered", details = parts.join(" · ")), Tone::Good, cx)
+                }
+                Err(error) => Self::note_line(error, Tone::Bad, cx),
+            });
+        }
+        col.child(
+            div()
+                .flex()
+                .justify_end()
+                .gap(px(8.))
+                .child(Button::new("custom-back", t!("settings.providers.back")).ghost().on_click(cx.listener(|this, _, window, cx| {
+                    if let Some(flow) = this.add.as_mut() {
+                        Self::enter(flow, Step::Agents, window, cx);
+                    }
+                    cx.notify();
+                })))
+                .child(Button::new("custom-check", t!("settings.providers.check")).disabled(!has_command || checking).on_click(cx.listener(|this, _, _, cx| this.check_custom(cx))))
+                .child(Button::new("custom-add", t!("settings.providers.agent_add")).primary().disabled(!has_command || !has_name).on_click(cx.listener(|this, _, window, cx| this.save_custom(window, cx)))),
+        )
+        .into_any_element()
+    }
+
+    /// The name, the program, its arguments, and the variables of the custom form.
+    fn custom_fields(&self, cx: &App) -> Option<CustomAgent> {
+        let flow = self.add.as_ref()?;
+        let (command, args) = split_command(&flow.command.read(cx).value())?;
+        let name = flow.name.read(cx).value().trim().to_string();
+        Some((name, command, args, parse_env(&flow.env.read(cx).value())))
+    }
+
+    fn check_custom(&mut self, cx: &mut Context<Self>) {
+        let Some((_, command, args, env)) = self.custom_fields(cx) else { return };
+        self.model.update(cx, |m, cx| m.check_agent_command(command, args, env, cx));
+    }
+
+    fn save_custom(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((name, command, args, env)) = self.custom_fields(cx) else { return };
+        if name.is_empty() {
+            return;
+        }
+        let id = self.model.update(cx, |m, cx| m.add_custom_agent(name, command, args, env, cx));
+        self.after_add(&id, window, cx);
+    }
+}
+
+/// The fields of the custom agent form: name, program, arguments, variables.
+type CustomAgent = (String, String, Vec<String>, std::collections::BTreeMap<String, String>);
+
+/// The color of a note line.
+#[derive(Clone, Copy)]
+enum Tone {
+    Good,
+    Bad,
+    Info,
 }

@@ -31,7 +31,7 @@ pub use acp::registry;
 pub use acp::{AcpAgent, AgentCheck, IDLE_LIMIT as ACP_IDLE_LIMIT, check_agent, secret_account as acp_secret_account, stop_agent as stop_acp_agent};
 pub use auth::{AuthStatus, SIGN_IN_LIMIT, SignIn, SignInEvent, auth_status};
 pub use chatgpt::ChatGpt;
-pub use claude::{ClaudeCli, SPARE_LIFETIME, prepare, stop_spares};
+pub use claude::{ClaudeCli, SPARE_LIFETIME, stop_spares};
 pub use engine::EngineModel;
 pub use detect::{detect_claude_cli, detect_ollama, detect_ollama_at, list_models, test_provider};
 pub use models::list_provider_models;
@@ -45,6 +45,17 @@ use sayso_core::enhance::{EnhanceError, EnhanceRequest, EnhanceResponse, Enhance
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Start what a provider runs before its request comes: a spare `claude`
+/// process, or the agent of an ACP provider. Call it when the microphone
+/// opens. Does nothing for other kinds. Returns at once.
+pub fn prepare(provider: &Provider, secrets: &dyn SecretStore) {
+    match provider.kind {
+        ProviderKind::ClaudeCli { .. } => claude::prepare(provider),
+        ProviderKind::Acp { .. } => acp::warm(provider, secrets),
+        _ => {}
+    }
+}
 
 /// Build the enhancer for a configured provider.
 ///

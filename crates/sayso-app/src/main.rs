@@ -4,6 +4,7 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod a11y;
+mod agents;
 mod app;
 mod app_assets;
 mod caption;

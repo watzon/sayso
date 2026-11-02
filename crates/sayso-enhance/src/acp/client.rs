@@ -83,6 +83,15 @@ enum ModelControl {
     ConfigOption(String),
 }
 
+/// How a session changes its mode.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ModeControl {
+    /// `session/set_mode`, of agents that send `modes`.
+    SetMode,
+    /// `session/set_config_option` with the config option of the `mode` category.
+    ConfigOption(String),
+}
+
 /// A session that `session/new` opened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Session {
@@ -91,6 +100,9 @@ pub(crate) struct Session {
     pub models: Vec<ModelChoice>,
     pub current_model: Option<String>,
     control: Option<ModelControl>,
+    /// The mode that lets the agent do the least, when it is not the current
+    /// mode, and how to choose it.
+    safer_mode: Option<(ModeControl, String)>,
 }
 
 /// What a prompt turn gave.
@@ -185,11 +197,27 @@ impl AcpClient {
         })
     }
 
-    /// Open a session in `cwd`, an empty folder, with no MCP servers.
+    /// Open a session in `cwd`, an empty folder, with no MCP servers. An
+    /// agent can start in a mode that runs its own tools without asking (the
+    /// user's settings choose it), so the session moves to the mode that lets
+    /// the agent do the least: plan, read-only, ask, or default.
     pub fn new_session(&self, cwd: &Path, deadline: Deadline) -> Result<Session, EnhanceError> {
         let params = json!({ "cwd": cwd.to_string_lossy(), "mcpServers": [] });
         let result = self.call("session/new", params, deadline, None)?;
-        parse_session(&result, &self.label)
+        let mut session = parse_session(&result, &self.label)?;
+        if let Some((control, mode)) = session.safer_mode.take() {
+            let sent = match control {
+                ModeControl::SetMode => self.call("session/set_mode", json!({ "sessionId": session.id, "modeId": mode }), deadline, None),
+                ModeControl::ConfigOption(config_id) => {
+                    self.call("session/set_config_option", json!({ "sessionId": session.id, "configId": config_id, "value": mode }), deadline, None)
+                }
+            };
+            // The empty folder and the refused permissions still apply when this fails.
+            if let Err(e) = sent {
+                log::warn!("{} did not take the mode \"{mode}\": {e}", self.label);
+            }
+        }
+        Ok(session)
     }
 
     /// Close a session when the agent can, without waiting for the answer.
@@ -363,7 +391,27 @@ fn parse_session(result: &Value, label: &str) -> Result<Session, EnhanceError> {
     if let Some(current) = models.iter_mut().find(|m| current_model.as_deref() == Some(m.id.as_str())) {
         current.thinking = thinking;
     }
-    Ok(Session { id, models, current_model, control })
+    // The modes: a config option of the `mode` category, else `modes`.
+    let (modes, current_mode, mode_control) = if let Some(option) = by_category("mode") {
+        let modes = select_options(option).into_iter().map(|(id, name, _)| (id, name)).collect();
+        (modes, text(option, "currentValue"), text(option, "id").map(ModeControl::ConfigOption))
+    } else if let Some(list) = result["modes"]["availableModes"].as_array() {
+        let modes = list.iter().filter_map(|m| Some((text(m, "id")?, text(m, "name").unwrap_or_default()))).collect();
+        (modes, text(&result["modes"], "currentModeId"), Some(ModeControl::SetMode))
+    } else {
+        (Vec::new(), None, None)
+    };
+    let safer_mode = mode_control.zip(safest_mode(&modes)).filter(|(_, mode)| current_mode.as_deref() != Some(mode.as_str()));
+    Ok(Session { id, models, current_model, control, safer_mode })
+}
+
+/// The mode that lets an agent do the least, from its ids and names: plan,
+/// then read-only, then ask, then default. None when no mode is one of these.
+fn safest_mode(modes: &[(String, String)]) -> Option<String> {
+    const ORDER: [&str; 5] = ["plan", "read", "ask", "default", "manual"];
+    ORDER.iter().find_map(|word| {
+        modes.iter().find(|(id, name)| id.to_lowercase().contains(word) || name.to_lowercase().contains(word)).map(|(id, _)| id.clone())
+    })
 }
 
 /// Keep the first choice of each id, in order.
@@ -375,6 +423,21 @@ fn dedup(choices: Vec<ModelChoice>) -> Vec<ModelChoice> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_session_moves_to_the_mode_that_lets_the_agent_do_the_least() {
+        let options = json!({ "sessionId": "s", "configOptions": [{ "id": "agent", "category": "mode", "type": "select", "currentValue": "build",
+            "options": [{ "value": "build", "name": "Build" }, { "value": "plan", "name": "Plan" }] }] });
+        let session = parse_session(&options, "a").unwrap();
+        assert_eq!(session.safer_mode, Some((ModeControl::ConfigOption("agent".into()), "plan".into())));
+        let modes = json!({ "sessionId": "s", "modes": { "currentModeId": "auto", "availableModes": [
+            { "id": "auto", "name": "Auto" }, { "id": "default", "name": "Always ask" }, { "id": "acceptEdits", "name": "Accept edits" }] } });
+        assert_eq!(parse_session(&modes, "a").unwrap().safer_mode, Some((ModeControl::SetMode, "default".into())));
+        let already = json!({ "sessionId": "s", "modes": { "currentModeId": "plan", "availableModes": [{ "id": "plan", "name": "Plan" }] } });
+        assert_eq!(parse_session(&already, "a").unwrap().safer_mode, None, "nothing is sent when the mode is right");
+        assert_eq!(safest_mode(&[("yolo".into(), "YOLO".into())]), None);
+        assert_eq!(safest_mode(&[("x".into(), "Read-only".into()), ("ask".into(), "Ask".into())]).as_deref(), Some("x"));
+    }
 
     #[test]
     fn a_permission_request_is_rejected_or_cancelled() {

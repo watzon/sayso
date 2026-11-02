@@ -285,7 +285,8 @@ impl AppModel {
             self.start_preview(session, true, cx);
             // A provider that runs a program can start it while the user speaks.
             if let Some(provider) = self.provider_for(&self.session_style(session)).cloned() {
-                cx.background_spawn(async move { sayso_enhance::prepare(&provider) }).detach();
+                let secrets = self.services.secrets.clone();
+                cx.background_spawn(async move { sayso_enhance::prepare(&provider, secrets.as_ref()) }).detach();
             }
         }
     }

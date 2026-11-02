@@ -13,6 +13,7 @@ impl ProviderSettings {
         let open = self.open.as_ref().filter(|o| o.id == p.id);
         let mut col = div().id(SharedString::from(format!("detail-{}", p.id))).flex().flex_col().w_full().min_w_0().pt(px(26.));
         col = col.child(self.detail_header(p, default, &status, login.as_ref(), cx));
+        let has_problem = status.problem.is_some();
 
         if let (Some(sign_in), Some(open)) = (login.as_ref().and_then(|l| l.sign_in.as_ref()), open) {
             col = col.child(self.sign_in_panel(p, open, sign_in.takes_code(), login.as_ref().and_then(|l| l.url.clone()), cx));
@@ -32,9 +33,17 @@ impl ProviderSettings {
                 .child(self.default_row(p, default, cx));
             return col.child(rows).child(self.footer(p, cx)).into_any_element();
         }
+        if matches!(p.kind, ProviderKind::Acp { .. }) && !has_problem && login.as_ref().is_none_or(|l| l.sign_in.is_none()) {
+            col = col.child(div().pb(px(16.)).child(Banner::new(BannerKind::Info, t!("settings.providers.agent_notice"))));
+        }
         match &p.kind {
             ProviderKind::ChatGpt { .. } => {
                 rows = rows.child(self.chatgpt_account(p, login.as_ref(), cx));
+            }
+            ProviderKind::Acp { .. } => {
+                if let Some(open) = open {
+                    rows = rows.children(self.agent_rows(p, open, login.as_ref(), cx));
+                }
             }
             ProviderKind::ClaudeCli { .. } => {
                 if let Some(open) = open {
@@ -89,6 +98,9 @@ impl ProviderSettings {
         if cleanup.is_some() {
             title = title.child(badge(t!("settings.providers.no_prompts"), true));
         }
+        if matches!(p.kind, ProviderKind::Acp { .. }) {
+            title = title.child(badge(t!("settings.providers.agent_badge"), true));
+        }
         if default {
             title = title.child(badge(t!("settings.providers.default_badge"), false));
         }
@@ -104,7 +116,7 @@ impl ProviderSettings {
             .items_start()
             .gap(px(16.))
             .pb(px(22.))
-            .child(logo::tile(logo::of(p), 52., cx))
+            .child(logo::tile(self.mark(p, cx), 52., cx))
             .child(div().flex().flex_col().flex_1().min_w_0().gap(px(6.)).child(title).child(status_line))
             .children(self.main_action(p, login, cx))
     }
@@ -246,6 +258,54 @@ impl ProviderSettings {
         rows
     }
 
+    /// The command, the sign-in, and Keep running of an ACP agent.
+    fn agent_rows(&self, p: &Provider, open: &Open, login: Option<&ProviderLogin>, cx: &mut Context<Self>) -> Vec<Div> {
+        let c = cx.paper().colors;
+        let ProviderKind::Acp { command, args, keep_running, .. } = &p.kind else { return Vec::new() };
+        let line = crate::agents::join_command(command, args);
+        let control = match &open.edit {
+            Some((Edit::Command, field)) => self.edit_field(field, false, cx).into_any_element(),
+            _ => div()
+                .flex()
+                .items_center()
+                .gap(px(10.))
+                .min_w_0()
+                .child(text::mono(line.clone(), 12., c.graphite).font_weight(FontWeight::NORMAL).truncate())
+                .child(self.edit_button(&p.id, Edit::Command, line.clone(), cx))
+                .into_any_element(),
+        };
+        let mut rows = vec![kit::row_s(t!("settings.providers.command"), t!("settings.providers.command_detail"), control, cx)];
+        let account = match login.and_then(|l| l.status.as_ref()) {
+            Some(AuthStatus::SignedIn { account: Some(account) }) => account.clone(),
+            Some(AuthStatus::SignedIn { account: None }) => t!("settings.providers.agent_signed_in"),
+            Some(AuthStatus::SignedOut { .. }) => t!("settings.providers.not_signed_in"),
+            _ => t!("settings.providers.checking_login"),
+        };
+        let id = p.id.clone();
+        let again = Button::new(SharedString::from(format!("agent-sign-in-{}", p.id)), t!("settings.providers.sign_in_again"))
+            .a11y_label(format!("{}, {}", t!("settings.providers.sign_in_again"), p.name))
+            .small()
+            .on_click(cx.listener(move |this, _, _, cx| this.model.update(cx, |m, cx| m.sign_in_provider(&id, cx))));
+        rows.push(kit::row_s(t!("settings.providers.chatgpt_account"), account, again, cx));
+        let (id, on) = (p.id.clone(), *keep_running);
+        let model = self.model.clone();
+        let switch = Switch::new(SharedString::from(format!("keep-running-{}", p.id)), on).label(t!("settings.providers.keep_running")).on_toggle(move |on, _, cx| {
+            let id = id.clone();
+            if !on {
+                sayso_enhance::stop_acp_agent(&id);
+            }
+            model.update(cx, |m, cx| {
+                m.edit_config(cx, |c| {
+                    if let Some(ProviderKind::Acp { keep_running, .. }) = c.ai.providers.iter_mut().find(|p| p.id == id).map(|p| &mut p.kind) {
+                        *keep_running = on;
+                    }
+                })
+            });
+        });
+        rows.push(kit::row(&t!("settings.providers.keep_running"), &t!("settings.providers.keep_running_detail"), switch, cx));
+        rows
+    }
+
     fn edit_button(&self, id: &str, what: Edit, value: String, cx: &mut Context<Self>) -> Button {
         self.edit_button_labeled(id, what, value, t!("settings.providers.edit"), cx)
     }
@@ -254,6 +314,7 @@ impl ProviderSettings {
         let key = match what {
             Edit::Address => "edit-address",
             Edit::ApiKey => "edit-key",
+            Edit::Command => "edit-command",
         };
         Button::new(SharedString::from(format!("{key}-{id}")), label.clone()).a11y_label(label).small().on_click(cx.listener(move |this, _, window, cx| this.start_edit(what, &value, window, cx)))
     }
@@ -298,6 +359,22 @@ impl ProviderSettings {
         let value = field.read(cx).value().trim().to_string();
         let id = open.id.clone();
         let Some(mut p) = self.provider(&id, cx) else { return };
+        if what == Edit::Command {
+            let ProviderKind::Acp { command, args, .. } = &mut p.kind else { return };
+            let Some((program, words)) = crate::agents::split_command(&value) else { return };
+            *command = program;
+            *args = words;
+            // The agent starts again with the new command at its next request.
+            sayso_enhance::stop_acp_agent(&id);
+            self.tests.remove(&id);
+            self.model.update(cx, |m, cx| {
+                m.replace_provider(p, None, cx);
+                m.check_provider_login(&id, cx);
+                m.load_provider_models(&id, true, cx);
+            });
+            cx.notify();
+            return;
+        }
         let ProviderKind::OpenAiCompatible { base_url, api_key_account, .. } = &mut p.kind else { return };
         let mut key = None;
         match what {
@@ -314,6 +391,7 @@ impl ProviderSettings {
                 api_key_account.get_or_insert_with(|| format!("provider.{id}"));
                 key = Some(value);
             }
+            Edit::Command => return,
         }
         self.tests.remove(&id);
         self.model.update(cx, |m, cx| {
@@ -397,6 +475,8 @@ impl ProviderSettings {
             ProviderKind::ChatGpt { .. } => Some((t!("settings.providers.chatgpt_note"), false)),
             ProviderKind::ClaudeCli { path, .. } => path.clone().map(|path| (path, true)),
             ProviderKind::OpenAiCompatible { base_url, .. } if !is_local_url(base_url) => Some((t!("settings.providers.cloud_note"), false)),
+            ProviderKind::Acp { registry: Some(entry), .. } => Some((t!("settings.providers.agent_from_registry", version = entry.version.clone()), false)),
+            ProviderKind::Acp { registry: None, .. } => Some((t!("settings.providers.agent_custom_note"), false)),
             _ => None,
         };
         let left = div().flex_1().min_w_0().children(note.map(|(note, mono)| {
