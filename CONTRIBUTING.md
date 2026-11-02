@@ -121,7 +121,7 @@ On Windows, also test the speech engine:
 cargo test --manifest-path native\portable\Cargo.toml
 ```
 
-The tests with the fake `claude` and `codex` scripts and the Swift engine test run on macOS only.
+The tests with the fake `claude` scripts and the Swift engine test run on macOS only.
 
 These tests need models, API keys, or a login, so they do not run by default:
 
@@ -153,7 +153,7 @@ A pull request that changes the Linux packaging (`packaging/linux`, `scripts/bun
 | `native/macos/SaysoEngine` | Swift sidecar for the local models on macOS: Parakeet, Nemotron, Cohere, Canary, SenseVoice, Paraformer (FluidAudio), Whisper (WhisperKit), and Apple Speech (macOS 26). |
 | `crates/sayso-engine` | Rust sidecar for the local models on Windows and Linux: Parakeet, Whisper, SenseVoice, Moonshine, and a streaming Zipformer on sherpa-onnx, Whisper on whisper.cpp (Windows), and Parakeet on parakeet.cpp (Linux GPU). Same protocol as the Swift sidecar. |
 | `crates/sayso-store` | SQLite history and dictionary, FLAC audio, retention. |
-| `crates/sayso-enhance` | AI styles: OpenAI-compatible HTTP, Claude CLI, Codex CLI. |
+| `crates/sayso-enhance` | AI styles: OpenAI-compatible HTTP, Claude CLI, ChatGPT plan. |
 | `crates/sayso-transcribe` | Cloud models: OpenAI, Groq, Mistral, ElevenLabs, Deepgram, AssemblyAI, and any OpenAI-compatible server. |
 | `crates/sayso-ink` | The ink, palette, and appearance types. MIT. It needs only serde. `sayso-core` re-exports it as `sayso_core::ink`. |
 | `crates/sayso-cleanup-models` | What Sayso knows about cleanup models: the catalog, the input format, the plan of parts, the checks. MIT. No I/O. `sayso-core::cleanup` re-exports it. |

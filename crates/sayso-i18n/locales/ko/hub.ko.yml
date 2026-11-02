@@ -39,7 +39,7 @@ hub:
     cloud_host: "클라우드 · %{host}"
     local_host: "로컬 · %{host}"
     claude_cli: "클라우드 · Claude 로그인 사용"
-    codex_cli: "클라우드 · 호출당 약 5초"
+    chatgpt: "클라우드 · ChatGPT 요금제 사용"
     apple_intelligence: "로컬 · 이 Mac에서 실행"
   duration:
     seconds: "%{seconds}초"

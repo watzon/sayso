@@ -7408,6 +7408,7 @@ dependencies = [
 name = "sayso-enhance"
 version = "0.14.1"
 dependencies = [
+ "base64 0.23.1",
  "keyring",
  "log",
  "parking_lot",
@@ -7416,10 +7417,13 @@ dependencies = [
  "sayso-engine-client",
  "sayso-i18n",
  "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror 2.0.21",
  "tiny_http",
  "ureq 3.4.2",
+ "url",
+ "uuid",
  "wait-timeout",
  "workspace-hack",
 ]

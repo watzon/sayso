@@ -4,3 +4,7 @@ _version: 1
 enhance:
   # The note under Apple Intelligence in the model list of a style provider.
   runs_on_this_mac: "Funziona su questo Mac"
+  sign_in_done_title: "Accesso eseguito"
+  sign_in_done_body: "Ora Sayso può usare il tuo piano ChatGPT. Puoi chiudere questa pagina."
+  sign_in_failed_title: "L'accesso non è stato completato"
+  sign_in_failed_body: "Torna a Sayso e riprova."

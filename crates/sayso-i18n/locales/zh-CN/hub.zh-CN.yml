@@ -39,7 +39,7 @@ hub:
     cloud_host: "云端 · %{host}"
     local_host: "本地 · %{host}"
     claude_cli: "云端 · 你的 Claude 登录"
-    codex_cli: "云端 · 每次调用约 5 秒"
+    chatgpt: "云端 · 你的 ChatGPT 套餐"
     apple_intelligence: "本地 · 在这台 Mac 上运行"
   duration:
     seconds: "%{seconds} 秒"

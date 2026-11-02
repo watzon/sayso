@@ -9,7 +9,7 @@ use super::kit::{self, group};
 use crate::hub::pages::ext::provider_detail;
 use crate::hub::pages::kit::{self as pkit, plain, ui};
 use crate::cleanup_models::CleanupModelState;
-use crate::model::{AppModel, ProviderLogin};
+use crate::model::{AppModel, ProviderLogin, has_login};
 use crate::model_picker;
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -39,7 +39,7 @@ enum Test {
 enum AddKind {
     OpenAi,
     Claude,
-    Codex,
+    ChatGpt,
 }
 
 struct AddProvider {
@@ -91,7 +91,6 @@ enum AddError {
     NoName,
     BadUrl,
     NoClaudeCli,
-    NoCodexCli,
 }
 
 impl AddError {
@@ -100,7 +99,6 @@ impl AddError {
             AddError::NoName => t!("settings.providers.error_no_name"),
             AddError::BadUrl => t!("settings.providers.error_bad_url"),
             AddError::NoClaudeCli => t!("settings.providers.error_no_claude_cli"),
-            AddError::NoCodexCli => t!("settings.providers.error_no_codex_cli"),
         }
     }
 }
@@ -116,14 +114,16 @@ pub struct ProviderSettings {
     _observe: Subscription,
 }
 
+/// True for the Claude CLI, the provider with a program and a login folder.
 fn is_cli(p: &Provider) -> bool {
-    matches!(p.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::CodexCli { .. })
+    matches!(p.kind, ProviderKind::ClaudeCli { .. })
 }
 
 /// The name of the tool in a sentence, and the folder it uses by default.
+/// ChatGPT has no folder: Sayso keeps its sign-in.
 fn tool(p: &Provider) -> (&'static str, &'static str) {
     match p.kind {
-        ProviderKind::CodexCli { .. } => ("Codex", "~/.codex"),
+        ProviderKind::ChatGpt { .. } => ("ChatGPT", ""),
         _ => ("Claude Code", "~/.claude"),
     }
 }
@@ -183,7 +183,7 @@ fn style_names(p: &Provider) -> (Vec<String>, Vec<String>) {
 impl ProviderSettings {
     pub fn new(model: Entity<AppModel>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
         let observe = cx.observe(&model, |_, _, cx| cx.notify());
-        let ids: Vec<String> = model.read(cx).config.ai.providers.iter().filter(|p| is_cli(p)).map(|p| p.id.clone()).collect();
+        let ids: Vec<String> = model.read(cx).config.ai.providers.iter().filter(|p| has_login(p)).map(|p| p.id.clone()).collect();
         model.update(cx, |m, cx| {
             for id in &ids {
                 m.check_provider_login(id, cx);
@@ -333,7 +333,7 @@ impl ProviderSettings {
             return bad(t!("settings.providers.choose_model_to_use"), None);
         }
         let mut signed_in = None;
-        if is_cli(p) {
+        if has_login(p) {
             match login.and_then(|l| l.status.as_ref()) {
                 None => return Status { dot: c.pencil, line: t!("settings.providers.checking_login"), color: c.graphite, problem: None },
                 Some(AuthStatus::SignedIn { account }) => {
@@ -343,7 +343,9 @@ impl ProviderSettings {
                     });
                 }
                 Some(AuthStatus::SignedOut { detail }) => {
-                    let message = if self.sayso_login(p, cx) {
+                    let message = if matches!(p.kind, ProviderKind::ChatGpt { .. }) {
+                        t!("settings.providers.signed_out_chatgpt")
+                    } else if self.sayso_login(p, cx) {
                         t!("settings.providers.signed_out_sayso", tool = name)
                     } else {
                         t!("settings.providers.signed_out_folder", tool = name)
@@ -638,6 +640,8 @@ impl ProviderSettings {
                     cx,
                 ));
             }
+        } else if matches!(p.kind, ProviderKind::ChatGpt { .. }) {
+            col = col.child(self.chatgpt_account(p, login, cx));
         } else if let ProviderKind::OpenAiCompatible { base_url, .. } = &p.kind {
             let place = if is_local_url(base_url) { t!("settings.providers.address_local", computer = crate::shell::computer()) } else { t!("settings.providers.address_cloud") };
             col = col.child(kit::row_s(t!("settings.providers.address"), place, text::mono(base_url.clone(), 12., c.graphite).font_weight(FontWeight::NORMAL), cx));
@@ -648,7 +652,7 @@ impl ProviderSettings {
             col = col.child(kit::row(&t!("settings.providers.model"), &t!("settings.providers.model_detail"), self.model_picker(p, cx), cx));
         }
         let path = match &p.kind {
-            ProviderKind::ClaudeCli { path, .. } | ProviderKind::CodexCli { path, .. } => path.clone(),
+            ProviderKind::ClaudeCli { path, .. } => path.clone(),
             _ => None,
         };
         let mut left = div().flex().flex_col().flex_1().min_w_0().gap(px(2.));
@@ -658,6 +662,30 @@ impl ProviderSettings {
                 .child(text::mono(path, 12., c.graphite).font_weight(FontWeight::NORMAL));
         }
         col.child(div().flex().items_center().w_full().gap(px(24.)).pt(px(14.)).child(left).child(self.actions(p, default, cx)))
+    }
+
+    /// The ChatGPT account that Sayso is signed in to, with a button that signs out.
+    fn chatgpt_account(&self, p: &Provider, login: Option<&ProviderLogin>, cx: &mut Context<Self>) -> Div {
+        let signed_in = match login.and_then(|l| l.status.as_ref()) {
+            Some(AuthStatus::SignedIn { account }) => Some(account.clone()),
+            _ => None,
+        };
+        let about = match &signed_in {
+            Some(Some(account)) => t!("settings.providers.signed_in_account", account = account),
+            Some(None) => t!("settings.providers.signed_in"),
+            None => t!("settings.providers.chatgpt_account_detail"),
+        };
+        let control = signed_in.map(|_| {
+            let id = p.id.clone();
+            Button::new(SharedString::from(format!("sign-out-{}", p.id)), t!("settings.providers.sign_out"))
+                .a11y_label(format!("{}, {}", t!("settings.providers.sign_out"), p.name))
+                .ghost()
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.tests.remove(&id);
+                    this.model.update(cx, |m, cx| m.sign_out_provider(&id, cx));
+                }))
+        });
+        kit::row_s(t!("settings.providers.chatgpt_account"), about, div().children(control), cx)
     }
 
     /// What a cleanup model runs, from the plan of each built-in style.
@@ -1029,12 +1057,6 @@ impl ProviderSettings {
             let detail = t!("settings.providers.suggest_claude", computer = crate::shell::computer());
             found.push(("suggest-claude", "Claude CLI", detail, Provider { id: new_id("claude"), name: "Claude CLI".into(), kind }));
         }
-        let has_codex = providers.iter().any(|p| matches!(p.kind, ProviderKind::CodexCli { .. }));
-        if let (Some(path), false) = (&detected.codex_cli, has_codex) {
-            let kind = ProviderKind::CodexCli { path: Some(path.display().to_string()), model: None, config_dir: None, thinking: Default::default() };
-            let detail = t!("settings.providers.suggest_codex", computer = crate::shell::computer());
-            found.push(("suggest-codex", "Codex CLI", detail, Provider { id: new_id("codex"), name: "Codex CLI".into(), kind }));
-        }
         let has_apple = providers.iter().any(|p| matches!(p.kind, ProviderKind::AppleIntelligence));
         if let (Some(model), false) = (&detected.apple_intelligence, has_apple) {
             let p = Provider { id: new_id("apple-intelligence"), name: "Apple Intelligence".into(), kind: ProviderKind::AppleIntelligence };
@@ -1122,16 +1144,15 @@ impl ProviderSettings {
                 let key = add.key.read(cx).value().trim().to_string();
                 (name, Some(url), (!key.is_empty()).then_some(key))
             }
-            AddKind::Claude | AddKind::Codex => {
-                let claude = add.kind == AddKind::Claude;
-                let found = if claude { detected.claude_cli.is_some() } else { detected.codex_cli.is_some() };
-                if !found {
-                    add.error = Some(if claude { AddError::NoClaudeCli } else { AddError::NoCodexCli });
+            AddKind::Claude => {
+                if detected.claude_cli.is_none() {
+                    add.error = Some(AddError::NoClaudeCli);
                     cx.notify();
                     return;
                 }
-                (if claude { "Claude CLI".into() } else { "Codex CLI".into() }, None, None)
+                ("Claude CLI".into(), None, None)
             }
+            AddKind::ChatGpt => ("ChatGPT".into(), None, None),
         };
         let id = self.model.read(cx).new_provider_id(&name);
         let kind = match (add.kind, kind) {
@@ -1144,7 +1165,8 @@ impl ProviderSettings {
             },
             // Haiku is the fast choice for cleanup; the picker offers the rest.
             (AddKind::Claude, _) => ProviderKind::ClaudeCli { path: detected.claude_cli.map(|p| p.display().to_string()), model: "haiku".into(), config_dir: None, thinking: Default::default() },
-            _ => ProviderKind::CodexCli { path: detected.codex_cli.map(|p| p.display().to_string()), model: None, config_dir: None, thinking: Default::default() },
+            // A small model of the account until the user picks one.
+            _ => ProviderKind::ChatGpt { model: None, thinking: None },
         };
         let provider = Provider { id, name, kind };
         self.add = None;
@@ -1153,14 +1175,21 @@ impl ProviderSettings {
 
     /// Save a new provider, open its row, and fetch its models. A provider
     /// that cannot run without a model opens its picker. A CLI provider shows
-    /// its login. Other providers are tested right away.
+    /// its login, and ChatGPT starts its sign-in. Other providers are tested
+    /// right away.
     fn added(&mut self, provider: Provider, key: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
         let id = provider.id.clone();
         let needs_model = provider.needs_model();
-        let cli = is_cli(&provider);
+        let login = has_login(&provider);
+        let chatgpt = matches!(provider.kind, ProviderKind::ChatGpt { .. });
         self.model.update(cx, |m, cx| {
             m.save_provider(provider, key, false, cx);
-            m.load_provider_models(&id, true, cx);
+            if chatgpt {
+                // Its models come with the sign-in.
+                m.sign_in_provider(&id, cx);
+            } else {
+                m.load_provider_models(&id, true, cx);
+            }
         });
         self.open_row(&id, window, cx);
         if needs_model {
@@ -1170,7 +1199,7 @@ impl ProviderSettings {
                 let _ = this.update(cx, |this, cx| this.open_models(&id, cx));
             })
             .detach();
-        } else if !cli {
+        } else if !login {
             self.test(id, cx);
         }
         cx.notify();
@@ -1179,22 +1208,19 @@ impl ProviderSettings {
     fn add_panel(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let c = cx.paper().colors;
         let add = self.add.as_ref()?;
-        let (claude, codex) = {
-            let m = self.model.read(cx);
-            (m.detected.claude_cli.clone(), m.detected.codex_cli.clone())
-        };
+        let claude = self.model.read(cx).detected.claude_cli.clone();
         let selected = match add.kind {
             AddKind::OpenAi => 0,
             AddKind::Claude => 1,
-            AddKind::Codex => 2,
+            AddKind::ChatGpt => 2,
         };
         let entity = cx.entity();
-        let seg = Segmented::new("add-kind", [t!("settings.providers.kind_openai"), "Claude CLI".to_string(), "Codex CLI".to_string()], selected)
+        let seg = Segmented::new("add-kind", [t!("settings.providers.kind_openai"), "Claude CLI".to_string(), "ChatGPT".to_string()], selected)
             .label(t!("settings.providers.add_title"))
             .on_select(move |i, _, cx| {
             entity.update(cx, |this, cx| {
                 if let Some(a) = this.add.as_mut() {
-                    a.kind = [AddKind::OpenAi, AddKind::Claude, AddKind::Codex][i];
+                    a.kind = [AddKind::OpenAi, AddKind::Claude, AddKind::ChatGpt][i];
                     a.error = None;
                 }
                 cx.notify();
@@ -1232,20 +1258,17 @@ impl ProviderSettings {
                         ))
                     });
             }
-            AddKind::Claude | AddKind::Codex => {
-                let (path, name) = if add.kind == AddKind::Claude { (claude, "Claude CLI") } else { (codex, "Codex CLI") };
-                let status = match path {
+            AddKind::Claude => {
+                let status = match claude {
                     Some(p) => t!("settings.providers.cli_found", path = p.display()),
-                    None => t!("settings.providers.cli_missing", tool = name),
+                    None => t!("settings.providers.cli_missing", tool = "Claude CLI"),
                 };
-                body = body.child(ui(status, 13., 18., FontWeight::NORMAL, c.graphite)).child(Banner::new(
-                    BannerKind::Info,
-                    if add.kind == AddKind::Claude {
-                        t!("settings.providers.claude_cli_notice")
-                    } else {
-                        t!("settings.providers.codex_cli_notice")
-                    },
-                ));
+                body = body
+                    .child(ui(status, 13., 18., FontWeight::NORMAL, c.graphite))
+                    .child(Banner::new(BannerKind::Info, t!("settings.providers.claude_cli_notice")));
+            }
+            AddKind::ChatGpt => {
+                body = body.child(Banner::new(BannerKind::Info, t!("settings.providers.chatgpt_notice")));
             }
         }
         let panel = div()

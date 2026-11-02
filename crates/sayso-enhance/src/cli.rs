@@ -1,5 +1,5 @@
-//! Run a command line tool with a hard deadline. Shared by the Claude and
-//! Codex providers.
+//! Run a command line tool with a hard deadline, for the Claude provider:
+//! its requests, its model list, and its login.
 
 use sayso_core::enhance::EnhanceError;
 use std::ffi::OsString;

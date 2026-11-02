@@ -1,4 +1,4 @@
-//! The CLI providers against fake `claude` and `codex` scripts.
+//! The Claude CLI provider against fake `claude` scripts.
 //! No real tool runs and no model is called. The fake tools are shell
 //! scripts, so this file runs on Unix only.
 #![cfg(unix)]
@@ -7,7 +7,7 @@ mod common;
 
 use common::fake_tool;
 use sayso_core::enhance::{EnhanceError, EnhanceRequest, Enhancer, output_schema};
-use sayso_enhance::{ClaudeCli, CodexCli};
+use sayso_enhance::ClaudeCli;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -158,109 +158,6 @@ fn claude_missing_binary_is_not_configured() {
 #[test]
 fn claude_is_cloud() {
     assert!(ClaudeCli::new("c", Some("/x".into()), "haiku").is_cloud());
-}
-
-/// A fake codex: finds `-o` and `--output-schema`, saves what it saw, and
-/// writes `answer` to the `-o` file.
-fn codex_script(dir: &Path, answer: &str) -> String {
-    let seen = dir.join("seen");
-    format!(
-        r#"printf '%s\n' "$@" > {seen}.args
-pwd > {seen}.cwd
-out=""
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -o) out="$2"; shift ;;
-    --output-schema) cp "$2" {seen}.schema; shift ;;
-  esac
-  shift
-done
-cat > {seen}.stdin
-cat > "$out" <<'ANSWER'
-{answer}
-ANSWER
-"#,
-        seen = seen.display()
-    )
-}
-
-fn codex_with(script: &str, dir: &Path, model: Option<&str>) -> CodexCli {
-    CodexCli::new("codex", Some(fake_tool(dir, "codex", script)), model.map(String::from))
-}
-
-#[test]
-fn codex_success_reads_the_output_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let script = codex_script(dir.path(), r#"{"text":"He and I go home."}"#);
-    let response = codex_with(&script, dir.path(), Some("gpt-test")).enhance(&request(20_000)).unwrap();
-    assert_eq!(response.text, "He and I go home.");
-    assert_eq!((response.mode.as_str(), response.model.as_str()), ("codex_cli", "gpt-test"));
-
-    let args: Vec<String> = read(dir.path(), "args").lines().map(String::from).collect();
-    assert_eq!(args[0], "exec");
-    for flag in ["--skip-git-repo-check", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--output-schema", "-o"] {
-        assert!(args.contains(&flag.to_string()), "missing {flag}");
-    }
-    let sandbox = args.iter().position(|a| a == "--sandbox").unwrap();
-    assert_eq!(args[sandbox + 1], "read-only");
-    let model = args.iter().position(|a| a == "-m").unwrap();
-    assert_eq!(args[model + 1], "gpt-test");
-    let config = args.iter().position(|a| a == "-c").unwrap();
-    assert_eq!(args[config + 1], "model_reasoning_effort=low");
-    assert_eq!(args.last().map(String::as_str), Some("-"), "the prompt comes from stdin");
-    assert!(!args.iter().any(|a| a.contains("me and him")), "the transcript stays out of the arguments");
-
-    let schema: serde_json::Value = serde_json::from_str(&read(dir.path(), "schema")).unwrap();
-    assert_eq!(schema, output_schema());
-    let stdin = read(dir.path(), "stdin");
-    assert!(stdin.starts_with("Fix the grammar.") && stdin.contains("me and him goes home"));
-    let cwd = read(dir.path(), "cwd");
-    assert!(!Path::new(cwd.trim()).exists(), "the temporary folder is removed after the call");
-}
-
-#[test]
-fn codex_without_a_model_passes_no_model_flag() {
-    let dir = tempfile::tempdir().unwrap();
-    let script = codex_script(dir.path(), r#"{"text":"ok"}"#);
-    codex_with(&script, dir.path(), None).enhance(&request(20_000)).unwrap();
-    assert!(!read(dir.path(), "args").lines().any(|l| l == "-m"));
-}
-
-#[test]
-fn codex_invalid_answer_is_invalid_output() {
-    let dir = tempfile::tempdir().unwrap();
-    let script = codex_script(dir.path(), "I fixed it for you.");
-    let error = codex_with(&script, dir.path(), None).enhance(&request(20_000)).unwrap_err();
-    assert!(matches!(error, EnhanceError::InvalidOutput(_)), "{error:?}");
-}
-
-#[test]
-fn codex_failure_reports_stderr() {
-    let dir = tempfile::tempdir().unwrap();
-    let error = codex_with("cat >/dev/null\necho 'not signed in' >&2\nexit 2", dir.path(), None)
-        .enhance(&request(20_000))
-        .unwrap_err();
-    assert!(matches!(&error, EnhanceError::Cli(m) if m.contains("not signed in")), "{error:?}");
-}
-
-#[test]
-fn codex_missing_answer_file_is_a_cli_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let error = codex_with("cat >/dev/null\nexit 0", dir.path(), None).enhance(&request(20_000)).unwrap_err();
-    assert!(matches!(error, EnhanceError::Cli(_)), "{error:?}");
-}
-
-#[test]
-fn codex_timeout_kills_the_child() {
-    let dir = tempfile::tempdir().unwrap();
-    let pid_file = dir.path().join("pid");
-    let script = format!("echo $$ > {}\nexec sleep 30", pid_file.display());
-    let started = Instant::now();
-    let error = codex_with(&script, dir.path(), None).enhance(&request(400)).unwrap_err();
-    assert_eq!(error, EnhanceError::Timeout(400));
-    assert!(started.elapsed() < Duration::from_secs(5));
-    let pid = std::fs::read_to_string(&pid_file).unwrap();
-    assert!(!process_is_alive(pid.trim()));
 }
 
 #[test]

@@ -1,17 +1,17 @@
-//! Lists models with the real `claude` and `codex` commands and the user's own
-//! login. Run with `cargo test -p sayso-enhance --test real_models -- --ignored --nocapture`.
+//! Lists models with the real `claude` command and the user's own login, and
+//! with the ChatGPT sign-in that Sayso saved in the Keychain. Run with `cargo test -p sayso-enhance --test real_models -- --ignored --nocapture`.
 
 use sayso_core::config::{Provider, ProviderKind};
-use sayso_enhance::{MemoryStore, detect_codex_cli, list_provider_models};
+use sayso_enhance::{KeychainStore, MemoryStore, SecretStore, list_provider_models};
 use std::time::Duration;
 
-fn show(label: &str, kind: ProviderKind) -> Vec<String> {
+fn show(label: &str, kind: ProviderKind, secrets: &dyn SecretStore) -> Vec<String> {
     let provider = Provider {
         id: label.into(),
         name: label.into(),
         kind,
     };
-    let choices = list_provider_models(&provider, &MemoryStore::new(), None, Duration::from_secs(20))
+    let choices = list_provider_models(&provider, secrets, None, Duration::from_secs(20))
         .expect("model list");
     let ids: Vec<String> = choices.iter().map(|c| c.id.clone()).collect();
     eprintln!(
@@ -37,27 +37,18 @@ fn claude_lists_models() {
             config_dir: None,
             thinking: Default::default(),
         },
+        &MemoryStore::new(),
     );
     assert!(!ids.is_empty());
     assert!(ids.iter().any(|id| id == "haiku"), "no haiku in {ids:?}");
     assert!(!ids.iter().any(|id| id == "default"));
 }
 
+/// The id of the ChatGPT provider in Sayso: `SAYSO_CHATGPT_PROVIDER`, else "chatgpt".
 #[test]
-#[ignore = "needs the codex command and a login"]
-fn codex_lists_models() {
-    if detect_codex_cli().is_none() {
-        eprintln!("codex is not installed: skipped");
-        return;
-    }
-    let ids = show(
-        "codex",
-        ProviderKind::CodexCli {
-            path: None,
-            model: None,
-            config_dir: None,
-            thinking: Default::default(),
-        },
-    );
+#[ignore = "needs a ChatGPT sign-in that Sayso saved in the Keychain"]
+fn chatgpt_lists_models() {
+    let id = std::env::var("SAYSO_CHATGPT_PROVIDER").unwrap_or_else(|_| "chatgpt".into());
+    let ids = show(&id, ProviderKind::ChatGpt { model: None, thinking: None }, &KeychainStore);
     assert!(!ids.is_empty());
 }

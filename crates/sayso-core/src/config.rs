@@ -445,14 +445,13 @@ pub enum ProviderKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thinking: Option<String>,
     },
-    CodexCli {
-        #[serde(default)]
-        path: Option<String>,
-        #[serde(default)]
-        model: Option<String>,
-        /// The folder that holds the login of the tool (`CODEX_HOME`). None uses the tool's own default.
+    /// The user's ChatGPT plan, through the sign-in that Sayso keeps. The
+    /// tokens are in the secret store, never in this file. It replaces the
+    /// Codex CLI kind (`codex_cli`), whose entries become this kind on load.
+    ChatGpt {
+        /// None uses a small model from the account's list.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        config_dir: Option<String>,
+        model: Option<String>,
         /// The thinking level. None uses [`DEFAULT_CLI_THINKING`].
         #[serde(default, skip_serializing_if = "Option::is_none")]
         thinking: Option<String>,
@@ -471,7 +470,7 @@ impl ProviderKind {
         match self {
             ProviderKind::OpenAiCompatible { .. } => "open_ai_compatible",
             ProviderKind::ClaudeCli { .. } => "claude_cli",
-            ProviderKind::CodexCli { .. } => "codex_cli",
+            ProviderKind::ChatGpt { .. } => "chat_gpt",
             ProviderKind::AppleIntelligence => "apple_intelligence",
             ProviderKind::CleanupModel { .. } => "cleanup_model",
         }
@@ -491,12 +490,12 @@ pub struct Provider {
 }
 
 impl Provider {
-    /// The chosen model. None when no model is chosen yet, or when a CLI uses
-    /// its own default.
+    /// The chosen model. None when no model is chosen yet, or when the
+    /// provider picks its own default.
     pub fn model(&self) -> Option<&str> {
         let model = match &self.kind {
             ProviderKind::OpenAiCompatible { model, .. } | ProviderKind::ClaudeCli { model, .. } => Some(model.as_str()),
-            ProviderKind::CodexCli { model, .. } => model.as_deref(),
+            ProviderKind::ChatGpt { model, .. } => model.as_deref(),
             ProviderKind::AppleIntelligence => None,
             ProviderKind::CleanupModel { model } => Some(model.as_str()),
         };
@@ -506,9 +505,7 @@ impl Provider {
     /// The folder with the login of a CLI provider. None for the default folder of the tool, and for kinds without a login.
     pub fn config_dir(&self) -> Option<&str> {
         match &self.kind {
-            ProviderKind::ClaudeCli { config_dir, .. } | ProviderKind::CodexCli { config_dir, .. } => {
-                config_dir.as_deref().filter(|dir| !dir.trim().is_empty())
-            }
+            ProviderKind::ClaudeCli { config_dir, .. } => config_dir.as_deref().filter(|dir| !dir.trim().is_empty()),
             _ => None,
         }
     }
@@ -519,21 +516,21 @@ impl Provider {
         match &self.kind {
             ProviderKind::OpenAiCompatible { thinking, .. }
             | ProviderKind::ClaudeCli { thinking, .. }
-            | ProviderKind::CodexCli { thinking, .. } => thinking.as_deref().filter(|level| !level.trim().is_empty()),
+            | ProviderKind::ChatGpt { thinking, .. } => thinking.as_deref().filter(|level| !level.trim().is_empty()),
             ProviderKind::AppleIntelligence | ProviderKind::CleanupModel { .. } => None,
         }
     }
 
     /// The thinking level that goes to the provider. None sends no level.
     pub fn thinking_sent(&self) -> Option<&str> {
-        let default = matches!(self.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::CodexCli { .. }).then_some(DEFAULT_CLI_THINKING);
+        let default = matches!(self.kind, ProviderKind::ClaudeCli { .. } | ProviderKind::ChatGpt { .. }).then_some(DEFAULT_CLI_THINKING);
         self.thinking().or(default)
     }
 
     pub fn set_thinking(&mut self, level: Option<String>) {
         if let ProviderKind::OpenAiCompatible { thinking, .. }
         | ProviderKind::ClaudeCli { thinking, .. }
-        | ProviderKind::CodexCli { thinking, .. } = &mut self.kind
+        | ProviderKind::ChatGpt { thinking, .. } = &mut self.kind
         {
             *thinking = level;
         }
@@ -554,7 +551,7 @@ impl Provider {
     pub fn set_model(&mut self, id: String) {
         match &mut self.kind {
             ProviderKind::OpenAiCompatible { model, .. } | ProviderKind::ClaudeCli { model, .. } => *model = id,
-            ProviderKind::CodexCli { model, .. } => *model = Some(id),
+            ProviderKind::ChatGpt { model, .. } => *model = Some(id),
             // macOS chooses the model.
             ProviderKind::AppleIntelligence => {}
             // The catalog fixes the model.
@@ -562,8 +559,8 @@ impl Provider {
         }
     }
 
-    /// True when the provider cannot run until a model is chosen. The CLIs
-    /// have their own default; an HTTP server has none.
+    /// True when the provider cannot run until a model is chosen. Claude and
+    /// ChatGPT have their own default; an HTTP server has none.
     pub fn needs_model(&self) -> bool {
         matches!(self.kind, ProviderKind::OpenAiCompatible { .. }) && self.model().is_none()
     }
@@ -572,7 +569,7 @@ impl Provider {
     pub fn is_cloud(&self) -> bool {
         match &self.kind {
             ProviderKind::OpenAiCompatible { base_url, .. } => !is_local_url(base_url),
-            ProviderKind::ClaudeCli { .. } | ProviderKind::CodexCli { .. } => true,
+            ProviderKind::ClaudeCli { .. } | ProviderKind::ChatGpt { .. } => true,
             ProviderKind::AppleIntelligence | ProviderKind::CleanupModel { .. } => false,
         }
     }
@@ -630,7 +627,7 @@ impl Ai {
 /// An older Sayso reads `[ai]` in one piece, and a provider of a kind that it
 /// does not know makes it use the default for the whole section. So a cleanup
 /// model is not in `providers`. It is in `cleanup_models`, which an older
-/// Sayso ignores.
+/// Sayso ignores. A ChatGPT provider is in `chatgpt_accounts` for the same reason.
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 struct AiFile {
@@ -644,6 +641,9 @@ struct AiFile {
     /// Not written when empty, so a file without cleanup models stays as it was.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     cleanup_models: Vec<CleanupModelEntry>,
+    /// The ChatGPT providers, in their own list for the same reason as the cleanup models.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    chatgpt_accounts: Vec<ChatGptEntry>,
 }
 
 impl Default for AiFile {
@@ -671,7 +671,7 @@ impl Serialize for ProviderEntry {
 impl<'de> Deserialize<'de> for ProviderEntry {
     /// Read each entry on its own, so one bad entry does not fail the section.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let value = toml::Value::deserialize(deserializer)?;
+        let value = migrate_provider(toml::Value::deserialize(deserializer)?);
         Ok(match value.clone().try_into::<Provider>() {
             Ok(provider) => ProviderEntry::Known(provider),
             Err(error) => {
@@ -681,6 +681,35 @@ impl<'de> Deserialize<'de> for ProviderEntry {
             }
         })
     }
+}
+
+/// Turn an entry of a kind that Sayso no longer has into the kind that
+/// replaced it. A Codex CLI entry becomes a ChatGPT entry with the same
+/// model and thinking level, and moves to `chatgpt_accounts` when the file
+/// is written. The user signs in once more.
+fn migrate_provider(mut value: toml::Value) -> toml::Value {
+    let Some(table) = value.as_table_mut() else { return value };
+    if table.get("kind").and_then(toml::Value::as_str) == Some("codex_cli") {
+        table.insert("kind".into(), toml::Value::String("chat_gpt".into()));
+        table.remove("path");
+        table.remove("config_dir");
+        if table.get("name").and_then(toml::Value::as_str) == Some("Codex CLI") {
+            table.insert("name".into(), toml::Value::String("ChatGPT".into()));
+        }
+    }
+    value
+}
+
+/// An entry of `[[ai.chatgpt_accounts]]`. The tokens are in the secret store.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(default)]
+struct ChatGptEntry {
+    id: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<String>,
 }
 
 /// An entry of `[[ai.cleanup_models]]`.
@@ -710,6 +739,13 @@ impl From<AiFile> for Ai {
             }
             providers.push(Provider { id: entry.id, name: entry.name, kind: ProviderKind::CleanupModel { model: entry.model } });
         }
+        for entry in file.chatgpt_accounts {
+            if entry.id.is_empty() {
+                log::warn!("skipped a ChatGPT provider with an empty id");
+                continue;
+            }
+            providers.push(Provider { id: entry.id, name: entry.name, kind: ProviderKind::ChatGpt { model: entry.model, thinking: entry.thinking } });
+        }
         Ai {
             enabled: file.enabled,
             active_style: file.active_style,
@@ -727,9 +763,11 @@ impl From<Ai> for AiFile {
     fn from(ai: Ai) -> Self {
         let mut providers = Vec::new();
         let mut cleanup_models = Vec::new();
+        let mut chatgpt_accounts = Vec::new();
         for provider in ai.providers {
             match provider.kind {
                 ProviderKind::CleanupModel { model } => cleanup_models.push(CleanupModelEntry { id: provider.id, name: provider.name, model }),
+                ProviderKind::ChatGpt { model, thinking } => chatgpt_accounts.push(ChatGptEntry { id: provider.id, name: provider.name, model, thinking }),
                 kind => providers.push(ProviderEntry::Known(Provider { id: provider.id, name: provider.name, kind })),
             }
         }
@@ -743,6 +781,7 @@ impl From<Ai> for AiFile {
             cli_timeout_ms: ai.cli_timeout_ms,
             style_rules: ai.style_rules,
             cleanup_models,
+            chatgpt_accounts,
         }
     }
 }
@@ -1414,12 +1453,13 @@ mod tests {
     }
 
     #[test]
-    fn cli_providers_never_need_a_model() {
-        let mut codex = Provider { id: "c".into(), name: "Codex CLI".into(), kind: ProviderKind::CodexCli { path: None, model: None, config_dir: None, thinking: Default::default() } };
-        assert_eq!(codex.model(), None);
-        assert!(!codex.needs_model(), "Codex uses its own default");
-        codex.set_model("gpt-6.1-sol".into());
-        assert_eq!(codex.model(), Some("gpt-6.1-sol"));
+    fn claude_and_chatgpt_never_need_a_model() {
+        let mut chatgpt = Provider { id: "c".into(), name: "ChatGPT".into(), kind: ProviderKind::ChatGpt { model: None, thinking: None } };
+        assert_eq!(chatgpt.model(), None);
+        assert!(!chatgpt.needs_model(), "ChatGPT picks a model from the account's list");
+        chatgpt.set_model("gpt-6.1-sol".into());
+        assert_eq!(chatgpt.model(), Some("gpt-6.1-sol"));
+        assert!(chatgpt.is_cloud());
         let claude = Provider { id: "k".into(), name: "Claude CLI".into(), kind: ProviderKind::ClaudeCli { path: None, model: "haiku".into(), config_dir: None, thinking: Default::default() } };
         assert_eq!(claude.model(), Some("haiku"));
         assert!(!claude.needs_model());
@@ -1448,8 +1488,8 @@ mod tests {
         let ProviderKind::ClaudeCli { config_dir, .. } = &mut claude.kind else { unreachable!() };
         *config_dir = Some("  ".into());
         assert_eq!(claude.config_dir(), None, "a blank folder counts as unset");
-        let codex = Provider { id: "c".into(), name: "C".into(), kind: ProviderKind::CodexCli { path: None, model: None, config_dir: Some("/x".into()), thinking: Default::default() } };
-        assert_eq!(codex.config_dir(), Some("/x"));
+        let chatgpt = Provider { id: "c".into(), name: "C".into(), kind: ProviderKind::ChatGpt { model: None, thinking: None } };
+        assert_eq!(chatgpt.config_dir(), None, "Sayso keeps the ChatGPT sign-in");
         let apple = Provider { id: "a".into(), name: "A".into(), kind: ProviderKind::AppleIntelligence };
         assert_eq!(apple.config_dir(), None);
     }
@@ -1667,6 +1707,43 @@ mod tests {
         assert_eq!(cleanup[0].get("id").and_then(toml::Value::as_str), Some("s1-mini"));
         assert_eq!(cleanup[0].get("name").and_then(toml::Value::as_str), Some("S1-mini"));
         assert_eq!(cleanup[0].get("model").and_then(toml::Value::as_str), Some("s1-mini"));
+    }
+
+    #[test]
+    fn a_chatgpt_provider_round_trips_in_its_own_list() {
+        let mut config = config_with_cleanup_model();
+        config.ai.providers.push(Provider { id: "chatgpt".into(), name: "ChatGPT".into(), kind: ProviderKind::ChatGpt { model: Some("gpt-mini".into()), thinking: None } });
+        let text = config.to_toml();
+        let loaded = Config::parse(&text);
+        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert_eq!(loaded.config, config);
+        let ai = ai_table(&text);
+        assert_eq!(kinds_of(ai.get("providers")), ["apple_intelligence"]);
+        let accounts = ai.get("chatgpt_accounts").and_then(toml::Value::as_array).expect("chatgpt_accounts is written");
+        assert_eq!(accounts[0].get("model").and_then(toml::Value::as_str), Some("gpt-mini"));
+        assert!(accounts[0].get("thinking").is_none(), "an unset level is not written");
+        // An older reader does not see it, and keeps the rest of the section.
+        let old: OldAi = ai.clone().try_into().expect("the older version parses [ai]");
+        assert_eq!(old.providers.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["apple-intelligence"]);
+    }
+
+    #[test]
+    fn a_codex_cli_provider_becomes_a_chatgpt_provider() {
+        let old = "[ai]\ndefault_provider = \"codex\"\n\n[[ai.providers]]\nid = \"codex\"\nname = \"Codex CLI\"\nkind = \"codex_cli\"\n\
+                   path = \"/opt/bin/codex\"\nmodel = \"gpt-5.6-codex\"\nconfig_dir = \"~/.codex-work\"\nthinking = \"medium\"\n";
+        let parsed = Config::parse(old);
+        assert!(parsed.issues.is_empty(), "{:?}", parsed.issues);
+        assert!(parsed.config.ai.unknown_providers.is_empty());
+        let p = &parsed.config.ai.providers[0];
+        assert_eq!((p.id.as_str(), p.name.as_str()), ("codex", "ChatGPT"));
+        assert_eq!(p.kind, ProviderKind::ChatGpt { model: Some("gpt-5.6-codex".into()), thinking: Some("medium".into()) });
+        assert_eq!(parsed.config.ai.default_provider.as_deref(), Some("codex"));
+        let ai = ai_table(&parsed.config.to_toml());
+        assert!(ai.get("providers").is_none_or(|v| v.as_array().is_some_and(Vec::is_empty)));
+        assert!(ai.get("chatgpt_accounts").is_some(), "it is written to the new list");
+
+        let renamed = old.replace("name = \"Codex CLI\"", "name = \"Work\"");
+        assert_eq!(Config::parse(&renamed).config.ai.providers[0].name, "Work", "a name the user chose stays");
     }
 
     /// The `[ai]` section of the version before cleanup models. Its provider

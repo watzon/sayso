@@ -105,11 +105,6 @@ pub fn detect_claude_cli() -> Option<PathBuf> {
     detect("claude")
 }
 
-/// The `codex` binary, searched in `PATH` and the usual install folders.
-pub fn detect_codex_cli() -> Option<PathBuf> {
-    detect("codex")
-}
-
 /// Ask a local Ollama for its models. None when Ollama does not answer within `timeout`.
 pub fn detect_ollama(timeout: Duration) -> Option<Vec<String>> {
     detect_ollama_at(OLLAMA_URL, timeout)

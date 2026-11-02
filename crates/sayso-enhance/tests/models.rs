@@ -1,4 +1,4 @@
-//! `list_provider_models` against a mock server and fake `claude` and `codex` scripts.
+//! `list_provider_models` against a mock server and fake `claude` scripts.
 //! No real tool runs and no model is called. The fake tools are shell
 //! scripts, so their tests run on Unix only.
 #![cfg_attr(not(unix), allow(dead_code, unused_imports))]
@@ -27,15 +27,6 @@ fn claude(path: &Path) -> Provider {
     provider(ProviderKind::ClaudeCli {
         path: Some(path.display().to_string()),
         model: "haiku".into(),
-        config_dir: None,
-        thinking: Default::default(),
-    })
-}
-
-fn codex(path: &Path) -> Provider {
-    provider(ProviderKind::CodexCli {
-        path: Some(path.display().to_string()),
-        model: None,
         config_dir: None,
         thinking: Default::default(),
     })
@@ -155,85 +146,12 @@ fn missing_binaries_are_not_configured() {
         matches!(result, Err(EnhanceError::NotConfigured(_))),
         "{result:?}"
     );
-    let result = list(&codex(Path::new("/nowhere/codex")), Duration::from_secs(1));
-    assert!(
-        matches!(result, Err(EnhanceError::NotConfigured(_))),
-        "{result:?}"
-    );
 }
 
 #[test]
-#[cfg(unix)] // The fake tool is a shell script.
-fn codex_models_are_read_across_two_pages() {
-    let dir = tempfile::tempdir().unwrap();
-    let log = dir.path().join("lines");
-    let script = format!(
-        r#"while IFS= read -r line; do
-  echo "$line" >> {log}
-  case "$line" in
-    *'"method":"initialize"'*)
-      echo '{{"jsonrpc":"2.0","method":"remote/notice","params":{{}}}}'
-      echo '{{"jsonrpc":"2.0","id":1,"result":{{"userAgent":"fake"}}}}' ;;
-    *'"method":"model/list"'*cursor*)
-      echo '{{"jsonrpc":"2.0","id":99,"result":{{"data":[]}}}}'
-      echo '{{"jsonrpc":"2.0","id":3,"result":{{"data":[{{"id":"m3","model":"m3","displayName":"M3"}},{{"id":"m1","model":"m1","displayName":"Again"}}],"nextCursor":null}}}}' ;;
-    *'"method":"model/list"'*)
-      echo '{{"jsonrpc":"2.0","id":2,"result":{{"data":[{{"id":"m1","model":"m1","displayName":"M1","description":"First."}},{{"id":"mh","model":"mh","hidden":true}}],"nextCursor":"c2"}}}}' ;;
-  esac
-done
-"#,
-        log = log.display()
-    );
-    let path = fake_tool(dir.path(), "codex", &script);
-    let choices = list(&codex(&path), Duration::from_secs(10)).unwrap();
-    assert_eq!(ids(&choices), ["m1", "m3"]);
-    assert_eq!(
-        (choices[0].name.as_str(), choices[0].description.as_deref()),
-        ("M1", Some("First."))
-    );
-    assert_eq!(choices[1].name, "M3");
-
-    let sent = std::fs::read_to_string(&log).unwrap();
-    assert!(
-        sent.contains(r#""method":"initialized""#),
-        "initialized notification missing"
-    );
-    assert!(
-        sent.contains(r#""cursor":"c2""#),
-        "second page was not requested with the cursor"
-    );
-    assert!(sent.contains(r#""name":"sayso""#));
-}
-
-#[test]
-#[cfg(unix)] // The fake tool is a shell script.
-fn codex_error_reply_is_an_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let script = r#"while IFS= read -r line; do
-  case "$line" in
-    *'"method":"initialize"'*) echo '{"jsonrpc":"2.0","id":1,"result":{}}' ;;
-    *'"method":"model/list"'*) echo '{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"you must log in"}}' ;;
-  esac
-done"#;
-    let path = fake_tool(dir.path(), "codex", script);
-    assert!(matches!(
-        list(&codex(&path), Duration::from_secs(10)),
-        Err(EnhanceError::NotConfigured(_))
-    ));
-}
-
-#[test]
-#[cfg(unix)] // The fake tool is a shell script.
-fn codex_that_never_answers_times_out_quickly() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = fake_tool(dir.path(), "codex", "exec sleep 30");
-    let started = Instant::now();
-    let result = list(&codex(&path), Duration::from_millis(400));
-    assert!(
-        matches!(result, Err(EnhanceError::Timeout(_))),
-        "{result:?}"
-    );
-    assert!(started.elapsed() < Duration::from_millis(1400));
+fn chatgpt_without_a_sign_in_is_not_configured() {
+    let result = list(&provider(ProviderKind::ChatGpt { model: None, thinking: None }), Duration::from_secs(1));
+    assert!(matches!(result, Err(EnhanceError::NotConfigured(_))), "{result:?}");
 }
 
 fn http_provider(server: &MockServer, account: Option<&str>) -> Provider {

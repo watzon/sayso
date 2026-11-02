@@ -1,6 +1,6 @@
 [package]
 name = "sayso-enhance"
-description = "Sayso AI enhancement providers: OpenAI-compatible HTTP, Claude CLI, Codex CLI."
+description = "Sayso AI enhancement providers: OpenAI-compatible HTTP, Claude CLI, ChatGPT plan."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,6 +14,12 @@ thiserror.workspace = true
 log.workspace = true
 parking_lot.workspace = true
 tempfile.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+base64 = "0.23"
+url = "2"
+# The callback of the ChatGPT sign-in.
+tiny_http = "0.12"
 ureq = { version = "3", features = ["json"] }
 wait-timeout = "0.2"
 workspace-hack.workspace = true
@@ -29,7 +35,6 @@ keyring = { version = "4", features = ["windows-native-keyring-store"] }
 keyring = "4"
 
 [dev-dependencies]
-tiny_http = "0.12"
 # The style evaluation also runs the cleanup models through the cleanup runtime.
 sayso-cleanup-client.workspace = true
 
