@@ -2029,7 +2029,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-cleanup-models"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "regex",
  "serde",
@@ -2040,7 +2040,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-core"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "chrono",
  "log",
@@ -2060,7 +2060,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-i18n"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "chrono",
  "rust-i18n",
@@ -2070,7 +2070,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-ink"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "serde",
  "workspace-hack",
@@ -2078,7 +2078,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-protocol"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "base64 0.22.1",
  "libc",
@@ -2090,7 +2090,7 @@ dependencies = [
 
 [[package]]
 name = "sayso-speech"
-version = "0.14.1"
+version = "0.15.0"
 dependencies = [
  "crossbeam-channel",
  "log",

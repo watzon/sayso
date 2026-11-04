@@ -20,6 +20,36 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.15.0"
+title = "Clean up with your ChatGPT plan or a coding agent"
+
+[[release.item]]
+icon = "cloud"
+title = "Sign in with ChatGPT"
+text = "Sign in to your ChatGPT account in Settings › Providers, and Sayso cleans up your dictation with your plan. No API key needed."
+
+[[release.item]]
+icon = "code"
+title = "Coding agents as providers"
+text = "Sayso can now clean up with a coding agent that speaks the Agent Client Protocol, such as OpenCode. Pick one from the agent registry or add your own command."
+
+[[release.item]]
+icon = "sparkle"
+title = "Faster Claude Code"
+text = "Sayso starts Claude Code as soon as the microphone opens, so the cleanup no longer waits for it to start."
+
+[[release.item]]
+icon = "settings"
+title = "A new Providers page"
+text = "Your providers sit in a list, grouped as subscriptions, models on this computer, and API keys and servers. Select one to see its account, model, and the styles that use it."
+
+[[release.item]]
+icon = "models"
+title = "Local models on older processors"
+text = "The local cleanup model and the Windows speech engine now run on processors without AVX2, where they stopped before."
+systems = ["windows", "linux"]
+
+[[release]]
 version = "0.14.1"
 title = "Fixes for Fedora, Flatpak, and the first start"
 
