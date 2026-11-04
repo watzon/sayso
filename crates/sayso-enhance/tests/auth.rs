@@ -199,9 +199,26 @@ fn enhance_runs_get_the_config_folder() {
         temperature: None,
         timeout: Duration::from_secs(20),
     };
+    // A fake that speaks the stream-JSON protocol: it answers `initialize`,
+    // then the user message, and keeps stdin open in between, as claude does.
+    let init = r#"{"type":"control_response","response":{"request_id":"sayso-init","subtype":"success","response":{}}}"#;
     let envelope = r#"{"type":"result","subtype":"success","is_error":false,"structured_output":{"text":"ok"}}"#;
-    let script = format!("cat >/dev/null\necho \"$CLAUDE_CONFIG_DIR\" > {}/claude-env\necho '{envelope}'", dir.path().display());
+    let script = format!(
+        r#"echo "$CLAUDE_CONFIG_DIR" > {dir}/claude-env
+while IFS= read -r line; do
+  case "$line" in
+    *'"subtype":"initialize"'*) echo '{init}' ;;
+    *'"type":"user"'*) echo '{envelope}'; exit 0 ;;
+  esac
+done
+"#,
+        dir = dir.path().display()
+    );
     let tool = fake_tool(dir.path(), "claude", &script);
-    ClaudeCli::new("c", Some(tool), "haiku").with_config_dir(Some("/some/claude".into())).enhance(&request).unwrap();
+    ClaudeCli::new("c", Some(tool), "haiku")
+        .with_spare(false)
+        .with_config_dir(Some("/some/claude".into()))
+        .enhance(&request)
+        .unwrap();
     assert_eq!(std::fs::read_to_string(dir.path().join("claude-env")).unwrap().trim(), "/some/claude");
 }
