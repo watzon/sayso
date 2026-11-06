@@ -57,6 +57,11 @@ styles:
     prompt_hint: "Sayso adds your dictionary words and asks for JSON. You only write the style."
     use_base: "Use the base prompt"
     use_base_detail: "The base prompt cleans up the text: filler words, corrections, numbers. Turn it off for a style that does something else, for example a translation."
+    shortcut: "Shortcut"
+    # Under the Shortcut field when it has a key. %{style} is the name of the style.
+    shortcut_hint: "Starts one dictation in %{style}. The next one uses your usual style."
+    # The system did not accept the key, for example because another app holds it.
+    shortcut_failed: "Another app already uses %{keys}, so this key does not work. Choose another key."
     provider: "Provider"
     default_provider: "Default provider"
     default_provider_named: "Default provider (%{provider})"

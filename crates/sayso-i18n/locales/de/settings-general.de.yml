@@ -48,6 +48,8 @@ settings:
       bad_provider_id: "die Anbieter-ID „%{id}“ darf nicht leer sein und keinen Doppelpunkt enthalten"
       duplicate_provider_id: "zwei Anbieter haben die ID „%{id}“"
       needs_base_url: "der Anbieter „%{id}“ braucht eine base_url"
+      bad_hotkey: "„%{value}“ ist kein Tastenkürzel"
+      hotkey_in_use: "%{keys} wird schon von einem anderen Sayso-Kürzel genutzt"
     updates: "Updates"
     no_self_update: "Dieser Build aktualisiert sich nicht selbst"
     no_self_update_detail: "Version %{version}, aus dem Quellcode gebaut."

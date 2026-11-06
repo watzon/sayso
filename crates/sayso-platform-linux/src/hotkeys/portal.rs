@@ -30,8 +30,8 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Binding {
     /// Stable id. The portal remembers the user's choice under it.
-    pub id: &'static str,
-    pub description: &'static str,
+    pub id: String,
+    pub description: String,
     /// The preferred trigger in the shortcuts specification format.
     pub trigger: String,
     pub action: ChordAction,
@@ -180,7 +180,7 @@ async fn bind(portal: &GlobalShortcuts, bindings: &[Binding]) -> Option<Session<
     };
     let shortcuts: Vec<NewShortcut> = bindings
         .iter()
-        .map(|b| NewShortcut::new(b.id, b.description).preferred_trigger(b.trigger.as_str()))
+        .map(|b| NewShortcut::new(b.id.as_str(), b.description.as_str()).preferred_trigger(b.trigger.as_str()))
         .collect();
     let response = match portal.bind_shortcuts(&session, &shortcuts, None, BindShortcutsOptions::default()).await {
         Ok(request) => request.response(),

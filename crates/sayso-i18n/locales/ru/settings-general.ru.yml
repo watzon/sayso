@@ -50,6 +50,8 @@ settings:
       bad_provider_id: "id провайдера «%{id}» не должен быть пустым или содержать двоеточие"
       duplicate_provider_id: "у двух провайдеров одинаковый id «%{id}»"
       needs_base_url: "для провайдера «%{id}» нужен base_url"
+      bad_hotkey: "«%{value}» не является сочетанием клавиш"
+      hotkey_in_use: "%{keys} уже используется другим сочетанием клавиш Sayso"
     updates: "Обновления"
     no_self_update: "Эта сборка не обновляется сама"
     no_self_update_detail: "Версия %{version}, собрана из исходного кода."

@@ -84,12 +84,10 @@ impl HotkeySource for MacHotkeys {
 
         let toggle_modifiers = bindings.toggle.and_then(Hotkey::modifier_keys);
         // Chords through Carbon; modifier-only toggle uses the event tap.
-        let chords = [
-            (bindings.toggle.filter(|_| toggle_modifiers.is_none()), HotkeyEvent::Toggle),
-            (bindings.paste_last, HotkeyEvent::PasteLast),
-            (bindings.cycle_style, HotkeyEvent::CycleStyle),
-            (bindings.incognito, HotkeyEvent::ToggleIncognito),
-        ];
+        let chords: Vec<(Option<Hotkey>, HotkeyEvent)> = [(bindings.toggle.filter(|_| toggle_modifiers.is_none()), HotkeyEvent::Toggle)]
+            .into_iter()
+            .chain(bindings.press_chords().into_iter().map(|(hk, event)| (Some(hk), event)))
+            .collect();
         {
             let mut carbon = self.carbon.lock();
             self.actions.lock().clear();

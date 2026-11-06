@@ -26,6 +26,11 @@ pub fn open_requests() -> Option<async_channel::Receiver<()>> {
     None
 }
 
+/// Style ids from `sayso --style=<id>`. Only Linux has the command.
+pub fn style_requests() -> Option<async_channel::Receiver<String>> {
+    None
+}
+
 pub fn platform(sounds_dir: PathBuf) -> Platform {
     sayso_platform_macos::MacPlatform::new(sounds_dir)
 }

@@ -47,6 +47,8 @@ settings:
       bad_provider_id: "제공업체 ID는 비어 있거나 콜론을 포함하면 안 됨: \"%{id}\""
       duplicate_provider_id: "제공업체 두 개의 ID가 \"%{id}\"임"
       needs_base_url: "제공업체 \"%{id}\"에 base_url이 필요함"
+      bad_hotkey: "\"%{value}\" 값은 단축키가 아님"
+      hotkey_in_use: "%{keys}: 이미 다른 Sayso 단축키에 사용 중임"
     updates: "업데이트"
     no_self_update: "이 빌드는 스스로 업데이트하지 않아요"
     no_self_update_detail: "버전 %{version}, 소스에서 빌드했어요."

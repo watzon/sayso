@@ -3,7 +3,7 @@
 //! Older GNOME has no GlobalShortcuts portal. Without the `input` group,
 //! Sayso then has no way to see keys in other apps. GNOME itself can run a
 //! command for a key, so Sayso adds one custom shortcut for each chord, with
-//! the command `sayso --toggle` (or `--paste-last`, `--cycle-style`). The
+//! the command `sayso --toggle` (or `--paste-last`, `--cycle-style`, `--style=<id>`). The
 //! command reaches the running Sayso through its socket (see `crate::ipc`).
 //!
 //! The shortcuts show in Settings › Keyboard › Custom Shortcuts, named
@@ -27,9 +27,12 @@ pub(crate) fn host_gsettings() -> Command {
 /// One shortcut that Sayso adds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shortcut {
-    /// `toggle`, `paste-last`, or `cycle-style`: also the command flag.
-    pub id: &'static str,
-    pub name: &'static str,
+    /// The id in the dconf path (`sayso-<id>/`): `toggle`, `paste-last`,
+    /// `cycle-style`, or `style-<id of a style>`.
+    pub id: String,
+    pub name: String,
+    /// The command flag without the dashes: `toggle`, or `style=<id>`.
+    pub flag: String,
     /// A GNOME accelerator, for example `<Control><Alt>space`.
     pub binding: String,
 }
@@ -47,16 +50,16 @@ pub fn available() -> bool {
 pub fn apply(shortcuts: &[Shortcut]) -> Result<(), String> {
     let command = crate::launch::command().ok_or("cannot find the Sayso program")?;
     let current = parse_list(&gsettings(&["get", LIST_SCHEMA, LIST_KEY])?);
-    let ours: Vec<String> = shortcuts.iter().map(|s| path(s.id)).collect();
+    let ours: Vec<String> = shortcuts.iter().map(|s| path(&s.id)).collect();
     for old in current.iter().filter(|p| is_ours(p) && !ours.contains(p)) {
         for key in ["name", "command", "binding"] {
             let _ = gsettings(&["reset", &format!("{ENTRY_SCHEMA}:{old}"), key]);
         }
     }
     for shortcut in shortcuts {
-        let schema = format!("{ENTRY_SCHEMA}:{}", path(shortcut.id));
+        let schema = format!("{ENTRY_SCHEMA}:{}", path(&shortcut.id));
         gsettings(&["set", &schema, "name", &gvariant_string(&format!("Sayso: {}", shortcut.name))])?;
-        gsettings(&["set", &schema, "command", &gvariant_string(&command_line(&command, shortcut.id))])?;
+        gsettings(&["set", &schema, "command", &gvariant_string(&command_line(&command, &shortcut.flag))])?;
         gsettings(&["set", &schema, "binding", &gvariant_string(&shortcut.binding)])?;
     }
     let list = merge_list(&current, &ours);
@@ -116,10 +119,10 @@ fn is_ours(path: &str) -> bool {
 /// The command for a shortcut: the words that start Sayso (see
 /// [`crate::launch`]) and the flag. GNOME splits it like a shell, so a word
 /// with spaces gets single quotes.
-pub fn command_line(words: &[String], id: &str) -> String {
-    let quote = |w: &String| if w.contains([' ', '\'', '"']) { format!("'{}'", w.replace('\'', "'\\''")) } else { w.clone() };
-    let mut parts: Vec<String> = words.iter().map(quote).collect();
-    parts.push(format!("--{id}"));
+pub fn command_line(words: &[String], flag: &str) -> String {
+    let quote = |w: &str| if w.contains([' ', '\t', '\'', '"', '\\']) { format!("'{}'", w.replace('\'', "'\\''")) } else { w.to_string() };
+    let mut parts: Vec<String> = words.iter().map(|w| quote(w)).collect();
+    parts.push(quote(&format!("--{flag}")));
     parts.join(" ")
 }
 
@@ -187,6 +190,9 @@ mod tests {
         assert_eq!(command_line(&words(&["/home/a/.local/lib/sayso/sayso"]), "toggle"), "/home/a/.local/lib/sayso/sayso --toggle");
         assert_eq!(command_line(&words(&["/home/a b/Sayso.AppImage"]), "paste-last"), "'/home/a b/Sayso.AppImage' --paste-last");
         assert_eq!(command_line(&words(&["flatpak", "run", "dev.sayso.Sayso"]), "toggle"), "flatpak run dev.sayso.Sayso --toggle");
+        assert_eq!(command_line(&words(&["sayso"]), "style=email"), "sayso --style=email");
+        assert_eq!(command_line(&words(&["sayso"]), "style=my style"), "sayso '--style=my style'");
+        assert_eq!(command_line(&words(&["sayso"]), "style=it's"), "sayso '--style=it'\\''s'");
         assert_eq!(gvariant_string("it's \\ ok"), "'it\\'s \\\\ ok'");
     }
 }

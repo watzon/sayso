@@ -49,6 +49,11 @@ pub fn open_requests() -> Option<async_channel::Receiver<()>> {
     None
 }
 
+/// Style ids from `sayso --style=<id>`. Only Linux has the command.
+pub fn style_requests() -> Option<async_channel::Receiver<String>> {
+    None
+}
+
 pub fn platform(sounds_dir: PathBuf) -> Platform {
     Platform {
         hotkeys: Box::new(NoHotkeys(unbounded().1)),
@@ -168,6 +173,7 @@ impl HotkeySource for NoHotkeys {
         let failed = [bindings.toggle, bindings.push_to_talk, bindings.paste_last, bindings.cycle_style, bindings.incognito]
             .into_iter()
             .flatten()
+            .chain(bindings.styles.iter().map(|(_, h)| *h))
             .map(|h| (h, sayso_i18n::t!("app.hotkeys_not_built")))
             .collect();
         HotkeyRegistration { failed, needs_input_monitoring: false }

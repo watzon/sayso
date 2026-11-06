@@ -171,7 +171,7 @@ pub fn key_field<V: 'static>(
     let c = cx.paper().colors;
     let id = format!("{slot:?}");
     let mut out = div().flex().flex_none().items_center().gap(px(8.));
-    if recorder.is_recording(slot) {
+    if recorder.is_recording(&slot) {
         out = out.child(recording_box(
             SharedString::from(format!("{id}-rec")),
             recorder.window_only,
@@ -185,12 +185,12 @@ pub fn key_field<V: 'static>(
     }
     match hotkey {
         Some(hk) => {
-            let s = start.clone();
+            let (s, sl) = (start.clone(), slot.clone());
             out = out.child(key_well(
                 SharedString::from(format!("{id}-well")),
                 label,
                 &hk,
-                cx.listener(move |this, _, window, cx| s(this, slot, window, cx)),
+                cx.listener(move |this, _, window, cx| s(this, sl.clone(), window, cx)),
                 cx,
             ));
             if clearable {
@@ -199,7 +199,7 @@ pub fn key_field<V: 'static>(
                         .a11y_label(t!("settings.common.clear_hotkey", name = label))
                         .ghost()
                         .small()
-                        .on_click(cx.listener(move |this, _, _, cx| clear(this, slot, cx))),
+                        .on_click(cx.listener(move |this, _, _, cx| clear(this, slot.clone(), cx))),
                 );
             }
         }
@@ -208,7 +208,7 @@ pub fn key_field<V: 'static>(
             out = out.child(
                 dashed(SharedString::from(format!("{id}-empty")), cx)
                     .label(t!("settings.common.record_hotkey", name = label))
-                    .on_click(cx.listener(move |this, _, window, cx| s(this, slot, window, cx)))
+                    .on_click(cx.listener(move |this, _, window, cx| s(this, slot.clone(), window, cx)))
                     .child(icon(Icon::Keyboard, 14., c.graphite))
                     .child(text::ui(t!("settings.common.record_key"), 13., FontWeight::MEDIUM, c.graphite)),
             );

@@ -125,7 +125,7 @@ impl DictationSettings {
         };
 
         let toggle_field = kit::key_field(Slot::Toggle, &t!("settings.dictation.toggle"), toggle, &self.recorder, false, None, start, cancel, clear, cx);
-        let right_option = (ptt.is_none() && !self.recorder.is_recording(Slot::PushToTalk)).then(|| {
+        let right_option = (ptt.is_none() && !self.recorder.is_recording(&Slot::PushToTalk)).then(|| {
             Button::new("ptt-right-option", t!("settings.dictation.use_right_option"))
                 .small()
                 .on_click(cx.listener(|this, _, _, cx| {

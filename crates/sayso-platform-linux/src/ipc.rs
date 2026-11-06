@@ -8,6 +8,7 @@
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use sayso_platform::HotkeyEvent;
+use std::borrow::Cow;
 use std::io::{BufRead, BufReader, Write};
 use std::fs::File;
 use std::os::fd::AsRawFd;
@@ -17,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     /// Start or stop a dictation.
     Toggle,
@@ -34,12 +35,15 @@ pub enum Command {
     PushToTalkUpSubmit,
     /// Open the Hub (a second start of Sayso).
     Open,
+    /// Start one dictation in the style with this id (`style=<id>`). The app
+    /// maps the id to a style, so the hotkey stream does not carry it.
+    Style(String),
 }
 
 impl Command {
     /// The command line flag and the word on the socket.
-    pub fn word(self) -> &'static str {
-        match self {
+    pub fn word(&self) -> Cow<'static, str> {
+        Cow::Borrowed(match self {
             Command::Toggle => "toggle",
             Command::Cancel => "cancel",
             Command::PasteLast => "paste-last",
@@ -49,10 +53,15 @@ impl Command {
             Command::PushToTalkUp => "push-to-talk-up",
             Command::PushToTalkUpSubmit => "push-to-talk-up-submit",
             Command::Open => "open",
-        }
+            Command::Style(id) => return Cow::Owned(format!("style={id}")),
+        })
     }
 
     pub fn parse(word: &str) -> Option<Command> {
+        let word = word.trim();
+        if let Some(id) = word.strip_prefix("style=") {
+            return (!id.is_empty() && !id.contains('\n')).then(|| Command::Style(id.to_string()));
+        }
         [
             Command::Toggle,
             Command::Cancel,
@@ -65,15 +74,24 @@ impl Command {
             Command::Open,
         ]
         .into_iter()
-        .find(|c| c.word() == word.trim())
+        .find(|c| c.word() == word)
     }
 
-    /// The command in the program's arguments (`--toggle`), if any.
+    /// The command in the program's arguments (`--toggle`), if any. A style
+    /// is `--style=<id>` or `--style <id>`.
     pub fn from_args(args: impl IntoIterator<Item = String>) -> Option<Command> {
-        args.into_iter().find_map(|a| a.strip_prefix("--").and_then(Command::parse).filter(|c| *c != Command::Open))
+        let mut args = args.into_iter();
+        while let Some(arg) = args.next() {
+            let Some(flag) = arg.strip_prefix("--") else { continue };
+            let command = if flag == "style" { args.next().and_then(|id| Command::parse(&format!("style={id}"))) } else { Command::parse(flag) };
+            if let Some(command) = command.filter(|c| *c != Command::Open) {
+                return Some(command);
+            }
+        }
+        None
     }
 
-    fn hotkey(self) -> Option<HotkeyEvent> {
+    fn hotkey(&self) -> Option<HotkeyEvent> {
         Some(match self {
             Command::Toggle => HotkeyEvent::Toggle,
             Command::Cancel => HotkeyEvent::Cancel,
@@ -83,7 +101,7 @@ impl Command {
             Command::PushToTalkDown => HotkeyEvent::PushToTalkDown,
             Command::PushToTalkUp => HotkeyEvent::PushToTalkUp,
             Command::PushToTalkUpSubmit => HotkeyEvent::PushToTalkUpSubmit,
-            Command::Open => return None,
+            Command::Open | Command::Style(_) => return None,
         })
     }
 }
@@ -135,7 +153,7 @@ fn socket_path_from(runtime: Option<PathBuf>, flatpak_id: Option<String>) -> Pat
 }
 
 /// Send a command to the running Sayso.
-pub fn send(command: Command) -> std::io::Result<()> {
+pub fn send(command: &Command) -> std::io::Result<()> {
     let mut stream = UnixStream::connect(socket_path()?)?;
     stream.set_write_timeout(Some(Duration::from_secs(2)))?;
     stream.write_all(format!("{}\n", command.word()).as_bytes())
@@ -224,7 +242,7 @@ pub fn forward_hotkeys(tx: Sender<HotkeyEvent>) {
     *HOTKEYS.lock() = Some(tx);
 }
 
-/// Commands for the app itself: [`Command::Open`].
+/// Commands for the app itself: [`Command::Open`] and [`Command::Style`].
 pub fn app_commands() -> Receiver<Command> {
     app_channel().1.clone()
 }
@@ -331,8 +349,8 @@ mod tests {
 
     #[test]
     fn words_round_trip_and_flags_parse() {
-        for c in [Command::Toggle, Command::Cancel, Command::PasteLast, Command::CycleStyle, Command::Incognito, Command::PushToTalkUpSubmit, Command::Open] {
-            assert_eq!(Command::parse(c.word()), Some(c));
+        for c in [Command::Toggle, Command::Cancel, Command::PasteLast, Command::CycleStyle, Command::Incognito, Command::PushToTalkUpSubmit, Command::Open, Command::Style("my style".into())] {
+            assert_eq!(Command::parse(&c.word()), Some(c));
         }
         assert_eq!(Command::parse("toggle\n"), Some(Command::Toggle));
         assert_eq!(Command::parse("dance"), None);
@@ -342,6 +360,14 @@ mod tests {
         assert_eq!(Command::PushToTalkUpSubmit.hotkey(), Some(HotkeyEvent::PushToTalkUpSubmit));
         assert_eq!(Command::from_args(args(&["sayso", "--hub"])), None);
         assert_eq!(Command::from_args(args(&["sayso", "--open"])), None, "open is not a command line flag");
+        let email = || Some(Command::Style("email".into()));
+        assert_eq!(Command::parse("style=email"), email());
+        assert_eq!(Command::parse("style="), None);
+        assert_eq!(Command::from_args(args(&["sayso", "--style", "a\nb"])), None, "a newline would split the socket line");
+        assert_eq!(Command::from_args(args(&["sayso", "--style=email"])), email());
+        assert_eq!(Command::from_args(args(&["sayso", "--style", "email"])), email());
+        assert_eq!(Command::from_args(args(&["sayso", "--style"])), None);
+        assert_eq!(Command::Style("email".into()).hotkey(), None);
     }
 
     #[test]
@@ -352,5 +378,7 @@ mod tests {
         assert_eq!(rx.try_recv(), Ok(HotkeyEvent::Toggle));
         dispatch(Command::Open);
         assert_eq!(app_commands().try_recv(), Ok(Command::Open));
+        dispatch(Command::Style("email".into()));
+        assert_eq!(app_commands().try_recv(), Ok(Command::Style("email".into())));
     }
 }

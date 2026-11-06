@@ -19,6 +19,9 @@ Modifier-only push-to-talk intentionally starts immediately on press, including 
 
 Downgrading after saving left-side or combined modifier bindings: older builds may reject the whole `[hotkeys]` section and restore its defaults. Export or copy your shortcuts first, and check every hotkey after a downgrade.
 
+**Style hotkey**
+A hotkey that starts one dictation in one style. The user sets it in the editor of the style, on the Styles page, and Save writes it. While a dictation records, it gives that dictation the style and stops it. The next dictation uses its style rule or the default style again. It wins over a style rule. A style hotkey is a chord: it needs a regular key. It has no default. The hotkeys are in `config.toml` (`[style_hotkeys]`, the style id and the key), not in the style files, so a built-in style with a hotkey stays a built-in style, and a reset keeps the hotkey. A delete of a style removes its hotkey. An older build ignores `[style_hotkeys]`, and it removes the section when it saves the config. On Linux, `sayso --style=<id>` does the same as the hotkey.
+
 **Send with Enter**
 A setting on macOS and Windows, off by default (`hotkeys.enter_sends`). While a dictation records, Enter stops it, and Sayso presses Enter after the insert, so a chat sends the message. Sayso takes that first Enter from the app. Apart from the hotkeys of Sayso, Enter and Esc (see Block Esc) are the only keys that Sayso takes. It does not work when the toggle or push-to-talk hotkey uses Return. On Linux the command `sayso --push-to-talk-up-submit` does the same for push-to-talk.
 

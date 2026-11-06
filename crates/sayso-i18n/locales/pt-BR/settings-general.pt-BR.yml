@@ -49,6 +49,8 @@ settings:
       bad_provider_id: "o id de provedor \"%{id}\" não pode ficar vazio nem conter dois-pontos"
       duplicate_provider_id: "dois provedores têm o id \"%{id}\""
       needs_base_url: "o provedor \"%{id}\" precisa de uma base_url"
+      bad_hotkey: "\"%{value}\" não é um atalho"
+      hotkey_in_use: "%{keys} já é usada por outro atalho do Sayso"
     updates: "Atualizações"
     no_self_update: "Esta versão não se atualiza sozinha"
     no_self_update_detail: "Versão %{version}, compilada a partir do código-fonte."

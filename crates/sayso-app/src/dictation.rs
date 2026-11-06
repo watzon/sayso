@@ -219,6 +219,9 @@ impl AppModel {
 
     fn start_capture(&mut self, session: SessionId, cx: &mut Context<Self>) {
         let requested = Instant::now();
+        if let Some(style) = self.pending_style.take() {
+            self.session(session).picked_style = Some(style);
+        }
         // Dictation into Sayso itself is recorded as Sayso. A run outside a
         // bundle has no bundle id, so match the process instead.
         let app = self.services.platform.context.frontmost_app().map(|a| {
@@ -856,21 +859,52 @@ impl AppModel {
                 self.dispatch(Event::PushToTalkUp, cx)
             }
             HotkeyEvent::Submit => {
-                if let State::Recording { session, trigger, .. } = self.machine.state {
+                if let State::Recording { session, .. } = self.machine.state {
                     self.session(session).submit = true;
-                    // Stop the way the trigger of the dictation stops it.
-                    let stop = match trigger {
-                        Trigger::Toggle => Event::Toggle,
-                        Trigger::PushToTalk => Event::PushToTalkUp,
-                    };
-                    self.dispatch(stop, cx)
+                    self.stop_recording(cx);
                 }
             }
             HotkeyEvent::Cancel => self.dispatch(Event::Cancel, cx),
             HotkeyEvent::PasteLast => self.paste_last(cx),
             HotkeyEvent::CycleStyle => self.cycle_style(cx),
             HotkeyEvent::ToggleIncognito => self.toggle_incognito(cx),
+            HotkeyEvent::Style(index) => {
+                if let Some(id) = self.style_of_hotkey(index).map(str::to_string) {
+                    self.start_with_style(id, cx);
+                }
+            }
         }
+    }
+
+    /// Stop the dictation that records, the way its trigger stops it.
+    fn stop_recording(&mut self, cx: &mut Context<Self>) {
+        if let State::Recording { trigger, .. } = self.machine.state {
+            let stop = match trigger {
+                Trigger::Toggle => Event::Toggle,
+                Trigger::PushToTalk => Event::PushToTalkUp,
+            };
+            self.dispatch(stop, cx)
+        }
+    }
+
+    /// A style hotkey. With no dictation, start one in the style `id`.
+    /// While a dictation records, give it that style and stop it. The style
+    /// applies to that one dictation only.
+    pub(crate) fn start_with_style(&mut self, id: String, cx: &mut Context<Self>) {
+        if self.styles.get(&id).is_none() {
+            log::warn!("style hotkey: no style has the id {id}");
+            return;
+        }
+        if let State::Recording { session, .. } = self.machine.state {
+            self.session(session).picked_style = Some(id);
+            self.stop_recording(cx);
+            return;
+        }
+        // `start_capture` takes the style. A start that does not happen
+        // must not give it to a later dictation.
+        self.pending_style = Some(id);
+        self.dispatch(Event::Toggle, cx);
+        self.pending_style = None;
     }
 
     fn on_engine_event(&mut self, event: EngineEvent, cx: &mut Context<Self>) {
@@ -950,6 +984,7 @@ impl AppModel {
                 || styles.user_base_prompt != self.styles.user_base_prompt
             {
                 self.styles = styles;
+                self.styles_changed();
                 cx.notify();
             }
         }
