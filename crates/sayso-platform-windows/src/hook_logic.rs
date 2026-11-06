@@ -1079,6 +1079,8 @@ mod tests {
             l.set_capturing(true);
             let now = Instant::now();
             assert_eq!(l.handle(down(vk, &[]), now).captured, None, "a bare punctuation key is not a hotkey");
+            // Release it first: the hook reads a second key-down without a release as auto-repeat.
+            l.handle(up(vk, &[]), now);
             assert_eq!(l.handle(down(vk, &[VK_LCONTROL]), now).captured, Some(text.parse().unwrap()));
 
             let mut l = logic();
