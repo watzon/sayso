@@ -7,6 +7,7 @@ settings:
     action_paste_last: "Incolla l'ultimo testo"
     action_cycle_style: "Stile successivo"
     action_incognito: "Incognito"
+    action_style: "Stile %{style}"
     solo_only_push_to_talk: "%{keys} funziona solo per «Avvia e ferma la dettatura» o «Tieni premuto per parlare». Includi un tasto normale, per esempio %{example}."
     used_by: "%{keys} è già usato da %{action}. Scegli un altro tasto."
     conflict_app: "Anche %{name} usa %{keys}. Entrambe le app reagiranno. Scegli un altro tasto, oppure cambia la scorciatoia in %{name}."

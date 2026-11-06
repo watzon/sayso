@@ -15,7 +15,8 @@
 //! - Tray: `Tray` (with [`TrayEvent`]).
 //! - Files and system: `open`, `reveal`, `audio_player`, `user_full_name`, `model_runs_here`,
 //!   `engine_env` (extra environment for the speech engine), `open_requests` (a channel with one
-//!   message for each second start of Sayso that asks to open the Hub; `None` on macOS). Windows
+//!   message for each second start of Sayso that asks to open the Hub; `None` on macOS),
+//!   `style_requests` (the style ids of `sayso --style=<id>`; Linux only). Windows
 //!   plays audio in its own process, so it has `play_wav` and
 //!   `stop_wav` and no `audio_player`.
 //!

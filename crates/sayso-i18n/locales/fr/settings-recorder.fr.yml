@@ -7,6 +7,7 @@ settings:
     action_paste_last: "Coller le dernier texte"
     action_cycle_style: "Style suivant"
     action_incognito: "Mode privé"
+    action_style: "le style %{style}"
     solo_only_push_to_talk: "%{keys} fonctionne uniquement pour Démarrer et arrêter la dictée ou Maintenir pour parler. Ajoutez une touche ordinaire, par exemple %{example}."
     used_by: "%{keys} est déjà utilisée par %{action}. Choisissez une autre touche."
     conflict_app: "%{name} utilise aussi %{keys}. Les deux apps réagiront. Choisissez une autre touche, ou changez le raccourci dans %{name}."

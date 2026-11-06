@@ -18,6 +18,10 @@ use std::path::Path;
 pub struct Config {
     pub general: General,
     pub hotkeys: Hotkeys,
+    /// A hotkey for each style that has one. Its own section, so an older
+    /// build that does not know it keeps the `[hotkeys]` section.
+    #[serde(skip_serializing_if = "StyleHotkeys::is_empty")]
+    pub style_hotkeys: StyleHotkeys,
     pub dictation: Dictation,
     pub insertion: Insertion,
     pub overlay: Overlay,
@@ -142,6 +146,83 @@ impl Hotkeys {
     fn uses_key(&self, key: crate::hotkey::Key) -> bool {
         let uses = |h: &Option<Hotkey>| matches!(h, Some(Hotkey::Chord { key: k, .. }) if *k == key);
         uses(&self.toggle) || uses(&self.push_to_talk)
+    }
+}
+
+/// The result of `Config::style_hotkey_check`: the style hotkeys that can
+/// work, and the problem of each one that cannot.
+pub type StyleHotkeyCheck<'a> = (Vec<(&'a str, Hotkey)>, Vec<(&'a str, ConfigProblem)>);
+
+/// `[style_hotkeys]`: for each style id, a hotkey that starts one dictation in
+/// that style. There are no defaults.
+///
+/// An entry that does not parse stays in the file as it is, and `validate`
+/// reports it. The other entries and the `[hotkeys]` section still work.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StyleHotkeys {
+    keys: BTreeMap<String, Hotkey>,
+    invalid: BTreeMap<String, toml::Value>,
+}
+
+impl StyleHotkeys {
+    pub fn get(&self, style: &str) -> Option<Hotkey> {
+        self.keys.get(style).copied()
+    }
+
+    /// Set or clear the hotkey of a style. A bad entry of that style goes away.
+    pub fn set(&mut self, style: &str, hotkey: Option<Hotkey>) {
+        self.invalid.remove(style);
+        match hotkey {
+            Some(hk) => self.keys.insert(style.to_string(), hk),
+            None => self.keys.remove(style),
+        };
+    }
+
+    /// The style ids and their hotkeys, in id order.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, Hotkey)> {
+        self.keys.iter().map(|(id, hk)| (id.as_str(), *hk))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.keys.is_empty() && self.invalid.is_empty()
+    }
+}
+
+impl Serialize for StyleHotkeys {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut entries: BTreeMap<&str, toml::Value> = self.invalid.iter().map(|(id, v)| (id.as_str(), v.clone())).collect();
+        entries.extend(self.keys.iter().map(|(id, hk)| (id.as_str(), toml::Value::String(hk.to_string()))));
+        let mut map = s.serialize_map(Some(entries.len()))?;
+        for (id, value) in entries {
+            map.serialize_entry(id, &value)?;
+        }
+        map.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for StyleHotkeys {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let raw = BTreeMap::<String, toml::Value>::deserialize(d)?;
+        let mut out = StyleHotkeys::default();
+        for (id, value) in raw {
+            match value.as_str().map(str::trim) {
+                // An empty value is no key, as in `[hotkeys]`.
+                Some("") => {}
+                Some(text) => match text.parse::<Hotkey>() {
+                    Ok(hk) => {
+                        out.keys.insert(id, hk);
+                    }
+                    Err(_) => {
+                        out.invalid.insert(id, value);
+                    }
+                },
+                None => {
+                    out.invalid.insert(id, value);
+                }
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -1027,6 +1108,15 @@ pub enum ConfigProblem {
     DuplicateProviderId(String),
     #[error("the provider \"{0}\" needs a base_url")]
     NeedsBaseUrl(String),
+    /// A value that is not a hotkey. The text of the value in the file.
+    #[error("\"{0}\" is not a hotkey")]
+    BadHotkey(String),
+    /// A style hotkey of modifiers only. A style hotkey needs a regular key.
+    #[error("{0} has no regular key")]
+    StyleHotkeyNeedsKey(Hotkey),
+    /// Another hotkey of Sayso uses the same key, so this one does not work.
+    #[error("{0} is already used by another Sayso hotkey")]
+    HotkeyInUse(Hotkey),
 }
 
 #[derive(Debug)]
@@ -1107,6 +1197,7 @@ impl Config {
         }
         section!("general", general);
         section!("hotkeys", hotkeys);
+        section!("style_hotkeys", style_hotkeys);
         section!("dictation", dictation);
         section!("insertion", insertion);
         section!("overlay", overlay);
@@ -1148,6 +1239,13 @@ impl Config {
                     issue(field, problem);
                 }
             }
+        }
+        for (id, value) in &self.style_hotkeys.invalid {
+            let text = value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string());
+            issue(&format!("style_hotkeys.{id}"), ConfigProblem::BadHotkey(text));
+        }
+        for (id, problem) in self.style_hotkey_check().1 {
+            issue(&format!("style_hotkeys.{id}"), problem);
         }
         if let Some(id) = &self.ai.default_provider
             && !self.ai.providers.iter().any(|p| &p.id == id) {
@@ -1194,6 +1292,28 @@ impl Config {
             }
         }
         issues
+    }
+
+    /// The style hotkeys that can work, in id order, and the problem of each
+    /// one that cannot. A style hotkey needs a regular key, because it fires
+    /// on a key press only. It must not overlap a hotkey of `[hotkeys]` or a
+    /// style hotkey before it. The recorder refuses all of these, but a hand
+    /// edit of the file does not go through the recorder.
+    pub fn style_hotkey_check(&self) -> StyleHotkeyCheck<'_> {
+        let h = &self.hotkeys;
+        let mut taken: Vec<Hotkey> = [h.toggle, h.push_to_talk, h.paste_last, h.cycle_style, h.incognito].into_iter().flatten().collect();
+        let (mut usable, mut refused) = (Vec::new(), Vec::new());
+        for (id, hotkey) in self.style_hotkeys.iter() {
+            if hotkey.modifier_keys().is_some() {
+                refused.push((id, ConfigProblem::StyleHotkeyNeedsKey(hotkey)));
+            } else if taken.iter().any(|t| t.overlaps(hotkey)) {
+                refused.push((id, ConfigProblem::HotkeyInUse(hotkey)));
+            } else {
+                taken.push(hotkey);
+                usable.push((id, hotkey));
+            }
+        }
+        (usable, refused)
     }
 
     pub fn to_toml(&self) -> String {
@@ -2149,5 +2269,77 @@ model = "spokenly-cleanup-1"
         provider.set_model("other".into());
         provider.fit_thinking(&["low".to_string()]);
         assert_eq!(provider, cleanup_model("s1-mini", "S1-mini"));
+    }
+
+    fn style_key(c: &Config, id: &str) -> Option<String> {
+        c.style_hotkeys.get(id).map(|hk| hk.to_string())
+    }
+
+    #[test]
+    fn style_hotkeys_round_trip_and_an_old_file_has_none() {
+        let mut c = Config::default();
+        assert!(c.style_hotkeys.is_empty(), "a new install has no style hotkeys");
+        assert!(!c.to_toml().contains("style_hotkeys"), "a file with no style hotkeys has no section");
+        c.style_hotkeys.set("email", Some("ctrl+opt+e".parse().unwrap()));
+        c.style_hotkeys.set("notes", Some("ctrl+opt+n".parse().unwrap()));
+        let text = c.to_toml();
+        assert!(text.contains("[style_hotkeys]"), "{text}");
+        let loaded = Config::parse(&text);
+        assert!(loaded.issues.is_empty(), "{:?}", loaded.issues);
+        assert_eq!(loaded.config, c);
+        assert!(Config::parse("[hotkeys]\nincognito = \"\"\n").config.style_hotkeys.is_empty());
+        c.style_hotkeys.set("email", None);
+        assert_eq!(style_key(&c, "email"), None);
+        assert_eq!(c.style_hotkeys.iter().map(|(id, _)| id).collect::<Vec<_>>(), ["notes"]);
+    }
+
+    #[test]
+    fn a_bad_style_hotkey_keeps_the_other_entries_and_the_hotkeys_section() {
+        let text = "[hotkeys]\ntoggle = \"ctrl+opt+d\"\n\n[style_hotkeys]\nemail = \"ctrl+opt+e\"\nnotes = \"ctrl+banana\"\nraw = 3\nclean = \"\"\n";
+        let loaded = Config::parse(text);
+        let c = &loaded.config;
+        assert_eq!(c.hotkeys.toggle, Some("ctrl+opt+d".parse().unwrap()));
+        assert_eq!(style_key(c, "email"), Some("ctrl+opt+e".parse::<Hotkey>().unwrap().to_string()));
+        assert_eq!(c.style_hotkeys.get("notes"), None);
+        assert_eq!(c.style_hotkeys.get("clean"), None, "an empty value is no key");
+        let mut issues: Vec<_> = loaded.issues.iter().map(|i| (i.field.as_str(), i.problem.clone())).collect();
+        issues.sort_by_key(|i| i.0);
+        assert_eq!(
+            issues,
+            [
+                ("style_hotkeys.notes", ConfigProblem::BadHotkey("ctrl+banana".into())),
+                ("style_hotkeys.raw", ConfigProblem::BadHotkey("3".into())),
+            ]
+        );
+        // The bad entries stay in the file until the user changes them.
+        let saved = c.to_toml();
+        assert!(saved.contains("notes = \"ctrl+banana\"") && saved.contains("raw = 3"), "{saved}");
+        let mut changed = c.clone();
+        changed.style_hotkeys.set("notes", Some("ctrl+opt+n".parse().unwrap()));
+        assert!(!changed.to_toml().contains("banana"));
+    }
+
+    #[test]
+    fn a_style_hotkey_must_not_overlap_another_hotkey() {
+        let mut c = Config::default();
+        c.hotkeys.toggle = Some("ctrl+opt+d".parse().unwrap());
+        c.hotkeys.cycle_style = Some("ctrl+opt+s".parse().unwrap());
+        let set = |c: &mut Config, id: &str, key: &str| c.style_hotkeys.set(id, Some(key.parse().unwrap()));
+        set(&mut c, "a-toggle", "ctrl+opt+d");
+        set(&mut c, "b-cycle", "ctrl+opt+s");
+        set(&mut c, "c-email", "ctrl+opt+e");
+        set(&mut c, "d-twice", "ctrl+opt+e");
+        set(&mut c, "e-modifiers", "right_option");
+        let (usable, refused) = c.style_hotkey_check();
+        assert_eq!(usable, [("c-email", "ctrl+opt+e".parse().unwrap())]);
+        let refused: Vec<_> = refused.into_iter().map(|(id, p)| (id, std::mem::discriminant(&p))).collect();
+        let in_use = std::mem::discriminant(&ConfigProblem::HotkeyInUse(Hotkey::toggle_default()));
+        let needs_key = std::mem::discriminant(&ConfigProblem::StyleHotkeyNeedsKey(Hotkey::toggle_default()));
+        assert_eq!(refused, [("a-toggle", in_use), ("b-cycle", in_use), ("d-twice", in_use), ("e-modifiers", needs_key)]);
+        let fields: Vec<_> = c.validate().into_iter().map(|i| i.field).collect();
+        assert_eq!(fields, ["style_hotkeys.a-toggle", "style_hotkeys.b-cycle", "style_hotkeys.d-twice", "style_hotkeys.e-modifiers"]);
+        // A modifier-only toggle blocks only modifier keys, and a style hotkey is a chord.
+        c.hotkeys.toggle = Some("left_control".parse().unwrap());
+        assert!(c.style_hotkey_check().0.iter().any(|(id, _)| *id == "a-toggle"));
     }
 }

@@ -16,55 +16,69 @@ use sayso_i18n::t;
 use sayso_platform::{ConflictSource, HotkeyConflict};
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Slot {
     Toggle,
     PushToTalk,
     PasteLast,
     CycleStyle,
     Incognito,
+    /// The style hotkey of the style with this id (`[style_hotkeys]`). The
+    /// style editor keeps a new key until Save, so this slot stages the key.
+    Style(SharedString),
 }
 
 impl Slot {
-    pub fn get(self, c: &Config) -> Option<Hotkey> {
+    pub fn get(&self, c: &Config) -> Option<Hotkey> {
         match self {
             Slot::Toggle => c.hotkeys.toggle,
             Slot::PushToTalk => c.hotkeys.push_to_talk,
             Slot::PasteLast => c.hotkeys.paste_last,
             Slot::CycleStyle => c.hotkeys.cycle_style,
             Slot::Incognito => c.hotkeys.incognito,
+            Slot::Style(id) => c.style_hotkeys.get(id),
         }
     }
 
-    pub fn apply(self, m: &mut AppModel, hotkey: Option<Hotkey>, cx: &mut Context<AppModel>) {
+    pub fn apply(&self, m: &mut AppModel, hotkey: Option<Hotkey>, cx: &mut Context<AppModel>) {
         match self {
             Slot::Toggle => m.set_toggle_hotkey(hotkey, cx),
             Slot::PushToTalk => m.set_push_to_talk(hotkey, cx),
             Slot::PasteLast => m.edit_config(cx, |c| c.hotkeys.paste_last = hotkey),
             Slot::CycleStyle => m.edit_config(cx, |c| c.hotkeys.cycle_style = hotkey),
             Slot::Incognito => m.edit_config(cx, |c| c.hotkeys.incognito = hotkey),
+            Slot::Style(id) => m.edit_config(cx, |c| c.style_hotkeys.set(id, hotkey)),
         }
     }
 
-    /// Another Sayso action that uses or overlaps `hotkey`.
-    pub fn clash(self, c: &Config, hotkey: &Hotkey) -> Option<Slot> {
+    /// A recorded key goes to the view, not to the config file.
+    fn stages(&self) -> bool {
+        matches!(self, Slot::Style(_))
+    }
+
+    /// Another Sayso action that uses or overlaps `hotkey`: a hotkey of
+    /// `[hotkeys]` or the style hotkey of another style.
+    pub fn clash(&self, c: &Config, hotkey: &Hotkey) -> Option<Slot> {
+        let styles = c.style_hotkeys.iter().map(|(id, _)| Slot::Style(SharedString::from(id.to_string())));
         [Slot::Toggle, Slot::PushToTalk, Slot::PasteLast, Slot::CycleStyle, Slot::Incognito]
             .into_iter()
-            .find(|s| *s != self && s.get(c).is_some_and(|other| match (self, *s) {
-                (Slot::Toggle, _) => other.conflicts_with_toggle(*hotkey),
-                (_, Slot::Toggle) => hotkey.conflicts_with_toggle(other),
+            .chain(styles)
+            .find(|s| s != self && s.get(c).is_some_and(|other| match (self, s) {
+                (Slot::Toggle, _) | (_, Slot::Toggle) => other.overlaps(*hotkey),
                 _ => other == *hotkey,
             }))
     }
 
-    /// The name of the action, for sentences.
-    fn label(self) -> String {
+    /// The name of the action, for sentences. A style has
+    /// `Note::UsedByStyle` with its name instead.
+    fn label(&self) -> String {
         match self {
             Slot::Toggle => t!("settings.recorder.action_toggle"),
             Slot::PushToTalk => t!("settings.recorder.action_push_to_talk"),
             Slot::PasteLast => t!("settings.recorder.action_paste_last"),
             Slot::CycleStyle => t!("settings.recorder.action_cycle_style"),
             Slot::Incognito => t!("settings.recorder.action_incognito"),
+            Slot::Style(id) => t!("settings.recorder.action_style", style = id),
         }
     }
 }
@@ -77,6 +91,8 @@ pub enum Note {
     SoloOnlyForPushToTalk(Hotkey),
     /// Another Sayso action uses the key.
     UsedBy(Hotkey, Slot),
+    /// The style hotkey of another style uses the key: the name of that style.
+    UsedByStyle(Hotkey, String),
 }
 
 impl Note {
@@ -86,6 +102,7 @@ impl Note {
                 t!("settings.recorder.solo_only_push_to_talk", keys = words(hk), example = words(&Hotkey::toggle_default()))
             }
             Note::UsedBy(hk, other) => t!("settings.recorder.used_by", keys = words(hk), action = other.label()),
+            Note::UsedByStyle(hk, name) => t!("settings.recorder.used_by", keys = words(hk), action = t!("settings.recorder.action_style", style = name)),
         }
     }
 }
@@ -103,6 +120,8 @@ pub struct Recorder {
     pub window_only: bool,
     /// A message after the last attempt, for example "Already used by ...".
     pub note: Option<Note>,
+    /// A key that a staging slot recorded. The view takes it.
+    staged: Option<Hotkey>,
     generation: u64,
     pub focus: FocusHandle,
     conflicts: Vec<(Option<Hotkey>, Instant, Vec<HotkeyConflict>)>,
@@ -110,11 +129,16 @@ pub struct Recorder {
 
 impl Recorder {
     pub fn new(cx: &mut App) -> Self {
-        Self { slot: None, window_only: false, note: None, generation: 0, focus: cx.focus_handle(), conflicts: Vec::new() }
+        Self { slot: None, window_only: false, note: None, staged: None, generation: 0, focus: cx.focus_handle(), conflicts: Vec::new() }
     }
 
-    pub fn is_recording(&self, slot: Slot) -> bool {
-        self.slot == Some(slot)
+    pub fn is_recording(&self, slot: &Slot) -> bool {
+        self.slot.as_ref() == Some(slot)
+    }
+
+    /// The key that a staging slot recorded since the last call (see `Slot::Style`).
+    pub fn take_staged(&mut self) -> Option<Hotkey> {
+        self.staged.take()
     }
 
     /// Conflicts for a hotkey, cached for a few seconds (running apps change).
@@ -150,7 +174,7 @@ pub fn start<V: 'static>(
     cx: &mut Context<V>,
 ) {
     let r = get(this);
-    r.slot = Some(slot);
+    r.slot = Some(slot.clone());
     r.window_only = false;
     r.note = None;
     r.generation += 1;
@@ -162,7 +186,7 @@ pub fn start<V: 'static>(
             let current = view
                 .update(cx, |v, _| {
                     let r = get(v);
-                    r.generation == generation && r.slot == Some(slot)
+                    r.generation == generation && r.slot.as_ref() == Some(&slot)
                 })
                 .unwrap_or(false);
             if !current {
@@ -170,11 +194,11 @@ pub fn start<V: 'static>(
             }
             match result {
                 Recorded::Key(hk) => {
-                    let note = finish(m, slot, hk, cx);
+                    let done = finish(m, &slot, hk, cx);
                     let _ = view.update(cx, |v, cx| {
                         let r = get(v);
                         r.slot = None;
-                        r.note = note;
+                        r.take(done);
                         cx.notify();
                     });
                 }
@@ -198,24 +222,60 @@ pub fn start<V: 'static>(
 
 /// Modifier keys work for start/stop and push-to-talk. The other actions
 /// keep their existing chords.
-fn unusable(slot: Slot, hk: &Hotkey) -> Option<Note> {
+fn unusable(slot: &Slot, hk: &Hotkey) -> Option<Note> {
     match hk {
         Hotkey::Solo(_) | Hotkey::ModifierOnly(_) if !matches!(slot, Slot::Toggle | Slot::PushToTalk) => Some(Note::SoloOnlyForPushToTalk(*hk)),
         _ => None,
     }
 }
 
-/// Save a recorded key unless the action cannot use it or another Sayso
-/// action uses it. Returns a note for the UI.
-fn finish(m: &mut AppModel, slot: Slot, hk: Hotkey, cx: &mut Context<AppModel>) -> Option<Note> {
-    if let Some(note) = unusable(slot, &hk) {
-        return Some(note);
+/// What happened to a recorded key.
+#[derive(Debug, Clone, PartialEq)]
+enum Finished {
+    /// The key is in the config file.
+    Saved,
+    /// A staging slot: the view keeps the key until the user saves.
+    Staged(Hotkey),
+    /// The key was not used, for this reason.
+    Refused(Note),
+}
+
+impl Recorder {
+    fn take(&mut self, done: Finished) {
+        match done {
+            Finished::Saved => self.note = None,
+            Finished::Staged(hk) => {
+                self.note = None;
+                self.staged = Some(hk);
+            }
+            Finished::Refused(note) => self.note = Some(note),
+        }
     }
-    if let Some(other) = slot.clash(&m.config, &hk) {
-        return Some(Note::UsedBy(hk, other));
+}
+
+/// Check a recorded key against the action and the other Sayso hotkeys.
+fn check(m: &AppModel, slot: &Slot, hk: Hotkey) -> Result<(), Note> {
+    if let Some(note) = unusable(slot, &hk) {
+        return Err(note);
+    }
+    match slot.clash(&m.config, &hk) {
+        Some(Slot::Style(id)) => Err(Note::UsedByStyle(hk, m.style_name(&id))),
+        Some(other) => Err(Note::UsedBy(hk, other)),
+        None => Ok(()),
+    }
+}
+
+/// Save or stage a recorded key unless the action cannot use it or another
+/// Sayso action uses it.
+fn finish(m: &mut AppModel, slot: &Slot, hk: Hotkey, cx: &mut Context<AppModel>) -> Finished {
+    if let Err(note) = check(m, slot, hk) {
+        return Finished::Refused(note);
+    }
+    if slot.stages() {
+        return Finished::Staged(hk);
     }
     slot.apply(m, Some(hk), cx);
-    None
+    Finished::Saved
 }
 
 /// Handle a key press in the window while a recorder is open. Returns true when it used the key.
@@ -227,7 +287,7 @@ pub fn on_key_down<V: 'static>(
     cx: &mut Context<V>,
 ) -> bool {
     let r = get(this);
-    let Some(slot) = r.slot else { return false };
+    let Some(slot) = r.slot.clone() else { return false };
     let k = &event.keystroke;
     let m = k.modifiers;
     if k.key == "escape" && !(m.control || m.alt || m.shift || m.platform) {
@@ -237,8 +297,8 @@ pub fn on_key_down<V: 'static>(
     }
     let Some(hk) = keystroke_hotkey(k) else { return true };
     r.cancel();
-    let note = model.update(cx, |m, cx| finish(m, slot, hk, cx));
-    get(this).note = note;
+    let done = model.update(cx, |m, cx| finish(m, &slot, hk, cx));
+    get(this).take(done);
     cx.notify();
     true
 }
@@ -425,12 +485,12 @@ mod tests {
                 config.hotkeys.cycle_style = None;
                 assert_eq!(slot.clash(&config, &other), Some(Slot::Toggle), "{toggle}, {other}");
                 config.hotkeys.toggle = None;
-                match slot {
+                match &slot {
                     Slot::PushToTalk => config.hotkeys.push_to_talk = Some(other),
                     Slot::PasteLast => config.hotkeys.paste_last = Some(other),
                     Slot::CycleStyle => config.hotkeys.cycle_style = Some(other),
                     Slot::Incognito => config.hotkeys.incognito = Some(other),
-                    Slot::Toggle => unreachable!(),
+                    Slot::Toggle | Slot::Style(_) => unreachable!(),
                 }
                 assert_eq!(Slot::Toggle.clash(&config, &toggle), Some(slot));
             }
@@ -467,11 +527,11 @@ mod tests {
     fn combined_modifiers_work_for_recording_without_changing_other_actions() {
         for binding in ["left_command+left_option", "left_command+left_control+left_option+left_shift"] {
             let hotkey = binding.parse::<Hotkey>().unwrap();
-            assert_eq!(unusable(Slot::Toggle, &hotkey), None);
-            assert_eq!(unusable(Slot::PushToTalk, &hotkey), None);
+            assert_eq!(unusable(&Slot::Toggle, &hotkey), None);
+            assert_eq!(unusable(&Slot::PushToTalk, &hotkey), None);
             for slot in [Slot::PasteLast, Slot::CycleStyle, Slot::Incognito] {
-                assert!(unusable(slot, &hotkey).is_some());
-                assert_eq!(unusable(slot, &Hotkey::paste_last_default()), None);
+                assert!(unusable(&slot, &hotkey).is_some());
+                assert_eq!(unusable(&slot, &Hotkey::paste_last_default()), None);
             }
         }
     }
@@ -479,11 +539,46 @@ mod tests {
     #[test]
     fn solo_modifiers_work_for_both_recording_actions() {
         let solo = Hotkey::Solo(SoloModifier::RightOption);
-        assert_eq!(unusable(Slot::PushToTalk, &solo), None);
-        assert_eq!(unusable(Slot::Toggle, &solo), None);
+        assert_eq!(unusable(&Slot::PushToTalk, &solo), None);
+        assert_eq!(unusable(&Slot::Toggle, &solo), None);
         for slot in [Slot::PasteLast, Slot::CycleStyle, Slot::Incognito] {
-            assert_eq!(unusable(slot, &solo), Some(Note::SoloOnlyForPushToTalk(solo)));
+            assert_eq!(unusable(&slot, &solo), Some(Note::SoloOnlyForPushToTalk(solo)));
         }
-        assert_eq!(unusable(Slot::Toggle, &Hotkey::toggle_default()), None);
+        assert_eq!(unusable(&Slot::Toggle, &Hotkey::toggle_default()), None);
+    }
+
+    fn style(id: &str) -> Slot {
+        Slot::Style(id.to_string().into())
+    }
+
+    #[test]
+    fn a_style_hotkey_clashes_with_every_other_sayso_hotkey_but_its_own() {
+        use sayso_core::config::Config;
+
+        let key = |s: &str| s.parse::<Hotkey>().unwrap();
+        let mut config = Config::default();
+        config.hotkeys.toggle = Some(key("ctrl+opt+d"));
+        config.hotkeys.cycle_style = Some(key("ctrl+opt+s"));
+        config.style_hotkeys.set("email", Some(key("ctrl+opt+e")));
+        assert_eq!(style("notes").clash(&config, &key("ctrl+opt+d")), Some(Slot::Toggle));
+        assert_eq!(style("notes").clash(&config, &key("ctrl+opt+s")), Some(Slot::CycleStyle));
+        assert_eq!(style("notes").clash(&config, &key("ctrl+opt+e")), Some(style("email")));
+        // The key that the style has already is not a clash, and a new style has no id yet.
+        assert_eq!(style("email").clash(&config, &key("ctrl+opt+e")), None);
+        assert_eq!(style("").clash(&config, &key("ctrl+opt+n")), None);
+        // The fixed hotkeys see the style hotkeys too.
+        assert_eq!(Slot::Incognito.clash(&config, &key("ctrl+opt+e")), Some(style("email")));
+        assert_eq!(Slot::Toggle.clash(&config, &key("ctrl+opt+e")), Some(style("email")));
+    }
+
+    #[test]
+    fn a_style_hotkey_needs_a_regular_key_and_is_staged() {
+        for binding in ["right_option", "left_command+left_option"] {
+            let hotkey = binding.parse::<Hotkey>().unwrap();
+            assert_eq!(unusable(&style("email"), &hotkey), Some(Note::SoloOnlyForPushToTalk(hotkey)));
+        }
+        assert_eq!(unusable(&style("email"), &"ctrl+opt+e".parse().unwrap()), None);
+        assert!(style("email").stages());
+        assert!(!Slot::Toggle.stages() && !Slot::CycleStyle.stages());
     }
 }

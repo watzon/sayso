@@ -127,6 +127,7 @@ impl AppModel {
                             }
                         }
                         m.styles = StyleLibrary::load(&styles_dir);
+                        m.styles_changed();
                         m.reload_dictionary();
                         m.reload_history(cx);
                         log::info!("import from Pindrop: {report:?}, {styles} styles");

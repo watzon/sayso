@@ -47,6 +47,8 @@ settings:
       bad_provider_id: "服务商 ID“%{id}”不能为空，也不能包含冒号"
       duplicate_provider_id: "有两个服务商的 ID 都是“%{id}”"
       needs_base_url: "服务商“%{id}”需要 base_url"
+      bad_hotkey: "“%{value}”不是快捷键"
+      hotkey_in_use: "%{keys} 已被 Sayso 的另一个快捷键使用"
     updates: "更新"
     no_self_update: "此版本不会自动更新"
     no_self_update_detail: "版本 %{version}，从源代码构建。"

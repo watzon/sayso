@@ -49,6 +49,8 @@ settings:
       bad_provider_id: "l'id del provider \"%{id}\" non deve essere vuoto né contenere i due punti"
       duplicate_provider_id: "due provider hanno l'id \"%{id}\""
       needs_base_url: "il provider \"%{id}\" richiede un base_url"
+      bad_hotkey: "\"%{value}\" non è una scorciatoia"
+      hotkey_in_use: "%{keys} è già usato da un’altra scorciatoia di Sayso"
     updates: "Aggiornamenti"
     no_self_update: "Questa build non si aggiorna da sola"
     no_self_update_detail: "Versione %{version}, compilata dai sorgenti."

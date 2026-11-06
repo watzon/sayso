@@ -60,6 +60,10 @@ pub struct HotkeyBindings {
     pub paste_last: Option<Hotkey>,
     pub cycle_style: Option<Hotkey>,
     pub incognito: Option<Hotkey>,
+    /// The style hotkeys: a style id and a chord. Entry `i` sends
+    /// `HotkeyEvent::Style(i)`. The id is for backends that name each
+    /// shortcut, for example the shortcut portal on Linux.
+    pub styles: Vec<(String, Hotkey)>,
     /// Enter while recording sends `Submit`, and no app gets that Enter.
     pub enter_sends: bool,
     /// Esc while recording goes to no app.
@@ -84,6 +88,22 @@ pub enum HotkeyEvent {
     CycleStyle,
     /// Turn incognito on or off.
     ToggleIncognito,
+    /// The style hotkey at this index of `HotkeyBindings::styles`.
+    Style(u16),
+}
+
+impl HotkeyBindings {
+    /// The chords that send one event on a key press, apart from the toggle:
+    /// paste last, next style, incognito, and the style hotkeys.
+    pub fn press_chords(&self) -> Vec<(Hotkey, HotkeyEvent)> {
+        let fixed = [
+            (self.paste_last, HotkeyEvent::PasteLast),
+            (self.cycle_style, HotkeyEvent::CycleStyle),
+            (self.incognito, HotkeyEvent::ToggleIncognito),
+        ];
+        let styles = self.styles.iter().enumerate().filter_map(|(i, (_, hk))| Some((*hk, HotkeyEvent::Style(u16::try_from(i).ok()?))));
+        fixed.into_iter().filter_map(|(hk, event)| Some((hk?, event))).chain(styles).collect()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

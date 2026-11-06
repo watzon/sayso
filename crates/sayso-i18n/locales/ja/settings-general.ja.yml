@@ -47,6 +47,8 @@ settings:
       bad_provider_id: "プロバイダ ID「%{id}」は空にできず、コロンを含めることもできません"
       duplicate_provider_id: "2つのプロバイダが同じ ID「%{id}」を使用しています"
       needs_base_url: "プロバイダ「%{id}」には base_url が必要です"
+      bad_hotkey: "「%{value}」はショートカットではありません"
+      hotkey_in_use: "%{keys} はすでに Sayso の別のショートカットに使われています"
     updates: "アップデート"
     no_self_update: "このビルドは自動でアップデートされません"
     no_self_update_detail: "バージョン %{version}、ソースからビルド。"

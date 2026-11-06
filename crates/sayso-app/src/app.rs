@@ -169,6 +169,16 @@ pub fn run() {
             })
             .detach();
         }
+        // `sayso --style=<id>` (Linux): one dictation in that style.
+        if let Some(requests) = crate::shell::style_requests() {
+            let m = model.clone();
+            cx.spawn(async move |cx| {
+                while let Ok(id) = requests.recv().await {
+                    cx.update(|cx| m.update(cx, |m, cx| m.start_with_style(id, cx)));
+                }
+            })
+            .detach();
+        }
         if crate::dev::flag("popover") {
             let m = model.clone();
             cx.spawn(async move |cx| {

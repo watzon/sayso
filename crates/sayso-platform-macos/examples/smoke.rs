@@ -65,6 +65,7 @@ mod mac {
             paste_last: Some(Hotkey::paste_last_default()),
             cycle_style: Some("ctrl+cmd+s".parse().unwrap()),
             incognito: None,
+            styles: Vec::new(),
             enter_sends: false,
             take_escape: false,
             single_escape: false,

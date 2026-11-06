@@ -35,6 +35,7 @@ fn bindings(toggle: &str, ptt: &str) -> HotkeyBindings {
         paste_last: None,
         cycle_style: None,
         incognito: None,
+        styles: Vec::new(),
         enter_sends: false,
         take_escape: false,
         single_escape: false,

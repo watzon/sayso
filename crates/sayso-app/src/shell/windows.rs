@@ -48,6 +48,11 @@ pub fn open_requests() -> Option<async_channel::Receiver<()>> {
     Some(OPEN_REQUESTS.1.clone())
 }
 
+/// Style ids from `sayso --style=<id>`. Only Linux has the command.
+pub fn style_requests() -> Option<async_channel::Receiver<String>> {
+    None
+}
+
 pub fn platform(sounds_dir: PathBuf) -> Platform {
     sayso_platform_windows::WinPlatform::new(sounds_dir)
 }

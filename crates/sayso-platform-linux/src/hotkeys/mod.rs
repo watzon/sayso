@@ -38,7 +38,7 @@ use std::sync::Arc;
 /// What a chord does when a chord backend sees it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChordAction {
-    /// One event on key press (toggle, paste last, cycle style).
+    /// One event on key press (toggle, paste last, cycle style, a style hotkey).
     Press(HotkeyEvent),
     /// Push-to-talk: down on press, up on release.
     PushToTalk,
@@ -210,21 +210,15 @@ fn plan(bindings: &HotkeyBindings) -> Plan {
         Ok(chord) => plan.chords.push((hotkey, chord, action)),
         Err(reason) => plan.failed.push((hotkey, reason)),
     };
-    for (hotkey, event) in [
-        (bindings.toggle, HotkeyEvent::Toggle),
-        (bindings.paste_last, HotkeyEvent::PasteLast),
-        (bindings.cycle_style, HotkeyEvent::CycleStyle),
-        (bindings.incognito, HotkeyEvent::ToggleIncognito),
-    ] {
-        if let Some(hotkey) = hotkey {
-            if hotkey.modifier_keys().is_some() && event == HotkeyEvent::Toggle {
-                match keymap::check_push_to_talk(&hotkey) {
-                    Ok(()) => plan.modifier_toggle = Some(hotkey),
-                    Err(reason) => plan.failed.push((hotkey, reason)),
-                }
-            } else {
-                add_chord(&mut plan, hotkey, ChordAction::Press(event));
+    let toggle = bindings.toggle.map(|hotkey| (hotkey, HotkeyEvent::Toggle));
+    for (hotkey, event) in toggle.into_iter().chain(bindings.press_chords()) {
+        if hotkey.modifier_keys().is_some() && event == HotkeyEvent::Toggle {
+            match keymap::check_push_to_talk(&hotkey) {
+                Ok(()) => plan.modifier_toggle = Some(hotkey),
+                Err(reason) => plan.failed.push((hotkey, reason)),
             }
+        } else {
+            add_chord(&mut plan, hotkey, ChordAction::Press(event));
         }
     }
     if let Some(ptt) = bindings.push_to_talk {
@@ -237,13 +231,28 @@ fn plan(bindings: &HotkeyBindings) -> Plan {
     plan
 }
 
-fn portal_binding(chord: &Chord, action: ChordAction) -> Option<portal::Binding> {
+/// The id of a style in a portal id or a GNOME path: lower case letters,
+/// digits, and `-`. Any other character becomes `-`.
+fn style_slug(id: &str) -> String {
+    id.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c.to_ascii_lowercase() } else { '-' }).collect()
+}
+
+/// The raw id of the style that `Style(i)` points at.
+fn style_id(styles: &[(String, Hotkey)], index: u16) -> Option<&str> {
+    styles.get(usize::from(index)).map(|(id, _)| id.as_str())
+}
+
+fn portal_binding(chord: &Chord, action: ChordAction, styles: &[(String, Hotkey)]) -> Option<portal::Binding> {
     let (id, description) = match action {
-        ChordAction::Press(HotkeyEvent::Toggle) => ("toggle", "Start or stop a dictation"),
-        ChordAction::Press(HotkeyEvent::PasteLast) => ("paste-last", "Paste the last dictation"),
-        ChordAction::Press(HotkeyEvent::CycleStyle) => ("cycle-style", "Switch to the next style"),
-        ChordAction::Press(HotkeyEvent::ToggleIncognito) => ("incognito", "Turn incognito on or off"),
-        ChordAction::PushToTalk => ("push-to-talk", "Record while you hold the keys"),
+        ChordAction::Press(HotkeyEvent::Toggle) => ("toggle".to_string(), "Start or stop a dictation".to_string()),
+        ChordAction::Press(HotkeyEvent::PasteLast) => ("paste-last".into(), "Paste the last dictation".into()),
+        ChordAction::Press(HotkeyEvent::CycleStyle) => ("cycle-style".into(), "Switch to the next style".into()),
+        ChordAction::Press(HotkeyEvent::ToggleIncognito) => ("incognito".into(), "Turn incognito on or off".into()),
+        ChordAction::Press(HotkeyEvent::Style(i)) => {
+            let raw = style_id(styles, i)?;
+            (format!("style-{}", style_slug(raw)), format!("Start one dictation in the {raw} style"))
+        }
+        ChordAction::PushToTalk => ("push-to-talk".into(), "Record while you hold the keys".into()),
         ChordAction::Press(_) => return None,
     };
     Some(portal::Binding { id, description, trigger: keymap::portal_trigger(chord)?, action })
@@ -265,8 +274,16 @@ impl HotkeySource for LinuxHotkeys {
                 Err(e) => failed.extend(chords.iter().map(|(h, _, _)| (*h, e.clone()))),
             },
             ChordBackend::Portal => {
-                let wanted: Vec<portal::Binding> =
-                    chords.iter().filter_map(|(_, chord, action)| portal_binding(chord, *action)).collect();
+                let mut wanted: Vec<portal::Binding> = Vec::new();
+                for (hotkey, chord, action) in &chords {
+                    let Some(binding) = portal_binding(chord, *action, &bindings.styles) else { continue };
+                    // Two style ids can give one portal id. The portal keeps one shortcut for it.
+                    if wanted.iter().any(|w| w.id == binding.id) {
+                        failed.push((*hotkey, format!("another style already uses the portal shortcut {}", binding.id)));
+                    } else {
+                        wanted.push(binding);
+                    }
+                }
                 if b.portal_bound.as_ref() != Some(&wanted) {
                     if let Some(p) = &b.portal {
                         p.bind(wanted.clone());
@@ -275,13 +292,22 @@ impl HotkeySource for LinuxHotkeys {
                 }
             }
             ChordBackend::GnomeCustom => {
-                let mut shortcuts = Vec::new();
+                let mut shortcuts: Vec<gnome::Shortcut> = Vec::new();
                 for (hotkey, _, action) in &chords {
-                    let (id, name) = match action {
-                        ChordAction::Press(HotkeyEvent::Toggle) => ("toggle", "Start or stop dictation"),
-                        ChordAction::Press(HotkeyEvent::PasteLast) => ("paste-last", "Paste the last text"),
-                        ChordAction::Press(HotkeyEvent::CycleStyle) => ("cycle-style", "Next style"),
-                        ChordAction::Press(HotkeyEvent::ToggleIncognito) => ("incognito", "Incognito"),
+                    let (id, name, flag) = match action {
+                        ChordAction::Press(HotkeyEvent::Toggle) => ("toggle".to_string(), "Start or stop dictation".to_string(), "toggle".to_string()),
+                        ChordAction::Press(HotkeyEvent::PasteLast) => ("paste-last".into(), "Paste the last text".into(), "paste-last".into()),
+                        ChordAction::Press(HotkeyEvent::CycleStyle) => ("cycle-style".into(), "Next style".into(), "cycle-style".into()),
+                        ChordAction::Press(HotkeyEvent::ToggleIncognito) => ("incognito".into(), "Incognito".into(), "incognito".into()),
+                        ChordAction::Press(HotkeyEvent::Style(i)) => {
+                            let Some(raw) = style_id(&bindings.styles, *i) else { continue };
+                            let id = format!("style-{}", style_slug(raw));
+                            if shortcuts.iter().any(|s| s.id == id) {
+                                failed.push((*hotkey, format!("another style already uses the GNOME shortcut {id}")));
+                                continue;
+                            }
+                            (id, format!("Style: {raw}"), format!("style={raw}"))
+                        }
                         ChordAction::Press(_) => continue,
                         ChordAction::PushToTalk => {
                             failed.push((*hotkey, "this version of GNOME cannot tell Sayso when you release a key. Use a toggle key, or join the input group".into()));
@@ -289,7 +315,7 @@ impl HotkeySource for LinuxHotkeys {
                         }
                     };
                     match gnome::accelerator(hotkey) {
-                        Some(binding) => shortcuts.push(gnome::Shortcut { id, name, binding }),
+                        Some(binding) => shortcuts.push(gnome::Shortcut { id, name, flag, binding }),
                         None => failed.push((*hotkey, "GNOME cannot bind a modifier alone".into())),
                     }
                 }
@@ -397,6 +423,7 @@ mod tests {
             paste_last: None,
             cycle_style: None,
             incognito: None,
+            styles: Vec::new(),
             enter_sends: false,
             take_escape: false,
             single_escape: false,
@@ -435,10 +462,44 @@ mod tests {
     #[test]
     fn portal_bindings_have_stable_ids_and_spec_triggers() {
         let p = plan(&bindings(Some("ctrl+opt+space"), Some("cmd+shift+d")));
-        let bound: Vec<_> = p.chords.iter().filter_map(|(_, c, a)| portal_binding(c, *a)).collect();
+        let bound: Vec<_> = p.chords.iter().filter_map(|(_, c, a)| portal_binding(c, *a, &[])).collect();
         assert_eq!(bound[0].id, "toggle");
         assert_eq!(bound[0].trigger, "CTRL+ALT+space");
         assert_eq!(bound[1].id, "push-to-talk");
         assert_eq!(bound[1].trigger, "SHIFT+LOGO+d");
+    }
+
+    fn with_styles(toggle: Option<&str>, styles: &[(&str, &str)]) -> HotkeyBindings {
+        let mut b = bindings(toggle, None);
+        b.styles = styles.iter().map(|(id, key)| (id.to_string(), key.parse().unwrap())).collect();
+        b
+    }
+
+    #[test]
+    fn plan_sends_style_events_and_refuses_a_shared_chord() {
+        let p = plan(&with_styles(Some("ctrl+opt+space"), &[("email", "ctrl+opt+e")]));
+        assert_eq!(p.chords.len(), 2);
+        assert_eq!(p.chords[1].2, ChordAction::Press(HotkeyEvent::Style(0)));
+        assert!(p.failed.is_empty());
+
+        let p = plan(&with_styles(Some("ctrl+opt+space"), &[("email", "ctrl+opt+space")]));
+        assert_eq!(p.chords.len(), 1);
+        assert_eq!(p.failed.len(), 1);
+        assert!(p.failed[0].1.contains("another Sayso action"));
+    }
+
+    #[test]
+    fn style_portal_ids_are_stable_and_sanitized() {
+        let b = with_styles(None, &[("email", "ctrl+opt+e"), ("My Style!", "ctrl+opt+m")]);
+        let p = plan(&b);
+        let bound: Vec<_> = p.chords.iter().filter_map(|(_, c, a)| portal_binding(c, *a, &b.styles)).collect();
+        assert_eq!(bound[0].id, "style-email");
+        assert_eq!(bound[0].description, "Start one dictation in the email style");
+        assert_eq!(bound[1].id, "style-my-style-");
+        assert_eq!(bound[1].description, "Start one dictation in the My Style! style");
+        // The id does not depend on the other styles.
+        let b = with_styles(None, &[("My Style!", "ctrl+opt+m")]);
+        let (_, chord, action) = &plan(&b).chords[0];
+        assert_eq!(portal_binding(chord, *action, &b.styles).unwrap().id, "style-my-style-");
     }
 }

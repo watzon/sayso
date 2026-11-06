@@ -26,8 +26,8 @@ impl OnboardingView {
         let im = m.permission(Permission::InputMonitoring);
         let mut conflicts = self.recorder.conflicts(m, toggle);
         conflicts.extend(self.recorder.conflicts(m, ptt));
-        let rec_toggle = self.recorder.is_recording(Slot::Toggle);
-        let rec_ptt = self.recorder.is_recording(Slot::PushToTalk);
+        let rec_toggle = self.recorder.is_recording(&Slot::Toggle);
+        let rec_ptt = self.recorder.is_recording(&Slot::PushToTalk);
         let window_only = self.recorder.window_only;
 
         // Start and stop.
