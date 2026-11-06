@@ -28,6 +28,9 @@ const LETTER_CODES: [u16; 26] = [
 ];
 /// Digit key codes, `0` to `9`.
 const DIGIT_CODES: [u16; 10] = [29, 18, 19, 20, 21, 23, 22, 26, 28, 25];
+/// ANSI punctuation key codes, in the order of [`Key::PUNCTUATION`]:
+/// `` ` - = [ ] \ ; ' , . / ``.
+const PUNCTUATION_CODES: [u16; 11] = [50, 27, 24, 33, 30, 42, 41, 39, 43, 47, 44];
 /// Function key codes, `F1` to `F20`.
 const F_CODES: [u16; 20] = [
     122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, 105, 107, 113, 106, 64, 79, 80, 90,
@@ -47,6 +50,7 @@ pub fn keycode(key: Key) -> Option<u16> {
         }
         Key::Digit(d) if d <= 9 => Some(DIGIT_CODES[d as usize]),
         Key::F(n) if (1..=20).contains(&n) => Some(F_CODES[n as usize - 1]),
+        Key::Punctuation(c) => Key::punctuation_index(c).map(|i| PUNCTUATION_CODES[i]),
         _ => None,
     }
 }
@@ -59,6 +63,7 @@ pub fn key_from_keycode(code: u16) -> Option<Key> {
         .chain((b'a'..=b'z').map(|c| Key::Letter(c as char)))
         .chain((0..=9).map(Key::Digit))
         .chain((1..=20).map(Key::F))
+        .chain(Key::punctuation())
         .find(|k| keycode(*k) == Some(code))
 }
 
@@ -169,6 +174,10 @@ const GH_DIGITS: [Code; 10] = [
     Code::Digit0, Code::Digit1, Code::Digit2, Code::Digit3, Code::Digit4, Code::Digit5,
     Code::Digit6, Code::Digit7, Code::Digit8, Code::Digit9,
 ];
+const GH_PUNCTUATION: [Code; 11] = [
+    Code::Backquote, Code::Minus, Code::Equal, Code::BracketLeft, Code::BracketRight,
+    Code::Backslash, Code::Semicolon, Code::Quote, Code::Comma, Code::Period, Code::Slash,
+];
 const GH_FKEYS: [Code; 20] = [
     Code::F1, Code::F2, Code::F3, Code::F4, Code::F5, Code::F6, Code::F7, Code::F8, Code::F9,
     Code::F10, Code::F11, Code::F12, Code::F13, Code::F14, Code::F15, Code::F16, Code::F17,
@@ -193,6 +202,7 @@ pub fn to_global_hotkey(hotkey: &Hotkey) -> Result<HotKey, String> {
         Key::Letter(c) if c.is_ascii_alphabetic() => GH_LETTERS[(c.to_ascii_lowercase() as u8 - b'a') as usize],
         Key::Digit(d) if d <= 9 => GH_DIGITS[d as usize],
         Key::F(n) if (1..=20).contains(&n) => GH_FKEYS[n as usize - 1],
+        Key::Punctuation(c) if let Some(i) = Key::punctuation_index(c) => GH_PUNCTUATION[i],
         other => return Err(format!("unsupported key {other:?}")),
     };
     let mut mods = GhModifiers::empty();
@@ -233,6 +243,12 @@ mod tests {
         assert_eq!(keycode(Key::F(12)), Some(111));
         assert_eq!(keycode(Key::F(21)), None);
         assert_eq!(keycode(Key::Letter('é')), None);
+        // kVK_ANSI_LeftBracket, kVK_ANSI_RightBracket, kVK_ANSI_Grave, kVK_ANSI_Slash.
+        assert_eq!(keycode(Key::Punctuation('[')), Some(33));
+        assert_eq!(keycode(Key::Punctuation(']')), Some(30));
+        assert_eq!(keycode(Key::Punctuation('`')), Some(50));
+        assert_eq!(keycode(Key::Punctuation('/')), Some(44));
+        assert_eq!(keycode(Key::Punctuation('{')), None);
     }
 
     #[test]
@@ -247,13 +263,16 @@ mod tests {
         for n in 1..=20 {
             assert_eq!(key_from_keycode(keycode(Key::F(n)).unwrap()), Some(Key::F(n)));
         }
+        for k in Key::punctuation() {
+            assert_eq!(key_from_keycode(keycode(k).unwrap()), Some(k));
+        }
         assert_eq!(key_from_keycode(53), Some(Key::Escape));
         assert_eq!(key_from_keycode(200), None);
     }
 
     #[test]
     fn letter_and_digit_tables_have_unique_codes() {
-        let mut all: Vec<u16> = LETTER_CODES.iter().chain(&DIGIT_CODES).chain(&F_CODES).copied().collect();
+        let mut all: Vec<u16> = LETTER_CODES.iter().chain(&DIGIT_CODES).chain(&F_CODES).chain(&PUNCTUATION_CODES).copied().collect();
         all.extend([49, 53, 36, 48, 51]);
         let n = all.len();
         all.sort_unstable();
@@ -300,6 +319,13 @@ mod tests {
         assert_eq!(hk, HotKey::new(Some(GhModifiers::SHIFT), Code::F5));
         let hk = to_global_hotkey(&chord("cmd+7")).unwrap();
         assert_eq!(hk, HotKey::new(Some(GhModifiers::SUPER), Code::Digit7));
+        let hk = to_global_hotkey(&chord("ctrl+[")).unwrap();
+        assert_eq!(hk, HotKey::new(Some(GhModifiers::CONTROL), Code::BracketLeft));
+        let hk = to_global_hotkey(&chord("ctrl+]")).unwrap();
+        assert_eq!(hk, HotKey::new(Some(GhModifiers::CONTROL), Code::BracketRight));
+        for key in Key::punctuation() {
+            assert!(to_global_hotkey(&Hotkey::Chord { modifiers: Modifiers { option: true, ..Default::default() }, key }).is_ok(), "{key:?}");
+        }
     }
 
     #[test]

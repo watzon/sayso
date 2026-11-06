@@ -10,7 +10,7 @@
 //! "Sayso: …". Sayso owns only the entries whose path contains `/sayso-`.
 //! A custom shortcut has no key-up, so push-to-talk cannot work this way.
 
-use sayso_core::hotkey::{Hotkey, Key};
+use sayso_core::hotkey::Hotkey;
 use std::process::Command;
 
 const LIST_SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
@@ -101,16 +101,7 @@ pub fn accelerator(hotkey: &Hotkey) -> Option<String> {
             out.push_str(name);
         }
     }
-    out.push_str(&match key {
-        Key::Space => "space".to_string(),
-        Key::Escape => "Escape".to_string(),
-        Key::Return => "Return".to_string(),
-        Key::Tab => "Tab".to_string(),
-        Key::Backspace => "BackSpace".to_string(),
-        Key::Letter(c) => c.to_ascii_lowercase().to_string(),
-        Key::Digit(d) => d.to_string(),
-        Key::F(n) => format!("F{n}"),
-    });
+    out.push_str(&super::keymap::keysym_name(*key));
     Some(out)
 }
 
@@ -182,6 +173,11 @@ mod tests {
         assert_eq!(accelerator(&hk("ctrl+alt+space")).as_deref(), Some("<Control><Alt>space"));
         assert_eq!(accelerator(&hk("super+shift+v")).as_deref(), Some("<Shift><Super>v"));
         assert_eq!(accelerator(&hk("ctrl+f5")).as_deref(), Some("<Control>F5"));
+        assert_eq!(accelerator(&hk("ctrl+[")).as_deref(), Some("<Control>bracketleft"));
+        assert_eq!(accelerator(&hk("ctrl+]")).as_deref(), Some("<Control>bracketright"));
+        for accel in ["<Control>bracketleft", "<Alt><Shift>slash", "<Super>grave"] {
+            assert_eq!(accelerator(&super::super::conflicts::parse_accelerator(accel).unwrap()).as_deref(), Some(accel));
+        }
         assert_eq!(accelerator(&hk("right_control")), None);
     }
 
