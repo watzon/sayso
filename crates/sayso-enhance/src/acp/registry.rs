@@ -511,7 +511,8 @@ mod tests {
         }
         let agent = agent_with_binary("https://example.test/a.tar.gz", "./bin/agent", None);
         assert!(matches!(resolve_launch(&agent, root.path()), Err(EnhanceError::NotConfigured(m)) if m.contains("not installed")));
-        let program = root.path().join("opencode/2.2.5/bin/agent");
+        // One join per part, so the expected text has the separators of this system.
+        let program = root.path().join("opencode").join("2.2.5").join("bin").join("agent");
         std::fs::create_dir_all(program.parent().unwrap()).unwrap();
         std::fs::write(&program, "").unwrap();
         let launch = resolve_launch(&agent, root.path()).unwrap();
