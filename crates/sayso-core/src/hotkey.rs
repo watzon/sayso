@@ -24,6 +24,9 @@ pub enum Key {
     Letter(char),
     Digit(u8),
     F(u8),
+    /// A punctuation key, by the character it types without Shift on a US
+    /// keyboard: one of [`Key::PUNCTUATION`].
+    Punctuation(char),
 }
 
 /// A modifier key on its own, used for toggle or push-to-talk.
@@ -380,6 +383,20 @@ impl SoloModifier {
 }
 
 impl Key {
+    /// The punctuation keys of a US keyboard, in a fixed order that the
+    /// platform key tables follow.
+    pub const PUNCTUATION: [char; 11] = ['`', '-', '=', '[', ']', '\\', ';', '\'', ',', '.', '/'];
+
+    /// The position of `c` in [`Key::PUNCTUATION`].
+    pub fn punctuation_index(c: char) -> Option<usize> {
+        Self::PUNCTUATION.iter().position(|p| *p == c)
+    }
+
+    /// Every punctuation key, in the order of [`Key::PUNCTUATION`].
+    pub fn punctuation() -> impl Iterator<Item = Key> {
+        Self::PUNCTUATION.into_iter().map(Key::Punctuation)
+    }
+
     pub fn label(&self) -> String {
         match self {
             Key::Space => "Space".into(),
@@ -390,6 +407,7 @@ impl Key {
             Key::Letter(c) => c.to_ascii_uppercase().to_string(),
             Key::Digit(d) => d.to_string(),
             Key::F(n) => format!("F{n}"),
+            Key::Punctuation(c) => c.to_string(),
         }
     }
     fn token(&self) -> String {
@@ -402,6 +420,7 @@ impl Key {
             Key::Letter(c) => c.to_ascii_lowercase().to_string(),
             Key::Digit(d) => d.to_string(),
             Key::F(n) => format!("f{n}"),
+            Key::Punctuation(c) => c.to_string(),
         }
     }
     fn parse(token: &str) -> Option<Key> {
@@ -420,6 +439,9 @@ impl Key {
             }
             _ if t.starts_with('f') && t[1..].parse::<u8>().is_ok_and(|n| (1..=20).contains(&n)) => {
                 Key::F(t[1..].parse().ok()?)
+            }
+            _ if t.chars().count() == 1 && Self::punctuation_index(t.chars().next()?).is_some() => {
+                Key::Punctuation(t.chars().next()?)
             }
             _ => return None,
         })
@@ -577,6 +599,34 @@ mod tests {
         let cmd_v = Hotkey::Chord { modifiers: Modifiers { command: true, ..Default::default() }, key: Key::Letter('v') };
         for s in ["command+V", "super+v", "win+v", "meta+v"] {
             assert_eq!(s.parse::<Hotkey>().unwrap(), cmd_v, "{s}");
+        }
+    }
+
+    #[test]
+    fn punctuation_keys_parse_and_round_trip() {
+        let ctrl = Modifiers { control: true, ..Default::default() };
+        assert_eq!("ctrl+[".parse::<Hotkey>().unwrap(), Hotkey::Chord { modifiers: ctrl, key: Key::Punctuation('[') });
+        assert_eq!(" Ctrl + ] ".parse::<Hotkey>().unwrap(), Hotkey::Chord { modifiers: ctrl, key: Key::Punctuation(']') });
+        for key in Key::punctuation() {
+            let hotkey = Hotkey::Chord { modifiers: Modifiers { control: true, shift: true, ..Default::default() }, key };
+            let text = hotkey.to_string();
+            assert_eq!(text.parse::<Hotkey>().unwrap(), hotkey, "{text}");
+            assert_eq!(serde_json::from_str::<Hotkey>(&serde_json::to_string(&hotkey).unwrap()).unwrap(), hotkey);
+            assert_eq!(hotkey.keycaps().last().unwrap(), &key.label());
+        }
+        for invalid in ["ctrl+{", "ctrl+}", "ctrl+<", "ctrl+[]", "ctrl+§"] {
+            assert!(matches!(invalid.parse::<Hotkey>(), Err(HotkeyParseError::UnknownKey(_))), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn punctuation_keys_survive_the_config_file() {
+        #[derive(Serialize, Deserialize, PartialEq, Debug)]
+        struct File { toggle: Hotkey }
+        for key in Key::punctuation() {
+            let file = File { toggle: Hotkey::Chord { modifiers: Modifiers { control: true, ..Default::default() }, key } };
+            let text = toml::to_string(&file).unwrap();
+            assert_eq!(toml::from_str::<File>(&text).unwrap(), file, "{text}");
         }
     }
 

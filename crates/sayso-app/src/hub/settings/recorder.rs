@@ -11,7 +11,7 @@ use super::ext::Recorded;
 use crate::model::AppModel;
 use gpui_kit::*;
 use sayso_core::config::Config;
-use sayso_core::hotkey::Hotkey;
+use sayso_core::hotkey::{Hotkey, Key};
 use sayso_i18n::t;
 use sayso_platform::{ConflictSource, HotkeyConflict};
 use std::time::{Duration, Instant};
@@ -303,7 +303,10 @@ pub fn on_key_down<V: 'static>(
     true
 }
 
-/// Map a GPUI keystroke to a hotkey. Bare letters and digits need a modifier.
+/// Map a GPUI keystroke to a hotkey. Bare letters, digits, and punctuation
+/// keys need a modifier. GPUI names a punctuation key by the character it
+/// types; with Shift it gives the shifted character (`{`), which Sayso cannot
+/// map back to a key, so only the system listener records those.
 pub fn keystroke_hotkey(k: &Keystroke) -> Option<Hotkey> {
     let m = k.modifiers;
     let key = match k.key.as_str() {
@@ -314,6 +317,7 @@ pub fn keystroke_hotkey(k: &Keystroke) -> Option<Hotkey> {
         "escape" => "esc".to_string(),
         s if s.len() == 1 && s.chars().all(|c| c.is_ascii_alphanumeric()) => s.to_ascii_lowercase(),
         s if s.starts_with('f') && s[1..].parse::<u8>().is_ok() => s.to_string(),
+        s if s.chars().count() == 1 && s.chars().next().and_then(Key::punctuation_index).is_some() => s.to_string(),
         _ => return None,
     };
     let any_mod = m.control || m.alt || m.shift || m.platform || m.function;
@@ -464,8 +468,29 @@ fn shortcut_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     // Not `super::*`: the GPUI glob has its own `test` macro.
-    use super::{Note, Slot, unusable};
-    use sayso_core::hotkey::{Hotkey, SoloModifier};
+    use super::{Note, Slot, keystroke_hotkey, unusable};
+    use sayso_core::hotkey::{Hotkey, Key, SoloModifier};
+
+    fn keystroke(key: &str, control: bool) -> gpui_kit::Keystroke {
+        gpui_kit::Keystroke {
+            modifiers: gpui_kit::Modifiers { control, ..Default::default() },
+            key: key.into(),
+            key_char: None,
+        }
+    }
+
+    #[test]
+    fn window_keys_record_punctuation_chords() {
+        assert_eq!(keystroke_hotkey(&keystroke("[", true)), Some("ctrl+[".parse().unwrap()));
+        assert_eq!(keystroke_hotkey(&keystroke("]", true)), Some("ctrl+]".parse().unwrap()));
+        for c in Key::PUNCTUATION {
+            let hotkey = keystroke_hotkey(&keystroke(&c.to_string(), true));
+            assert!(matches!(hotkey, Some(Hotkey::Chord { key: Key::Punctuation(k), .. }) if k == c), "{c}");
+            assert_eq!(keystroke_hotkey(&keystroke(&c.to_string(), false)), None, "a bare {c} is not a hotkey");
+        }
+        // GPUI gives the shifted character for Shift with a punctuation key.
+        assert_eq!(keystroke_hotkey(&keystroke("{", true)), None);
+    }
 
     #[test]
     fn modifier_toggle_conflicts_are_rejected_in_either_assignment_order() {

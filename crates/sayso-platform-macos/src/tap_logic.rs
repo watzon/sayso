@@ -813,6 +813,23 @@ mod tests {
     }
 
     #[test]
+    fn capture_and_push_to_talk_take_punctuation_chords() {
+        // kVK_ANSI_LeftBracket and kVK_ANSI_RightBracket.
+        for (code, text) in [(33, "ctrl+["), (30, "ctrl+]")] {
+            let mut l = logic();
+            l.set_capturing(true);
+            assert_eq!(l.handle(key_down(code, 0), Instant::now()).captured, None, "a bare punctuation key is not a hotkey");
+            assert_eq!(l.handle(key_down(code, FLAG_CONTROL), Instant::now()).captured, Some(text.parse().unwrap()));
+
+            let mut l = logic();
+            l.set_ptt(Some(text.parse().unwrap()));
+            let now = Instant::now();
+            assert_eq!(l.handle(key_down(code, FLAG_CONTROL), now).events, vec![HotkeyEvent::PushToTalkDown]);
+            assert_eq!(l.handle(RawEvent::KeyUp { code, flags: FLAG_CONTROL }, now).events, vec![HotkeyEvent::PushToTalkUp]);
+        }
+    }
+
+    #[test]
     fn capture_ignores_bare_letters_but_takes_f_keys() {
         let mut l = logic();
         l.set_capturing(true);
