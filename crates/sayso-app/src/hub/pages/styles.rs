@@ -7,6 +7,8 @@
 
 use super::ext::{self, StyleRoute};
 use super::kit::{self, ui};
+use crate::hub::settings::kit as settings_kit;
+use crate::hub::settings::recorder::{self, Recorder, Slot};
 use crate::model::AppModel;
 use crate::model_picker::{self, Extra};
 use gpui_kit::component::input::{InputEvent, InputState, Textarea, TextareaState};
@@ -14,6 +16,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use sayso_core::cleanup::{CleanupModelInfo, CleanupSettings, Format, Layout, Settings, Tone};
 use sayso_core::config::{Provider, ProviderKind};
+use sayso_core::hotkey::Hotkey;
 use sayso_core::ink::{NamedInk, NamedInkLabel as _};
 use sayso_core::style::{CleanupField, RunPlan, Style, StyleOrigin};
 use sayso_core::style_rules::{self, TypedTarget};
@@ -84,6 +87,13 @@ fn cleanup_to_save(base: &Style, edit: &CleanupEdit) -> Option<CleanupField> {
     (edit.own || known).then(|| edit.table())
 }
 
+/// The style file needs a write: the style is new, or a field of the file
+/// changed. The apps, the sites, and the shortcut of a style are in the
+/// config file, so a change to them alone leaves a built-in style built in.
+fn style_file_changed(base: &Style, saved: &Style, is_new: bool) -> bool {
+    is_new || *saved != Style { prompt: base.prompt.trim().to_string(), ..base.clone() }
+}
+
 /// The cleanup model that cannot run `style`, when `provider` is one.
 fn cannot_run(style: &Style, provider: Option<&Provider>) -> Option<&'static CleanupModelInfo> {
     let provider = provider?;
@@ -152,6 +162,8 @@ struct Editor {
     /// The "add" field shows all apps, also with no text.
     target_open: bool,
     _target_sub: Subscription,
+    /// The style hotkey (`[style_hotkeys]`). Save writes it.
+    shortcut: Option<Hotkey>,
 }
 
 /// A row of the list under the "add" field.
@@ -162,6 +174,10 @@ enum Choice {
     /// A typed app id that no app on this computer has.
     AppId(String),
     Site(String),
+}
+
+fn rec(page: &mut StylesPage) -> &mut Recorder {
+    &mut page.recorder
 }
 
 /// The most rows that the list under the "add" field draws.
@@ -175,6 +191,8 @@ struct BaseEditor {
 
 pub struct StylesPage {
     model: Entity<AppModel>,
+    /// The key recorder of the Shortcut field of the editor.
+    recorder: Recorder,
     hovered: Option<String>,
     editor: Option<Editor>,
     base_editor: Option<BaseEditor>,
@@ -201,6 +219,7 @@ impl StylesPage {
         .detach();
         Self {
             model,
+            recorder: Recorder::new(cx),
             hovered: None,
             editor: None,
             base_editor: None,
@@ -247,11 +266,15 @@ impl StylesPage {
                 .default_value(b.timeout_ms.map(|ms| trim_float(ms as f64 / 1000.0)).unwrap_or_default())
         });
         name.update(cx, |s, cx| s.focus(window, cx));
-        let (apps, sites, sites_ok) = {
+        let (apps, sites, sites_ok, shortcut) = {
             let m = self.model.read(cx);
             let rule = m.config.ai.style_rules.rule(&base.id).cloned().unwrap_or_default();
-            (rule.apps, rule.sites, m.services.platform.context.reads_page_url())
+            let shortcut = if is_new { None } else { m.config.style_hotkeys.get(&base.id) };
+            (rule.apps, rule.sites, m.services.platform.context.reads_page_url(), shortcut)
         };
+        self.recorder.cancel();
+        self.recorder.note = None;
+        self.recorder.take_staged();
         let target = cx.new(|cx| {
             InputState::new(window, cx).placeholder(target_placeholder(sites_ok))
         });
@@ -290,6 +313,7 @@ impl StylesPage {
             target,
             target_open: false,
             _target_sub,
+            shortcut,
         });
         cx.notify();
     }
@@ -396,13 +420,24 @@ impl StylesPage {
             cleanup,
             ..ed.base.clone()
         };
-        let (apps, sites) = (ed.apps.clone(), ed.sites.clone());
+        let (apps, sites, shortcut) = (ed.apps.clone(), ed.sites.clone(), ed.shortcut);
+        let file_changed = style_file_changed(&ed.base, &style, ed.is_new);
         let saved = self.model.update(cx, |m, cx| {
-            m.save_style(&style, cx)?;
-            // The rules are in the config file, not in the style file.
+            // A new style is in the library before its shortcut, so Sayso registers the shortcut.
+            if file_changed {
+                m.save_style(&style, cx)?;
+            }
+            // The rules and the shortcut are in the config file, not in the style file.
             let rule = m.config.ai.style_rules.rule(&style.id);
-            if rule.map(|r| (&r.apps, &r.sites)) != Some((&apps, &sites)) && (rule.is_some() || !apps.is_empty() || !sites.is_empty()) {
-                m.edit_config(cx, |c| c.ai.style_rules.set_targets(&style.id, apps, sites));
+            let rule_changed = rule.map(|r| (&r.apps, &r.sites)) != Some((&apps, &sites)) && (rule.is_some() || !apps.is_empty() || !sites.is_empty());
+            let shortcut_changed = m.config.style_hotkeys.get(&style.id) != shortcut;
+            if rule_changed || shortcut_changed {
+                m.edit_config(cx, |c| {
+                    if rule_changed {
+                        c.ai.style_rules.set_targets(&style.id, apps, sites);
+                    }
+                    c.style_hotkeys.set(&style.id, shortcut);
+                });
             }
             Ok::<_, String>(())
         });
@@ -419,6 +454,7 @@ impl StylesPage {
 
     fn editor_panel(&mut self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let c = cx.paper().colors;
+        let shortcut_field = self.shortcut_field(cx)?;
         let ed = self.editor.as_ref()?;
         let m = self.model.read(cx);
         let providers: Vec<(String, String)> = m.config.ai.providers.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
@@ -838,6 +874,7 @@ impl StylesPage {
                     prompt_body,
                     &c,
                 ))
+                .child(shortcut_field)
                 .child(fold_row(
                     "fold-targets",
                     t!("styles.targets.title"),
@@ -866,6 +903,7 @@ impl StylesPage {
                         .child(kit::field(&t!("styles.editor.model"), model_field, None, cx).flex_1())
                         .child(kit::field(&t!("styles.editor.timeout"), kit::input_well_named(&ed.timeout, Some(t!("styles.editor.timeout").into()), cx), None, cx).w(px(150.))),
                 )
+                .child(shortcut_field)
                 .child(self.targets_group(ed, true, cx)),
         };
         let body = body
@@ -874,6 +912,68 @@ impl StylesPage {
 
         let panel_title = if ed.is_new { t!("styles.editor.new_title") } else { t!("styles.editor.edit_title", name = ed.base.name) };
         Some(self.side_panel("style-editor", panel_title, body, cx))
+    }
+
+    /// The Shortcut field of the editor: the style hotkey, and what is wrong
+    /// with it. A recorded key stays in the editor until Save.
+    fn shortcut_field(&mut self, cx: &mut Context<Self>) -> Option<Div> {
+        let c = cx.paper().colors;
+        let ed = self.editor.as_ref()?;
+        let hotkey = ed.shortcut;
+        let slot = Slot::Style(ed.id.clone().into());
+        let name = Some(ed.name.read(cx).value().trim().to_string()).filter(|n| !n.is_empty()).unwrap_or_else(|| ed.base.display_name());
+        let m = self.model.read(cx);
+        // The system refused the key that is saved and registered now.
+        let refused = hotkey.filter(|hk| !ed.is_new && m.config.style_hotkeys.get(&ed.id) == Some(*hk) && m.hotkey_failed(*hk));
+        let conflicts = self.recorder.conflicts(m, hotkey);
+        let label = t!("styles.editor.shortcut");
+        let start = |this: &mut Self, slot: Slot, window: &mut Window, cx: &mut Context<Self>| {
+            let model = this.model.clone();
+            recorder::start(rec, this, &model, slot, window, cx);
+        };
+        let cancel = |this: &mut Self, cx: &mut Context<Self>| {
+            this.recorder.cancel();
+            cx.notify();
+        };
+        let clear = |this: &mut Self, _: Slot, cx: &mut Context<Self>| {
+            if let Some(ed) = this.editor.as_mut() {
+                ed.shortcut = None;
+            }
+            this.recorder.note = None;
+            cx.notify();
+        };
+        let well = settings_kit::key_field(slot, &label, hotkey, &self.recorder, true, None, start, cancel, clear, cx);
+        let hint = hotkey.map(|_| t!("styles.editor.shortcut_hint", style = name));
+        let warning = |text: String| Banner::new(BannerKind::Warning, text);
+        Some(
+            div()
+                .relative()
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                // The recorder takes the keys while it listens, so Esc stops it and does not close the editor.
+                .on_key_down(cx.listener(|this, e: &KeyDownEvent, _, cx| {
+                    let model = this.model.clone();
+                    if recorder::on_key_down(rec, this, &model, e, cx) {
+                        cx.stop_propagation();
+                    }
+                }))
+                .child(settings_kit::key_listener("style-shortcut-keys", &self.recorder.focus))
+                .child(kit::field(&label, well, hint.as_deref(), cx))
+                .children(conflicts.iter().map(|conflict| warning(recorder::conflict_text(conflict, false))))
+                .when(self.recorder.window_only && self.recorder.slot.is_some(), |d| d.child(Banner::new(BannerKind::Info, t!("settings.dictation.window_only_note"))))
+                .when_some(self.recorder.note.as_ref(), |d, note| d.child(warning(note.text())))
+                .when_some(refused, |d, hk| {
+                    d.child(
+                        div()
+                            .flex()
+                            .items_start()
+                            .gap(px(6.))
+                            .child(div().flex_none().pt(px(2.)).child(icon(Icon::Warning, 12., c.danger)))
+                            .child(ui(t!("styles.editor.shortcut_failed", keys = recorder::words(&hk)), 12., 16., FontWeight::NORMAL, c.danger).flex_1().min_w_0()),
+                    )
+                }),
+        )
     }
 
     /// The line on a style card that names the apps and sites of the style.
@@ -1318,6 +1418,7 @@ impl StylesPage {
         let hovered = self.hovered.as_deref() == Some(style.id.as_str());
         let detail = self.row_detail(style, cx);
         let has_rule = detail.as_ref().is_some_and(|d| !d.2) && self.target_line(&style.id, cx).is_some();
+        let shortcut = self.model.read(cx).config.style_hotkeys.get(&style.id);
         let id2 = style.id.clone();
         let id3 = style.id.clone();
         let st = style.clone();
@@ -1325,6 +1426,7 @@ impl StylesPage {
         // The row says what it shows: the style, what it does, and where it goes.
         let mut said = vec![style.display_description()];
         said.extend(detail.as_ref().map(|d| d.0.clone()));
+        said.extend(shortcut.map(|hk| format!("{} {}", t!("styles.editor.shortcut"), recorder::words(&hk))));
         said.retain(|s| !s.is_empty());
         // The Edit button is in the tab order, also when the row is not hovered:
         // it is clear until the row has the pointer or the focus.
@@ -1392,6 +1494,20 @@ impl StylesPage {
                 d.when(has_rule, |d| d.child(icon(Icon::ArrowRight, 11., c.graphite)))
                     .when(warning, |d| d.child(icon(Icon::Warning, 12., color)))
                     .child(kit::plain(line, 12., 16., FontWeight::MEDIUM, color).min_w_0().truncate())
+            }))
+            // The shortcut lane has a fixed width, so the columns line up with no shortcut too.
+            .child(div().flex().flex_none().items_center().justify_end().w(px(76.)).when_some(shortcut, |d, hk| {
+                d.child(
+                    div()
+                        .flex()
+                        .flex_none()
+                        .items_center()
+                        .h(px(22.))
+                        .px(px(6.))
+                        .rounded(px(5.))
+                        .keycap(&c)
+                        .child(kit::plain_mono(hk.compact_label(), 11., c.ink).line_height(px(14.))),
+                )
             }))
             .child(
                 div()
@@ -1627,6 +1743,15 @@ impl Render for StylesPage {
                 ed.prompt.update(cx, |s, cx| s.set_placeholder(t!("styles.base.placeholder"), window, cx));
             }
         }
+        // A key that the recorder took goes into the editor. With no editor, nothing records.
+        if let Some(hk) = self.recorder.take_staged()
+            && let Some(ed) = self.editor.as_mut()
+        {
+            ed.shortcut = Some(hk);
+        }
+        if self.editor.is_none() && self.recorder.slot.is_some() {
+            self.recorder.cancel();
+        }
         let (styles, active, dir) = {
             let m = self.model.read(cx);
             (m.styles.styles().cloned().collect::<Vec<_>>(), m.active_style().id, m.styles_dir_display())
@@ -1721,7 +1846,7 @@ impl Render for StylesPage {
 #[cfg(test)]
 mod tests {
     use super::{CleanupEdit, CleanupField, CleanupSettings, Format, Layout, Provider, ProviderKind, Settings, Style, Tone};
-    use super::{cannot_run, cleanup_to_save, featured_style, style_as_edited};
+    use super::{cannot_run, cleanup_to_save, featured_style, style_as_edited, style_file_changed};
     use sayso_core::style::builtin_styles;
 
     fn cleanup_model(model: &str) -> Provider {
@@ -1821,5 +1946,19 @@ mod tests {
         let mut style = built_in("clean");
         style.cleanup = CleanupField::Settings(CleanupSettings { layout: Some("table".into()), ..Default::default() });
         assert_eq!(cleanup_to_save(&style, &CleanupEdit::new(&style, false)), None);
+    }
+
+    #[test]
+    fn a_save_that_changes_no_field_of_the_file_writes_no_file() {
+        for style in builtin_styles() {
+            // The editor trims the prompt, so a prompt with a line break at the end is the same prompt.
+            let saved = Style { prompt: style.prompt.trim().to_string(), ..style.clone() };
+            assert!(!style_file_changed(&style, &saved, false), "{}", style.id);
+            assert!(style_file_changed(&style, &saved, true), "a new style always gets a file");
+            let renamed = Style { name: "Mine".into(), ..saved.clone() };
+            assert!(style_file_changed(&style, &renamed, false));
+            let longer = Style { timeout_ms: Some(9000), ..saved };
+            assert!(style_file_changed(&style, &longer, false));
+        }
     }
 }

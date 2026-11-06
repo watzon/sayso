@@ -133,7 +133,7 @@ With more than one display, the overlay follows the display in use (Settings ›
 - On KDE, sway, and Hyprland, a layer surface cannot change its display. Sayso opens a new overlay each time a dictation starts, and the compositor puts it on the display in use. The idle pill stays on the display of the last dictation.
 - On GNOME (Wayland), Sayso sees the mouse and the focus only over X11 apps, so the pill follows only those.
 
-On GNOME 47 and earlier without keyboard access, Sayso adds its chords to **Settings › Keyboard › Custom Shortcuts**, named "Sayso: …". GNOME then runs `sayso --toggle` (or `--paste-last`, `--cycle-style`, `--incognito`) for the key. Push-to-talk cannot work this way, because GNOME does not report a key release. When the shortcuts portal or keyboard access becomes available, Sayso removes these entries.
+On GNOME 47 and earlier without keyboard access, Sayso adds its chords to **Settings › Keyboard › Custom Shortcuts**, named "Sayso: …". GNOME then runs `sayso --toggle` (or `--paste-last`, `--cycle-style`, `--incognito`, `--style=<id>`) for the key. Push-to-talk cannot work this way, because GNOME does not report a key release. When the shortcuts portal or keyboard access becomes available, Sayso removes these entries.
 
 ## Title bar
 
@@ -204,6 +204,8 @@ If your desktop gives no global shortcuts to apps, bind these commands to keys i
 | `sayso --incognito` | Turn incognito on or off |
 | `sayso --push-to-talk-down`, `sayso --push-to-talk-up` | Push-to-talk, for tools that run one command on press and one on release |
 | `sayso --push-to-talk-up-submit` | Push-to-talk release, and Enter once the app has the text: for a chat or a terminal. Without a read of the text there is no Enter. |
+
+`sayso --style=<id>` (or `sayso --style <id>`) starts one dictation in the style with that id, for example `sayso --style=email`. Use the id of the style, not its name.
 
 On sway, for example, add this to the config:
 

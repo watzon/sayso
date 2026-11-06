@@ -469,6 +469,9 @@ fn issue_text(problem: &ConfigProblem) -> String {
         ConfigProblem::BadProviderId(id) => t!("settings.general.issue.bad_provider_id", id = id),
         ConfigProblem::DuplicateProviderId(id) => t!("settings.general.issue.duplicate_provider_id", id = id),
         ConfigProblem::NeedsBaseUrl(id) => t!("settings.general.issue.needs_base_url", id = id),
+        ConfigProblem::BadHotkey(value) => t!("settings.general.issue.bad_hotkey", value = value),
+        ConfigProblem::StyleHotkeyNeedsKey(hotkey) => super::recorder::Note::SoloOnlyForPushToTalk(*hotkey).text(),
+        ConfigProblem::HotkeyInUse(hotkey) => t!("settings.general.issue.hotkey_in_use", keys = super::recorder::words(hotkey)),
     }
 }
 

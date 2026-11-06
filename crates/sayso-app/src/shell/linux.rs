@@ -44,7 +44,7 @@ fn on_x11() -> bool {
 /// when another Sayso already runs, so it never touches that Sayso's log.
 pub fn hand_off() {
     if let Some(command) = Command::from_args(std::env::args()) {
-        match ipc::send(command) {
+        match ipc::send(&command) {
             Ok(()) => std::process::exit(0),
             Err(e) => {
                 eprintln!("sayso: Sayso is not running, so it cannot {}: {e}", command.word());
@@ -53,7 +53,7 @@ pub fn hand_off() {
         }
     }
     if let Claim::Running = ipc::claim() {
-        let _ = ipc::send(Command::Open);
+        let _ = ipc::send(&Command::Open);
         eprintln!("sayso: Sayso is already running. Its window opens.");
         std::process::exit(0);
     }
@@ -68,22 +68,50 @@ pub fn platform(sounds_dir: PathBuf) -> Platform {
     sayso_platform_linux::LinuxPlatform::new(sounds_dir)
 }
 
-/// One message for each `sayso` start that asked the running Sayso to open.
-/// A thread waits on the command channel and forwards the open commands.
-pub fn open_requests() -> Option<async_channel::Receiver<()>> {
-    let (tx, rx) = async_channel::unbounded();
-    let commands = ipc::app_commands();
-    std::thread::Builder::new()
-        .name("sayso-open-requests".into())
-        .spawn(move || {
-            while let Ok(command) = commands.recv() {
-                if matches!(command, Command::Open) && tx.send_blocking(()).is_err() {
-                    break;
-                }
-            }
+/// The channels that the command thread fills.
+struct Requests {
+    open: async_channel::Receiver<()>,
+    style: async_channel::Receiver<String>,
+}
+
+/// Start the command thread once. It waits on the app command channel and
+/// forwards each command to the channel for it. The receivers are None when
+/// the thread cannot start.
+fn requests() -> Option<&'static Requests> {
+    static REQUESTS: std::sync::OnceLock<Option<Requests>> = std::sync::OnceLock::new();
+    REQUESTS
+        .get_or_init(|| {
+            let (open_tx, open) = async_channel::unbounded();
+            let (style_tx, style) = async_channel::unbounded();
+            let commands = ipc::app_commands();
+            std::thread::Builder::new()
+                .name("sayso-app-requests".into())
+                .spawn(move || {
+                    while let Ok(command) = commands.recv() {
+                        let sent = match command {
+                            Command::Open => open_tx.send_blocking(()).is_ok(),
+                            Command::Style(id) => style_tx.send_blocking(id).is_ok(),
+                            _ => true,
+                        };
+                        if !sent {
+                            break;
+                        }
+                    }
+                })
+                .ok()?;
+            Some(Requests { open, style })
         })
-        .ok()?;
-    Some(rx)
+        .as_ref()
+}
+
+/// One message for each `sayso` start that asked the running Sayso to open.
+pub fn open_requests() -> Option<async_channel::Receiver<()>> {
+    requests().map(|r| r.open.clone())
+}
+
+/// The id of a style for each `sayso --style=<id>` command.
+pub fn style_requests() -> Option<async_channel::Receiver<String>> {
+    requests().map(|r| r.style.clone())
 }
 
 pub fn native(window: &Window) -> Option<NativeWindow> {

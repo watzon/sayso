@@ -7,6 +7,8 @@ settings:
     action_paste_last: "Paste last text"
     action_cycle_style: "Next style"
     action_incognito: "Incognito"
+    # The style hotkey of a style, in a sentence: "%{keys} is already used by the Notes style."
+    action_style: "the %{style} style"
     solo_only_push_to_talk: "%{keys} works only for Start and stop dictation or Push to talk. Include a regular key, for example %{example}."
     used_by: "%{keys} is already used by %{action}. Choose another key."
     conflict_app: "%{name} also uses %{keys}. Both apps will react. Choose another key, or change the shortcut in %{name}."

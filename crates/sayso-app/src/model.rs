@@ -157,6 +157,15 @@ pub struct AppModel {
     history_reload: u64,
 
     pub(crate) sessions: crate::dictation::Sessions,
+    /// The style id of each registered style hotkey, by its index in
+    /// `HotkeyEvent::Style`.
+    style_hotkey_ids: Vec<String>,
+    /// The hotkeys that the system did not register at the last
+    /// registration, with the reason for the log.
+    pub hotkey_failures: Vec<(Hotkey, String)>,
+    /// The style of the next dictation that starts, from a style hotkey.
+    /// Set only while that hotkey starts the dictation.
+    pub(crate) pending_style: Option<String>,
     /// Pauses the media of other apps while a dictation records.
     pub(crate) media: crate::media::MediaPause,
     pub(crate) started: Instant,
@@ -312,6 +321,9 @@ impl AppModel {
             history_revision: 0,
             history_reload: 0,
             sessions: Default::default(),
+            style_hotkey_ids: Vec::new(),
+            hotkey_failures: Vec::new(),
+            pending_style: None,
             media,
             started: Instant::now(),
             config_mtime,
@@ -633,7 +645,10 @@ impl AppModel {
             crate::app::apply_language(&self.config);
             cx.emit(AppEvent::LanguageChanged);
         }
-        if before.hotkeys != self.config.hotkeys || (!before.onboarding.reached_keys() && self.config.onboarding.reached_keys()) {
+        if before.hotkeys != self.config.hotkeys
+            || before.style_hotkeys != self.config.style_hotkeys
+            || (!before.onboarding.reached_keys() && self.config.onboarding.reached_keys())
+        {
             self.register_hotkeys();
         }
         if !self.config.history.enabled {
@@ -705,21 +720,51 @@ impl AppModel {
         let h = &self.config.hotkeys;
         // Config files can bypass the recorder's conflict checks.
         let usable = |hotkey: Option<Hotkey>| hotkey.filter(|key| h.toggle.is_none_or(|toggle| !key.conflicts_with_toggle(toggle)));
+        let styles = self.style_hotkeys();
+        self.style_hotkey_ids = styles.iter().map(|(id, _)| id.clone()).collect();
         let bindings = sayso_platform::HotkeyBindings {
             toggle: h.toggle,
             push_to_talk: usable(h.push_to_talk),
             paste_last: usable(h.paste_last),
             cycle_style: usable(h.cycle_style),
             incognito: usable(h.incognito),
+            styles,
             enter_sends: h.enter_sends_usable(),
             take_escape: h.take_escape_usable(),
             single_escape: h.cancel == sayso_core::config::CancelMode::SingleEscape,
             double_escape_window: Duration::from_millis(h.double_escape_ms),
         };
         let reg = self.services.platform.hotkeys.register(&bindings);
-        for (hk, why) in reg.failed {
+        for (hk, why) in &reg.failed {
             log::warn!("hotkey {hk} not registered: {why}");
         }
+        self.hotkey_failures = reg.failed;
+    }
+
+    /// The style hotkeys to register: the usable ones (see
+    /// `Config::style_hotkey_check`) of the styles that exist.
+    fn style_hotkeys(&self) -> Vec<(String, Hotkey)> {
+        let (usable, _) = self.config.style_hotkey_check();
+        usable.into_iter().filter(|(id, _)| self.styles.get(id).is_some()).map(|(id, hk)| (id.to_string(), hk)).collect()
+    }
+
+    /// Register the hotkeys again when a change to the styles adds or
+    /// removes a style that has a hotkey.
+    pub(crate) fn styles_changed(&mut self) {
+        let ids: Vec<String> = self.style_hotkeys().into_iter().map(|(id, _)| id).collect();
+        if ids != self.style_hotkey_ids {
+            self.register_hotkeys();
+        }
+    }
+
+    /// The style id of a style hotkey event.
+    pub(crate) fn style_of_hotkey(&self, index: u16) -> Option<&str> {
+        self.style_hotkey_ids.get(usize::from(index)).map(String::as_str)
+    }
+
+    /// The system did not register this hotkey.
+    pub fn hotkey_failed(&self, hotkey: Hotkey) -> bool {
+        self.hotkey_failures.iter().any(|(hk, _)| *hk == hotkey)
     }
 
     pub fn set_toggle_hotkey(&mut self, hotkey: Option<Hotkey>, cx: &mut Context<Self>) {
@@ -1242,6 +1287,7 @@ impl AppModel {
     pub fn save_style(&mut self, style: &Style, cx: &mut Context<Self>) -> Result<(), String> {
         sayso_core::style::save_style(&self.paths.styles_dir(), style).map_err(|e| e.to_string())?;
         self.styles = StyleLibrary::load(&self.paths.styles_dir());
+        self.styles_changed();
         cx.notify();
         Ok(())
     }
@@ -1251,6 +1297,7 @@ impl AppModel {
             log::warn!("reset style: {e}");
         }
         self.styles = StyleLibrary::load(&self.paths.styles_dir());
+        self.styles_changed();
         cx.notify();
     }
 
@@ -1286,7 +1333,10 @@ impl AppModel {
         self.reset_style(id, cx);
         if self.styles.get(id).is_none() {
             let id = id.to_string();
-            self.edit_config(cx, |c| c.ai.style_rules.remove_style(&id));
+            self.edit_config(cx, |c| {
+                c.ai.style_rules.remove_style(&id);
+                c.style_hotkeys.set(&id, None);
+            });
         }
         if self.config.ai.active_style == id && self.styles.get(id).is_none() {
             self.set_active_style(sayso_core::style::DEFAULT_STYLE_ID, cx);

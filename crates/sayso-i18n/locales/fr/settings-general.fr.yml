@@ -49,6 +49,8 @@ settings:
       bad_provider_id: "l’identifiant de fournisseur « %{id} » ne doit pas être vide ni contenir de deux-points"
       duplicate_provider_id: "deux fournisseurs ont l’identifiant « %{id} »"
       needs_base_url: "le fournisseur « %{id} » a besoin d’une base_url"
+      bad_hotkey: "« %{value} » n’est pas un raccourci"
+      hotkey_in_use: "%{keys} est déjà utilisée par un autre raccourci de Sayso"
     updates: "Mises à jour"
     no_self_update: "Cette version ne se met pas à jour toute seule"
     no_self_update_detail: "Version %{version}, compilée depuis les sources."

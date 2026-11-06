@@ -106,12 +106,10 @@ impl HotkeySource for WinHotkeys {
             modifier_toggle = None;
         }
         // Chords through RegisterHotKey; modifier-only toggle uses the hook.
-        let chords = [
-            (bindings.toggle.filter(|h| h.modifier_keys().is_none()), HotkeyEvent::Toggle),
-            (bindings.paste_last, HotkeyEvent::PasteLast),
-            (bindings.cycle_style, HotkeyEvent::CycleStyle),
-            (bindings.incognito, HotkeyEvent::ToggleIncognito),
-        ];
+        let chords: Vec<(Option<Hotkey>, HotkeyEvent)> = [(bindings.toggle.filter(|h| h.modifier_keys().is_none()), HotkeyEvent::Toggle)]
+            .into_iter()
+            .chain(bindings.press_chords().into_iter().map(|(hk, event)| (Some(hk), event)))
+            .collect();
         {
             let mut state = self.chords.lock();
             let here = std::thread::current().id();
@@ -217,6 +215,7 @@ mod tests {
             paste_last: None,
             cycle_style: None,
             incognito: None,
+            styles: Vec::new(),
             enter_sends: false,
             take_escape: false,
             single_escape: false,

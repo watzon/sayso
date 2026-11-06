@@ -188,12 +188,17 @@ impl Hotkey {
     /// Modifier-only actions cannot share a gesture. Chords can share the
     /// toggle's modifiers because a regular key cancels a modifier-only toggle.
     pub fn conflicts_with_toggle(self, toggle: Self) -> bool {
-        if self == toggle { return true; }
-        let Some(toggle_keys) = toggle.modifier_keys() else { return false };
-        if let Some(keys) = self.modifier_keys() {
-            return keys.is_subset_of(toggle_keys) || toggle_keys.is_subset_of(keys);
+        self.overlaps(toggle)
+    }
+
+    /// Two bindings that the same key press can fire: the same hotkey, or two
+    /// sets of modifiers where one holds the other. The order does not matter.
+    pub fn overlaps(self, other: Self) -> bool {
+        if self == other { return true; }
+        match (self.modifier_keys(), other.modifier_keys()) {
+            (Some(a), Some(b)) => a.is_subset_of(b) || b.is_subset_of(a),
+            _ => false,
         }
-        false
     }
 
     pub fn modifier_keys(self) -> Option<ModifierSet> {

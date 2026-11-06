@@ -48,6 +48,8 @@ settings:
       bad_provider_id: "the provider id \"%{id}\" must not be empty or contain a colon"
       duplicate_provider_id: "two providers have the id \"%{id}\""
       needs_base_url: "the provider \"%{id}\" needs a base_url"
+      bad_hotkey: "\"%{value}\" is not a hotkey"
+      hotkey_in_use: "%{keys} is already used by another Sayso hotkey"
     updates: "Updates"
     no_self_update: "This build does not update itself"
     no_self_update_detail: "Version %{version}, built from source."
