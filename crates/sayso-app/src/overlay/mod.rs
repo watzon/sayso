@@ -8,12 +8,16 @@
 //! With the notch style ([`notch`]), the same panel sits at the top center of
 //! the display and shows only while a dictation runs.
 
+mod motion;
 mod notch;
+mod pen;
 mod placement;
 
 use crate::model::{AppModel, NoticeIcon};
 use gpui_kit::*;
 use notch::Notch;
+use motion::{Align, Exit, Morph};
+use pen::Pen;
 use placement::{Anchor, Follow, Placement};
 use sayso_core::config::{self, OverlaySize, OverlayStyle};
 use sayso_core::dictation::{Notice, Stage, State};
@@ -82,6 +86,17 @@ pub struct OverlayView {
     notch: Option<Notch>,
     /// The content widths of the notch wings, from the last frame.
     wings: notch::Wings,
+    /// The card: it eases to the size of each state, grows in, and shrinks out.
+    card_motion: Morph,
+    /// The slip of the live preview. On the pill it grows out of the center of
+    /// the pill and goes back into it. Under the notch it feeds out, and back in.
+    slip_motion: Morph,
+    /// The slip shows the live preview, also while it goes back in.
+    slip_preview: bool,
+    /// The pen that writes the live preview out on the slip.
+    pen: Pen,
+    /// The wings of the notch: they open from the camera, and close into it.
+    notch_motion: notch::Motion,
     /// The style settings that the window was opened with. A change opens a new window.
     style: (OverlayStyle, bool),
     hovered: bool,
@@ -119,6 +134,9 @@ fn global_bounds(window: &Window, ns: crate::shell::NativeWindow) -> Bounds<Pixe
     Bounds { origin: point(px(frame.x as f32), px(top)), size: size(px(frame.width as f32), px(frame.height as f32)) }
 }
 
+/// The time that the content of a new state takes to fade in, in seconds.
+const FADE_IN: f32 = 0.16;
+
 /// How often the overlay looks for the display in use.
 const FOLLOW_EVERY: Duration = Duration::from_millis(250);
 
@@ -148,6 +166,11 @@ impl OverlayView {
             origin,
             notch,
             wings: Rc::new(Cell::new([0.; 2])),
+            card_motion: Morph::new(Exit::Shrink),
+            slip_motion: Morph::new(Exit::Point),
+            slip_preview: false,
+            pen: Pen::default(),
+            notch_motion: notch::Motion::default(),
             style,
             hovered: false,
             drag: None,
@@ -227,7 +250,31 @@ impl OverlayView {
 
     /// True when the overlay hides while no dictation runs. The notch always does.
     fn hides_when_idle(&self, o: &config::Overlay) -> bool {
-        self.notch.is_some() || !o.idle_pill || (o.hide_in_fullscreen && crate::shell::frontmost_app_is_fullscreen())
+        self.closes_when_idle(o) || (o.hide_in_fullscreen && crate::shell::frontmost_app_is_fullscreen())
+    }
+
+    /// True when the card closes with motion at the end of a dictation: the
+    /// notch, or no idle pill. A full screen app hides the pill at once.
+    fn closes_when_idle(&self, o: &config::Overlay) -> bool {
+        self.notch.is_some() || !o.idle_pill
+    }
+
+    /// True while the card still closes. The window hides when it is gone.
+    fn closing(&self) -> bool {
+        if self.notch.is_some() { !self.notch_motion.gone() } else { !self.card_motion.gone() }
+    }
+
+    /// Hide the window when the card has closed. Render calls this at the last frame of the close.
+    fn hide_after_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.hidden {
+            return;
+        }
+        self.hidden = true;
+        if crate::shell::can_place_windows()
+            && let Some(ns) = crate::shell::native(window)
+        {
+            crate::app::appkit_later(cx, move || crate::shell::order_out(ns));
+        }
     }
 
     /// Move the overlay to the display of the mouse or of the focused window,
@@ -355,7 +402,9 @@ impl OverlayView {
             let m = self.model.read(cx);
             let idle = matches!(m.state(), State::Idle) && m.blocked_notice.is_none();
             let hide = idle && self.hides_when_idle(&m.config.overlay);
-            if hide != self.hidden {
+            // A card that still closes hides at the end of its motion (see render).
+            let closing = hide && self.closing() && self.closes_when_idle(&m.config.overlay);
+            if hide != self.hidden && !closing {
                 self.hidden = hide;
                 if hide {
                     crate::app::appkit_later(cx, move || crate::shell::order_out(ns));
@@ -383,7 +432,8 @@ impl OverlayView {
             let m = self.model.read(cx);
             let idle = matches!(m.state(), State::Idle) && m.blocked_notice.is_none();
             let hide = idle && self.hides_when_idle(&m.config.overlay);
-            if hide != self.hidden {
+            let closing = hide && self.closing() && self.closes_when_idle(&m.config.overlay);
+            if hide != self.hidden && !closing {
                 self.hidden = hide;
                 cx.notify();
             }
@@ -416,6 +466,19 @@ impl OverlayView {
             card_height,
             moved: false,
         });
+    }
+
+    /// Give the pen the live preview, and move it on. A recording with no
+    /// preview yet starts a new text. Returns true while the pen writes.
+    fn write(&mut self, live: bool, recording: bool, preview: &(String, String), reduce: bool) -> bool {
+        if live {
+            self.pen.set(&preview.0, &preview.1);
+            self.slip_preview = true;
+        } else if recording {
+            self.pen.clear();
+            self.slip_preview = false;
+        }
+        self.pen.update(reduce)
     }
 
     /// A click on the card that was not a drag.
@@ -534,225 +597,279 @@ impl Render for OverlayView {
         let pill = is_pill(&state);
         let recording = matches!(state, State::Recording { .. });
 
+        // A new state fades in while the card eases to its size.
+        let fade = if reduce { 1. } else { (self.phase_start.elapsed().as_secs_f32() / FADE_IN).min(1.) };
+        let mut moving = fade < 1.;
+        let closes = self.closes_when_idle(&m.config.overlay);
+
         let body: AnyElement = if let Some(n) = self.notch {
-            let scene = notch::Scene {
-                state: &state,
-                blocked: blocked.as_ref(),
-                hovered: self.hovered,
-                levels,
-                t,
-                now_ms,
-                incognito,
-                preview: (show_preview && !(preview.0.is_empty() && preview.1.is_empty())).then_some((preview.0.as_str(), preview.1.as_str())),
-                preview_loading,
-                stage: match &state {
-                    State::Processing { stage, .. } => stage_label(stage, &model_status, dictionary_loading),
-                    _ => String::new(),
-                },
-                progress: processing_progress(self.phase_start.elapsed(), reduce),
-                model: self.model.clone(),
-                wings: self.wings.clone(),
-            };
-            match notch::body(n, scene, &c, &cx.paper().colors_for(Appearance::Dark)) {
-                Some(card) => card.child(capture()).into_any_element(),
-                None => {
-                    // Nothing shows, so nothing takes the mouse.
-                    self.card.set(Bounds::default());
-                    div().into_any_element()
+            let open = notch::opens(&state, blocked.as_ref());
+            self.slip_motion.set_exit(Exit::Fold);
+            moving |= self.notch_motion.update(open, notch::wing_width(&self.wings), reduce);
+            if self.notch_motion.gone() {
+                // Nothing shows, so nothing takes the mouse.
+                self.card.set(Bounds::default());
+                div().into_any_element()
+            } else {
+                let live = recording && show_preview && !(preview.0.is_empty() && preview.1.is_empty());
+                moving |= self.write(live, recording, &preview, reduce);
+                let scene = notch::Scene {
+                    state: &state,
+                    blocked: blocked.as_ref(),
+                    hovered: self.hovered,
+                    levels,
+                    t,
+                    now_ms,
+                    incognito,
+                    preview: live,
+                    preview_loading,
+                    stage: match &state {
+                        State::Processing { stage, .. } => stage_label(stage, &model_status, dictionary_loading),
+                        _ => String::new(),
+                    },
+                    progress: processing_progress(self.phase_start.elapsed(), reduce),
+                    model: self.model.clone(),
+                    wings: self.wings.clone(),
+                    motion: self.notch_motion,
+                    slip: self.slip_motion.clone(),
+                    last_preview: self.slip_preview,
+                    pen: &self.pen,
+                    reduce,
+                };
+                let card = notch::body(n, scene, &c, &cx.paper().colors_for(Appearance::Dark));
+                moving |= self.slip_motion.moving();
+                // A notice has its own slip. When it goes, the slip feeds back in empty, not with an old preview.
+                if !recording && self.slip_motion.present() {
+                    self.slip_preview = false;
                 }
+                card.child(capture()).into_any_element()
             }
-        } else if let Some(notice) = blocked.clone().filter(|_| matches!(state, State::Idle)) {
-            let ic = match notice.icon {
-                NoticeIcon::Info => Icon::Info,
-                NoticeIcon::Microphone => Icon::Mic,
-                NoticeIcon::Style => Icon::Styles,
-                NoticeIcon::Incognito => Icon::Wordmark,
-            };
-            notice_pill(ic, &notice.title, notice.detail.as_deref(), size, &c).child(capture()).into_any_element()
         } else {
-            match &state {
-                State::Idle => idle_pill(self.hovered, &toggle_caps, size, &c).child(capture()).into_any_element(),
-                State::Recording { started_ms, .. } => {
-                    let elapsed = now_ms.saturating_sub(*started_ms);
-                    let pulse = if reduce { 0.0 } else { (t * 2.4).sin() * 0.5 + 0.5 };
-                    let pill = div()
-                        .relative()
-                        .flex()
-                        .items_center()
-                        .gap(z(14.))
-                        .pl(z(10.))
-                        .pr(z(18.))
-                        .py(z(10.))
-                        .rounded_full()
-                        .floating(&c)
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .size(z(36.))
-                                .rounded_full()
-                                .debossed(&c)
-                                // A click anywhere on the pill stops, so hover shows a stop button.
-                                .child(if self.hovered {
-                                    div().size(z(12.)).rounded(z(3.)).bg(c.accent)
-                                } else {
-                                    div()
-                                        .relative()
-                                        .size(z(12.))
-                                        .rounded_full()
-                                        .bg(c.accent)
-                                        .child(halo(12. * k, (3. + 2. * pulse) * k, c.accent.opacity(0.16 + 0.1 * pulse)))
-                                }),
-                        )
-                        // The window has room for one tag next to the full waveform.
-                        .child(ink_waveform(levels, t, c.ink).w(z(if incognito && recording_style.is_some() { 150. } else { 232. })).h(z(36.)))
-                        .child(text::mono(clock(elapsed), 13. * tk, c.graphite).w(px(36. * tk)).text_right())
-                        .when_some(recording_style, |d, s| d.child(StyleTag::new(s, Some(c.ink))))
-                        .when(incognito, |d| {
-                            d.child(
+            let floating = || div().rounded_full().floating(&c);
+            // The card for the state: its look, and its content. None: the card goes away.
+            let face: Option<(Div, AnyElement)> = if let Some(notice) = blocked.clone().filter(|_| matches!(state, State::Idle)) {
+                let ic = match notice.icon {
+                    NoticeIcon::Info => Icon::Info,
+                    NoticeIcon::Microphone => Icon::Mic,
+                    NoticeIcon::Style => Icon::Styles,
+                    NoticeIcon::Incognito => Icon::Wordmark,
+                };
+                Some((floating(), notice_pill(ic, &notice.title, notice.detail.as_deref(), size, &c).into_any_element()))
+            } else {
+                match &state {
+                    State::Idle if closes => None,
+                    State::Idle => {
+                        let (shell, content) = idle_pill(self.hovered, &toggle_caps, size, &c);
+                        Some((shell, content.into_any_element()))
+                    }
+                    State::Recording { started_ms, .. } => {
+                        let elapsed = now_ms.saturating_sub(*started_ms);
+                        let pulse = if reduce { 0.0 } else { (t * 2.4).sin() * 0.5 + 0.5 };
+                        let content = div()
+                            .flex()
+                            .items_center()
+                            .gap(z(14.))
+                            .pl(z(10.))
+                            .pr(z(18.))
+                            .py(z(10.))
+                            .child(
                                 div()
                                     .flex()
-                                    .flex_none()
                                     .items_center()
-                                    .h(z(22.))
-                                    .px(z(9.))
+                                    .justify_center()
+                                    .size(z(36.))
                                     .rounded_full()
                                     .debossed(&c)
-                                    .child(text::ui(sayso_i18n::t!("overlay.incognito"), 12. * tk, FontWeight::MEDIUM, c.graphite)),
+                                    // A click anywhere on the pill stops, so hover shows a stop button.
+                                    .child(if self.hovered {
+                                        div().size(z(12.)).rounded(z(3.)).bg(c.accent)
+                                    } else {
+                                        div()
+                                            .relative()
+                                            .size(z(12.))
+                                            .rounded_full()
+                                            .bg(c.accent)
+                                            .child(halo(12. * k, (3. + 2. * pulse) * k, c.accent.opacity(0.16 + 0.1 * pulse)))
+                                    }),
                             )
-                        })
-                        .child(capture());
-                    // The live preview is on the side of the pill that has room on the display.
-                    let slip = if show_preview && !(preview.0.is_empty() && preview.1.is_empty()) {
-                        Some(preview_slip(&preview.0, &preview.1, size, &c))
-                    } else if preview_loading {
-                        Some(loading_slip(processing_progress(self.phase_start.elapsed(), reduce), size, &c))
-                    } else {
-                        None
-                    };
-                    let col = div().flex().flex_col().items_center().gap(z(12.));
-                    match anchor {
-                        Anchor::Bottom => col.children(slip).child(pill),
-                        Anchor::Top => col.child(pill).children(slip),
+                            // The window has room for one tag next to the full waveform.
+                            .child(ink_waveform(levels, t, c.ink).w(z(if incognito && recording_style.is_some() { 150. } else { 232. })).h(z(36.)))
+                            .child(text::mono(clock(elapsed), 13. * tk, c.graphite).w(px(36. * tk)).text_right())
+                            .when_some(recording_style, |d, s| d.child(StyleTag::new(s, Some(c.ink))))
+                            .when(incognito, |d| {
+                                d.child(
+                                    div()
+                                        .flex()
+                                        .flex_none()
+                                        .items_center()
+                                        .h(z(22.))
+                                        .px(z(9.))
+                                        .rounded_full()
+                                        .debossed(&c)
+                                        .child(text::ui(sayso_i18n::t!("overlay.incognito"), 12. * tk, FontWeight::MEDIUM, c.graphite)),
+                                )
+                            });
+                        Some((floating(), content.into_any_element()))
                     }
-                    .into_any_element()
-                }
-                State::Processing { stage, .. } => {
-                    let label = stage_label(stage, &model_status, dictionary_loading);
-                    let p = processing_progress(self.phase_start.elapsed(), reduce);
-                    div()
-                        .relative()
-                        .flex()
-                        .items_center()
-                        .gap(z(12.))
-                        .px(z(18.))
-                        .py(z(10.))
-                        .rounded_full()
-                        .floating(&c)
-                        .child(div().w(z(150.)).h(z(36.)).child(ink_line(p, c.ink, c.pencil).size_full()))
-                        .child(div().font_family(SERIF).locale_fonts(Face::Serif).italic().text_size(px(16. * tk)).text_color(c.graphite).child(label))
-                        .child(capture())
-                        .into_any_element()
-                }
-                State::Showing { notice, until_ms, .. } => match notice {
-                    Notice::Inserted { style_name } => div()
-                        .relative()
-                        .flex()
-                        .items_center()
-                        .gap(z(10.))
-                        .pl(z(8.))
-                        .pr(z(if style_name.is_some() { 10. } else { 18. }))
-                        .py(z(8.))
-                        .rounded_full()
-                        .floating(&c)
-                        .child(Seal::new(28. * k))
-                        .child(text::ui(sayso_i18n::t!("overlay.inserted"), 14. * tk, FontWeight::SEMIBOLD, c.ink))
-                        .when_some(style_name.clone(), |d, s| d.child(StyleTag::new(s, Some(c.ink))))
-                        .child(capture())
-                        .into_any_element(),
-                    Notice::InsertedRaw { reason } => {
-                        notice_pill(Icon::Check, &sayso_i18n::t!("overlay.inserted_raw"), Some(reason), size, &c).child(capture()).into_any_element()
-                    }
-                    Notice::Cancelled => {
-                        let total = 5000.0;
-                        let left = until_ms.map(|u| u.saturating_sub(now_ms) as f32 / total).unwrap_or(0.0);
-                        let model = self.model.clone();
-                        div()
-                            .relative()
+                    State::Processing { stage, .. } => {
+                        let label = stage_label(stage, &model_status, dictionary_loading);
+                        let p = processing_progress(self.phase_start.elapsed(), reduce);
+                        let content = div()
                             .flex()
                             .items_center()
                             .gap(z(12.))
-                            .pl(z(18.))
-                            .pr(z(8.))
-                            .py(z(8.))
-                            .rounded_full()
-                            .floating(&c)
-                            .child(text::ui(sayso_i18n::t!("overlay.cancelled"), 14. * tk, FontWeight::MEDIUM, c.graphite))
-                            .child(
-                                Pressable::new("undo")
-                                    .label(sayso_i18n::t!("overlay.a11y.undo_cancel"))
-                                    .flex()
-                                    .items_center()
-                                    .gap(z(8.))
-                                    .h(z(30.))
-                                    .pl(z(10.))
-                                    .pr(z(12.))
-                                    .rounded_full()
-                                    .bg(c.ink_fill)
-                                    .shadows(paper::ink_button(&c))
-                                    .cursor_pointer()
-                                    .on_click(move |_, _, cx| model.update(cx, |m, cx| m.undo_cancel(cx)))
-                                    .child(countdown_ring(left, c.on_ink).size(z(18.)))
-                                    .child(text::ui(sayso_i18n::t!("overlay.undo"), 14. * tk, FontWeight::SEMIBOLD, c.on_ink)),
-                            )
-                            .child(capture())
-                            .into_any_element()
+                            .px(z(18.))
+                            .py(z(10.))
+                            .child(div().w(z(150.)).h(z(36.)).child(ink_line(p, c.ink, c.pencil).size_full()))
+                            .child(div().font_family(SERIF).locale_fonts(Face::Serif).italic().text_size(px(16. * tk)).text_color(c.graphite).child(label));
+                        Some((floating(), content.into_any_element()))
                     }
-                    Notice::InsertFailed { text, reason } => {
-                        let (m1, m2) = (self.model.clone(), self.model.clone());
-                        let copy = text.clone();
-                        div()
-                            .relative()
-                            .flex()
-                            .flex_col()
-                            .gap(z(10.))
-                            .w(z(320.))
-                            .pt(z(14.))
-                            .px(z(16.))
-                            .pb(z(12.))
-                            .rounded(z(14.))
-                            .floating(&c)
-                            .child(text::ui(reason.clone(), 13. * tk, FontWeight::SEMIBOLD, c.danger))
-                            .child(text::serif(text.replace('\n', " "), 15. * tk, c.ink).line_clamp(4).text_ellipsis())
-                            .child(
-                                div()
-                                    .flex()
-                                    .justify_end()
-                                    .gap(z(6.))
-                                    .child(
-                                        Button::new("dismiss", sayso_i18n::t!("overlay.dismiss"))
-                                            .small()
-                                            .on_click(move |_, _, cx| m1.update(cx, |m, cx| m.dismiss_notice(cx))),
-                                    )
-                                    .child(Button::new("copy", sayso_i18n::t!("overlay.copy_text")).small().primary().on_click(move |_, _, cx| {
-                                        m2.update(cx, |m, cx| {
-                                            m.copy_text(&copy);
-                                            m.dismiss_notice(cx);
-                                        })
-                                    })),
-                            )
-                            .child(capture())
-                            .into_any_element()
-                    }
-                    Notice::Error { message } => notice_pill(Icon::Info, message, None, size, &c).child(capture()).into_any_element(),
-                    Notice::NoSpeech => {
-                        notice_pill(Icon::Info, &sayso_i18n::t!("overlay.error.no_speech"), None, size, &c).child(capture()).into_any_element()
-                    }
-                    Notice::Discarded => div().into_any_element(),
-                },
+                    State::Showing { notice, until_ms, .. } => match notice {
+                        Notice::Inserted { style_name } => {
+                            let content = div()
+                                .flex()
+                                .items_center()
+                                .gap(z(10.))
+                                .pl(z(8.))
+                                .pr(z(if style_name.is_some() { 10. } else { 18. }))
+                                .py(z(8.))
+                                .child(Seal::new(28. * k))
+                                .child(text::ui(sayso_i18n::t!("overlay.inserted"), 14. * tk, FontWeight::SEMIBOLD, c.ink))
+                                .when_some(style_name.clone(), |d, s| d.child(StyleTag::new(s, Some(c.ink))));
+                            Some((floating(), content.into_any_element()))
+                        }
+                        Notice::InsertedRaw { reason } => {
+                            Some((floating(), notice_pill(Icon::Check, &sayso_i18n::t!("overlay.inserted_raw"), Some(reason), size, &c).into_any_element()))
+                        }
+                        Notice::Cancelled => {
+                            let total = 5000.0;
+                            let left = until_ms.map(|u| u.saturating_sub(now_ms) as f32 / total).unwrap_or(0.0);
+                            let model = self.model.clone();
+                            let content = div()
+                                .flex()
+                                .items_center()
+                                .gap(z(12.))
+                                .pl(z(18.))
+                                .pr(z(8.))
+                                .py(z(8.))
+                                .child(text::ui(sayso_i18n::t!("overlay.cancelled"), 14. * tk, FontWeight::MEDIUM, c.graphite))
+                                .child(
+                                    Pressable::new("undo")
+                                        .label(sayso_i18n::t!("overlay.a11y.undo_cancel"))
+                                        .flex()
+                                        .items_center()
+                                        .gap(z(8.))
+                                        .h(z(30.))
+                                        .pl(z(10.))
+                                        .pr(z(12.))
+                                        .rounded_full()
+                                        .bg(c.ink_fill)
+                                        .shadows(paper::ink_button(&c))
+                                        .cursor_pointer()
+                                        .on_click(move |_, _, cx| model.update(cx, |m, cx| m.undo_cancel(cx)))
+                                        .child(countdown_ring(left, c.on_ink).size(z(18.)))
+                                        .child(text::ui(sayso_i18n::t!("overlay.undo"), 14. * tk, FontWeight::SEMIBOLD, c.on_ink)),
+                                );
+                            Some((floating(), content.into_any_element()))
+                        }
+                        Notice::InsertFailed { text, reason } => {
+                            let (m1, m2) = (self.model.clone(), self.model.clone());
+                            let copy = text.clone();
+                            let content = div()
+                                .flex()
+                                .flex_col()
+                                .gap(z(10.))
+                                .w(z(320.))
+                                .pt(z(14.))
+                                .px(z(16.))
+                                .pb(z(12.))
+                                .child(text::ui(reason.clone(), 13. * tk, FontWeight::SEMIBOLD, c.danger))
+                                .child(text::serif(text.replace('\n', " "), 15. * tk, c.ink).line_clamp(4).text_ellipsis())
+                                .child(
+                                    div()
+                                        .flex()
+                                        .justify_end()
+                                        .gap(z(6.))
+                                        .child(
+                                            Button::new("dismiss", sayso_i18n::t!("overlay.dismiss"))
+                                                .small()
+                                                .on_click(move |_, _, cx| m1.update(cx, |m, cx| m.dismiss_notice(cx))),
+                                        )
+                                        .child(Button::new("copy", sayso_i18n::t!("overlay.copy_text")).small().primary().on_click(move |_, _, cx| {
+                                            m2.update(cx, |m, cx| {
+                                                m.copy_text(&copy);
+                                                m.dismiss_notice(cx);
+                                            })
+                                        })),
+                                );
+                            Some((div().rounded(z(14.)).floating(&c), content.into_any_element()))
+                        }
+                        Notice::Error { message } => Some((floating(), notice_pill(Icon::Info, message, None, size, &c).into_any_element())),
+                        Notice::NoSpeech => {
+                            Some((floating(), notice_pill(Icon::Info, &sayso_i18n::t!("overlay.error.no_speech"), None, size, &c).into_any_element()))
+                        }
+                        Notice::Discarded => None,
+                    },
+                }
+            };
+            moving |= self.card_motion.update(face.is_some(), reduce);
+
+            // The live preview is on the side of the pill that has room on the display.
+            // It grows out of the center of the pill to its place, and goes back
+            // into the pill the same way when the recording stops.
+            self.slip_motion.set_exit(Exit::Point);
+            let live = recording && show_preview && !(preview.0.is_empty() && preview.1.is_empty());
+            moving |= self.write(live, recording, &preview, reduce);
+            let slip_content = if live {
+                Some(preview_slip(&self.pen, size, &c).into_any_element())
+            } else if recording && preview_loading {
+                Some(loading_slip(processing_progress(self.phase_start.elapsed(), reduce), size, &c).into_any_element())
+            } else {
+                None
+            };
+            moving |= self.slip_motion.update(slip_content.is_some(), reduce);
+            let slip = (!self.slip_motion.gone()).then(|| {
+                let last = self.slip_preview.then(|| preview_slip(&self.pen, size, &c).into_any_element());
+                let content = slip_content.or(last).unwrap_or_else(|| div().into_any_element());
+                let gap = 12. * k;
+                // How far the slip is from the center of the pill: all the way
+                // at the start, none at its place.
+                let pill = self.card.get().size.height.as_f32();
+                let away = (1. - self.slip_motion.opacity()) * (gap + (pill + self.slip_motion.height()) / 2.);
+                let slip = self.slip_motion.render(slip_shell(size, &c), Align::Center, content);
+                match anchor {
+                    Anchor::Bottom => div().relative().top(px(away)).pb(px(gap)).child(slip),
+                    Anchor::Top => div().relative().top(px(-away)).pt(px(gap)).child(slip),
+                }
+            });
+            if self.slip_motion.gone() {
+                self.slip_preview = false;
             }
+
+            let card = if self.card_motion.gone() {
+                self.card.set(Bounds::default());
+                None
+            } else {
+                let (shell, content) = face.unwrap_or_else(|| (floating(), div().into_any_element()));
+                Some(self.card_motion.render(shell.child(capture()), Align::Center, div().opacity(fade).child(content)))
+            };
+            // The slip is the first child, so the pill draws over it, and the
+            // slip comes out from behind the pill. A reversed column puts it under the pill.
+            let col = div().flex().items_center().children(slip).children(card);
+            match anchor {
+                Anchor::Bottom => col.flex_col(),
+                Anchor::Top => col.flex_col_reverse(),
+            }
+            .into_any_element()
         };
+
+        if moving {
+            window.request_animation_frame();
+        }
+        // The card has closed: hide the window until the next dictation.
+        if matches!(state, State::Idle) && blocked.is_none() && closes && !self.closing() {
+            self.hide_after_close(window, cx);
+        }
 
         div()
             .size_full()
@@ -807,52 +924,47 @@ impl Render for OverlayView {
     }
 }
 
-fn idle_pill(hovered: bool, caps: &[String], size: OverlaySize, c: &sayso_ui::Colors) -> Div {
+/// The idle pill: its look, and its content. Hover opens it to show the toggle hotkey.
+fn idle_pill(hovered: bool, caps: &[String], size: OverlaySize, c: &sayso_ui::Colors) -> (Div, Div) {
     let (k, tk) = (size.scale(), size.text_scale());
     if hovered {
-        return div()
-            .relative()
+        let shell = div().rounded_full().bg(c.sheet_raised).shadow(paper::raised(c));
+        let content = div()
             .flex()
             .items_center()
             .gap(px(10. * k))
             .pl(px(8. * k))
             .pr(px(14. * k))
             .py(px(7. * k))
-            .rounded_full()
-            .bg(c.sheet_raised)
-            .shadow(paper::raised(c))
             .child(Keycaps::new(caps.iter().cloned()).size(if k < 0.8 { KeySize::Small } else { KeySize::Medium }))
             .child(text::ui(sayso_i18n::t!("overlay.to_dictate"), 14. * tk, FontWeight::MEDIUM, c.graphite));
+        return (shell, content);
     }
-    div()
-        .relative()
+    let shell = div().rounded_full().bg(c.sheet_raised).shadow(vec![
+        BoxShadow::new(px(0.), px(1. * k), c.highlight(1.0)).inset(),
+        BoxShadow::new(px(0.), px(1. * k), c.shadow(0.16)).blur_radius(px(2. * k)),
+        BoxShadow::new(px(0.), px(4. * k), c.shadow(0.12)).blur_radius(px(12. * k)),
+    ]);
+    let content = div()
         .flex()
         .items_center()
         .justify_center()
         .w(px(52. * k))
         .h(px(14. * k))
-        .rounded_full()
-        .bg(c.sheet_raised)
-        .shadow(vec![
-            BoxShadow::new(px(0.), px(1. * k), c.highlight(1.0)).inset(),
-            BoxShadow::new(px(0.), px(1. * k), c.shadow(0.16)).blur_radius(px(2. * k)),
-            BoxShadow::new(px(0.), px(4. * k), c.shadow(0.12)).blur_radius(px(12. * k)),
-        ])
-        .child(div().w(px(18. * k)).h(px(2. * k)).rounded(px(2. * k)).bg(c.ink.opacity(0.55)))
+        .child(div().w(px(18. * k)).h(px(2. * k)).rounded(px(2. * k)).bg(c.ink.opacity(0.55)));
+    (shell, content)
 }
 
+/// The content of a notice on the floating card.
 fn notice_pill(ic: Icon, title: &str, detail: Option<&str>, size: OverlaySize, c: &sayso_ui::Colors) -> Div {
     let (k, tk) = (size.scale(), size.text_scale());
     div()
-        .relative()
         .flex()
         .items_center()
         .gap(px(10. * k))
         .pl(px(8. * k))
         .pr(px(18. * k))
         .py(px(8. * k))
-        .rounded_full()
-        .floating(c)
         .child(
             div()
                 .flex()
@@ -873,19 +985,21 @@ fn notice_pill(ic: Icon, title: &str, detail: Option<&str>, size: OverlaySize, c
         )
 }
 
+/// The look of the slip of paper that holds the live preview.
+fn slip_shell(size: OverlaySize, c: &sayso_ui::Colors) -> Div {
+    div().rounded(px(12. * size.scale())).bg(c.sheet).shadow(paper::raised(c))
+}
+
 /// The live preview: committed words in ink, the tentative tail in pencil
 /// italic, and the caret. One styled text run, so it wraps like a paragraph.
-fn preview_slip(committed: &str, tentative: &str, size: OverlaySize, c: &sayso_ui::Colors) -> Div {
+fn preview_slip(pen: &Pen, size: OverlaySize, c: &sayso_ui::Colors) -> Div {
     let (k, tk) = (size.scale(), size.text_scale());
     // A smaller slip holds fewer characters per line.
-    let (text, highlights) = preview_text(committed, tentative, (150. * k) as usize, c);
+    let (text, highlights) = preview_text(pen, (150. * k) as usize, c);
     div()
         .w(px(420. * k))
         .px(px(18. * k))
         .py(px(14. * k))
-        .rounded(px(12. * k))
-        .bg(c.sheet)
-        .shadow(paper::raised(c))
         .font_family(SERIF).locale_fonts(Face::Serif)
         .text_size(px(17. * tk))
         .line_height(px(24. * tk))
@@ -902,9 +1016,6 @@ fn loading_slip(progress: f32, size: OverlaySize, c: &sayso_ui::Colors) -> Div {
         .w(px(420. * k))
         .px(px(18. * k))
         .py(px(14. * k))
-        .rounded(px(12. * k))
-        .bg(c.sheet)
-        .shadow(paper::raised(c))
         .flex()
         .items_center()
         .gap(px(10. * k))
@@ -921,44 +1032,59 @@ fn loading_slip(progress: f32, size: OverlaySize, c: &sayso_ui::Colors) -> Div {
         )
 }
 
-/// The text of the live preview with its colors: committed words in ink, the
-/// tentative tail in pencil italic, and the caret. It shows only the last
-/// `max` characters of the committed words, so the slip stays at three lines
-/// or less.
-fn preview_text(committed: &str, tentative: &str, max: usize, c: &sayso_ui::Colors) -> (String, Vec<(std::ops::Range<usize>, HighlightStyle)>) {
-    let committed = tail(committed, max);
-    let mut text = committed.clone();
-    let mut highlights = Vec::new();
-    if !tentative.is_empty() {
-        if needs_space(&text, tentative) {
-            text.push(' ');
-        }
-        let start = text.len();
-        text.push_str(tentative);
-        highlights.push((
-            start..text.len(),
-            HighlightStyle { color: Some(c.pencil), font_style: Some(FontStyle::Italic), ..Default::default() },
-        ));
+/// The text of the live preview with its look: committed words in ink, the
+/// tentative tail in pencil italic, and the caret. The pen gives each letter
+/// its stroke (see [`pen`]). Only the last `max` letters of the committed
+/// words show, so the slip stays at three lines or less.
+fn preview_text(pen: &Pen, max: usize, c: &sayso_ui::Colors) -> (String, Vec<(std::ops::Range<usize>, HighlightStyle)>) {
+    let letters: Vec<char> = pen.letters().collect();
+    let start = tail_start(&letters[..pen.committed()], max);
+    let end = letters.iter().rposition(|ch| !ch.is_whitespace()).map_or(0, |i| i + 1).max(start);
+    let mut text = String::new();
+    let mut highlights: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
+    if start > 0 {
+        text.push('…');
     }
-    let trimmed = text.trim_end().len();
-    text.truncate(trimmed);
+    // Letters with the same stroke share one highlight: dry ink, dry pencil.
+    let mut last = None;
+    for (i, &ch) in letters.iter().enumerate().take(end).skip(start) {
+        let at = text.len();
+        text.push(ch);
+        let stroke = pen.stroke(i);
+        match highlights.last_mut() {
+            Some((range, _)) if last == Some(stroke) => range.end = text.len(),
+            _ => highlights.push((at..text.len(), stroke_style(stroke, c))),
+        }
+        last = Some(stroke);
+    }
+    // The caret shows when the pen has caught up with the words.
     let caret_start = text.len();
     text.push_str(" \u{2502}");
-    highlights.push((caret_start..text.len(), HighlightStyle { color: Some(c.accent.opacity(0.7)), ..Default::default() }));
+    let caret = if pen.caught_up() { 0.7 } else { 0. };
+    highlights.push((caret_start..text.len(), HighlightStyle { color: Some(c.accent.opacity(caret)), ..Default::default() }));
     (text, highlights)
 }
 
-fn tail(s: &str, max: usize) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= max {
-        return s.to_string();
+/// The look of one letter: pencil italic that turns to ink, and fades in as it is written.
+fn stroke_style(stroke: pen::Stroke, c: &sayso_ui::Colors) -> HighlightStyle {
+    let (a, b) = (Rgba::from(c.pencil), Rgba::from(c.ink));
+    let t = stroke.ink;
+    let mix = Rgba { r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t, a: a.a + (b.a - a.a) * t };
+    HighlightStyle {
+        color: Some(Hsla::from(mix).opacity(stroke.opacity)),
+        font_style: Some(if stroke.ink < 0.5 { FontStyle::Italic } else { FontStyle::Normal }),
+        ..Default::default()
     }
-    let start = chars.len() - max;
-    let cut: String = chars[start..].iter().collect();
-    match cut.find(' ') {
-        Some(i) => format!("…{}", &cut[i..]),
-        None => format!("…{cut}"),
+}
+
+/// The first committed letter that shows: the last `max` letters, from the
+/// first space among them. A start after zero shows an ellipsis first.
+fn tail_start(committed: &[char], max: usize) -> usize {
+    if committed.len() <= max {
+        return 0;
     }
+    let cut = committed.len() - max;
+    cut + committed[cut..].iter().position(|&ch| ch == ' ').unwrap_or(0)
 }
 
 /// True when the committed text and the tentative tail need a space between
