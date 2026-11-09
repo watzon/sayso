@@ -67,7 +67,34 @@ pub struct PipelineOutput {
     pub notice: Option<CleanupNotice>,
 }
 
+/// The words that the base time limit of a style covers.
+const BASE_TIMEOUT_WORDS: usize = 100;
+/// The time that each word after [`BASE_TIMEOUT_WORDS`] adds to the time
+/// limit. The model writes the full text again, so a long dictation needs a
+/// longer limit. 50 ms is 20 words each second, which a slow model can do.
+const TIMEOUT_PER_WORD: Duration = Duration::from_millis(50);
+
 impl TextPipeline<'_> {
+    /// The time limit of the style step for `text`: the limit of the style
+    /// (or the default), and more time for each word after the first
+    /// [`BASE_TIMEOUT_WORDS`]. Zero stays zero, because zero gives the default
+    /// of the provider.
+    fn step_timeout(&self, text: &str) -> Duration {
+        let base = self
+            .style
+            .timeout_ms
+            .map(Duration::from_millis)
+            .unwrap_or(self.timeout);
+        if base.is_zero() {
+            return base;
+        }
+        let extra_words = text
+            .split_whitespace()
+            .count()
+            .saturating_sub(BASE_TIMEOUT_WORDS);
+        base + TIMEOUT_PER_WORD * extra_words as u32
+    }
+
     /// True when [`run_style`](Self::run_style) will call a provider.
     pub fn will_enhance(&self) -> bool {
         match &self.cleaner {
@@ -105,11 +132,7 @@ impl TextPipeline<'_> {
         };
         // The model gets spelled words as words. A failure returns the text without this step.
         let spoken = crate::spelled::apply(&replaced);
-        let timeout = self
-            .style
-            .timeout_ms
-            .map(Duration::from_millis)
-            .unwrap_or(self.timeout);
+        let timeout = self.step_timeout(&spoken);
         let mut request = EnhanceRequest {
             system_prompt: system_prompt(self.style, self.base_prompt, self.vocabulary, &spoken),
             transcript: spoken,
@@ -248,11 +271,7 @@ impl TextPipeline<'_> {
         }
         // The model gets spelled words as words, as a language model does.
         let spoken = crate::spelled::apply(&replaced);
-        let timeout = self
-            .style
-            .timeout_ms
-            .map(Duration::from_millis)
-            .unwrap_or(self.timeout);
+        let timeout = self.step_timeout(&spoken);
         let request = CleanupRequest {
             model: model.to_string(),
             text: spoken.clone(),
@@ -603,6 +622,35 @@ mod tests {
             out.enhance_error,
             Some((_, EnhanceError::InvalidOutput(_)))
         ));
+    }
+
+    #[test]
+    fn a_long_dictation_gets_more_time() {
+        fn limit(style: &Style, text: &str) -> Duration {
+            let replacer = Replacer::new(&[]);
+            let p = TextPipeline {
+                replacer: &replacer,
+                style,
+                base_prompt: "",
+                vocabulary: &[],
+                enhancer: None,
+                cleaner: None,
+                timeout: Duration::from_secs(8),
+            };
+            p.step_timeout(text)
+        }
+        let mut s = style("clean");
+        let short = "word ".repeat(BASE_TIMEOUT_WORDS);
+        assert_eq!(limit(&s, &short), Duration::from_secs(8));
+        // About 10 minutes of speech: 1,500 words.
+        let long = "word ".repeat(1500);
+        assert_eq!(limit(&s, &long), Duration::from_secs(8 + 70));
+        // The limit of a style is the base too.
+        s.timeout_ms = Some(2000);
+        assert_eq!(limit(&s, &long), Duration::from_secs(2 + 70));
+        // Zero gives the default of the provider, so it stays zero.
+        s.timeout_ms = Some(0);
+        assert_eq!(limit(&s, &long), Duration::ZERO);
     }
 
     #[test]
