@@ -30,6 +30,13 @@ const LETTER_CODES: [u16; 26] = [
 ];
 /// evdev codes for `0` to `9`.
 const DIGIT_CODES: [u16; 10] = [11, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+/// evdev codes of the punctuation keys, in the order of [`Key::PUNCTUATION`]:
+/// `` ` - = [ ] \ ; ' , . / ``.
+const PUNCTUATION_CODES: [u16; 11] = [41, 12, 13, 26, 27, 43, 39, 40, 51, 52, 53];
+/// XKB keysym names of the punctuation keys, in the same order.
+const PUNCTUATION_KEYSYMS: [&str; 11] = [
+    "grave", "minus", "equal", "bracketleft", "bracketright", "backslash", "semicolon", "apostrophe", "comma", "period", "slash",
+];
 /// evdev codes for `F1` to `F20`.
 const F_CODES: [u16; 20] = [59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 87, 88, 183, 184, 185, 186, 187, 188, 189, 190];
 
@@ -44,6 +51,7 @@ pub fn code(key: Key) -> Option<u16> {
         Key::Letter(c) if c.is_ascii_alphabetic() => Some(LETTER_CODES[(c.to_ascii_lowercase() as u8 - b'a') as usize]),
         Key::Digit(d) if d <= 9 => Some(DIGIT_CODES[d as usize]),
         Key::F(n) if (1..=20).contains(&n) => Some(F_CODES[n as usize - 1]),
+        Key::Punctuation(c) => Key::punctuation_index(c).map(|i| PUNCTUATION_CODES[i]),
         _ => None,
     }
 }
@@ -56,6 +64,7 @@ pub fn key_from_code(code_: u16) -> Option<Key> {
         .chain((b'a'..=b'z').map(|c| Key::Letter(c as char)))
         .chain((0..=9).map(Key::Digit))
         .chain((1..=20).map(Key::F))
+        .chain(Key::punctuation())
         .find(|k| code(*k) == Some(code_))
 }
 
@@ -168,8 +177,9 @@ pub fn portal_trigger(chord_: &Chord) -> Option<String> {
     Some(parts.join("+"))
 }
 
-/// The XKB keysym name of a key, as the shortcuts specification uses it.
-fn keysym_name(key: Key) -> String {
+/// The XKB keysym name of a key, as the shortcuts specification and GNOME
+/// accelerators use it.
+pub fn keysym_name(key: Key) -> String {
     match key {
         Key::Space => "space".into(),
         Key::Escape => "Escape".into(),
@@ -179,7 +189,13 @@ fn keysym_name(key: Key) -> String {
         Key::Letter(c) => c.to_ascii_lowercase().to_string(),
         Key::Digit(d) => d.to_string(),
         Key::F(n) => format!("F{n}"),
+        Key::Punctuation(c) => Key::punctuation_index(c).map_or_else(|| c.to_string(), |i| PUNCTUATION_KEYSYMS[i].to_string()),
     }
+}
+
+/// The punctuation key of an XKB keysym name such as `bracketleft`.
+pub fn punctuation_from_keysym(name: &str) -> Option<Key> {
+    PUNCTUATION_KEYSYMS.iter().position(|n| *n == name).map(|i| Key::Punctuation(Key::PUNCTUATION[i]))
 }
 
 #[cfg(test)]
@@ -216,6 +232,11 @@ mod tests {
         assert_eq!(code(Key::F(13)), Some(183));
         assert_eq!(code(Key::F(21)), None);
         assert_eq!(code(Key::Letter('é')), None);
+        assert_eq!(code(Key::Punctuation('[')), Some(26)); // KEY_LEFTBRACE
+        assert_eq!(code(Key::Punctuation(']')), Some(27)); // KEY_RIGHTBRACE
+        assert_eq!(code(Key::Punctuation('`')), Some(41)); // KEY_GRAVE
+        assert_eq!(code(Key::Punctuation('/')), Some(53)); // KEY_SLASH
+        assert_eq!(code(Key::Punctuation('{')), None);
     }
 
     #[test]
@@ -225,7 +246,8 @@ mod tests {
             .into_iter()
             .chain((b'a'..=b'z').map(|c| Key::Letter(c as char)))
             .chain((0..=9).map(Key::Digit))
-            .chain((1..=20).map(Key::F));
+            .chain((1..=20).map(Key::F))
+            .chain(Key::punctuation());
         for k in keys {
             let c = code(k).unwrap();
             assert_eq!(key_from_code(c), Some(k));
@@ -283,5 +305,11 @@ mod tests {
         assert_eq!(t("opt+return"), "ALT+Return");
         assert_eq!(t("ctrl+7"), "CTRL+7");
         assert_eq!(t("f9"), "F9");
+        assert_eq!(t("ctrl+["), "CTRL+bracketleft");
+        assert_eq!(t("ctrl+]"), "CTRL+bracketright");
+        assert_eq!(t("alt+shift+'"), "ALT+SHIFT+apostrophe");
+        for key in Key::punctuation() {
+            assert_eq!(punctuation_from_keysym(&keysym_name(key)), Some(key));
+        }
     }
 }

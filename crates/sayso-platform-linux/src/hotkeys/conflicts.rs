@@ -241,6 +241,7 @@ pub fn parse_accelerator(accel: &str) -> Option<Hotkey> {
             Key::Letter(rest.chars().next()?.to_ascii_lowercase())
         }
         _ if rest.len() == 1 && rest.chars().all(|c| c.is_ascii_digit()) => Key::Digit(rest.parse().ok()?),
+        _ if let Some(key) = super::keymap::punctuation_from_keysym(rest) => key,
         _ => {
             let n: u8 = rest.strip_prefix('F')?.parse().ok()?;
             if !(1..=20).contains(&n) {
@@ -269,6 +270,8 @@ mod tests {
         assert_eq!(parse_accelerator("<Super>Tab"), Some(hk("cmd+tab")));
         assert_eq!(parse_accelerator("<Alt>F4"), Some(hk("opt+f4")));
         assert_eq!(parse_accelerator("<Super>1"), Some(hk("cmd+1")));
+        assert_eq!(parse_accelerator("<Control>bracketleft"), Some(hk("ctrl+[")));
+        assert_eq!(parse_accelerator("<Super>period"), Some(hk("cmd+.")));
         assert_eq!(parse_accelerator("XF86Keyboard"), None);
         assert_eq!(parse_accelerator("<Super>Print"), None);
         assert_eq!(parse_accelerator("<Hyper>a"), None);

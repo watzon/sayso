@@ -1066,9 +1066,28 @@ mod tests {
     fn capture_ignores_keys_sayso_cannot_name() {
         let mut l = logic();
         l.set_capturing(true);
-        // Ctrl+Period: no Sayso key for the period.
-        assert_eq!(l.handle(down(0xBE, &[VK_LCONTROL]), Instant::now()).captured, None);
+        // Ctrl+VK_OEM_102 (the extra key of ISO keyboards): Sayso has no name for it.
+        assert_eq!(l.handle(down(0xE2, &[VK_LCONTROL]), Instant::now()).captured, None);
         assert!(l.is_needed(), "the recorder stays open");
+    }
+
+    #[test]
+    fn capture_and_push_to_talk_take_punctuation_chords() {
+        // VK_OEM_4 and VK_OEM_6, the bracket keys of the US layout.
+        for (vk, text) in [(0xDB, "ctrl+["), (0xDD, "ctrl+]")] {
+            let mut l = logic();
+            l.set_capturing(true);
+            let now = Instant::now();
+            assert_eq!(l.handle(down(vk, &[]), now).captured, None, "a bare punctuation key is not a hotkey");
+            // Release it first: the hook reads a second key-down without a release as auto-repeat.
+            l.handle(up(vk, &[]), now);
+            assert_eq!(l.handle(down(vk, &[VK_LCONTROL]), now).captured, Some(text.parse().unwrap()));
+
+            let mut l = logic();
+            l.set_ptt(Some(text.parse().unwrap()));
+            assert_eq!(l.handle(down(vk, &[VK_RCONTROL]), now).events, vec![HotkeyEvent::PushToTalkDown]);
+            assert_eq!(l.handle(up(vk, &[VK_RCONTROL]), now).events, vec![HotkeyEvent::PushToTalkUp]);
+        }
     }
 
     #[test]
