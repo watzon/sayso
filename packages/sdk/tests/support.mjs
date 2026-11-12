@@ -16,9 +16,18 @@ if (!existsSync(fakeEngine)) {
 }
 
 /** A temporary folder that the test removes at its end. */
-export function tempDir(t) {
+const tempDirs = new Set();
+// Node runs the t.after hooks of a test in the order they were added, so a hook of
+// tempDir would remove the folder before a later hook closes the Speech that writes
+// into it. The folders go when the test process exits, after every hook.
+process.on("exit", () => {
+	for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+});
+
+/** A new temporary folder. It is removed when the test process exits. */
+export function tempDir(_t) {
 	const dir = mkdtempSync(join(tmpdir(), "sayso-sdk-test-"));
-	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	tempDirs.add(dir);
 	return dir;
 }
 
