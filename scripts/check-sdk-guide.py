@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
-"""Check that the Rust code in docs/sdk-guide/ is the code that CI compiles.
+"""Check that the Rust and TypeScript code in docs/sdk-guide/ is the code that CI compiles.
 
-Every ```rust block in the guide needs a line above it with a tag:
+Every ```rust block and every ```ts block in the guide needs a line above it with a tag:
 
   <!-- check: file crates/sayso-sdk/examples/scribe.rs -->      the block is the whole file
   <!-- check: verbatim crates/sayso-sdk/examples/guide.rs -->    the block is lines of the file, in a row
   <!-- check: lines crates/sayso-sdk/examples/scribe.rs -->      each line of the block is a line of the file
   <!-- check: unchecked -->                                      a fragment that nothing compiles
 
-The examples compile with `cargo clippy --workspace --all-targets`. Run this script from any folder.
+The path of a ```ts block must be a file in packages/sdk/examples/.
+
+The Rust examples compile with `cargo clippy --workspace --all-targets`. The TypeScript examples
+compile with `pnpm --filter @justsayso/sdk check:examples` (`tsc -p packages/sdk/examples`).
+Run this script from any folder.
 """
 import re
 import sys
@@ -18,14 +22,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / "docs" / "sdk-guide"
 TAG = re.compile(r"^<!-- check: (file|verbatim|lines|unchecked)(?: (\S+))? -->$")
+TS_EXAMPLES = "packages/sdk/examples/"
+EXAMPLES = {
+    "rust": "<!-- check: verbatim crates/sayso-sdk/examples/guide.rs -->",
+    "ts": f"<!-- check: verbatim {TS_EXAMPLES}tutorial.ts -->",
+}
 
 
-def blocks(text):
-    """Yield (line number, tag line, code) for each rust block."""
+def blocks(text, language):
+    """Yield (line number, tag line, code) for each block of the language."""
     lines = text.split("\n")
     i = 0
     while i < len(lines):
-        if re.match(r"^\s*```rust\s*$", lines[i]):
+        if re.match(rf"^\s*```{language}\s*$", lines[i]):
             start = i
             tag = lines[i - 1].strip() if i > 0 else ""
             body = []
@@ -41,14 +50,19 @@ def main():
     problems = []
     checked = 0
     for page in sorted(GUIDE.glob("*.md")):
-        for number, tag, code in blocks(page.read_text()):
+        text = page.read_text()
+        found_blocks = [(language, *block) for language in EXAMPLES for block in blocks(text, language)]
+        for language, number, tag, code in sorted(found_blocks, key=lambda found: found[1]):
             where = f"{page.relative_to(ROOT)}:{number}"
             found = TAG.match(tag)
             if not found:
-                problems.append(f"{where}: a rust block needs a tag above it, for example <!-- check: verbatim crates/sayso-sdk/examples/guide.rs -->")
+                problems.append(f"{where}: a {language} block needs a tag above it, for example {EXAMPLES[language]}")
                 continue
             kind, name = found.groups()
             if kind == "unchecked":
+                continue
+            if language == "ts" and not (name or "").startswith(TS_EXAMPLES):
+                problems.append(f"{where}: the file of a ts block must be in {TS_EXAMPLES}")
                 continue
             source = (ROOT / name).read_text() if name and (ROOT / name).is_file() else None
             if source is None:

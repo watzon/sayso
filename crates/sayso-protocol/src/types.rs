@@ -5,6 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 /// A word with its times, in milliseconds from the start of the audio.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Word {
     pub start_ms: u64,
     pub end_ms: u64,
@@ -14,6 +15,7 @@ pub struct Word {
 /// A part of a transcript with its times. `words` is there when the model
 /// has the timestamp level `word`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct Segment {
     pub start_ms: u64,
     pub end_ms: u64,
@@ -24,6 +26,7 @@ pub struct Segment {
 
 /// A part of the audio with speech, from VAD.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct SpeechPart {
     pub start_ms: u64,
     pub end_ms: u64,
@@ -35,6 +38,7 @@ pub struct SpeechPart {
 /// of one job or live session. The engine protocol sends an integer from 0;
 /// this type reads both and writes a string.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Turn {
     pub start_ms: u64,
     pub end_ms: u64,
@@ -57,6 +61,7 @@ fn label<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error>
 
 /// A model in the reply to `list_models`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct ModelInfo {
     pub id: String,
     pub name: String,

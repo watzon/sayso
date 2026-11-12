@@ -966,6 +966,13 @@ impl Speech {
         }
     }
 
+    /// End the work and close the connection or stop the engine, as a drop does, also while
+    /// other threads still use this `Speech`. Calls that wait get `connection_lost`, and so
+    /// do the calls after this one. A second call does nothing.
+    pub fn close(&self) {
+        self.shared.close();
+    }
+
     /// [`Mode::Sayso`]: connect again after [`Event::Disconnected`]. Work does not survive
     /// the end of a connection. In the other modes the SDK does this by itself, and this does nothing.
     pub fn reconnect(&self) -> Result<(), Error> {

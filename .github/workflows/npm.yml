@@ -1,0 +1,218 @@
+name: npm
+
+# The npm packages of the TypeScript SDK (docs/sdk-typescript.md, "CI and publication"):
+# @justsayso/sdk, its native addons @justsayso/sdk-<platform>, @justsayso/engine, the
+# engine packages @justsayso/engine-<platform>, @justsayso/cleanup, and the cleanup runtime
+# packages @justsayso/cleanup-<platform>.
+#
+# Build and test the addons on the five platforms:
+#   gh workflow run npm.yml
+# Publish a release to npm, after the Release workflow attached the engine and cleanup release files:
+#   gh workflow run npm.yml -f tag=v0.16.0 -f publish=true
+# Publication uses the trusted publishing of npm (OIDC), so the repository keeps no npm token.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag of a release with engine and cleanup release files (for example v0.16.0). Empty: build the branch.'
+        required: false
+        type: string
+      publish:
+        description: 'Publish the packages to npm (needs tag)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  addon:
+    name: Addon (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-26 has Xcode 26. The linker of Xcode 27 can write a string table that the
+          # dyld of macOS 27 refuses (docs/sdk-typescript.md, "The load error of macOS 27").
+          - { platform: darwin-arm64, runner: macos-26, target: aarch64-apple-darwin }
+          - { platform: darwin-x64, runner: macos-26, target: x86_64-apple-darwin, cross: true }
+          - { platform: linux-x64-gnu, runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu }
+          - { platform: linux-arm64-gnu, runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { platform: win32-x64-msvc, runner: windows-2025, target: x86_64-pc-windows-msvc }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install the build packages
+        if: runner.os == 'Linux'
+        run: scripts/linux-deps.sh
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: npm-${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install the JavaScript tools
+        run: pnpm install --frozen-lockfile
+      - name: Build the addon
+        working-directory: packages/sdk
+        run: node scripts/build-addon.mjs --release --target ${{ matrix.target }}
+      - name: Check the Mach-O file of the addon
+        if: runner.os == 'macOS'
+        run: python3 scripts/check-macho.py --weak-coreaudio packages/sdk/sayso.${{ matrix.platform }}.node
+      - name: Build the TypeScript layer
+        run: pnpm --filter @justsayso/sdk build
+      - name: Check the types against the values of Rust
+        run: pnpm --filter @justsayso/sdk test:types
+      - name: Check the examples of the guide
+        run: pnpm --filter @justsayso/sdk check:examples
+      # The Intel addon is built on Apple silicon; the runtimes job runs it on macos-15-intel.
+      - name: Build the fake engine
+        if: ${{ !matrix.cross }}
+        run: cargo build -p sayso-engine-client --bin sayso-fake-engine
+      - name: Test the SDK
+        if: ${{ !matrix.cross }}
+        run: pnpm --filter @justsayso/sdk test
+      - name: Test the engine package
+        run: pnpm --filter @justsayso/engine test
+      - name: Test the cleanup package
+        run: pnpm --filter @justsayso/cleanup test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: addon-${{ matrix.platform }}
+          path: packages/sdk/sayso.${{ matrix.platform }}.node
+          if-no-files-found: error
+
+  runtimes:
+    name: Runtimes (${{ matrix.platform }}, ${{ matrix.runtime }})
+    needs: addon
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [node22, node24, node26, bun, deno]
+        platform: [darwin-arm64, linux-x64-gnu]
+        include:
+          - { platform: darwin-arm64, runner: macos-26 }
+          - { platform: linux-x64-gnu, runner: ubuntu-24.04 }
+          - { platform: darwin-x64, runner: macos-15-intel, runtime: node24 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: addon-${{ matrix.platform }}
+          path: packages/sdk
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: npm-fake-engine
+      - name: Build the fake engine
+        run: cargo build -p sayso-engine-client --bin sayso-fake-engine
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.runtime == 'node22' && 22 || matrix.runtime == 'node26' && 26 || 24 }}
+      - uses: oven-sh/setup-bun@v2
+        if: matrix.runtime == 'bun'
+      - uses: denoland/setup-deno@v2
+        if: matrix.runtime == 'deno'
+        with:
+          deno-version: v2.x
+      - name: Build the TypeScript layer
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @justsayso/sdk build
+      - name: Test with Node
+        if: startsWith(matrix.runtime, 'node')
+        run: pnpm --filter @justsayso/sdk test
+      - name: Smoke test with Bun
+        if: matrix.runtime == 'bun'
+        run: bun packages/sdk/tests/smoke.mjs
+      - name: Smoke test with Deno
+        if: matrix.runtime == 'deno'
+        run: deno run --allow-all packages/sdk/tests/smoke.mjs
+
+  publish:
+    name: Publish to npm
+    needs: [addon, runtimes]
+    if: inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # Trusted publishing and provenance.
+      id-token: write
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check the inputs
+        if: inputs.tag == ''
+        run: |
+          echo "::error::publish needs a tag"
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+      - name: Check the tag against the version of the packages
+        run: |
+          version=$(node -p 'require("./packages/sdk/package.json").version')
+          test "v$version" = "$TAG" || { echo "::error::$TAG does not match the version $version of packages/sdk"; exit 1; }
+          python3 scripts/npm-packages.py check-versions --version "$version"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: addon-*
+          path: addons
+      - name: Put the addons in their packages
+        shell: bash
+        run: |
+          for dir in addons/addon-*; do
+            platform=${dir#addons/addon-}
+            cp "$dir/sayso.$platform.node" "packages/sdk/npm/$platform/"
+          done
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Build the TypeScript layer
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @justsayso/sdk build
+      - name: Make the engine packages from the release files
+        run: |
+          gh release download "$TAG" -p 'sayso-engine-*' -D release
+          python3 scripts/npm-packages.py engine --version "${TAG#v}" --release-dir release --out npm-out
+      - name: Make the cleanup packages from the release files
+        run: |
+          gh release download "$TAG" -p 'sayso-cleanup-*' -D release-cleanup
+          python3 scripts/npm-packages.py cleanup --version "${TAG#v}" --release-dir release-cleanup --out npm-out
+      # The platform packages first, so the main packages never point at a missing version.
+      - name: Publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install -g npm@latest
+          for dir in packages/sdk/npm/* npm-out/engine-* npm-out/cleanup-*; do
+            (cd "$dir" && npm publish --provenance --access public)
+          done
+          (cd npm-out/engine && npm publish --provenance --access public)
+          (cd npm-out/cleanup && npm publish --provenance --access public)
+          (cd packages/sdk && npm publish --provenance --access public)

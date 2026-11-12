@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 /// A request. Each request with an `id` gets one reply: `ok` or `error`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Request {
     Hello(Hello),
@@ -72,6 +73,7 @@ impl Request {
 
 /// The first request of a client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct Hello {
     /// The name and version of the SDK, for example `sayso-sdk 0.13.0`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -91,11 +93,13 @@ pub struct Hello {
 
 /// `app` of `hello`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct AppName {
     pub name: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct ListModels {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role: Option<Role>,
@@ -103,6 +107,7 @@ pub struct ListModels {
 
 /// The host asks the user before the download.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct DownloadModel {
     pub model: String,
     /// Why the app needs the model, for the question to the user.
@@ -111,6 +116,7 @@ pub struct DownloadModel {
 
 /// Start a job. `ok {job}` comes at once.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct TranscribeFile {
     pub path: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -129,12 +135,14 @@ pub struct TranscribeFile {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct CancelJob {
     pub job: u64,
 }
 
 /// Start a live session.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct SessionStart {
     pub sources: Vec<Source>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -160,6 +168,7 @@ pub struct SessionStart {
 
 /// Audio for the source `client`. It has no `id` and gets no reply.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct SessionAudio {
     pub session: u64,
     /// Base64 of 16 kHz mono little-endian 16-bit PCM (see [`crate::pcm`]).
@@ -167,12 +176,14 @@ pub struct SessionAudio {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct SessionStop {
     pub session: u64,
 }
 
 /// `text` with an optional `style`, or a `prompt`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct Enhance {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -185,6 +196,7 @@ pub struct Enhance {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct Subscribe {
     /// Event types, for example `dictation_done`.
     pub events: Vec<String>,

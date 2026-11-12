@@ -1,0 +1,11 @@
+# Settings for ts-rs, which writes the TypeScript types of sayso-protocol
+# (cargo test -p sayso-protocol --features ts). Only ts-rs reads these
+# variables, and only with that feature, so no other build changes.
+[env]
+# Our u64 values are small enough for a JavaScript number. The default is bigint,
+# which JSON.parse never gives.
+TS_RS_LARGE_INT = "number"
+# Relative to the folder of this .cargo folder, so the workspace root.
+TS_RS_EXPORT_DIR = { value = "packages/sdk/src/protocol", relative = true }
+# The package uses NodeNext, so imports need a file extension.
+TS_RS_IMPORT_EXTENSION = "js"

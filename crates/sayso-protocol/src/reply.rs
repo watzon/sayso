@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 /// The reply to a request: `ok` with the fields of that request, or `error`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Reply {
     Ok(Fields),
@@ -44,6 +45,7 @@ pub fn parse_ok<T: DeserializeOwned>(fields: &Fields) -> serde_json::Result<T> {
 
 /// An `error` reply. `message` is English, for people.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct ErrorReply {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub code: Option<ErrorCode>,
@@ -69,6 +71,7 @@ impl std::error::Error for ErrorReply {}
 
 /// `ok` to `hello`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct HelloReply {
     /// The version of Sayso.
     pub host_version: String,
@@ -87,18 +90,21 @@ pub struct HelloReply {
 
 /// `ok` to `list_models`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct ListModelsReply {
     pub models: Vec<ModelInfo>,
 }
 
 /// `ok` to `transcribe_file`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct JobReply {
     pub job: u64,
 }
 
 /// `ok` to `session_start`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct SessionReply {
     pub session: u64,
     /// What the capture of the source `system` leaves out: `sayso`, `app`, or
@@ -109,12 +115,14 @@ pub struct SessionReply {
 
 /// `ok` to `session_stop`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TextReply {
     pub text: String,
 }
 
 /// `ok` to `enhance`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct EnhanceReply {
     pub text: String,
     pub provider: String,
@@ -124,12 +132,14 @@ pub struct EnhanceReply {
 /// `ok` to `subscribe`: the events that the host sends to this connection
 /// from now on. A name that the host does not know is not in the list.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct SubscribeReply {
     pub events: Vec<String>,
 }
 
 /// Any message from the host: a reply or an event.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(untagged)]
 pub enum HostMessage {
     Reply(Reply),

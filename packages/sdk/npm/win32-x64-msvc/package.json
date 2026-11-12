@@ -1,0 +1,21 @@
+{
+  "name": "@justsayso/sdk-win32-x64-msvc",
+  "version": "0.15.0",
+  "description": "The native addon of @justsayso/sdk for win32-x64-msvc. Install @justsayso/sdk, not this package.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "packages/sdk/npm/win32-x64-msvc"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "sayso.win32-x64-msvc.node",
+  "files": [
+    "sayso.win32-x64-msvc.node"
+  ]
+}

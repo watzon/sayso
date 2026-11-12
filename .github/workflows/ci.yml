@@ -104,6 +104,9 @@ jobs:
           fi
       - name: Test
         run: cargo test --workspace
+      # packages/sdk/src/protocol must be what sayso-protocol writes (feature ts).
+      - name: Check the TypeScript types of the protocol
+        run: scripts/check-protocol-ts.sh
       # Not a workspace member, so cargo test --workspace does not run it.
       - name: Test the vendored crate
         run: cargo test -p gpui-pre-wgpu --test sayso

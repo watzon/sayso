@@ -13,6 +13,14 @@ serde.workspace = true
 serde_json.workspace = true
 base64 = "0.22"
 workspace-hack.workspace = true
+# Only for the TypeScript types (docs/sdk-typescript.md, "Types"). A normal
+# build does not build it.
+ts-rs = { version = "12.0.1", features = ["serde-json-impl", "serde-compat"], optional = true }
+
+[features]
+# `cargo test -p sayso-protocol --features ts` writes the TypeScript types to
+# packages/sdk/src/protocol/ (see .cargo/config.toml).
+ts = ["dep:ts-rs"]
 
 # The socket path rules ask the system for the user (uid, temp folder, SID).
 [target.'cfg(unix)'.dependencies]

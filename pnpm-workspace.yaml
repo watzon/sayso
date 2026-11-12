@@ -1,0 +1,12 @@
+packages:
+  - packages/*
+
+# CI builds the platform packages (docs/sdk-typescript.md, "Packages"), so they are not on
+# npm during development. Here the SDK loads the addon of `pnpm --filter @justsayso/sdk
+# build:addon`, and the tests start the engine by its path.
+ignoredOptionalDependencies:
+  - "@justsayso/sdk-*"
+  - "@justsayso/engine-*"
+  - "@justsayso/cleanup-*"
+autoInstallPeers: false
+linkWorkspacePackages: true

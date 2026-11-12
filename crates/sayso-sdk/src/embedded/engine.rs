@@ -14,7 +14,7 @@ use parking_lot::Mutex;
 use sayso_engine_sdk::protocol::engine::Event as RawEvent;
 use sayso_engine_sdk::wav::TempWav;
 use sayso_engine_sdk::{
-    Engine, EngineOptions, Error as SdkError, Event as SdkEvent, Stderr, TranscribeOptions,
+    Engine, EngineOptions, Error as SdkError, Event as SdkEvent, StderrTail, TranscribeOptions,
 };
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -116,13 +116,17 @@ impl ProgramEngine {
         if let Some(running) = slot.as_ref().filter(|running| running.engine.is_running()) {
             return Ok(running.clone());
         }
-        let mut options = EngineOptions::new(&self.program, &self.models_dir).stderr(
-            Stderr::lines(|line| log::debug!(target: "sayso_engine", "{line}")),
-        );
+        // The last lines of stderr go into the error when the engine does not start.
+        let tail = StderrTail::new();
+        let mut options = EngineOptions::new(&self.program, &self.models_dir)
+            .stderr(tail.stderr(|line| log::debug!(target: "sayso_engine", "{line}")));
         if let Some(store) = &self.store {
             options = options.env("SAYSO_MODEL_STORE", store);
         }
-        let engine = Engine::start(options).map_err(sdk_error)?;
+        let engine = Engine::start(options).map_err(|e| EngineError {
+            code: e.code().cloned(),
+            message: tail.describe(&e),
+        })?;
         let (syncs, synced) = unbounded();
         let events = engine.events();
         let watchers = self.watchers.clone();

@@ -1,0 +1,41 @@
+{
+  "name": "@justsayso/cleanup",
+  "version": "0.15.0",
+  "description": "The runtime of the local cleanup models of Sayso for Node, Electron, Bun, and Deno. It finds the runtime package of the platform.",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "packages/cleanup"
+  },
+  "homepage": "https://github.com/watzon/sayso",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.d.ts"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\""
+  },
+  "optionalDependencies": {
+    "@justsayso/cleanup-darwin-arm64": "0.15.0",
+    "@justsayso/cleanup-darwin-x64": "0.15.0",
+    "@justsayso/cleanup-linux-arm64-gnu": "0.15.0",
+    "@justsayso/cleanup-linux-x64-gnu": "0.15.0",
+    "@justsayso/cleanup-win32-x64-msvc": "0.15.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

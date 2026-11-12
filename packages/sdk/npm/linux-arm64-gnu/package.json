@@ -1,0 +1,24 @@
+{
+  "name": "@justsayso/sdk-linux-arm64-gnu",
+  "version": "0.15.0",
+  "description": "The native addon of @justsayso/sdk for linux-arm64-gnu. Install @justsayso/sdk, not this package.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "packages/sdk/npm/linux-arm64-gnu"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "main": "sayso.linux-arm64-gnu.node",
+  "files": [
+    "sayso.linux-arm64-gnu.node"
+  ]
+}

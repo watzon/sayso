@@ -7,7 +7,7 @@ use crate::protocol::{self, ErrorCode, ErrorReply, ModelState};
 use crate::{CaptureSources, Engine, ModelChoices, Timing, paths};
 use sayso_capture::live::{LiveMicrophone, LiveSystemAudio};
 use sayso_capture::system;
-use sayso_engine_sdk::{EngineOptions, Stderr};
+use sayso_engine_sdk::{EngineOptions, StderrTail};
 use sayso_speech::jobs::{DictationGate, JobQueue, JobRunner};
 use sayso_speech::live::{LiveDeps, LiveError, LiveSessions, Owner, RecordingFolder, Started};
 use sayso_speech::{EventSink, JobSpec, SessionSpec};
@@ -46,8 +46,10 @@ impl LocalRun {
         let program = engine.program().map_err(|e| ErrorReply { code: Some(ErrorCode::Unsupported), message: e.to_string(), capability: None, reason: None })?;
         let models_dir = engine.models_dir.clone().unwrap_or_else(|| paths::app_models(app));
         let store = engine.store.clone().unwrap_or_else(paths::model_store);
-        let options = EngineOptions::new(program, models_dir).model_store(store).stderr(Stderr::lines(|line| log::debug!("engine: {line}")));
-        let started = sayso_engine_sdk::Engine::start(options).map_err(|e| ErrorReply { code: Some(ErrorCode::Unsupported), message: format!("the engine of this app did not start: {e}"), capability: None, reason: None })?;
+        // The last lines of stderr go into the error when the engine does not start.
+        let tail = StderrTail::new();
+        let options = EngineOptions::new(program, models_dir).model_store(store).stderr(tail.stderr(|line| log::debug!("engine: {line}")));
+        let started = sayso_engine_sdk::Engine::start(options).map_err(|e| ErrorReply { code: Some(ErrorCode::Unsupported), message: format!("the engine of this app did not start: {}", tail.describe(&e)), capability: None, reason: None })?;
         let adapter = LocalEngine::new(started, timing.keep_model, downloads);
         // No dictation here, so `begin` is never called, and live sessions still come before jobs.
         let gate = Arc::new(DictationGate::new());

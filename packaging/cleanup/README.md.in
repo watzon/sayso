@@ -1,0 +1,31 @@
+# Sayso cleanup runtime @VERSION@
+
+This is `sayso-cleanup`, the runtime of the local cleanup models of Sayso for @SYSTEM@. A cleanup model rewrites the text of a dictation: it removes filler words and fixes the layout. The runtime loads one model file (GGUF) with llama.cpp and completes text. It knows no model by name and has no prompts. The program that starts it builds the prompts and checks the answers.
+
+The runtime has the version of the Sayso release that it comes with.
+
+## How the SDK uses it
+
+`@justsayso/sdk` for TypeScript and `sayso-sdk` for Rust start the runtime as a separate program, one process for each cleaner. The npm package `@justsayso/cleanup` has the files of this release file. In TypeScript, `cleanup.runtimeFromPackage()` gives the path of the best build for the processor of the computer. Pass that path to `RuntimeCleaner`. The SDK downloads the model files to the model folder, and it never downloads the runtime.
+
+## Requirements
+
+@REQUIREMENTS@
+
+@BUILDS@
+
+## Run the runtime
+
+The runtime reads requests from stdin and writes replies to stdout. Each message is one line of JSON (NDJSON). It writes logs to stderr, and it stops when stdin closes.
+
+To check that the runtime works, send a `hello` request. The reply has the version of the protocol, the version of llama.cpp, and the backend (`metal` or `cpu`). The runtime stops when stdin closes, so keep stdin open for a moment, as this command does.
+
+```
+@HELLO@
+```
+
+The other requests are `load`, `count`, `complete`, and `unload`. They are described in [native/cleanup/NOTES.md](https://github.com/watzon/sayso/blob/v@VERSION@/native/cleanup/NOTES.md), "Protocol". A model file needs the right prompt format. Use the SDK for that.
+
+## Licenses
+
+The runtime has the GPL-3.0-only license. The text is in `LICENSE`. llama.cpp and ggml are linked into the runtime. They have the MIT license, in `licenses/ggml.txt`. The models have their own licenses. The SDK downloads them with their license files.

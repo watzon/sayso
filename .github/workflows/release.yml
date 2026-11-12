@@ -159,6 +159,26 @@ jobs:
           path: dist/sayso-engine-*-macos-arm64.tar.gz
           if-no-files-found: error
 
+      # The cleanup runtime release file has the runtime of the signed app, not
+      # a new build, like the engine release file above. The signature has the
+      # identifier dev.sayso.Sayso.cleanup (scripts/bundle.sh), and the
+      # notarization of the app covers it. --require-signed stops the job when
+      # the runtime has no Developer ID signature.
+      - name: Make the cleanup runtime release file
+        run: scripts/package-cleanup.sh --require-signed dist/Sayso.app/Contents/MacOS
+
+      - name: Attach the cleanup runtime release file to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/sayso-cleanup-*-macos-arm64.tar.gz dist/sayso-cleanup-*-macos-arm64.tar.gz.sha256 --clobber
+
+      - name: Keep the cleanup runtime release file for the manifest job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-macos-arm64
+          path: dist/sayso-cleanup-*-macos-arm64.tar.gz
+          if-no-files-found: error
+
       # The engine release file for Intel Macs. Sayso itself runs on Apple
       # silicon only, so the app has no Intel engine. This step cross-compiles
       # the engine, and it signs the engine like the engine of the app
@@ -177,6 +197,12 @@ jobs:
           [[ -n "$SIGN_IDENTITY" ]] && export SAYSO_SIGN_IDENTITY="$SIGN_IDENTITY"
           scripts/build-engine-x86_64.sh
 
+      # Every Mach-O file of the app and the Intel engine. A file with SDK 27 or
+      # newer and a string table that is not aligned to 8 bytes does not load
+      # on macOS 27 (docs/sdk-typescript.md, "The load error of macOS 27").
+      - name: Check the Mach-O files
+        run: python3 scripts/check-macho.py dist/Sayso.app dist/engine-x86_64
+
       - name: Make the Intel engine release file
         run: scripts/package-engine.sh --require-signed dist/engine-x86_64/SaysoEngine
 
@@ -190,6 +216,55 @@ jobs:
         with:
           name: release-engine-macos-x86_64
           path: dist/sayso-engine-*-macos-x86_64.tar.gz
+          if-no-files-found: error
+
+      # The cleanup runtime release file for Intel Macs. The app has no Intel
+      # runtime, so this step cross-compiles it, as the step for the Intel engine
+      # does. GGML_NATIVE is off, so ggml does not use the flags of this Apple
+      # silicon machine, and it turns on AVX2 and the other instructions that
+      # every Mac with macOS 14 has. The step signs the runtime like the runtime
+      # of the app (same identity, identifier, hardened runtime, and no
+      # entitlements), and uploads it to Apple. A bare binary cannot have a
+      # stapled ticket, so macOS looks the ticket up online.
+      - name: Build, sign, and notarize the Intel cleanup runtime
+        env:
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          SIGN_IDENTITY: ${{ vars.SAYSO_SIGN_IDENTITY }}
+        run: |
+          # The same default as scripts/bundle.sh.
+          identity="${SIGN_IDENTITY:-Developer ID Application: Watzon Ventures LLc (MB5789APU7)}"
+          rustup target add x86_64-apple-darwin
+          GGML_NATIVE=OFF cargo build --release --manifest-path native/cleanup/Cargo.toml --target x86_64-apple-darwin --target-dir native/cleanup/target/x86_64
+          mkdir -p dist/cleanup-x86_64
+          runtime=dist/cleanup-x86_64/sayso-cleanup
+          install -m 755 native/cleanup/target/x86_64/x86_64-apple-darwin/release/sayso-cleanup "$runtime"
+          strip "$runtime"
+          [[ "$(lipo -archs "$runtime")" == "x86_64" ]] || { echo "::error::The runtime is not an x86_64 binary: $(lipo -archs "$runtime")"; exit 1; }
+          codesign --force --timestamp --options runtime --identifier dev.sayso.Sayso.cleanup -s "$identity" "$runtime"
+          codesign --verify --strict "$runtime"
+          source scripts/notarize-lib.sh
+          ditto -c -k --keepParent "$runtime" dist/cleanup-x86_64/sayso-cleanup-notarize.zip
+          notarize dist/cleanup-x86_64/sayso-cleanup-notarize.zip
+          rm dist/cleanup-x86_64/sayso-cleanup-notarize.zip
+
+      - name: Check the Mach-O file of the Intel cleanup runtime
+        run: python3 scripts/check-macho.py dist/cleanup-x86_64
+
+      - name: Make the Intel cleanup runtime release file
+        run: scripts/package-cleanup.sh --require-signed dist/cleanup-x86_64
+
+      - name: Attach the Intel cleanup runtime release file to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/sayso-cleanup-*-macos-x86_64.tar.gz dist/sayso-cleanup-*-macos-x86_64.tar.gz.sha256 --clobber
+
+      - name: Keep the Intel cleanup runtime release file for the manifest job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-macos-x86_64
+          path: dist/sayso-cleanup-*-macos-x86_64.tar.gz
           if-no-files-found: error
 
       - name: Delete the keychain and the API key
@@ -234,6 +309,49 @@ jobs:
     with:
       ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
       official_build: true
+
+  # The cleanup runtime release files of Linux. The runtime is in the tarball
+  # that the linux job built (artifact release-linux-<arch>), so this job packs
+  # the builds of the tarball, not new ones. Like the Linux engine files, the
+  # manifest job attaches the files to the release (linux.yml does not touch the
+  # release).
+  cleanup-linux:
+    name: Cleanup runtime file (Linux ${{ matrix.arch }})
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+
+      - name: Get the tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: tarball
+
+      - name: Make the cleanup runtime release file
+        run: |
+          tar -xzf tarball/sayso-*-linux-${{ matrix.arch }}.tar.gz -C tarball
+          # The file name has arm64 where the tarball has aarch64.
+          scripts/package-cleanup.sh --out cleanup tarball/sayso-*-linux-${{ matrix.arch }}/bin
+
+      - name: Keep the cleanup runtime release file for the manifest job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-linux-${{ matrix.arch == 'aarch64' && 'arm64' || matrix.arch }}
+          path: cleanup/*.tar.gz
+          if-no-files-found: error
 
   windows:
     name: Windows (x64)
@@ -332,6 +450,24 @@ jobs:
           path: dist/sayso-engine-*-windows-x64.zip
           if-no-files-found: error
 
+      # The cleanup runtime release file has the three exes of the app folder
+      # (signed there when the certificate exists) and the Visual C++ runtime
+      # DLLs, not a new build.
+      - name: Make the cleanup runtime release file
+        run: scripts\package-cleanup.ps1
+
+      - name: Attach the cleanup runtime release file to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$env:TAG" (Get-ChildItem dist\sayso-cleanup-*-windows-x64.zip, dist\sayso-cleanup-*-windows-x64.zip.sha256).FullName --clobber
+
+      - name: Keep the cleanup runtime release file for the manifest job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-windows-x64
+          path: dist/sayso-cleanup-*-windows-x64.zip
+          if-no-files-found: error
+
       - name: Delete the certificate
         if: always()
         run: Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:RUNNER_TEMP 'certificate.pfx')
@@ -351,7 +487,7 @@ jobs:
   # changed release file never gets a signature.
   manifest:
     name: Update manifest
-    needs: [macos, linux, windows, engine-check]
+    needs: [macos, linux, cleanup-linux, windows, engine-check]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -412,6 +548,9 @@ jobs:
           # does not use them.
           packages += [f"sayso-engine-{version}-{platform}.tar.gz" for platform in ("macos-arm64", "macos-x86_64", "linux-x86_64", "linux-arm64")]
           packages.append(f"sayso-engine-{version}-windows-x64.zip")
+          # The cleanup runtime release files. They are not in the manifest either.
+          packages += [f"sayso-cleanup-{version}-{platform}.tar.gz" for platform in ("macos-arm64", "macos-x86_64", "linux-x86_64", "linux-arm64")]
+          packages.append(f"sayso-cleanup-{version}-windows-x64.zip")
           missing = [name for name in [*files.values(), *packages] if not os.path.isfile(os.path.join("dist", name))]
           if missing:
               sys.exit(f"::error::These release files are missing: {', '.join(missing)}")

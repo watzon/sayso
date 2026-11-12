@@ -17,3 +17,8 @@ native/cleanup/target
 
 # Agent worktrees of Claude Code.
 .claude/worktrees/
+
+# npm packages (packages/*).
+node_modules/
+packages/*/dist/
+*.node

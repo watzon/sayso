@@ -1,0 +1,65 @@
+{
+  "name": "@justsayso/sdk",
+  "version": "0.15.0",
+  "description": "Use the speech features of Sayso from your own app: with Sayso when it runs, and with the engine of the app when it does not.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "packages/sdk"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:addon": "node scripts/build-addon.mjs",
+    "test": "node --test --test-concurrency=1 --test-timeout=60000 \"tests/*.test.mjs\"",
+    "test:types": "tsc -p tests/types",
+    "check:examples": "tsc -p examples"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "@justsayso/sdk-darwin-arm64": "0.15.0",
+    "@justsayso/sdk-darwin-x64": "0.15.0",
+    "@justsayso/sdk-linux-x64-gnu": "0.15.0",
+    "@justsayso/sdk-linux-arm64-gnu": "0.15.0",
+    "@justsayso/sdk-win32-x64-msvc": "0.15.0"
+  },
+  "peerDependencies": {
+    "@justsayso/cleanup": "0.15.0",
+    "@justsayso/engine": "0.15.0"
+  },
+  "peerDependenciesMeta": {
+    "@justsayso/cleanup": {
+      "optional": true
+    },
+    "@justsayso/engine": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "speech-to-text",
+    "transcription",
+    "dictation",
+    "sayso",
+    "whisper",
+    "parakeet"
+  ]
+}

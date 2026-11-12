@@ -35,6 +35,23 @@ Ship the engine of the same commit or release (see [How to ship the engine in yo
 - [How to run your app in a Flatpak](run-in-a-flatpak.md)
 - [How to handle errors and the end of each piece of work](handle-errors-and-ends.md)
 
+## TypeScript
+
+The package `@justsayso/sdk` gives an app in TypeScript or JavaScript the same API as the Rust crate. The modes, the messages, and the end rules are the same. The packages are not on npm yet, so the install commands on these pages work after the first release. The design is [docs/sdk-typescript.md](../sdk-typescript.md).
+
+- [Tutorial: build a speech app in TypeScript](ts-tutorial.md). Build a small Node program that transcribes a file. Start here.
+- [How to transcribe a file in TypeScript](ts-transcribe-a-file.md)
+- [How to run a live session in TypeScript](ts-run-a-live-session.md)
+- [How to choose a model and download it in TypeScript](ts-choose-and-download-a-model.md)
+- [How to react to mode changes in TypeScript](ts-react-to-mode-changes.md)
+- [How to handle errors and the end of each piece of work in TypeScript](ts-handle-errors-and-ends.md)
+- [How to use your own capture in TypeScript](ts-use-your-own-capture.md)
+- [How to put your own final pass around the engine in TypeScript](ts-wrap-the-engine.md)
+- [How to ship the SDK in an Electron app](ts-ship-in-electron.md)
+- [How to clean up text with a local cleanup model in TypeScript](ts-use-the-local-cleanup.md)
+
+The code in these pages is in `packages/sdk/examples/`. `tsc` compiles it (`pnpm --filter @justsayso/sdk check:examples`). The script `scripts/check-sdk-guide.py` checks that each `ts` block is the code of these files. The messages are the same objects as in the [Host API reference](reference.md), with `snake_case` fields.
+
 ## Look something up
 
 - [Host API reference](reference.md). The transport, each request, reply, and event with its fields, the error codes, the capabilities, and what differs between modes.

@@ -20,6 +20,7 @@ anstyle = { version = "1" }
 base64 = { version = "0.23" }
 bytemuck = { version = "1", default-features = false, features = ["extern_crate_alloc"] }
 crc32fast = { version = "1" }
+futures-core = { version = "0.3", default-features = false, features = ["std"] }
 hashbrown = { version = "0.17", default-features = false, features = ["default-hasher"] }
 image = { version = "0.25", default-features = false, features = ["gif", "ico", "jpeg", "webp"] }
 log = { version = "0.4", default-features = false, features = ["std"] }
@@ -55,7 +56,7 @@ semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_core = { version = "1", features = ["alloc"] }
 smallvec = { version = "1", default-features = false, features = ["const_generics"] }
-syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "visit"] }
+syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", features = ["extra-traits", "fold", "full", "visit"] }
 syn-f595c2ba2a3f28df = { package = "syn", version = "2", features = ["extra-traits", "full"] }
 typenum = { version = "1", default-features = false, features = ["const-generics"] }
 winnow-ca01ad9e24f5d932 = { package = "winnow", version = "0.7" }
@@ -120,7 +121,7 @@ rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "
 simd-adler32 = { version = "0.3" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
 subtle = { version = "2", default-features = false, features = ["const-generics"] }
-syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", default-features = false, features = ["full", "visit-mut"] }
+syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", default-features = false, features = ["visit-mut"] }
 syn-f595c2ba2a3f28df = { package = "syn", version = "2", default-features = false, features = ["visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 toml_parser = { version = "1" }
@@ -173,7 +174,7 @@ rustix = { version = "1", features = ["event", "fs", "net", "pipe", "process", "
 simd-adler32 = { version = "0.3" }
 smallvec = { version = "1", default-features = false, features = ["const_new", "union"] }
 subtle = { version = "2", default-features = false, features = ["const-generics"] }
-syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", default-features = false, features = ["full", "visit-mut"] }
+syn-7b89eefb6aaa9bf3 = { package = "syn", version = "3", default-features = false, features = ["visit-mut"] }
 syn-f595c2ba2a3f28df = { package = "syn", version = "2", default-features = false, features = ["visit", "visit-mut"] }
 time = { version = "0.3", features = ["formatting", "parsing"] }
 toml_parser = { version = "1" }

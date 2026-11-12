@@ -1,0 +1,31 @@
+[package]
+name = "sayso-node"
+description = "The native Node addon of @justsayso/sdk: sayso-sdk for JavaScript (docs/sdk-typescript.md)."
+version.workspace = true
+edition.workspace = true
+# The workspace license is GPL-3.0-only. This crate is MIT, as sayso-sdk is
+# (docs/adr/0006-typescript-sdk-wraps-the-rust-sdk.md). npm publishes it, not cargo.
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+# A test of a napi addon cannot link without Node: tests/values.rs tests src/values.rs.
+test = false
+doctest = false
+
+[dependencies]
+sayso-sdk.workspace = true
+sayso-protocol.workspace = true
+sayso-speech.workspace = true
+sayso-capture.workspace = true
+napi = { version = "3.16", default-features = false, features = ["napi6"] }
+napi-derive = "3.7"
+serde.workspace = true
+serde_json.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+workspace-hack.workspace = true
+
+[build-dependencies]
+napi-build = "2.6"

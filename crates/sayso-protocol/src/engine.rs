@@ -22,6 +22,7 @@ use std::path::PathBuf;
 /// A request to the engine. Each request with an `id` gets one reply.
 /// `StreamAudio` has no `id` and no reply.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Request {
     Hello,
@@ -67,6 +68,7 @@ tagged_kind!(Request {
 /// A model of a `list_models` request: its id, and the `engine` object when
 /// the client has one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct ListedModel {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -75,6 +77,7 @@ pub struct ListedModel {
 
 /// Without `models`, the engine checks the models of its built-in catalog.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct ListModels {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub models: Option<Vec<ListedModel>>,
@@ -83,6 +86,7 @@ pub struct ListModels {
 /// A model for `delete` and `load`. Without `engine`, the engine takes the
 /// `engine` object of the id from its catalog.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct ModelRef {
     pub model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -90,6 +94,7 @@ pub struct ModelRef {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct Download {
     pub model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -100,6 +105,7 @@ pub struct Download {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct Unload {
     pub model: String,
     /// Keep the live preview part in memory (feature `keep_preview`).
@@ -109,6 +115,7 @@ pub struct Unload {
 
 /// Load the optional parts of a loaded model (feature `prepare`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct Prepare {
     pub model: String,
     #[serde(default)]
@@ -119,6 +126,7 @@ pub struct Prepare {
 
 /// The final pass on a WAV file: 16 kHz, mono, 16-bit PCM.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct Transcribe {
     pub model: String,
     pub path: PathBuf,
@@ -138,6 +146,7 @@ fn auto() -> String {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct StreamStart {
     /// An integer that the client chooses.
     pub session: u64,
@@ -148,6 +157,7 @@ pub struct StreamStart {
 
 /// Audio for a stream or a VAD session. It has no `id` and gets no reply.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct StreamAudio {
     pub session: u64,
     /// Base64 of 16 kHz mono little-endian 16-bit PCM (see [`crate::pcm`]).
@@ -155,12 +165,14 @@ pub struct StreamAudio {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct StreamEnd {
     pub session: u64,
 }
 
 /// Find the speech in a WAV file (feature `vad`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct Vad {
     pub model: String,
     pub path: PathBuf,
@@ -168,6 +180,7 @@ pub struct Vad {
 
 /// Open a VAD session on live audio (feature `vad`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct VadStart {
     pub session: u64,
     pub model: String,
@@ -175,6 +188,7 @@ pub struct VadStart {
 
 /// Find who speaks when in a WAV file (feature `diarization`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct Diarize {
     pub model: String,
     pub path: PathBuf,
@@ -185,6 +199,7 @@ pub struct Diarize {
 
 /// Run the language model of the system (feature `language_model`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct Generate {
     pub instructions: String,
     pub prompt: String,
@@ -195,6 +210,7 @@ pub struct Generate {
 
 /// A reply of the engine. Each request with an `id` gets exactly one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Reply {
     Hello(Hello),
@@ -214,6 +230,7 @@ tagged_kind!(Reply {
 
 /// The reply to `hello`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct Hello {
     /// The version of the engine.
     #[serde(default)]
@@ -227,6 +244,7 @@ pub struct Hello {
 
 /// The reply to `transcribe`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct Final {
     pub text: String,
     #[serde(default)]
@@ -242,6 +260,7 @@ pub struct Final {
 
 /// A model of the built-in catalog, in the reply to `list_models` without `models`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct CatalogModel {
     pub id: String,
     #[serde(default)]
@@ -270,6 +289,7 @@ fn no_timestamps() -> TimestampLevel {
 
 /// An id that left the catalog.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct Retired {
     pub id: String,
     #[serde(default)]
@@ -278,6 +298,7 @@ pub struct Retired {
 
 /// `ok` to `list_models`. Both lists are empty when the request had `models`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct ListModelsReply {
     #[serde(default)]
     pub models: Vec<CatalogModel>,
@@ -287,6 +308,7 @@ pub struct ListModelsReply {
 
 /// `ok` to `vad`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct VadReply {
     #[serde(default)]
     pub speech: Vec<SpeechPart>,
@@ -295,6 +317,7 @@ pub struct VadReply {
 /// A turn of one speaker. In the engine protocol the speaker is an integer
 /// from 0, in the order in which the speakers first speak.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct SpeakerTurn {
     pub start_ms: u64,
     pub end_ms: u64,
@@ -303,6 +326,7 @@ pub struct SpeakerTurn {
 
 /// `ok` to `diarize`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct DiarizeReply {
     #[serde(default)]
     pub speakers: u32,
@@ -312,6 +336,7 @@ pub struct DiarizeReply {
 
 /// `ok` to `stream_end`. A VAD session has no `text`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct StreamEndReply {
     pub session: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -320,6 +345,7 @@ pub struct StreamEndReply {
 
 /// `ok` to `language_model`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields, export_to = "engine/"))]
 pub struct LanguageModelReply {
     pub available: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -333,6 +359,7 @@ pub struct LanguageModelReply {
 
 /// `ok` to `generate`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct GenerateReply {
     pub text: String,
     #[serde(default)]
@@ -342,6 +369,7 @@ pub struct GenerateReply {
 /// An event of the engine. An event that a request caused has the `id` of
 /// that request and comes before its reply.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
     ModelState(ModelStateEvent),
@@ -365,6 +393,7 @@ tagged_kind!(Event {
 
 /// The state of an optional part of a model, after `prepare`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct PartState {
     pub model: String,
     /// `preview` or `dictionary`.
@@ -375,6 +404,7 @@ pub struct PartState {
 
 /// The text of a stream so far. It has all the text of the stream.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct Partial {
     pub session: u64,
     /// Text that does not change any more.
@@ -384,12 +414,14 @@ pub struct Partial {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct SpeechStart {
     pub session: u64,
     pub start_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct SpeechEnd {
     pub session: u64,
     pub start_ms: u64,
@@ -397,6 +429,7 @@ pub struct SpeechEnd {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 pub struct Log {
     #[serde(default)]
     pub level: String,
@@ -406,6 +439,7 @@ pub struct Log {
 
 /// Any message from the engine: a reply or an event.
 #[derive(Debug, Clone, PartialEq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, export_to = "engine/"))]
 #[serde(untagged)]
 pub enum FromEngine {
     Reply(Reply),

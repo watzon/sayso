@@ -5,8 +5,8 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 macro_rules! names {
-    ($(#[$meta:meta])* $name:ident { $($(#[$vmeta:meta])* $variant:ident = $text:literal,)* }) => {
-        $(#[$meta])*
+    ($(#[doc = $doc:literal])* $name:ident { $($(#[$vmeta:meta])* $variant:ident = $text:literal,)* }) => {
+        $(#[doc = $doc])*
         #[derive(Debug, Clone, PartialEq, Eq, Hash)]
         pub enum $name {
             $($(#[$vmeta])* $variant,)*
@@ -30,6 +30,50 @@ macro_rules! names {
                     $($text => $name::$variant,)*
                     other => $name::Other(other.to_owned()),
                 }
+            }
+        }
+
+        // The TypeScript type is a union of the names in `ALL` and
+        // `(string & {})`, so a name from a newer peer still type checks. ts-rs
+        // cannot build that from an attribute, so this impl writes it by hand.
+        // The other types use it as a dependency, and ts-rs writes its file when
+        // it exports them.
+        #[cfg(feature = "ts")]
+        impl ts_rs::TS for $name {
+            type WithoutGenerics = Self;
+            type OptionInnerType = Self;
+
+            fn docs() -> Option<String> {
+                Some(ts_rs::format_docs(&[$($doc),*]))
+            }
+
+            fn ident(_: &ts_rs::Config) -> String {
+                stringify!($name).to_owned()
+            }
+
+            fn name(_: &ts_rs::Config) -> String {
+                stringify!($name).to_owned()
+            }
+
+            fn inline(_: &ts_rs::Config) -> String {
+                let mut union = String::new();
+                for known in $name::ALL {
+                    union.push_str(&format!("\"{}\" | ", known.as_str()));
+                }
+                union.push_str("(string & {})");
+                union
+            }
+
+            fn decl_concrete(cfg: &ts_rs::Config) -> String {
+                format!("type {} = {};", stringify!($name), <Self as ts_rs::TS>::inline(cfg))
+            }
+
+            fn decl(cfg: &ts_rs::Config) -> String {
+                <Self as ts_rs::TS>::decl_concrete(cfg)
+            }
+
+            fn output_path() -> Option<std::path::PathBuf> {
+                Some(std::path::PathBuf::from(concat!(stringify!($name), ".ts")))
             }
         }
 
@@ -175,5 +219,31 @@ names! {
         Permission = "permission",
         /// The capture failed, and it did not come back.
         Failed = "failed",
+    }
+}
+
+/// The TypeScript union of each name type is built from `ALL`. This checks it.
+#[cfg(all(test, feature = "ts"))]
+mod ts_tests {
+    use super::*;
+    use ts_rs::{Config, TS};
+
+    fn check<T: TS>(all: &[impl std::fmt::Display]) {
+        let cfg = Config::default();
+        let expected: Vec<String> = all.iter().map(|name| format!("\"{name}\"")).collect();
+        let expected = format!("{} | (string & {{}})", expected.join(" | "));
+        assert_eq!(T::inline(&cfg), expected, "{}", T::ident(&cfg));
+        assert_eq!(T::decl(&cfg), format!("type {} = {expected};", T::ident(&cfg)));
+    }
+
+    #[test]
+    fn every_union_has_the_names_of_all() {
+        check::<Capability>(Capability::ALL);
+        check::<ErrorCode>(ErrorCode::ALL);
+        check::<Role>(Role::ALL);
+        check::<ModelState>(ModelState::ALL);
+        check::<TimestampLevel>(TimestampLevel::ALL);
+        check::<Source>(Source::ALL);
+        check::<SourceEndReason>(SourceEndReason::ALL);
     }
 }

@@ -33,7 +33,9 @@
 //! - The engine exits when its stdin closes. Dropping the [`Engine`] closes
 //!   stdin, waits a short time, and then kills the process.
 //! - The engine writes free text to stderr. By default it goes to the stderr
-//!   of your app. See [`Stderr`] to send it to a callback or to discard it.
+//!   of your app. See [`Stderr`] to send it to a callback or to discard it. When the
+//!   engine cannot start, its stderr often says why: [`StderrTail`] keeps the last lines
+//!   for your error message.
 //! - Check [`Engine::features`] before you use an optional request. A request
 //!   that the engine does not know gets an [`Error::Engine`] reply.
 //!
@@ -43,10 +45,12 @@
 mod calls;
 mod connection;
 mod release;
+mod stderr_tail;
 pub mod wav;
 
 pub use calls::{Catalog, Loaded, Model, StreamEnded, Transcript, TranscribeOptions};
 pub use release::find_engine;
+pub use stderr_tail::StderrTail;
 pub use sayso_protocol as protocol;
 pub use sayso_protocol::Fields;
 

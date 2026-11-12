@@ -6,6 +6,7 @@ use crate::{ErrorCode, ModelState, Segment, Source, SourceEndReason, Turn};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
     ModelState(ModelStateEvent),
@@ -25,6 +26,7 @@ pub enum Event {
         job: u64,
         message: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
         code: Option<ErrorCode>,
     },
     Partial(PartialEvent),
@@ -51,6 +53,7 @@ pub enum Event {
         /// The text of all segments in the order of time.
         text: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
         code: Option<ErrorCode>,
     },
     /// The silence limit of a live session stopped its audio. The last parts
@@ -88,6 +91,7 @@ tagged_kind!(Event {
 });
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct ModelStateEvent {
     pub model: String,
     pub state: ModelState,
@@ -105,6 +109,7 @@ pub struct ModelStateEvent {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct DownloadProgress {
     pub model: String,
     pub fraction: f64,
@@ -114,6 +119,7 @@ pub struct DownloadProgress {
 
 /// A segment of a job or of one source of a live session.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct SegmentEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job: Option<u64>,
@@ -127,6 +133,7 @@ pub struct SegmentEvent {
 
 /// The speakers of a job, or of one source of a live session.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct SpeakersEvent {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job: Option<u64>,
@@ -139,6 +146,7 @@ pub struct SpeakersEvent {
 
 /// The text of one source of a live session so far.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct PartialEvent {
     pub session: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -198,6 +206,7 @@ pub fn is_unspaced(c: char) -> bool {
 
 /// A dictation after its insert.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export, optional_fields))]
 pub struct DictationDone {
     /// The inserted text.
     pub text: String,
