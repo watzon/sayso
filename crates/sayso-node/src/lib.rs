@@ -19,6 +19,7 @@ pub mod cleanup;
 pub mod client;
 pub mod embedded;
 pub mod helpers;
+mod pump;
 mod speech;
 mod values;
 

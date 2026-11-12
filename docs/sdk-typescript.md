@@ -148,6 +148,7 @@ The root gets a `package.json` and a `pnpm-workspace.yaml` for `packages/*`. The
 - The SDK gives each event to every listener. `speech.events()` gives an async iterator that starts at the moment of the call, and `speech.on(type, listener)` calls a function. In Rust, two receivers of one channel take turns, so two readers would each miss events. JavaScript apps expect each listener to get all events.
 - Events wait in JavaScript until something reads them, as they wait in the channel in Rust.
 - The thread-safe function holds the event loop of Node only while work is active: a request without a reply, a job before its end, or a live session before its end. These are the end rules of `sdk.md`, so the layer knows them. Without work, the process can end. With work, Node does not end before the last event.
+- A promise settles through its own thread-safe function, and Node gives no order between two of them. So `stopSession` asks the event thread to give all events that wait, and then a marker, through the function of the events (`crates/sayso-node/src/pump.rs`). The text comes after the marker, so the last `segment` events always come first. A CI run on macOS showed the wrong order before. The tests show it with `SAYSO_NODE_EVENT_DELAY_MS`, which slows the event thread.
 
 ### Lifetime
 

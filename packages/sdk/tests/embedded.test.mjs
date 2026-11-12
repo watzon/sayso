@@ -4,10 +4,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { EmbeddedSpeech, DeepgramFinal, Deepgram, SaysoError } from "../dist/index.js";
 import { concat, deepgramReply, fakeDeepgram, fakeEngine, fakeWorld, FINAL, silence, STREAMING, tempDir, until, voice } from "./support.mjs";
+
+const index = new URL("../dist/index.js", import.meta.url).href;
 
 /** Connect to the fake engine, and close at the end of the test. */
 async function connect(t, world, extra = {}) {
@@ -346,6 +349,36 @@ test("a Deepgram client in a final pass function: the text arrives, and a refuse
 	assert.deepEqual(seen.map((e) => e.type), ["part_failed"], "the session shows the failed part");
 });
 
+
+test("the segment events of a session come before the text of stopSession", async (t) => {
+	// The text and the events cross from the addon in two ways, with no order between them
+	// in Node. stopSession waits for the events. A slow thread of the events (a busy
+	// computer) shows it: without the wait, the text comes before the last segment.
+	const world = fakeWorld(t);
+	const script = `
+import { EmbeddedSpeech } from ${JSON.stringify(index)};
+const speech = await EmbeddedSpeech.connect({
+	app: { name: "Tests" },
+	engine: { program: ${JSON.stringify(fakeEngine)}, modelsDir: ${JSON.stringify(world.models)}, store: ${JSON.stringify(world.store)} },
+	tempDir: ${JSON.stringify(tempDir(t))},
+});
+const seen = [];
+speech.on((event) => seen.push(event));
+const samples = new Float32Array(${JSON.stringify(Array.from(talk()))});
+const id = await speech.startSession({ sources: ["client"], finalModel: ${JSON.stringify(FINAL)}, vad: "basic", language: "en" });
+for (let at = 0; at < samples.length; at += 1600) speech.sessionAudio(id, samples.subarray(at, at + 1600));
+const text = await speech.stopSession(id);
+const segments = seen.filter((e) => e.type === "segment").map((e) => e.text).join(" ");
+console.log(JSON.stringify({ text, segments }));
+await speech.close();
+`;
+	const file = join(tempDir(t), "order.mjs");
+	writeFileSync(file, script);
+	const out = execFileSync(process.execPath, [file], { env: { ...process.env, SAYSO_NODE_EVENT_DELAY_MS: "100" }, encoding: "utf8" });
+	const { text, segments } = JSON.parse(out.trim().split("\n").pop());
+	assert.ok(text.length > 0, "the session has text");
+	assert.equal(segments, text);
+});
 
 test("DeepgramFinal gives the text of Deepgram in the segments", async (t) => {
 	const world = fakeWorld(t);

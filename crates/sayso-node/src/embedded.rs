@@ -3,8 +3,9 @@
 
 use crate::bridge::{Args, Bridge};
 use crate::capture::JsSource;
+use crate::pump::{EventFn, Pump};
 use crate::{addon_error, error, id_of, outcome_text, parse_arg, spawn_promise, to_value};
-use crossbeam_channel::{Receiver, Sender, bounded, select};
+use crossbeam_channel::Receiver;
 use napi::bindgen_prelude::{Env, Float32Array, Function, Object, Status};
 use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
@@ -173,13 +174,7 @@ impl SpeechEngine for JsFinal {
 
 /// What `connect_with` puts around the engine.
 type Layer = Box<dyn FnOnce(Arc<dyn SpeechEngine>) -> Arc<dyn SpeechEngine> + Send>;
-type EventFn = ThreadsafeFunction<String, (), String, Status, false, true>;
 type LevelFn = ThreadsafeFunction<f64, (), f64, Status, false, true>;
-
-struct Pump {
-    stop: Sender<()>,
-    thread: std::thread::JoinHandle<()>,
-}
 
 struct Connected {
     inner: Arc<Inner>,
@@ -261,30 +256,17 @@ impl NativeEmbedded {
             return Err(napi::Error::from_reason("this EmbeddedSpeech has a listener already"));
         }
         let callback: EventFn = callback.build_threadsafe_function::<String>().callee_handled::<false>().weak::<true>().build_callback(|ctx| Ok(ctx.value))?;
-        let (stop, stopped) = bounded::<()>(1);
-        let events = inner.events();
-        let thread = std::thread::Builder::new()
-            .name("sayso-node-embedded-events".into())
-            .spawn(move || {
-                let deliver = |event: Event| {
-                    callback.call(outcome_text(event_value(event)), ThreadsafeFunctionCallMode::NonBlocking);
-                };
-                loop {
-                    select! {
-                        recv(events) -> event => match event {
-                            Ok(event) => deliver(event),
-                            Err(_) => return,
-                        },
-                        recv(stopped) -> _ => {
-                            events.try_iter().for_each(deliver);
-                            return;
-                        }
-                    }
-                }
-            })
+        let pump = Pump::start("sayso-node-embedded-events", inner.events(), callback, event_value)
             .map_err(|e| napi::Error::from_reason(format!("cannot start a thread: {e}")))?;
-        *slot = Some(Pump { stop, thread });
+        *slot = Some(pump);
         Ok(())
+    }
+
+    /// Give the events that wait now to the listener, then the text `{"flushed":true}`.
+    /// False when no text comes (no listener, or closed).
+    #[napi]
+    pub fn flush(&self) -> bool {
+        self.pump.lock().as_ref().is_some_and(Pump::flush)
     }
 
     /// The models of the engine and their state on disk. Starts the engine.
@@ -434,8 +416,7 @@ fn close_connected(connected: Option<Connected>, pump: Option<Pump>) {
         }
     }
     if let Some(pump) = pump {
-        let _ = pump.stop.send(());
-        let _ = pump.thread.join();
+        pump.stop();
     }
     drop(connected);
 }

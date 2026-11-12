@@ -158,3 +158,40 @@ export class WorkSet {
 		this.#endedEarly.clear();
 	}
 }
+
+/** The text of the addon after the events that came before a flush (`crates/sayso-node/src/pump.rs`). */
+const FLUSHED = '{"flushed":true}';
+
+/**
+ * Puts a result after the events that came before it. The addon gives a result and the
+ * events through two different functions, and Node gives no order between them. So a
+ * result that must come after its events (the text of `stopSession`) waits for `wait()`.
+ */
+export class Flushes {
+	#waiting: (() => void)[] = [];
+
+	/** Wait until the listener got every event that the addon has now. */
+	wait(native: { flush(): boolean }): Promise<void> {
+		return new Promise((resolve) => {
+			this.#waiting.push(resolve);
+			// No listener or closed: no text comes, and no event waits either.
+			if (!native.flush()) this.#take();
+		});
+	}
+
+	/** True when `text` is the answer of a flush, not an event. */
+	take(text: string): boolean {
+		if (text !== FLUSHED) return false;
+		this.#take();
+		return true;
+	}
+
+	/** The close: no answer comes any more. */
+	end(): void {
+		for (const resolve of this.#waiting.splice(0)) resolve();
+	}
+
+	#take(): void {
+		this.#waiting.shift()?.();
+	}
+}

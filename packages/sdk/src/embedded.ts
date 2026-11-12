@@ -2,7 +2,7 @@ import { sourceBridge, type AudioSource } from "./capture.js";
 import { Engine } from "./engine.js";
 import { findEngine } from "./helpers.js";
 import { SaysoError } from "./errors.js";
-import { EventHub, LoopHold, WorkSet } from "./events.js";
+import { EventHub, Flushes, LoopHold, WorkSet } from "./events.js";
 import { bridge, native, settle, unwrap, type NativeEmbedded } from "./native.js";
 import type { DownloadProgress, Event as Message, ModelState, Role, Source } from "./protocol/index.js";
 
@@ -97,6 +97,7 @@ export class EmbeddedSpeech implements AsyncDisposable {
 	readonly #events = new EventHub<EmbeddedEvent>();
 	readonly #hold = new LoopHold();
 	readonly #work = new WorkSet(this.#hold);
+	readonly #flushes = new Flushes();
 	#closed: Promise<void> | undefined;
 
 	private constructor(handle: NativeEmbedded) {
@@ -132,6 +133,7 @@ export class EmbeddedSpeech implements AsyncDisposable {
 	}
 
 	#deliver(text: string): void {
+		if (this.#flushes.take(text)) return;
 		let event: EmbeddedEvent;
 		try {
 			event = unwrap<EmbeddedEvent>(text);
@@ -206,7 +208,10 @@ export class EmbeddedSpeech implements AsyncDisposable {
 	/** End the audio, wait for the last parts, and give the text of the session. The `segment` events come before this returns. */
 	async stopSession(session: number): Promise<string> {
 		try {
-			return await settle<string>(this.#native.stopSession(session));
+			const text = await settle<string>(this.#native.stopSession(session));
+			// The last segment events reach the listeners before the text.
+			await this.#flushes.wait(this.#native);
+			return text;
 		} finally {
 			this.#work.ended(`session:${session}`);
 		}
@@ -249,6 +254,7 @@ export class EmbeddedSpeech implements AsyncDisposable {
 			} finally {
 				this.#work.clear();
 				this.#hold.clear();
+				this.#flushes.end();
 				this.#events.end();
 			}
 		})();

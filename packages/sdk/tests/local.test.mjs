@@ -4,8 +4,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { Speech, Engine, SaysoError } from "../dist/index.js";
-import { fakeEngine, fakeWorld, FINAL, tone, until } from "./support.mjs";
+import { concat, fakeEngine, fakeWorld, FINAL, silence, tone, until, voice } from "./support.mjs";
 
 async function connect(t, world, extra = {}) {
 	const speech = await Speech.connect({
@@ -83,6 +84,34 @@ test("a live session with the source client gives its text", async (t) => {
 	const text = await speech.stopSession(session);
 	assert.equal(typeof text, "string");
 	assert.throws(() => speech.sessionAudio(session, new Int16Array(10)), SaysoError);
+});
+
+test("the segment events of a live session come before the text of stopSession", async (t) => {
+	// As in embedded.test.mjs: a slow thread of the events shows the order.
+	const world = fakeWorld(t);
+	const script = `
+import { Engine, Speech } from ${JSON.stringify(new URL("../dist/index.js", import.meta.url).href)};
+const speech = await Speech.connect({
+	mode: "local",
+	app: { name: "Tests" },
+	engine: Engine.fromProgram(${JSON.stringify(fakeEngine)}).store(${JSON.stringify(world.store)}).modelsDir(${JSON.stringify(world.models)}),
+	models: { finalModel: ${JSON.stringify(FINAL)}, language: "en" },
+});
+const seen = [];
+speech.on((event) => { if (event.kind === "message" && event.message.type === "segment") seen.push(event.message.text); });
+const { session } = await speech.startSession({ sources: ["client"], model: ${JSON.stringify(FINAL)}, vad_model: "basic", language: "en" });
+const audio = new Int16Array(${JSON.stringify(Array.from(concat(silence(500), voice(1000), silence(800), voice(800)), (v) => Math.round(v * 32767)))});
+for (let at = 0; at < audio.length; at += 1600) speech.sessionAudio(session, audio.subarray(at, at + 1600));
+const text = await speech.stopSession(session);
+console.log(JSON.stringify({ text, segments: seen.join(" ") }));
+await speech.close();
+`;
+	const file = join(world.dir, "order.mjs");
+	writeFileSync(file, script);
+	const out = execFileSync(process.execPath, [file], { env: { ...process.env, SAYSO_NODE_EVENT_DELAY_MS: "100" }, encoding: "utf8" });
+	const { text, segments } = JSON.parse(out.trim().split("\n").pop());
+	assert.ok(text.length > 0, "the session has text");
+	assert.equal(segments, text);
 });
 
 test("a microphone in JavaScript gives the audio of a live session", async (t) => {

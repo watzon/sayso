@@ -12,6 +12,7 @@ export type BridgeFn = (call: number, kind: string, json: string, samples: Float
 export interface NativeSpeech {
 	connect(options: string, microphone?: BridgeFn, systemAudio?: BridgeFn, start?: BridgeFn): Promise<string>;
 	listen(callback: (outcome: string) => void): void;
+	flush(): boolean;
 	mode(): string;
 	features(): string;
 	listModels(role?: string): Promise<string>;
@@ -30,6 +31,7 @@ export interface NativeSpeech {
 export interface NativeEmbedded {
 	connect(options: string, microphone?: BridgeFn, finalPass?: BridgeFn): Promise<string>;
 	listen(callback: (outcome: string) => void): void;
+	flush(): boolean;
 	models(): Promise<string>;
 	download(model: string, sizeBytes: number | undefined | null, onProgress: (progress: string) => void): Promise<string>;
 	delete(model: string): Promise<string>;

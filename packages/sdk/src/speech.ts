@@ -1,7 +1,7 @@
 import { sourceBridge, type AudioSource } from "./capture.js";
 import { Engine } from "./engine.js";
 import { SaysoError } from "./errors.js";
-import { EventHub, LoopHold, WorkSet } from "./events.js";
+import { EventHub, Flushes, LoopHold, WorkSet } from "./events.js";
 import { bridge, native, settle, unwrap, type NativeSpeech } from "./native.js";
 import type {
 	Capability,
@@ -153,6 +153,7 @@ export class Speech implements AsyncDisposable {
 	readonly #events = new EventHub<SpeechEvent>();
 	readonly #hold = new LoopHold();
 	readonly #work = new WorkSet(this.#hold);
+	readonly #flushes = new Flushes();
 	#closed: Promise<void> | undefined;
 
 	private constructor(handle: NativeSpeech) {
@@ -183,6 +184,7 @@ export class Speech implements AsyncDisposable {
 	}
 
 	#deliver(text: string): void {
+		if (this.#flushes.take(text)) return;
 		let event: SpeechEvent;
 		try {
 			event = unwrap<SpeechEvent>(text);
@@ -311,10 +313,13 @@ export class Speech implements AsyncDisposable {
 		unwrap<null>(this.#native.sessionAudio(session, samples));
 	}
 
-	/** End the audio, wait for the last parts, and give the text of the session. */
+	/** End the audio, wait for the last parts, and give the text of the session. The last events of the session come before it. */
 	async stopSession(session: number): Promise<string> {
 		try {
-			return await settle<string>(this.#native.stopSession(session));
+			const text = await settle<string>(this.#native.stopSession(session));
+			// The last segment events reach the listeners before the text.
+			await this.#flushes.wait(this.#native);
+			return text;
 		} finally {
 			this.#work.ended(`session:${session}`);
 		}
@@ -349,6 +354,7 @@ export class Speech implements AsyncDisposable {
 			} finally {
 				this.#work.clear();
 				this.#hold.clear();
+				this.#flushes.end();
 				this.#events.end();
 			}
 		})();

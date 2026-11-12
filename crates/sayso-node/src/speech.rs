@@ -1,16 +1,15 @@
 //! `sayso_sdk::Speech` for JavaScript. The TypeScript class `Speech` wraps this one.
 
 use crate::bridge::Bridge;
+use crate::pump::{EventFn, Pump};
 use crate::capture::JsSource;
 use crate::values::{self, event_value, features_value, mode_name};
 use crate::{error, id_of, outcome_text, parse_arg, spawn_promise, to_value};
-use crossbeam_channel::{Receiver, Sender, bounded, select};
 use napi::bindgen_prelude::*;
-use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
 use napi_derive::napi;
 use parking_lot::Mutex;
 use sayso_protocol::{ErrorCode, ErrorReply};
-use sayso_sdk::{CaptureSources, Event, Options, Speech as Inner};
+use sayso_sdk::{CaptureSources, Options, Speech as Inner};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -41,33 +40,6 @@ fn capture_sources(microphone: Option<Bridge>, system_audio: Option<Bridge>) -> 
     }
 }
 
-type EventFn = ThreadsafeFunction<String, (), String, Status, false, true>;
-
-/// The thread that gives the events of the SDK to JavaScript. It does not hold the event
-/// loop: the TypeScript layer does that while work is active ("Events").
-struct Pump {
-    stop: Sender<()>,
-    thread: std::thread::JoinHandle<()>,
-}
-
-fn pump(events: Receiver<Event>, stop: Receiver<()>, callback: EventFn) {
-    let deliver = |event: Event| {
-        callback.call(outcome_text(event_value(event)), ThreadsafeFunctionCallMode::NonBlocking);
-    };
-    loop {
-        select! {
-            recv(events) -> event => match event {
-                Ok(event) => deliver(event),
-                Err(_) => return,
-            },
-            recv(stop) -> _ => {
-                // The events that came before the close still reach the app.
-                events.try_iter().for_each(deliver);
-                return;
-            }
-        }
-    }
-}
 
 /// `sayso_sdk::Speech`. Make it, then `connect`.
 #[napi]
@@ -127,14 +99,17 @@ impl NativeSpeech {
             return Err(Error::from_reason("this Speech has a listener already"));
         }
         let callback: EventFn = callback.build_threadsafe_function::<String>().callee_handled::<false>().weak::<true>().build_callback(|ctx| Ok(ctx.value))?;
-        let (stop, stopped) = bounded(1);
-        let events = inner.events();
-        let thread = std::thread::Builder::new()
-            .name("sayso-node-events".into())
-            .spawn(move || pump(events, stopped, callback))
+        let pump = Pump::start("sayso-node-events", inner.events(), callback, event_value)
             .map_err(|e| Error::from_reason(format!("cannot start a thread: {e}")))?;
-        *slot = Some(Pump { stop, thread });
+        *slot = Some(pump);
         Ok(())
+    }
+
+    /// Give the events that wait now to the listener, then the text `{"flushed":true}`.
+    /// False when no text comes (no listener, or closed).
+    #[napi]
+    pub fn flush(&self) -> bool {
+        self.pump.lock().as_ref().is_some_and(Pump::flush)
     }
 
     #[napi]
@@ -240,8 +215,7 @@ impl NativeSpeech {
                 inner.close();
             }
             if let Some(pump) = pump {
-                let _ = pump.stop.send(());
-                let _ = pump.thread.join();
+                pump.stop();
             }
             // The last reference of the SDK ends here, or with the last call that still runs.
             drop(inner);
@@ -270,8 +244,7 @@ impl Drop for NativeSpeech {
                 inner.close();
             }
             if let Some(pump) = pump {
-                let _ = pump.stop.send(());
-                let _ = pump.thread.join();
+                pump.stop();
             }
         });
     }
