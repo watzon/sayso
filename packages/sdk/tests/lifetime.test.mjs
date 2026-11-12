@@ -70,7 +70,15 @@ console.log("started", job);
 	assert.match(out, /started 1[\s\S]*done 1/);
 });
 
-test("a process ends after close with await using", async (t) => {
+// Node 22 cannot parse `await using` in JavaScript. TypeScript compiles it for Node 22.
+let awaitUsing = true;
+try {
+	new Function("return async () => { await using x = null; }");
+} catch {
+	awaitUsing = false;
+}
+
+test("a process ends after close with await using", { skip: !awaitUsing && "this Node cannot parse await using" }, async (t) => {
 	const world = fakeWorld(t);
 	const { code, out } = await run(t, world.dir, `
 import { Speech, Engine } from ${JSON.stringify(index)};

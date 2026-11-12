@@ -56,7 +56,9 @@ test("a signal cancels a download with declined, and progress comes", async (t) 
 
 test("a cleanup without the model fails with unavailable", async (t) => {
 	const dir = tempDir(t);
-	using cleaner = new RuntimeCleaner({ runtime: "/no/such/runtime", modelsDir: dir });
+	// Not `using`: Node 22 cannot parse it in a .mjs file.
+	const cleaner = new RuntimeCleaner({ runtime: "/no/such/runtime", modelsDir: dir });
+	t.after(() => cleaner[Symbol.dispose]());
 	await assert.rejects(cleaner.clean({ model: "s1-mini", text: "um so hello" }), (e) => e.code === "unavailable");
 	await assert.rejects(cleaner.clean({ model: "s1-mini", text: "x", settings: { tone: "angry" } }), (e) => e.code === "bad_request");
 	assert.equal(cleaner.isRunning(), false);

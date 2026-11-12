@@ -40,7 +40,7 @@ for (const segment of transcript.segments) {
 }
 ```
 
-`await using` closes the `Speech` at the end of the block. Without it, call `await speech.close()`.
+`await using` closes the `Speech` at the end of the block. Node 24 and later run it in JavaScript, and TypeScript compiles it for Node 22. Without it, call `await speech.close()`.
 
 A path in a request must be absolute. The SDK refuses a relative path with the code `bad_request`.
 
