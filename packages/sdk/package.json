@@ -1,6 +1,6 @@
 {
   "name": "@justsayso/sdk",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Use the speech features of Sayso from your own app: with Sayso when it runs, and with the engine of the app when it does not.",
   "license": "MIT",
   "repository": {
@@ -36,15 +36,15 @@
     "typescript": "^5.9.3"
   },
   "optionalDependencies": {
-    "@justsayso/sdk-darwin-arm64": "0.15.0",
-    "@justsayso/sdk-darwin-x64": "0.15.0",
-    "@justsayso/sdk-linux-x64-gnu": "0.15.0",
-    "@justsayso/sdk-linux-arm64-gnu": "0.15.0",
-    "@justsayso/sdk-win32-x64-msvc": "0.15.0"
+    "@justsayso/sdk-darwin-arm64": "0.16.0",
+    "@justsayso/sdk-darwin-x64": "0.16.0",
+    "@justsayso/sdk-linux-x64-gnu": "0.16.0",
+    "@justsayso/sdk-linux-arm64-gnu": "0.16.0",
+    "@justsayso/sdk-win32-x64-msvc": "0.16.0"
   },
   "peerDependencies": {
-    "@justsayso/cleanup": "0.15.0",
-    "@justsayso/engine": "0.15.0"
+    "@justsayso/cleanup": "0.16.0",
+    "@justsayso/engine": "0.16.0"
   },
   "peerDependenciesMeta": {
     "@justsayso/cleanup": {

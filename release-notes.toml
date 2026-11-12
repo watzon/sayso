@@ -20,6 +20,30 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.16.0"
+title = "A shortcut for each style"
+
+[[release.item]]
+icon = "styles"
+title = "Style shortcuts"
+text = "Give a style its own shortcut in the style editor. Press it to dictate one time in that style, or press it while you record to use that style for this dictation."
+
+[[release.item]]
+icon = "keyboard"
+title = "Punctuation keys in shortcuts"
+text = "A shortcut can now end in a punctuation key, for example Ctrl+[ or Ctrl+]."
+
+[[release.item]]
+icon = "overlay"
+title = "A smoother overlay"
+text = "The overlay now moves smoothly to its new size, and the live preview writes itself out letter by letter. With Reduce Motion on, it changes at once, as before."
+
+[[release.item]]
+icon = "sparkle"
+title = "Long dictations finish their style"
+text = "Sayso now gives a long dictation more time for its style, so a long text is less likely to run out of time."
+
+[[release]]
 version = "0.15.0"
 title = "Clean up with your ChatGPT plan or a coding agent"
 

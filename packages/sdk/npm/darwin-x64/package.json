@@ -1,6 +1,6 @@
 {
   "name": "@justsayso/sdk-darwin-x64",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "The native addon of @justsayso/sdk for darwin-x64. Install @justsayso/sdk, not this package.",
   "license": "MIT",
   "repository": {
