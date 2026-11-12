@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync } from "node:
 import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
@@ -88,11 +88,19 @@ export async function until(condition, ms = 10000, what = "the condition") {
 }
 
 /**
+ * The socket `name` in `dir`. On Windows the SDK talks over a named pipe, so it is a pipe
+ * with a name from the folder (a temporary folder, so the name is unique).
+ */
+export function socketPath(dir, name = "host.sock") {
+	return process.platform === "win32" ? `\\\\.\\pipe\\${basename(dir)}-${name}` : join(dir, name);
+}
+
+/**
  * A fake Sayso on a socket in `dir`. `script(peer)` runs for each connection; the default
  * answers `hello` and replies to each request with `respond(request, peer)`.
  */
 export async function fakeHost(t, dir, respond = () => ({ type: "ok" }), { hello } = {}) {
-	const path = process.platform === "win32" ? `\\\\.\\pipe\\sayso-sdk-test-${process.pid}-${Date.now()}` : join(dir, "host.sock");
+	const path = socketPath(dir);
 	const peers = new Set();
 	const requests = [];
 	const server = createServer((socket) => {

@@ -7,7 +7,7 @@ import { writeFileSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { Speech, Engine, SaysoError } from "../dist/index.js";
-import { fakeEngine, fakeHost, fakeWorld, FINAL, tempDir, tone, until } from "./support.mjs";
+import { fakeEngine, fakeHost, fakeWorld, FINAL, socketPath, tempDir, tone, until } from "./support.mjs";
 
 const TIMING = { watchMs: 20, helloLimitMs: 2000, retryMs: 200 };
 const CAPABILITIES = ["transcribe.file", "session.live"];
@@ -53,10 +53,10 @@ function jobHost(extra = () => undefined) {
 test("sayso mode without Sayso gives host_not_running", async (t) => {
 	const dir = tempDir(t);
 	// A socket path that nobody listens on.
-	await assert.rejects(Speech.connect({ mode: "sayso", app: { name: "Tests" }, socket: join(dir, "none.sock"), timing: TIMING }), (e) => e instanceof SaysoError && e.code === "host_not_running");
+	await assert.rejects(Speech.connect({ mode: "sayso", app: { name: "Tests" }, socket: socketPath(dir, "none.sock"), timing: TIMING }), (e) => e instanceof SaysoError && e.code === "host_not_running");
 	// No socket option: the SDK takes SAYSO_HOST_SOCKET. Point it at nothing, so a Sayso that runs on this computer is not touched.
 	const before = process.env.SAYSO_HOST_SOCKET;
-	process.env.SAYSO_HOST_SOCKET = join(dir, "env-none.sock");
+	process.env.SAYSO_HOST_SOCKET = socketPath(dir, "env-none.sock");
 	t.after(() => {
 		if (before === undefined) delete process.env.SAYSO_HOST_SOCKET;
 		else process.env.SAYSO_HOST_SOCKET = before;
@@ -215,13 +215,13 @@ async function refusingServer(t, path) {
 }
 
 test("a refused app gets not_approved in sayso mode", async (t) => {
-	const path = join(tempDir(t), "refuse.sock");
+	const path = socketPath(tempDir(t), "refuse.sock");
 	await refusingServer(t, path);
 	await assert.rejects(Speech.connect({ mode: "sayso", app: { name: "Tests" }, socket: path, timing: TIMING }), (e) => e instanceof SaysoError && e.code === "not_approved");
 });
 
 test("a host that says nothing to hello counts as not running", async (t) => {
-	const path = join(tempDir(t), "silent.sock");
+	const path = socketPath(tempDir(t), "silent.sock");
 	const sockets = new Set();
 	const server = createServer((socket) => {
 		sockets.add(socket);
@@ -318,7 +318,7 @@ test("enhance and subscribe fail with unsupported in local mode", async (t) => {
 
 test("enhance and subscribe fail with unsupported in auto mode without Sayso", async (t) => {
 	const world = fakeWorld(t);
-	const { speech } = await connect(t, "auto", join(world.dir, "host.sock"), { engine: localEngine(world) });
+	const { speech } = await connect(t, "auto", socketPath(world.dir, "host.sock"), { engine: localEngine(world) });
 	assert.equal(speech.mode(), "local");
 	await assert.rejects(speech.enhance({ text: "x" }), (e) => e.code === "unsupported");
 	await assert.rejects(speech.subscribe(["dictation_done"]), (e) => e.code === "unsupported");
@@ -335,7 +335,7 @@ test("auto mode uses Sayso when it runs at connect", async (t) => {
 
 test("auto mode starts in local mode and changes to Sayso when a host appears", async (t) => {
 	const world = fakeWorld(t);
-	const socket = join(world.dir, "host.sock");
+	const socket = socketPath(world.dir, "host.sock");
 	const { speech, seen } = await connect(t, "auto", socket, { engine: localEngine(world), models: { finalModel: FINAL, language: "en" } });
 	assert.equal(speech.mode(), "local");
 	assert.ok(speech.features().capabilities.includes("transcribe.file"));
@@ -372,7 +372,7 @@ test("auto mode never changes to Sayso during a job", async (t) => {
 	const world = fakeWorld(t);
 	const hold = join(world.models, "hold-transcribe");
 	writeFileSync(hold, "");
-	const socket = join(world.dir, "host.sock");
+	const socket = socketPath(world.dir, "host.sock");
 	const { speech, seen } = await connect(t, "auto", socket, { engine: localEngine(world), models: { finalModel: FINAL, language: "en" } });
 	assert.equal(speech.mode(), "local");
 	const job = await speech.transcribeFile({ path: world.wav, model: FINAL });
@@ -395,7 +395,7 @@ test("auto mode never changes to Sayso during a job", async (t) => {
 
 test("auto mode never changes during a live session", async (t) => {
 	const world = fakeWorld(t);
-	const socket = join(world.dir, "host.sock");
+	const socket = socketPath(world.dir, "host.sock");
 	const { speech, seen } = await connect(t, "auto", socket, { engine: localEngine(world), models: { finalModel: FINAL, language: "en" } });
 	const { session } = await speech.startSession({ sources: ["client"], model: FINAL, vad_model: "basic", language: "en" });
 	const host = await fakeHost(t, world.dir, jobHost());
@@ -410,7 +410,7 @@ test("auto mode never changes during a live session", async (t) => {
 
 test("auto mode with a host that refuses stays local and tries again after the retry time", async (t) => {
 	const world = fakeWorld(t);
-	const path = join(world.dir, "host.sock");
+	const path = socketPath(world.dir, "host.sock");
 	const state = await refusingServer(t, path);
 	const { speech, seen } = await connect(t, "auto", path, { engine: localEngine(world) });
 	assert.equal(speech.mode(), "local");

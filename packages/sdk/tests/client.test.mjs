@@ -4,7 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { Client, SaysoError } from "../dist/index.js";
-import { fakeHost, tempDir, until } from "./support.mjs";
+import { fakeHost, socketPath, tempDir, until } from "./support.mjs";
 
 const APP = { name: "Tests", capabilities: ["transcribe.file"] };
 
@@ -164,13 +164,13 @@ test("close sends bye and ends the iterators", async (t) => {
 
 test("a socket that does not exist fails with host_not_running", async (t) => {
 	const dir = tempDir(t);
-	await assert.rejects(Client.connect({ path: join(dir, "no-such.sock") }), (e) => e instanceof SaysoError && e.code === "host_not_running");
+	await assert.rejects(Client.connect({ path: socketPath(dir, "no-such.sock") }), (e) => e instanceof SaysoError && e.code === "host_not_running");
 	await assert.rejects(Client.connect({ path: "/no/such/socket" }), (e) => e instanceof SaysoError && e.code === "host_not_running");
 });
 
 test("start: true calls the JavaScript startSayso and connects when the host appears", async (t) => {
 	const dir = tempDir(t);
-	const path = join(dir, "host.sock");
+	const path = socketPath(dir, "host.sock");
 	let calls = 0;
 	let host;
 	const client = await Client.connect({
@@ -208,7 +208,7 @@ test("start: true fails with host_not_running when the host never comes", async 
 	let calls = 0;
 	await assert.rejects(
 		Client.connect({
-			path: join(dir, "host.sock"),
+			path: socketPath(dir, "host.sock"),
 			start: true,
 			waitMs: 300,
 			startSayso: () => {
@@ -224,7 +224,7 @@ test("a startSayso that throws fails the connect", async (t) => {
 	const dir = tempDir(t);
 	await assert.rejects(
 		Client.connect({
-			path: join(dir, "host.sock"),
+			path: socketPath(dir, "host.sock"),
 			start: true,
 			waitMs: 300,
 			startSayso: () => {

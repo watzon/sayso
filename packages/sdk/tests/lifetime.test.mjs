@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Speech } from "../dist/index.js";
-import { fakeEngine, fakeWorld, SLOW, tempDir } from "./support.mjs";
+import { fakeEngine, fakeWorld, SLOW, socketPath, tempDir } from "./support.mjs";
 
 const index = new URL("../dist/index.js", import.meta.url).href;
 
@@ -92,7 +92,7 @@ console.log("closed");
 test("calls that wait do not stop the file I/O of Node", async (t) => {
 	const dir = tempDir(t);
 	// A Sayso that takes connections and never answers hello.
-	const path = join(dir, "silent.sock");
+	const path = socketPath(dir, "silent.sock");
 	const sockets = [];
 	const server = createServer((socket) => sockets.push(socket));
 	await new Promise((resolve) => server.listen(path, resolve));
