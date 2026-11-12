@@ -312,6 +312,28 @@ fn events() -> Vec<(&'static str, Event)> {
                 reason: SourceEndReason::Permission,
             },
         ),
+        (
+            r#"{"v":1,"type":"part_failed","session":7,"source":"mic","start_ms":1200,"end_ms":4200,"message":"HTTP 401","code":"model_not_downloaded"}"#,
+            Event::PartFailed {
+                session: 7,
+                source: Source::Mic,
+                start_ms: 1200,
+                end_ms: 4200,
+                message: "HTTP 401".into(),
+                code: Some(ErrorCode::ModelNotDownloaded),
+            },
+        ),
+        (
+            r#"{"v":1,"type":"part_failed","session":7,"source":"system","start_ms":0,"end_ms":900,"message":"boom"}"#,
+            Event::PartFailed {
+                session: 7,
+                source: Source::System,
+                start_ms: 0,
+                end_ms: 900,
+                message: "boom".into(),
+                code: None,
+            },
+        ),
     ]
 }
 

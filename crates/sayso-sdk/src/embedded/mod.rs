@@ -135,6 +135,17 @@ pub enum Event {
     /// The silence limit of a session stopped its audio. The last parts still
     /// come as [`Event::Segment`]. End the session with [`Speech::stop_session`].
     SilenceLimit { session: u64, silence_ms: u64 },
+    /// The final pass of one part failed, so the session has no segment for
+    /// that audio. The session goes on, and the recording keeps the audio.
+    /// `start_ms` and `end_ms` are from the start of the session.
+    PartFailed {
+        session: u64,
+        source: Source,
+        start_ms: u64,
+        end_ms: u64,
+        message: String,
+        code: Option<ErrorCode>,
+    },
 }
 
 /// One live session.
@@ -339,6 +350,21 @@ impl EventSink for ChannelSink {
             } => Event::SilenceLimit {
                 session,
                 silence_ms,
+            },
+            sayso_protocol::Event::PartFailed {
+                session,
+                source,
+                start_ms,
+                end_ms,
+                message,
+                code,
+            } => Event::PartFailed {
+                session,
+                source,
+                start_ms,
+                end_ms,
+                message,
+                code,
             },
             _ => return,
         };

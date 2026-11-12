@@ -29,6 +29,8 @@ struct FakeEngine {
     vad_keeps_open_speech: bool,
     /// The text of the final pass: a loud part gives the first, and another part the second.
     texts: Option<(&'static str, &'static str)>,
+    /// The final pass fails with this message and the code `model_not_downloaded`.
+    fail_final: Option<&'static str>,
 }
 
 #[derive(Default)]
@@ -181,6 +183,12 @@ impl SpeechEngine for FakeEngine {
         _model: &ModelId,
         _language: &str,
     ) -> Result<Vec<Segment>, EngineError> {
+        if let Some(message) = self.fail_final {
+            return Err(EngineError::with_code(
+                ErrorCode::ModelNotDownloaded,
+                message,
+            ));
+        }
         self.state.lock().in_final_pass = true;
         {
             let mut hold = self.hold.lock();
@@ -927,6 +935,57 @@ fn basic_vad_cuts_parts_at_pauses_and_the_stop_ends_the_open_part() {
         "{segments:?}"
     );
     assert!(sink.partials().is_empty(), "no preview model, no partials");
+}
+
+#[test]
+fn a_final_pass_that_fails_gives_part_failed_and_the_session_ends_normally() {
+    let f = fixture_with(FakeEngine {
+        fail_final: Some("HTTP 401: the key is wrong"),
+        ..FakeEngine::default()
+    });
+    let sink = Arc::new(Events::default());
+    let session = f
+        .sessions
+        .start(
+            owner(1),
+            SessionSpec {
+                preview_model: None,
+                ..spec(&[Source::Client])
+            },
+            sink.clone(),
+        )
+        .unwrap()
+        .session;
+    let audio = pcm(&[silence(500), speech(1000), silence(1000)].concat());
+    send_client(&f.sessions, 1, session, &audio);
+    assert_eq!(f.sessions.stop(1, session).unwrap(), "");
+    let failed: Vec<Event> = sink
+        .all()
+        .into_iter()
+        .filter(|e| matches!(e, Event::PartFailed { .. }))
+        .collect();
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    let Event::PartFailed {
+        session: got,
+        source,
+        start_ms,
+        end_ms,
+        message,
+        code,
+    } = &failed[0]
+    else {
+        unreachable!()
+    };
+    assert_eq!(*got, session);
+    assert_eq!(*source, Source::Client);
+    assert_eq!(message, "HTTP 401: the key is wrong");
+    assert_eq!(*code, Some(ErrorCode::ModelNotDownloaded));
+    assert!(start_ms < end_ms, "{start_ms} {end_ms}");
+    assert!(
+        near(*start_ms, 500, 300) && near(*end_ms, 1500, 600),
+        "{start_ms} {end_ms}"
+    );
+    assert!(sink.segments().is_empty(), "no segment for a failed part");
 }
 
 #[test]

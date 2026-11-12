@@ -44,6 +44,19 @@ pub enum Event {
         source: Source,
         reason: SourceEndReason,
     },
+    /// The final pass of one part of a live session failed, so the session has no
+    /// segment for that audio. The session goes on. The recording keeps the audio.
+    PartFailed {
+        session: u64,
+        source: Source,
+        /// The time of the part, from the start of the session.
+        start_ms: u64,
+        end_ms: u64,
+        message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "ts", ts(optional))]
+        code: Option<ErrorCode>,
+    },
     /// The user stopped the live session in Sayso, not the app. The last
     /// `segment` and `speakers` events come before it, and it is the end of
     /// the session: there is no reply to `session_stop`. The SDK also gives
@@ -83,6 +96,7 @@ tagged_kind!(Event {
     Partial => "partial",
     SourceGap => "source_gap",
     SourceEnded => "source_ended",
+    PartFailed => "part_failed",
     SessionEnded => "session_ended",
     SilenceLimit => "silence_limit",
     DictationDone => "dictation_done",

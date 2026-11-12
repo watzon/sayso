@@ -66,6 +66,32 @@ fn rows() -> Rows {
             code: Some(ErrorCode::ConnectionLost),
         },
     );
+    line(
+        &mut rows,
+        "Event",
+        None,
+        &Event::PartFailed {
+            session: 3,
+            source: Source::Mic,
+            start_ms: 1200,
+            end_ms: 4200,
+            message: "HTTP 401".into(),
+            code: Some(ErrorCode::ConnectionLost),
+        },
+    );
+    line(
+        &mut rows,
+        "Event",
+        None,
+        &Event::PartFailed {
+            session: 3,
+            source: Source::System,
+            start_ms: 0,
+            end_ms: 900,
+            message: "boom".into(),
+            code: None,
+        },
+    );
     line(&mut rows, "Event", None, &Event::ApprovalWaiting);
     line(&mut rows, "Event", None, &Event::HostClosing);
     line(

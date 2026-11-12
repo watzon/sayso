@@ -86,6 +86,7 @@ In local mode the permissions belong to your app, not to Sayso:
 - A refused permission gives the code `permission`. `Speech::features` tells you `system_audio` without a question to the user.
 - `source_gap {session, source, ms}` says that a source lost audio, for example at a change of the output device. The session goes on.
 - `source_ended {session, source, reason}` says that one source ended: the user took the permission back, or the capture failed. The other sources go on, and the session still ends with the reply of `stop_session`.
+- `part_failed {session, source, start_ms, end_ms, message, code?}` says that the final pass of one part failed, for example because of a wrong key. The session has no segment for that audio, and it goes on.
 - In a session with `mic` and `system`, the SDK drops a microphone segment that repeats the system audio of the same time.
 
 ## License

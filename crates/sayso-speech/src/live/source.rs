@@ -617,6 +617,18 @@ impl FinalPass {
                         "host: live session {}: the final pass of a part failed: {e}",
                         self.session
                     );
+                    if !cancelled() {
+                        // The app needs this event to tell an engine error from silence.
+                        // It does not use the echo gate: no segment comes from this part.
+                        self.sink.event(Event::PartFailed {
+                            session: self.session,
+                            source: self.source.clone(),
+                            start_ms: part.offset_ms,
+                            end_ms: part.offset_ms + part.samples.len() as u64 * 1000 / RATE,
+                            message: e.message,
+                            code: e.code,
+                        });
+                    }
                     continue;
                 }
             };

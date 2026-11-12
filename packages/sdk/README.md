@@ -80,7 +80,7 @@ An iterator gets the events from the moment that `speech.events()` makes it, so 
 
 The messages have the names and fields of the Host API, in `snake_case`, as on the wire. The TypeScript types come from the Rust types, so they cannot differ. The events are:
 
-- `{ kind: "message", message }`: `job_progress`, `segment`, `speakers`, `job_done`, `job_failed`, `partial`, `source_gap`, `source_ended`, `session_ended`, `model_state`, `download_progress`, or `dictation_done`.
+- `{ kind: "message", message }`: `job_progress`, `segment`, `speakers`, `job_done`, `job_failed`, `partial`, `source_gap`, `source_ended`, `part_failed`, `session_ended`, `model_state`, `download_progress`, or `dictation_done`.
 - `{ kind: "mode_changed", mode, features }`: the mode changed. No work of your app was active.
 - `{ kind: "error", error }`: an error that belongs to no request.
 - `{ kind: "disconnected", code }`: Sayso mode only. The connection ended, and requests fail until `speech.reconnect()`.

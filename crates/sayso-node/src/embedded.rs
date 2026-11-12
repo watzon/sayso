@@ -97,6 +97,7 @@ fn event_value(event: Event) -> crate::Outcome {
         Event::Partial(partial) => to_value(&sayso_protocol::Event::Partial(partial)),
         Event::Segment(segment) => to_value(&sayso_protocol::Event::Segment(segment)),
         Event::SilenceLimit { session, silence_ms } => to_value(&sayso_protocol::Event::SilenceLimit { session, silence_ms }),
+        Event::PartFailed { session, source, start_ms, end_ms, message, code } => to_value(&sayso_protocol::Event::PartFailed { session, source, start_ms, end_ms, message, code }),
         other => Err(addon_error(format!("an event that this addon does not know: {other:?}"))),
     }
 }

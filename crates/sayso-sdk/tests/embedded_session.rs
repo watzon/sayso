@@ -18,6 +18,8 @@ struct Fake {
     watchers: Mutex<Vec<Sender<EngineEvent>>>,
     finals: Mutex<u32>,
     downloads: Mutex<Vec<String>>,
+    /// While set, a final pass fails with this message.
+    fail_finals: Mutex<Option<String>>,
 }
 
 impl SpeechEngine for Fake {
@@ -33,6 +35,9 @@ impl SpeechEngine for Fake {
         _: &ModelId,
         _: &str,
     ) -> Result<Vec<Segment>, EngineError> {
+        if let Some(message) = self.fail_finals.lock().clone() {
+            return Err(EngineError::new(message));
+        }
         let mut finals = self.finals.lock();
         *finals += 1;
         Ok(vec![Segment {
@@ -192,6 +197,44 @@ fn a_session_gives_partials_and_segments_and_the_text() {
             .flatten()
             .all(|e| !e.file_name().to_string_lossy().starts_with("sayso-live-")),
         "the recording goes with the session"
+    );
+}
+
+#[test]
+fn a_final_pass_that_fails_gives_part_failed_and_the_session_still_ends() {
+    let temp = tempfile::tempdir().unwrap();
+    let (speech, fake) = speech_with(temp.path());
+    *fake.fail_finals.lock() = Some("HTTP 401: the key is wrong".into());
+    let events = speech.events();
+    let session = speech.start_session(client_session(None)).unwrap();
+    speech.session_audio(session, &vec![0.0; RATE / 2]).unwrap();
+    speech.session_audio(session, &voice(1000)).unwrap();
+    assert_eq!(speech.stop_session(session).unwrap(), "");
+    let got: Vec<Event> = events.try_iter().collect();
+    let failed: Vec<&Event> = got
+        .iter()
+        .filter(|e| matches!(e, Event::PartFailed { .. }))
+        .collect();
+    assert_eq!(failed.len(), 1, "{got:?}");
+    let Event::PartFailed {
+        session: id,
+        source,
+        start_ms,
+        end_ms,
+        message,
+        code,
+    } = failed[0]
+    else {
+        unreachable!()
+    };
+    assert_eq!(*id, session);
+    assert_eq!(*source, Source::Client);
+    assert_eq!(message, "HTTP 401: the key is wrong");
+    assert_eq!(*code, None);
+    assert!(start_ms < end_ms, "{start_ms} {end_ms}");
+    assert!(
+        !got.iter().any(|e| matches!(e, Event::Segment(_))),
+        "no segment for a failed part"
     );
 }
 

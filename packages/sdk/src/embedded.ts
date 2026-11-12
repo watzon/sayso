@@ -17,8 +17,12 @@ export interface EmbeddedModel {
 	recommended: boolean;
 }
 
-/** What comes from `EmbeddedSpeech.events()`: `partial`, `segment`, or `silence_limit`. */
-export type EmbeddedEvent = Extract<Message, { type: "partial" | "segment" | "silence_limit" }>;
+/**
+ * What comes from `EmbeddedSpeech.events()`: `partial`, `segment`, `silence_limit`, or
+ * `part_failed`. A `part_failed` event says that the final pass of one part failed. The session
+ * has no segment for that audio and goes on.
+ */
+export type EmbeddedEvent = Extract<Message, { type: "partial" | "segment" | "silence_limit" | "part_failed" }>;
 
 /**
  * The final pass of the app: a function that gives the text of a part of the audio (16 kHz

@@ -245,9 +245,9 @@ test("a final pass in JavaScript can be a plain function, and leaves other model
 	assert.equal(await speech.stopSession(other), FAKE_TEXT);
 });
 
-test("a final pass in JavaScript that throws drops the part: no segment, no error, an empty text", async (t) => {
-	// The Rust layer logs a failed final pass of a part and goes on (sayso-speech, live/source.rs,
-	// FinalPass::run). So the app sees neither an event nor an error.
+test("a final pass in JavaScript that throws drops the part and gives part_failed: no segment, an empty text", async (t) => {
+	// The Rust layer logs a failed final pass of a part, sends part_failed, and goes on
+	// (sayso-speech, live/source.rs, FinalPass::run).
 	const world = fakeWorld(t);
 	let calls = 0;
 	const { speech, seen } = await connect(t, world, {
@@ -263,10 +263,19 @@ test("a final pass in JavaScript that throws drops the part: no segment, no erro
 	feed(speech, id, talk());
 	assert.equal(await speech.stopSession(id), "");
 	assert.ok(calls >= 1, "the function ran");
-	assert.deepEqual(seen, []);
+	await until(() => seen.some((e) => e.type === "part_failed"), 5000, "the part_failed event");
+	const failed = seen.filter((e) => e.type === "part_failed");
+	assert.equal(failed.length, calls, "one event for each failed part");
+	for (const event of failed) {
+		assert.equal(event.session, id);
+		assert.equal(event.source, "client");
+		assert.ok(event.message.includes("boom"), event.message);
+		assert.ok(event.start_ms >= 0 && event.end_ms > event.start_ms, JSON.stringify(event));
+	}
+	assert.equal(seen.filter((e) => e.type === "segment").length, 0, "no segment");
 });
 
-test("a final pass that gives a value that is not a string drops the part", async (t) => {
+test("a final pass that gives a value that is not a string drops the part and gives part_failed", async (t) => {
 	const world = fakeWorld(t);
 	let calls = 0;
 	const { speech, seen } = await connect(t, world, {
@@ -282,7 +291,8 @@ test("a final pass that gives a value that is not a string drops the part", asyn
 	feed(speech, id, voice(1000));
 	assert.equal(await speech.stopSession(id), "");
 	assert.ok(calls >= 1);
-	assert.deepEqual(seen, []);
+	await until(() => seen.some((e) => e.type === "part_failed"), 5000, "the part_failed event");
+	assert.deepEqual(seen.map((e) => e.type), ["part_failed"]);
 });
 
 test("a session still works after a final pass failed once", async (t) => {
@@ -303,7 +313,7 @@ test("a session still works after a final pass failed once", async (t) => {
 	assert.equal(await speech.stopSession(id), "second works");
 });
 
-test("a Deepgram client in a final pass function: the text arrives, and a refused key drops the part", async (t) => {
+test("a Deepgram client in a final pass function: the text arrives, and a refused key gives part_failed", async (t) => {
 	const world = fakeWorld(t);
 	let status = 200;
 	const server = await fakeDeepgram(t, () => (status === 200 ? { status, body: deepgramReply("deepgram says hi") } : { status, body: {} }));
@@ -332,7 +342,8 @@ test("a Deepgram client in a final pass function: the text arrives, and a refuse
 	feed(speech, bad, voice(1000));
 	assert.equal(await speech.stopSession(bad), "");
 	assert.equal(refused.code, "cloud_key", "the function saw the code");
-	assert.deepEqual(seen, [], "the session shows nothing of it");
+	await until(() => seen.some((e) => e.type === "part_failed"), 5000, "the part_failed event");
+	assert.deepEqual(seen.map((e) => e.type), ["part_failed"], "the session shows the failed part");
 });
 
 
@@ -355,7 +366,7 @@ test("DeepgramFinal gives the text of Deepgram in the segments", async (t) => {
 	assert.equal(request.headers["content-type"], "audio/wav");
 });
 
-test("DeepgramFinal with a refused key drops the part like any failed final pass", async (t) => {
+test("DeepgramFinal with a refused key gives part_failed like any failed final pass", async (t) => {
 	const world = fakeWorld(t);
 	const server = await fakeDeepgram(t, () => ({ status: 401, body: {} }));
 	const { speech, seen } = await connect(t, world, { finalPass: new DeepgramFinal("bad", { baseUrl: server.baseUrl }) });
@@ -363,7 +374,8 @@ test("DeepgramFinal with a refused key drops the part like any failed final pass
 	feed(speech, id, voice(1000));
 	assert.equal(await speech.stopSession(id), "");
 	assert.ok(server.requests.length >= 1);
-	assert.deepEqual(seen, []);
+	await until(() => seen.some((e) => e.type === "part_failed"), 5000, "the part_failed event");
+	assert.deepEqual(seen.map((e) => e.type), ["part_failed"]);
 });
 
 test("DeepgramFinal without a baseUrl connects, and leaves other models to the engine", async (t) => {

@@ -97,6 +97,7 @@ The events of a session are:
 - `segment { session, source, start_ms, end_ms, text, words? }`. A part of the text that will not change. Times are from the start of the session.
 - `source_gap { session, source, ms }`. A source lost audio, for example when the output device changed. The session goes on.
 - `source_ended { session, source, reason }`. One source ended and the others go on. `reason` is `permission` or `failed`.
+- `part_failed { session, source, start_ms, end_ms, message, code? }`. The final pass of one part failed, for example because of a wrong key. The session has no segment for that audio, and it goes on.
 - `session_ended { session, text, code? }`. The session ended without a `stopSession` of your app.
 
 See the [reference](reference.md#events) for every field.

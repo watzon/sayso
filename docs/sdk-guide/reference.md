@@ -233,6 +233,7 @@ A reply is `ok` or `error`.
 | `partial` | `session`, `source?`, `committed`, `tentative` | The text of one source so far. |
 | `source_gap` | `session`, `source`, `ms` | A source lost audio. |
 | `source_ended` | `session`, `source`, `reason` | One source ended and the others go on. |
+| `part_failed` | `session`, `source`, `start_ms`, `end_ms`, `message`, `code?` | The final pass of one part of a session failed. |
 | `session_ended` | `session`, `text`, `code?` | A session ended without `session_stop`. |
 | `dictation_done` | `text`, `transcript`, `app?`, `site?`, `style?`, `time` | A dictation was inserted. Needs `subscribe`. |
 | `approval_waiting` | none | `hello` waits for the answer of a person. `Speech` handles this event, so the app sees it only with `sayso_sdk::client`. |
@@ -245,6 +246,7 @@ Details:
 - `partial`: `committed` does not change any more. `tentative` can change. `PartialEvent::text()` gives both as one text, with one space where the text needs one: not before punctuation that closes, and not in a script without spaces.
 - `source_gap`: the recording and the times of the source have `ms` of silence there, at most 60 seconds. It comes at a change of the device, and after the computer sleeps.
 - `source_ended`: the last `segment` of the source comes before it. `reason` is `permission` or `failed`.
+- `part_failed`: the session has no segment for that audio, and it goes on. The recording keeps the audio. `start_ms` and `end_ms` are the time of the part from the start of the session. `message` says why, and `code` is set when the engine gave one. A wrong key of a cloud service for the final pass is one cause. Show `message` to the user.
 - `session_ended`: the user stopped the session in Sayso, or the SDK ended it because the connection ended. In that case `code` is set (`connection_lost` or `host_closing`). The last `segment` and `speakers` events come before it. There is no reply to `session_stop` after it.
 - `dictation_done`: `text` is the inserted text, `transcript` is the text of the speech model before replacements and the style, `app` is the name of the app, `site` the host of the web page, and `style` the id of the style. `time` is in RFC 3339 and UTC. No event comes while incognito is on.
 - `host_closing`: the host ends each job with `job_failed` and stops each live session before it. The SDK does not give this event to the app.

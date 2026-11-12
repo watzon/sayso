@@ -13,7 +13,11 @@ export type Event = { "type": "model_state" } & ModelStateEvent | { "type": "dow
 /**
  * From 0 to 1. A job that waits in the queue sends 0.
  */
-fraction: number, } | { "type": "segment" } & SegmentEvent | { "type": "speakers" } & SpeakersEvent | { "type": "job_done", job: number, text: string, } | { "type": "job_failed", job: number, message: string, code?: ErrorCode, } | { "type": "partial" } & PartialEvent | { "type": "source_gap", session: number, source: Source, ms: number, } | { "type": "source_ended", session: number, source: Source, reason: SourceEndReason, } | { "type": "session_ended", session: number, 
+fraction: number, } | { "type": "segment" } & SegmentEvent | { "type": "speakers" } & SpeakersEvent | { "type": "job_done", job: number, text: string, } | { "type": "job_failed", job: number, message: string, code?: ErrorCode, } | { "type": "partial" } & PartialEvent | { "type": "source_gap", session: number, source: Source, ms: number, } | { "type": "source_ended", session: number, source: Source, reason: SourceEndReason, } | { "type": "part_failed", session: number, source: Source, 
+/**
+ * The time of the part, from the start of the session.
+ */
+start_ms: number, end_ms: number, message: string, code?: ErrorCode, } | { "type": "session_ended", session: number, 
 /**
  * The text of all segments in the order of time.
  */

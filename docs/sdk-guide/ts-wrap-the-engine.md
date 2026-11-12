@@ -100,7 +100,7 @@ export async function prepareModel(speech: EmbeddedSpeech, id: string): Promise<
 
 `speech.startSession` waits while the models of the session load. At most one session runs at a time. The options use `camelCase`: `finalModel`, `previewModel`, `vad`, `language`, and `silenceLimitMs`. `sources` lists the sources, for example `["mic"]`. `vad` is a VAD model id, and the default is `basic`.
 
-The events are objects with a `type`: `partial`, `segment`, and `silence_limit`. `speech.stopSession` ends the audio, waits for the last parts, and resolves with the text. The `segment` events come before it resolves.
+The events are objects with a `type`: `partial`, `segment`, `silence_limit`, and `part_failed`. A `part_failed` event says that the final pass of one part failed: the session has no segment for that audio and goes on. `speech.stopSession` ends the audio, waits for the last parts, and resolves with the text. The `segment` events come before it resolves.
 
 <!-- check: verbatim packages/sdk/examples/embedded-final-pass.ts -->
 ```ts
