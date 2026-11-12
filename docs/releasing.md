@@ -109,33 +109,28 @@ To change the package without a new Sayso version (for example a new dependency)
 
 The job **npm publish** publishes the 18 packages of the TypeScript SDK ([sdk-typescript.md](sdk-typescript.md), "CI and publication"). `scripts/npm-packages.py names` lists them. The job **npm addons** (`npm.yml`) builds and tests the native addons on the five platforms, at the same time as the other build jobs. The publish job runs after the release is the latest release, like the Homebrew job, so a failure there does not change the release. To publish again, run the failed jobs of the run again. The publish job skips each package version that npm already has.
 
-The job uses npm trusted publishing: npm trusts `release.yml` of `watzon/sayso`, and the job gets a short token with OIDC. The repository keeps no npm token. A package must exist on npm before it can have a trusted publisher, so the first publication needs a token one time.
+The job uses npm trusted publishing: npm trusts `release.yml` of `watzon/sayso`, and the job gets a short token with OIDC. The repository keeps no npm token. A package must exist on npm before it can have a trusted publisher, and npm does not let a token publish without two-factor authentication. So the first version of a new package comes from a Mac, with your npm login. 0.16.0 was the first version of all 18 packages (2026-11-12), and it has no provenance for that reason.
 
-Do these steps one time, before the first release with npm packages:
+When a version adds a new package, do these steps for that package:
 
-1. On <https://www.npmjs.com>, make the organization `justsayso`, so the scope `@justsayso` exists. Turn on two-factor authentication for your account.
-2. Make a granular access token: **Access Tokens › Generate New Token › Granular Access Token**. Give it **Read and write** for the scope `@justsayso`, select **Bypass two-factor authentication**, and set a short expiry, for example 7 days. Store it:
+1. Let the release run as usual. The publish job fails at the new package, after the packages before it.
+2. On a Mac, make the packages from the files of the run as the job does ("Make the engine and cleanup packages from the release files", and the addons of the artifacts `addon-<platform>`), and publish the new package. Run it in a terminal: npm opens a page in the browser for the two-factor approval.
 
    ```sh
-   gh secret set NPM_TOKEN --repo watzon/sayso
+   npm login --auth-type=web
+   cd <folder of the package> && npm publish --access public
    ```
 
-3. Make the release as usual ("Make a release"). The publish job uses the token, because no package has a trusted publisher yet.
-4. Add the trusted publisher to every package. It needs npm 11.15.0 or later. npm asks for a one-time password at the first package:
+3. Add the trusted publisher to every package. It needs npm 11.15.0 or later. npm asks for one approval in the browser, then does not ask again for 5 minutes:
 
    ```sh
-   npm login
    scripts/npm-trust.sh
    scripts/npm-trust.sh --list   # each package names release.yml
    ```
 
-5. Delete the token, on npmjs.com and in the repository:
+4. Run the failed jobs of the release run again. The publish job skips the versions that npm has, and publishes the rest.
 
-   ```sh
-   gh secret delete NPM_TOKEN --repo watzon/sayso
-   ```
-
-A new trusted publisher expires when it has no publication in 2 days, so do step 4 close to a release, or run step 4 again before the next release. When a later version adds a new package, it needs the same steps for that package only: the token for its first publication, then the trusted publisher.
+A new trusted publisher expires when it has no publication in 2 days. Then run step 3 again before the next release.
 
 The `.node` files of the addons are not signed with the Developer ID. Each app that ships the SDK signs them with its own identity.
 

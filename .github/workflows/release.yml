@@ -850,10 +850,6 @@ jobs:
       # npm does not have. A version that is not the newest on npm (a correction
       # of an old line) and a prerelease do not take the dist-tag "latest".
       - name: Publish
-        env:
-          # Only for the first publication of a new package, before it has a
-          # trusted publisher. npm uses OIDC first. See docs/releasing.md.
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           npm install -g npm@11

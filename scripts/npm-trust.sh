@@ -8,8 +8,13 @@
 #   scripts/npm-trust.sh --list     # show the trusted publishers of every package
 #
 # It needs npm 11.15.0 or later, a session of `npm login` with two-factor
-# authentication, and packages that exist on npm. npm asks for a one-time
-# password at the first package. After that it does not ask for 5 minutes.
+# authentication, and packages that exist on npm. Each call needs a one-time
+# password. Set NPM_OTP_COMMAND to a command that prints one, and the script
+# gets a new one for each package, for example:
+#
+#   NPM_OTP_COMMAND='op item get <npm item> --otp' scripts/npm-trust.sh
+#
+# Without it, npm asks for the password in the terminal.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -37,6 +42,10 @@ while read -r name; do
   fi
   args=(trust github "$name" --file release.yml --repository watzon/sayso --allow-publish --yes)
   [[ "$mode" == dry-run ]] && args+=(--dry-run)
+  if [[ -n "${NPM_OTP_COMMAND:-}" ]]; then
+    otp=$(bash -c "$NPM_OTP_COMMAND") || { echo "NPM_OTP_COMMAND failed" >&2; exit 1; }
+    args+=(--otp "$otp")
+  fi
   echo "==> $name"
   npm "${args[@]}" || failed+=("$name")
   # npm asks for a pause between the calls.

@@ -55,7 +55,6 @@ What exists on 2026-11-10, and how it was checked on Chris's Mac (macOS 27, Appl
 Not done:
 
 - Not run anywhere: Windows, Linux x64, Intel macOS, yarn, Node 22 and 26, and Sayso mode against the real Sayso (the approval question).
-- The first publication: the organization `justsayso` on npm, the token for the first release, and the trusted publishers (docs/releasing.md, "npm packages"). Only Chris can do these.
 
 ### Changes from the plan
 
@@ -295,7 +294,7 @@ Not tested by the spike: Sayso mode from Node and the approval question, `Mode::
 - The Release workflow calls `npm.yml` as the job `npm-build`, which starts with the other build jobs. Its job `npm` runs after the job `manifest`, as the Homebrew and AUR jobs do. So a failure of the npm packages never stops a release.
 - The job `npm` makes the engine and cleanup packages from the release files with `scripts/npm-packages.py`, so the npm files are the release files. It puts the addons of the run into `packages/sdk/npm/<platform>`, publishes the platform packages first, and then `@justsayso/engine`, `@justsayso/cleanup`, and `@justsayso/sdk`. It skips each version that npm already has, so a second run publishes only what is missing.
 - All packages of a release get the version of the crates. `@justsayso/sdk` names its addon packages and its optional peers at that exact version. `scripts/npm-packages.py set-version` writes the version, and `check-versions` checks it in `ci.yml` and at the start of a release.
-- Publication uses the trusted publishing of npm (OIDC from GitHub Actions). The trusted publisher of each package is `release.yml` of `watzon/sayso`, so no other workflow can publish. npm adds provenance itself. A package must exist on npm before it can have a trusted publisher, so the first publication uses a granular token in the secret `NPM_TOKEN`. After that, `scripts/npm-trust.sh` adds the trusted publishers, and the secret goes away. docs/releasing.md, "npm packages", has the steps.
+- Publication uses the trusted publishing of npm (OIDC from GitHub Actions). The trusted publisher of each package is `release.yml` of `watzon/sayso`, so no other workflow can publish. npm adds provenance itself. A package must exist on npm before it can have a trusted publisher, and npm does not let a token publish without two-factor authentication (the token of the first try got `EOTP`). So the first version of a package comes from a Mac with an npm login, and then `scripts/npm-trust.sh` adds the trusted publishers. 0.16.0 was published that way on 2026-11-12, from the files of its release run, so it has no provenance. docs/releasing.md, "npm packages", has the steps.
 - A prerelease version gets the dist-tag `next`. A version that is older than the newest on npm gets `previous`, so it never takes `latest`.
 - The macOS `.node` files have no Developer ID signature: the arm64 file has the ad hoc signature of the linker, and the x64 file has none. An Electron app signs them with its own identity, as it does the engine.
 
