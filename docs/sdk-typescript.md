@@ -49,11 +49,13 @@ What exists on 2026-11-10, and how it was checked on Chris's Mac (macOS 27, Appl
 | The guide | `docs/sdk-guide/ts-*.md`, `packages/sdk/examples` | `tsc -p examples`; `scripts/check-sdk-guide.py` checks the `ts` blocks against the examples. The tutorial was not run from `npm init`, because the packages are not on npm. |
 | The Mach-O check | `scripts/check-macho.py` | `scripts/test_check_macho.py`; the spike file `raw.node` fails, and the same file with SDK 26.5 passes. |
 | The start error of the engine | `crates/sayso-engine-sdk`, `crates/sayso-sdk` | The error has the last lines of the stderr of the engine (a test with a fake program that exits with 127). |
-| CI | `.github/workflows/npm.yml` | Not run yet. It builds and tests the five addons, runs the runtimes, and publishes with trusted publishing. |
+| CI | `.github/workflows/npm.yml` | Not run yet. It builds and tests the five addons and runs the runtimes. It never publishes. |
+| Publication | The jobs `npm-build` and `npm` of `release.yml`, `scripts/npm-trust.sh` | Not run yet. `actionlint` passes. Nothing is on npm yet (2026-11-11). docs/releasing.md, "npm packages", has the setup. |
 
 Not done:
 
 - Not run anywhere: Windows, Linux x64, Intel macOS, yarn, Node 22 and 26, and Sayso mode against the real Sayso (the approval question).
+- The first publication: the organization `justsayso` on npm, the token for the first release, and the trusted publishers (docs/releasing.md, "npm packages"). Only Chris can do these.
 
 ### Changes from the plan
 
@@ -288,10 +290,13 @@ Not tested by the spike: Sayso mode from Node and the approval question, `Mode::
 
 ## CI and publication
 
-- A job for each platform builds the addon with `napi build --release --platform`, runs `scripts/check-macho.py` on macOS, and uploads the `.node` file. The two macOS builds run on `macos-26`, which has Xcode 26.
-- The release workflow makes the engine and cleanup packages from its release files with `scripts/npm-packages.py`, so the npm files are the release files.
-- All packages of a release get the version of the crates. `@justsayso/sdk` names its addon packages and its optional peer `@justsayso/engine` at that exact version.
-- Publication uses the trusted publishing of npm (OIDC from GitHub Actions) with provenance, so the repository keeps no npm token. Chris first makes the scope `@justsayso` on npmjs.com and sets up trusted publishing for each package. Check the rules of npm at that time: a package can need a first publication before trusted publishing.
+- `npm.yml` has a job for each platform. It builds the addon with `scripts/build-addon.mjs --release --target`, runs `scripts/check-macho.py` on macOS, runs the tests, and keeps the `.node` file as the artifact `addon-<platform>`. Then it runs the runtimes. The two macOS builds run on `macos-26`, which has Xcode 26. It never publishes. Run it by hand to test a branch, or the Release workflow calls it.
+- The Release workflow calls `npm.yml` as the job `npm-build`, which starts with the other build jobs. Its job `npm` runs after the job `manifest`, as the Homebrew and AUR jobs do. So a failure of the npm packages never stops a release.
+- The job `npm` makes the engine and cleanup packages from the release files with `scripts/npm-packages.py`, so the npm files are the release files. It puts the addons of the run into `packages/sdk/npm/<platform>`, publishes the platform packages first, and then `@justsayso/engine`, `@justsayso/cleanup`, and `@justsayso/sdk`. It skips each version that npm already has, so a second run publishes only what is missing.
+- All packages of a release get the version of the crates. `@justsayso/sdk` names its addon packages and its optional peers at that exact version. `scripts/npm-packages.py set-version` writes the version, and `check-versions` checks it in `ci.yml` and at the start of a release.
+- Publication uses the trusted publishing of npm (OIDC from GitHub Actions). The trusted publisher of each package is `release.yml` of `watzon/sayso`, so no other workflow can publish. npm adds provenance itself. A package must exist on npm before it can have a trusted publisher, so the first publication uses a granular token in the secret `NPM_TOKEN`. After that, `scripts/npm-trust.sh` adds the trusted publishers, and the secret goes away. docs/releasing.md, "npm packages", has the steps.
+- A prerelease version gets the dist-tag `next`. A version that is older than the newest on npm gets `previous`, so it never takes `latest`.
+- The macOS `.node` files have no Developer ID signature: the arm64 file has the ad hoc signature of the linker, and the x64 file has none. An Electron app signs them with its own identity, as it does the engine.
 
 ## Docs
 

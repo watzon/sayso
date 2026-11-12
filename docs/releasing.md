@@ -105,6 +105,40 @@ The AUR commit uses the name and the email address of the repository variables `
 
 To change the package without a new Sayso version (for example a new dependency), change `PKGBUILD.in`, increase `pkgrel` there, and push the files by hand. Set `pkgrel` back to 1 for the next version.
 
+### npm packages
+
+The job **npm publish** publishes the 18 packages of the TypeScript SDK ([sdk-typescript.md](sdk-typescript.md), "CI and publication"). `scripts/npm-packages.py names` lists them. The job **npm addons** (`npm.yml`) builds and tests the native addons on the five platforms, at the same time as the other build jobs. The publish job runs after the release is the latest release, like the Homebrew job, so a failure there does not change the release. To publish again, run the failed jobs of the run again. The publish job skips each package version that npm already has.
+
+The job uses npm trusted publishing: npm trusts `release.yml` of `watzon/sayso`, and the job gets a short token with OIDC. The repository keeps no npm token. A package must exist on npm before it can have a trusted publisher, so the first publication needs a token one time.
+
+Do these steps one time, before the first release with npm packages:
+
+1. On <https://www.npmjs.com>, make the organization `justsayso`, so the scope `@justsayso` exists. Turn on two-factor authentication for your account.
+2. Make a granular access token: **Access Tokens › Generate New Token › Granular Access Token**. Give it **Read and write** for the scope `@justsayso`, select **Bypass two-factor authentication**, and set a short expiry, for example 7 days. Store it:
+
+   ```sh
+   gh secret set NPM_TOKEN --repo watzon/sayso
+   ```
+
+3. Make the release as usual ("Make a release"). The publish job uses the token, because no package has a trusted publisher yet.
+4. Add the trusted publisher to every package. It needs npm 11.15.0 or later. npm asks for a one-time password at the first package:
+
+   ```sh
+   npm login
+   scripts/npm-trust.sh
+   scripts/npm-trust.sh --list   # each package names release.yml
+   ```
+
+5. Delete the token, on npmjs.com and in the repository:
+
+   ```sh
+   gh secret delete NPM_TOKEN --repo watzon/sayso
+   ```
+
+A new trusted publisher expires when it has no publication in 2 days, so do step 4 close to a release, or run step 4 again before the next release. When a later version adds a new package, it needs the same steps for that package only: the token for its first publication, then the trusted publisher.
+
+The `.node` files of the addons are not signed with the Developer ID. Each app that ships the SDK signs them with its own identity.
+
 ### Windows signing (optional)
 
 The Windows job signs the installer and the exes (`Sayso.exe`, the three builds of the speech engine: `sayso-engine.exe`, `sayso-engine-avx.exe`, and `sayso-engine-baseline.exe`, and the three builds of the cleanup runtime: `sayso-cleanup.exe`, `sayso-cleanup-avx.exe`, and `sayso-cleanup-baseline.exe`) when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
@@ -129,13 +163,20 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    To see the window, run `scripts/dev.sh --whats-new`. It shows the first entry of the file.
 
-2. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and set the same version in `engineVersion` in `native/macos/SaysoEngine/Sources/SaysoEngine/Protocol.swift`. The Swift engine cannot read `Cargo.toml`, and its `hello` reply must have the version of the release. The test `the_swift_engine_reports_the_sayso_version` in `sayso-core` (step 3) fails when the two differ. Commit the three files and `release-notes.toml` to `main`.
+2. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and set the same version in `engineVersion` in `native/macos/SaysoEngine/Sources/SaysoEngine/Protocol.swift`. The Swift engine cannot read `Cargo.toml`, and its `hello` reply must have the version of the release. The test `the_swift_engine_reports_the_sayso_version` in `sayso-core` (step 3) fails when the two differ. Then write the version into the npm packages:
+
+   ```sh
+   python3 scripts/npm-packages.py set-version --version 0.3.0
+   ```
+
+   The release stops at its first job when an npm package has another version. Commit the three files, the `package.json` files in `packages/`, and `release-notes.toml` to `main`.
 3. Run the checks on your Mac. CI does not run them on a push.
 
    ```sh
    cargo test --workspace
    cargo clippy --workspace --all-targets -- -D warnings
    scripts/check-deps.sh
+   python3 scripts/npm-packages.py check-versions
    ```
 
 4. Publish the release as a prerelease. The tag must be `v` plus the version in `Cargo.toml`, or the workflow stops. `--notes-start-tag` names the release before this one, because GitHub does not use a prerelease as the start of the notes by itself.
@@ -163,6 +204,12 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
    The tap `watzon/homebrew-tap` must also have a new commit, `sayso <version>`.
 
    The AUR package `sayso-bin` must also have the new version.
+
+   npm must have the new version of `@justsayso/sdk`, `@justsayso/engine`, and `@justsayso/cleanup`:
+
+   ```sh
+   npm view @justsayso/sdk version
+   ```
 
 7. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before. The Nix package installs every `bin/sayso-cleanup*` file of the tarball, so it needs a release with the cleanup runtime (0.11.0 or later).
 

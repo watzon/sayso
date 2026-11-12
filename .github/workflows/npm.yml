@@ -5,30 +5,30 @@ name: npm
 # engine packages @justsayso/engine-<platform>, @justsayso/cleanup, and the cleanup runtime
 # packages @justsayso/cleanup-<platform>.
 #
-# Build and test the addons on the five platforms:
-#   gh workflow run npm.yml
-# Publish a release to npm, after the Release workflow attached the engine and cleanup release files:
-#   gh workflow run npm.yml -f tag=v0.16.0 -f publish=true
-# Publication uses the trusted publishing of npm (OIDC), so the repository keeps no npm token.
+# This workflow builds and tests the addons on the five platforms, and keeps each addon as
+# the artifact addon-<platform>. It never publishes. The Release workflow calls it, and its
+# job "npm publish" publishes the packages with the addons of that run (docs/releasing.md,
+# "npm packages"). npm trusted publishing names release.yml, so only that workflow can publish.
+#
+# To build and test a branch or a tag by hand:
+#   gh workflow run npm.yml --ref <branch>
+#   gh workflow run npm.yml -f tag=v0.16.0
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag of a release with engine and cleanup release files (for example v0.16.0). Empty: build the branch.'
+        description: 'A tag to build (for example v0.16.0). Empty: build the branch of the run.'
         required: false
         type: string
-      publish:
-        description: 'Publish the packages to npm (needs tag)'
-        required: false
-        type: boolean
-        default: false
+  workflow_call:
+    inputs:
+      tag:
+        description: 'The tag to build'
+        required: true
+        type: string
 
 permissions:
   contents: read
-
-concurrency:
-  group: npm-${{ inputs.tag || github.ref }}
-  cancel-in-progress: false
 
 jobs:
   addon:
@@ -49,7 +49,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
       - name: Install the build packages
         if: runner.os == 'Linux'
         run: scripts/linux-deps.sh
@@ -113,7 +113,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           name: addon-${{ matrix.platform }}
@@ -148,71 +148,3 @@ jobs:
       - name: Smoke test with Deno
         if: matrix.runtime == 'deno'
         run: deno run --allow-all packages/sdk/tests/smoke.mjs
-
-  publish:
-    name: Publish to npm
-    needs: [addon, runtimes]
-    if: inputs.publish
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      # Trusted publishing and provenance.
-      id-token: write
-    env:
-      TAG: ${{ inputs.tag }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Check the inputs
-        if: inputs.tag == ''
-        run: |
-          echo "::error::publish needs a tag"
-          exit 1
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag }}
-      - name: Check the tag against the version of the packages
-        run: |
-          version=$(node -p 'require("./packages/sdk/package.json").version')
-          test "v$version" = "$TAG" || { echo "::error::$TAG does not match the version $version of packages/sdk"; exit 1; }
-          python3 scripts/npm-packages.py check-versions --version "$version"
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: addon-*
-          path: addons
-      - name: Put the addons in their packages
-        shell: bash
-        run: |
-          for dir in addons/addon-*; do
-            platform=${dir#addons/addon-}
-            cp "$dir/sayso.$platform.node" "packages/sdk/npm/$platform/"
-          done
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-      - name: Build the TypeScript layer
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm --filter @justsayso/sdk build
-      - name: Make the engine packages from the release files
-        run: |
-          gh release download "$TAG" -p 'sayso-engine-*' -D release
-          python3 scripts/npm-packages.py engine --version "${TAG#v}" --release-dir release --out npm-out
-      - name: Make the cleanup packages from the release files
-        run: |
-          gh release download "$TAG" -p 'sayso-cleanup-*' -D release-cleanup
-          python3 scripts/npm-packages.py cleanup --version "${TAG#v}" --release-dir release-cleanup --out npm-out
-      # The platform packages first, so the main packages never point at a missing version.
-      - name: Publish
-        shell: bash
-        run: |
-          set -euo pipefail
-          npm install -g npm@latest
-          for dir in packages/sdk/npm/* npm-out/engine-* npm-out/cleanup-*; do
-            (cd "$dir" && npm publish --provenance --access public)
-          done
-          (cd npm-out/engine && npm publish --provenance --access public)
-          (cd npm-out/cleanup && npm publish --provenance --access public)
-          (cd packages/sdk && npm publish --provenance --access public)

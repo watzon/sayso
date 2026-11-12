@@ -302,6 +302,10 @@ jobs:
             exit 1
           fi
 
+      # The npm packages get the version of the release (docs/releasing.md, step 2).
+      - name: Check the version of the npm packages
+        run: python3 scripts/npm-packages.py check-versions --version "${TAG#v}"
+
   linux:
     name: Linux
     needs: linux-check
@@ -767,3 +771,112 @@ jobs:
           git -C repo -c user.name="$AUR_COMMIT_NAME" -c user.email="$AUR_COMMIT_EMAIL" commit --quiet -m "sayso-bin $version"
           git -C repo push origin HEAD:master
           echo "The AUR has sayso-bin $version."
+
+  # Build and test the native addons of the TypeScript SDK on the five platforms
+  # (npm.yml). It starts with the other build jobs. A failure here does not stop
+  # the release: only the npm packages wait for it.
+  npm-build:
+    name: npm addons
+    needs: linux-check
+    permissions:
+      contents: read
+    uses: ./.github/workflows/npm.yml
+    with:
+      tag: ${{ github.event.release.tag_name || inputs.tag }}
+
+  # Publish the npm packages: @justsayso/sdk and its addons, and @justsayso/engine
+  # and @justsayso/cleanup with their platform packages, made from the release
+  # files. Like the Homebrew job, this runs after the release is the latest
+  # release. To publish again, run this job again: it skips each package
+  # version that npm already has. Authentication is npm trusted publishing,
+  # which names this file (docs/releasing.md, "npm packages").
+  npm:
+    name: npm publish
+    needs: [manifest, npm-build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # npm trusted publishing (OIDC) and provenance.
+      id-token: write
+    concurrency:
+      group: npm-publish
+      cancel-in-progress: false
+    steps:
+      - name: Checkout the tag
+        uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+
+      - name: Check the version of the npm packages
+        run: python3 scripts/npm-packages.py check-versions --version "${TAG#v}"
+
+      - name: Get the addons of this run
+        uses: actions/download-artifact@v4
+        with:
+          pattern: addon-*
+          path: addons
+
+      - name: Put the addons in their packages
+        run: |
+          for platform in darwin-arm64 darwin-x64 linux-x64-gnu linux-arm64-gnu win32-x64-msvc; do
+            file="addons/addon-$platform/sayso.$platform.node"
+            [[ -f "$file" ]] || { echo "::error::The addon for $platform is missing."; exit 1; }
+            cp "$file" "packages/sdk/npm/$platform/"
+          done
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Build the TypeScript layer
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --filter @justsayso/sdk build
+
+      - name: Make the engine and cleanup packages from the release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${TAG#v}"
+          gh release download "$TAG" -p "sayso-engine-$version-*" -D release-engine
+          python3 scripts/npm-packages.py engine --version "$version" --release-dir release-engine --out npm-out
+          gh release download "$TAG" -p "sayso-cleanup-$version-*" -D release-cleanup
+          python3 scripts/npm-packages.py cleanup --version "$version" --release-dir release-cleanup --out npm-out
+
+      # The platform packages first, so a main package never names a version that
+      # npm does not have. A version that is not the newest on npm (a correction
+      # of an old line) and a prerelease do not take the dist-tag "latest".
+      - name: Publish
+        env:
+          # Only for the first publication of a new package, before it has a
+          # trusted publisher. npm uses OIDC first. See docs/releasing.md.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          npm install -g npm@11
+          version="${TAG#v}"
+          publish() {
+            local dir=$1 name current tag=latest
+            name=$(node -p "require('./$dir/package.json').name")
+            if [[ -n "$(npm view "$name@$version" version 2>/dev/null || true)" ]]; then
+              echo "npm already has $name@$version."
+              return
+            fi
+            current=$(npm view "$name" dist-tags.latest 2>/dev/null || true)
+            if [[ "$version" == *-* ]]; then
+              tag=next
+            elif [[ -n "$current" && "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -1)" != "$version" ]]; then
+              tag=previous
+            fi
+            (cd "$dir" && npm publish --provenance --access public --tag "$tag")
+            echo "Published $name@$version with the dist-tag $tag."
+          }
+          for dir in packages/sdk/npm/* npm-out/engine-* npm-out/cleanup-*; do
+            publish "$dir"
+          done
+          publish npm-out/engine
+          publish npm-out/cleanup
+          publish packages/sdk

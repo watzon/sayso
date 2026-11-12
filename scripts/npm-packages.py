@@ -6,6 +6,8 @@
     scripts/npm-packages.py cleanup --version 0.15.0 --release-dir DIR --out OUT
                                     [--allow-missing] [--no-npm-check]
     scripts/npm-packages.py check-versions --version 0.15.0
+    scripts/npm-packages.py set-version --version 0.15.0
+    scripts/npm-packages.py names
 
 The engine command reads the engine release files in DIR:
 
@@ -43,6 +45,9 @@ file (on x64 for Linux and Windows, three CPU levels).
 The check-versions command stops with exit code 1, and names each wrong file,
 unless the version of the Cargo workspace and of every package in packages/ is
 the given version, and so are the @justsayso/* dependencies between them.
+The set-version command writes the version into every package in packages/
+and into those dependencies. It does not change Cargo.toml. The names command
+prints the name of each package that a release publishes, one for each line.
 
 A platform without a release file is an error, unless you give --allow-missing.
 The script never publishes. When npm is installed, it runs `npm pack --dry-run`
@@ -350,6 +355,44 @@ def workspace_version():
 DEPENDENCY_FIELDS = ("dependencies", "optionalDependencies", "peerDependencies")
 
 
+def package_manifests():
+    """The package.json files of the packages that a release publishes."""
+    manifests = [os.path.join(ROOT, "packages", "sdk", "package.json")]
+    manifests += sorted(glob.glob(os.path.join(ROOT, "packages", "sdk", "npm", "*", "package.json")))
+    manifests += [os.path.join(ROOT, "packages", "engine", "package.json"), os.path.join(ROOT, "packages", "cleanup", "package.json")]
+    return manifests
+
+
+def package_names():
+    """Each package that a release publishes: the platform packages, then the main packages."""
+    names = [f"{SCOPE}/sdk-{p['name']}" for p in PLATFORMS]
+    for kind in KINDS:
+        names += [f"{SCOPE}/{kind}-{p['name']}" for p in PLATFORMS]
+    return names + [f"{SCOPE}/{kind}" for kind in KINDS] + [f"{SCOPE}/sdk"]
+
+
+def run_set_version(args):
+    version = args.version
+    if not SEMVER.match(version):
+        raise Error(f"--version {version!r} is not a version like 0.15.0")
+    manifests = package_manifests()
+    for path in manifests:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        data["version"] = version
+        for field in DEPENDENCY_FIELDS:
+            for name in data.get(field) or {}:
+                if name.startswith(f"{SCOPE}/"):
+                    data[field][name] = version
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+    print(f"==> set the version {version} in {len(manifests)} package.json files")
+    found = workspace_version()
+    if found != version:
+        print(f"    note: Cargo.toml has the version {found}. A release needs the same version there.")
+
+
 def run_check_versions(args):
     version = args.version
     if not SEMVER.match(version):
@@ -360,9 +403,7 @@ def run_check_versions(args):
     if found != version:
         wrong.append(f"Cargo.toml: workspace version is {found}, not {version}")
 
-    manifests = [os.path.join(ROOT, "packages", "sdk", "package.json")]
-    manifests += sorted(glob.glob(os.path.join(ROOT, "packages", "sdk", "npm", "*", "package.json")))
-    manifests += [os.path.join(ROOT, "packages", "engine", "package.json"), os.path.join(ROOT, "packages", "cleanup", "package.json")]
+    manifests = package_manifests()
     for path in manifests:
         shown = os.path.relpath(path, ROOT)
         try:
@@ -397,12 +438,21 @@ def main(argv):
     for kind in KINDS:
         add_kind_command(commands, kind)
     check = commands.add_parser("check-versions", help="check that all packages and the Cargo workspace have one version")
-    check.add_argument("--version", required=True, help="the version that every file must have, like 0.15.0")
+    check.add_argument("--version", help="the version that every file must have, like 0.15.0 (default: the version in Cargo.toml)")
+    set_version = commands.add_parser("set-version", help="write one version into all packages and their @justsayso dependencies")
+    set_version.add_argument("--version", required=True, help="the new version, like 0.16.0")
+    commands.add_parser("names", help="print the name of each package that a release publishes")
     args = parser.parse_args(argv)
     try:
-        if args.command in KINDS:
+        if args.command == "names":
+            print("\n".join(package_names()))
+        elif args.command in KINDS:
             run_kind(args.command, args)
+        elif args.command == "set-version":
+            run_set_version(args)
         else:
+            if args.version is None:
+                args.version = workspace_version()
             run_check_versions(args)
     except Error as error:
         print(f"error: {error}", file=sys.stderr)

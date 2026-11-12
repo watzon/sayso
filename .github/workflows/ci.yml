@@ -107,6 +107,9 @@ jobs:
       # packages/sdk/src/protocol must be what sayso-protocol writes (feature ts).
       - name: Check the TypeScript types of the protocol
         run: scripts/check-protocol-ts.sh
+      # Each npm package has the version of Cargo.toml (docs/releasing.md, step 2).
+      - name: Check the version of the npm packages
+        run: python3 scripts/npm-packages.py check-versions
       # Not a workspace member, so cargo test --workspace does not run it.
       - name: Test the vendored crate
         run: cargo test -p gpui-pre-wgpu --test sayso
