@@ -121,7 +121,7 @@ When a version adds a new package, do these steps for that package:
    cd <folder of the package> && npm publish --access public
    ```
 
-3. Add the trusted publisher to every package. It needs npm 11.15.0 or later. npm asks for one approval in the browser, then does not ask again for 5 minutes:
+3. Add the trusted publisher to every package. It needs npm 11.15.0 or later. Every npm trust command needs two-factor authentication, also `--list`. Run the script in a terminal. At the first package, npm opens its approval page in the browser. Approve, and select the option to skip two-factor authentication for 5 minutes. Or set `NPM_OTP_COMMAND` (the comment at the top of the script tells how):
 
    ```sh
    scripts/npm-trust.sh

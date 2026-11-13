@@ -50,7 +50,7 @@ What exists on 2026-11-10, and how it was checked on Chris's Mac (macOS 27, Appl
 | The Mach-O check | `scripts/check-macho.py` | `scripts/test_check_macho.py`; the spike file `raw.node` fails, and the same file with SDK 26.5 passes. |
 | The start error of the engine | `crates/sayso-engine-sdk`, `crates/sayso-sdk` | The error has the last lines of the stderr of the engine (a test with a fake program that exits with 127). |
 | CI | `.github/workflows/npm.yml` | Not run yet. It builds and tests the five addons and runs the runtimes. It never publishes. |
-| Publication | The jobs `npm-build` and `npm` of `release.yml`, `scripts/npm-trust.sh` | Not run yet. `actionlint` passes. Nothing is on npm yet (2026-11-11). docs/releasing.md, "npm packages", has the setup. |
+| Publication | The jobs `npm-build` and `npm` of `release.yml`, `scripts/npm-trust.sh` | 0.16.0 of the 18 packages is on npm, published from a Mac (2026-11-12). The 18 trusted publishers name `release.yml` of `watzon/sayso` (checked with `scripts/npm-trust.sh --list`). The first publish with OIDC is the next release. docs/releasing.md, "npm packages", has the setup. |
 
 Not done:
 
