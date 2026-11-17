@@ -58,6 +58,9 @@ pub struct TapLogic {
     /// Modifiers pressed without a regular key in between.
     modifier_capture: ModifierCapture,
     pressed_keys: Vec<u16>,
+    /// The key of the push-to-talk chord that the active tap took on key
+    /// down. Its repeats and its release go to no app either.
+    taken_chord_key: Option<u16>,
 }
 
 impl TapLogic {
@@ -73,6 +76,7 @@ impl TapLogic {
             capturing: false,
             modifier_capture: ModifierCapture::default(),
             pressed_keys: Vec::new(),
+            taken_chord_key: None,
         }
     }
 
@@ -136,6 +140,47 @@ impl TapLogic {
         let swallow = self.take.key(down, repeat, plain);
         let cancel = down && !repeat && self.recording && plain && self.esc.press(now);
         (cancel.then_some(HotkeyEvent::Cancel), swallow)
+    }
+
+    /// Push-to-talk is a chord, which the active tap takes from the app.
+    pub fn has_ptt_chord(&self) -> bool {
+        matches!(self.ptt, Some(Ptt::Chord { .. }))
+    }
+
+    /// One key event in the active tap, for the push-to-talk chord. Returns
+    /// the push-to-talk event, if this event changes it, and true when the
+    /// app must not get the event. The listen-only tap may see the same
+    /// event; the push-to-talk state changes once, so only one event goes out.
+    pub fn active_ptt_key(&mut self, code: u16, down: bool, repeat: bool, flags: u64) -> (Option<HotkeyEvent>, bool) {
+        let mut events = Vec::new();
+        if self.taken_chord_key == Some(code) {
+            if !down {
+                self.taken_chord_key = None;
+                if matches!(self.ptt, Some(Ptt::Chord { keycode, .. }) if keycode == code) {
+                    self.set_ptt_down(false, &mut events);
+                }
+                return (events.pop(), true);
+            }
+            if repeat {
+                return (None, true);
+            }
+            // A new press: the tap missed the release of the last one.
+            self.taken_chord_key = None;
+        }
+        if !down || repeat || self.capturing || !self.chord_matches(code, flags) {
+            return (None, false);
+        }
+        self.taken_chord_key = Some(code);
+        self.set_ptt_down(true, &mut events);
+        (events.pop(), true)
+    }
+
+    /// This key down, with these flags, presses the push-to-talk chord.
+    fn chord_matches(&self, code: u16, flags: u64) -> bool {
+        matches!(self.ptt, Some(Ptt::Chord { keycode, modifiers })
+            if code == keycode
+                && modifiers_from_cg_flags(flags) == required_modifiers(modifiers)
+                && (!modifiers.function || flags & crate::ffi::FLAG_SECONDARY_FN != 0))
     }
 
     pub fn set_capturing(&mut self, capturing: bool) {
@@ -205,11 +250,7 @@ impl TapLogic {
                 if repeat {
                     return out;
                 }
-                if let Some(Ptt::Chord { keycode, modifiers }) = self.ptt
-                    && code == keycode
-                    && modifiers_from_cg_flags(flags) == required_modifiers(modifiers)
-                    && (!modifiers.function || flags & crate::ffi::FLAG_SECONDARY_FN != 0)
-                {
+                if self.chord_matches(code, flags) {
                     self.set_ptt_down(true, &mut out.events);
                 }
                 if code == KC_ESCAPE
@@ -696,6 +737,95 @@ mod tests {
         assert_eq!(out.events, vec![HotkeyEvent::PushToTalkUp]);
         // The later key-up must not release twice.
         assert!(l.handle(RawEvent::KeyUp { code: 2, flags: 0 }, now).events.is_empty());
+    }
+
+    // kVK_ANSI_Slash, for the Cmd+/ of issue #77.
+    const KC_SLASH: u16 = 44;
+
+    fn cmd_slash() -> TapLogic {
+        let mut l = logic();
+        l.set_ptt(Some("cmd+/".parse().unwrap()));
+        assert!(l.has_ptt_chord());
+        l
+    }
+
+    #[test]
+    fn the_active_tap_takes_the_ptt_chord_with_its_repeats_and_release() {
+        let mut l = cmd_slash();
+        let now = Instant::now();
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, false, FLAG_COMMAND), (Some(HotkeyEvent::PushToTalkDown), true));
+        // The listen-only tap may see the same press: no second down.
+        assert!(l.handle(key_down(KC_SLASH, FLAG_COMMAND), now).events.is_empty());
+        for _ in 0..3 {
+            assert_eq!(l.active_ptt_key(KC_SLASH, true, true, FLAG_COMMAND), (None, true), "auto-repeat");
+        }
+        assert_eq!(l.active_ptt_key(KC_SLASH, false, false, FLAG_COMMAND), (Some(HotkeyEvent::PushToTalkUp), true));
+        assert!(l.handle(RawEvent::KeyUp { code: KC_SLASH, flags: FLAG_COMMAND }, now).events.is_empty(), "no second up");
+        // After the release, a plain / goes to the app.
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, false, 0), (None, false));
+        assert_eq!(l.active_ptt_key(KC_SLASH, false, false, 0), (None, false));
+    }
+
+    #[test]
+    fn a_ptt_chord_seen_first_by_the_listen_tap_is_still_taken() {
+        let mut l = cmd_slash();
+        let now = Instant::now();
+        assert_eq!(l.handle(key_down(KC_SLASH, FLAG_COMMAND), now).events, vec![HotkeyEvent::PushToTalkDown]);
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, false, FLAG_COMMAND), (None, true));
+        assert_eq!(l.handle(RawEvent::KeyUp { code: KC_SLASH, flags: FLAG_COMMAND }, now).events, vec![HotkeyEvent::PushToTalkUp]);
+        assert_eq!(l.active_ptt_key(KC_SLASH, false, false, FLAG_COMMAND), (None, true));
+    }
+
+    #[test]
+    fn releasing_command_first_does_not_leak_a_slash() {
+        let mut l = cmd_slash();
+        let now = Instant::now();
+        l.active_ptt_key(KC_SLASH, true, false, FLAG_COMMAND);
+        assert_eq!(l.handle(flags(55, 0), now).events, vec![HotkeyEvent::PushToTalkUp]);
+        // The / is still down and repeats with no Command: those are plain
+        // slashes for the app, so Sayso takes them too.
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, true, 0), (None, true));
+        assert_eq!(l.active_ptt_key(KC_SLASH, false, false, 0), (None, true));
+    }
+
+    #[test]
+    fn the_active_tap_leaves_other_keys_and_other_modifiers_alone() {
+        let mut l = cmd_slash();
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, false, 0), (None, false), "a plain /");
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, false, FLAG_COMMAND | FLAG_SHIFT), (None, false), "Cmd+Shift+/");
+        assert_eq!(l.active_ptt_key(0, true, false, FLAG_COMMAND), (None, false), "Cmd+A");
+        // A repeat whose press Sayso did not take.
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, true, FLAG_COMMAND), (None, false));
+        assert_eq!(l.active_ptt_key(KC_SLASH, false, false, FLAG_COMMAND), (None, false));
+    }
+
+    #[test]
+    fn the_active_tap_takes_no_key_for_other_ptt_bindings_or_the_recorder() {
+        let mut l = solo_logic(SoloModifier::RightOption);
+        assert!(!l.has_ptt_chord());
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, false, FLAG_COMMAND), (None, false));
+        let mut l = cmd_slash();
+        l.set_capturing(true);
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, false, FLAG_COMMAND), (None, false), "the key recorder must see it");
+    }
+
+    #[test]
+    fn a_missed_release_does_not_take_the_next_plain_press() {
+        let mut l = cmd_slash();
+        l.active_ptt_key(KC_SLASH, true, false, FLAG_COMMAND);
+        // The system disabled the tap, and the release was lost.
+        assert_eq!(l.release_held(), Some(HotkeyEvent::PushToTalkUp));
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, false, 0), (None, false));
+        assert_eq!(l.active_ptt_key(KC_SLASH, true, true, 0), (None, false));
+        assert_eq!(l.active_ptt_key(KC_SLASH, false, false, 0), (None, false));
+    }
+
+    #[test]
+    fn a_held_chord_key_is_still_taken_after_the_binding_changes() {
+        let mut l = cmd_slash();
+        l.active_ptt_key(KC_SLASH, true, false, FLAG_COMMAND);
+        assert_eq!(l.set_ptt(Some(Hotkey::Solo(SoloModifier::RightOption))), Some(HotkeyEvent::PushToTalkUp));
+        assert_eq!(l.active_ptt_key(KC_SLASH, false, false, FLAG_COMMAND), (None, true));
     }
 
     #[test]

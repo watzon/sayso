@@ -5,7 +5,8 @@
 //! - Modifier-only toggle, push-to-talk, and Esc use our listen-only event tap
 //!   (see [`crate::tap`]). That needs Input Monitoring.
 //! - Send with Enter and taking Esc go through an active tap while one of the
-//!   settings is on. That needs Accessibility, as the paste does.
+//!   settings is on. A push-to-talk chord does too, so the app does not get
+//!   it. That needs Accessibility, as the paste does.
 //!
 //! Carbon hotkeys only fire while the main thread runs an event loop. GPUI
 //! does. A bare `CFRunLoop` does not (spike result).
