@@ -11,7 +11,7 @@ One recording from start to insert. A dictation has a state: idle, recording, pr
 A key that starts a dictation on the first press and stops it on the second press. The default is Option+Space on macOS, Ctrl+Space on Windows, and Ctrl+Alt+Space on Linux.
 
 **Push-to-talk hotkey**
-A key that records while you hold it and stops when you release it. It has no default.
+A key that records while you hold it and stops when you release it. It has no default. On macOS, Sayso takes a push-to-talk chord from the app, with its repeats and its release, as it does with the other chords, so the app does not open its own shortcut or type the key. That needs Accessibility; without it, the app gets the chord as well. Modifier-only bindings always reach the app.
 
 Both dictation hotkeys accept a chord, a single modifier, or a combination of modifiers. Modifier-only bindings distinguish left and right keys. macOS supports Command, Control, Option, Shift, and Fn; modifier-only toggles and push-to-talk need Input Monitoring. Windows and Linux do not support Fn. Modifier-only toggles fire on the first release within 400 ms of the first modifier press, unless another key, mouse button, or scroll was used. On XInput2, pointer motion also cancels a tap so smooth scrolling cannot activate dictation. Overlapping modifier-only bindings are rejected; regular chords can share modifiers. The key of a chord is a letter, a digit, an F key, Space, Return, Tab, Esc, Delete, or a punctuation key: `` ` - = [ ] \ ; ' , . / ``, by the names of the US layout. In the config file a punctuation key is its character, for example `ctrl+[`.
 
