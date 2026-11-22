@@ -4,6 +4,7 @@ package platform
 func New() (*Services, error) {
 	return &Services{
 		Audio:       &windowsAudio{},
+		Meter:       &windowsAudio{},
 		Hotkeys:     newWindowsHotkeys(),
 		Inserter:    windowsInserter{},
 		Context:     windowsContext{},

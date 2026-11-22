@@ -129,10 +129,13 @@ type ContextProvider interface {
 
 // PermissionStatus reports OS permission states.
 type PermissionStatus struct {
-	Microphone      bool
-	Accessibility   bool
-	InputMonitoring bool
-	NeedsInputPerms bool
+	Microphone bool
+	// MicrophoneDenied: the user said no (macOS), or microphone access is
+	// off (Windows). False while the system has not asked yet.
+	MicrophoneDenied bool
+	Accessibility    bool
+	InputMonitoring  bool
+	NeedsInputPerms  bool
 }
 
 // Permissions checks and requests OS permissions.
@@ -178,7 +181,10 @@ type DockPolicy interface {
 
 // Services bundles all platform services for the current OS.
 type Services struct {
-	Audio       AudioCapture
+	Audio AudioCapture
+	// Meter is a second capture for the microphone test of onboarding, so
+	// the test never holds the capture a dictation needs; nil has no test.
+	Meter       AudioCapture
 	Hotkeys     HotkeyManager
 	Inserter    Inserter
 	Context     ContextProvider
