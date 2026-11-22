@@ -148,7 +148,7 @@ func (a *linuxAudio) Start(ctx context.Context, deviceID string, onChunk func(Au
 	if onChunk == nil {
 		return errors.New("audio: no chunk handler")
 	}
-	args, err := a.recordCommand(deviceID)
+	args, err := a.recordCommand(NormalizeDeviceID(deviceID))
 	if err != nil {
 		return err
 	}

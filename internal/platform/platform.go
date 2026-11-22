@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -10,6 +11,26 @@ type AudioDevice struct {
 	ID        string
 	Name      string
 	IsDefault bool
+}
+
+// cpalHosts are the host names cpal writes before a device id
+// ("<host>:<device>"). The Rust app saved input_device in that form.
+var cpalHosts = []string{"coreaudio", "wasapi", "asio", "alsa", "jack", "pulse", "pulseaudio", "pipewire"}
+
+// NormalizeDeviceID strips the cpal host prefix from a device id saved by
+// the Rust app ("coreaudio:<UID>" becomes "<UID>"). Only the first part is
+// a host: an ALSA id such as "alsa:hw:0,0" becomes "hw:0,0".
+func NormalizeDeviceID(id string) string {
+	host, rest, ok := strings.Cut(id, ":")
+	if !ok {
+		return id
+	}
+	for _, h := range cpalHosts {
+		if strings.EqualFold(host, h) {
+			return rest
+		}
+	}
+	return id
 }
 
 // AudioChunk carries 16 kHz mono float32 PCM samples and an RMS level in [0, 1].

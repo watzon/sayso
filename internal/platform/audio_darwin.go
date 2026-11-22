@@ -183,7 +183,7 @@ func (a *macAudio) Start(ctx context.Context, deviceID string, onChunk func(Audi
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 		defer close(c.done)
-		if err := c.open(handle, deviceID); err != nil {
+		if err := c.open(handle, NormalizeDeviceID(deviceID)); err != nil {
 			ready <- err
 			return
 		}

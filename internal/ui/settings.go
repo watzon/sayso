@@ -383,7 +383,7 @@ func (a *App) audioSection(c *mu.Context, p theme.Colors) {
 			}
 			sel := labels[0]
 			for i, id := range ids {
-				if a.cfg.Audio.InputDevice != nil && id == *a.cfg.Audio.InputDevice {
+				if a.cfg.Audio.InputDevice != nil && id == platform.NormalizeDeviceID(*a.cfg.Audio.InputDevice) {
 					sel = labels[i]
 				}
 			}

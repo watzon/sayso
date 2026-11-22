@@ -15,6 +15,7 @@ import (
 	"github.com/watzon/sayso/internal/engine"
 	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/models"
+	"github.com/watzon/sayso/internal/platform"
 	"github.com/watzon/sayso/internal/store"
 )
 
@@ -795,3 +796,29 @@ func TestHotkeyConfigOfConfig(t *testing.T) {
 }
 
 func modelsFormat(n uint64) string { return models.FormatSize(n) }
+
+// devicesStub lists fixed microphones.
+type devicesStub struct{ micStub }
+
+func (devicesStub) ListDevices() ([]platform.AudioDevice, error) {
+	return []platform.AudioDevice{{ID: "BuiltInMicrophoneDevice", Name: "MacBook Pro Microphone"}, {ID: "USBMic", Name: "Desk Mic"}}, nil
+}
+
+// The Rust app saved input_device as "coreaudio:<UID>"; Settings showed
+// "System default" because it compared that with the bare UID.
+func TestSettingsAudioShowsADeviceSavedByTheRustApp(t *testing.T) {
+	e := newEnv(t)
+	e.a.d.Platform = &platform.Services{Audio: devicesStub{}}
+	e.a.cfg.Audio.InputDevice = ptr("coreaudio:USBMic")
+	e.a.OpenSettings(SecAudio)
+	tt := e.hub(t)
+	for _, a := range tt.AccessAll() {
+		if a.Name == i18n.T("settings.audio.input") && a.Role != mu.RoleText {
+			if a.Value != "Desk Mic" {
+				t.Fatalf("input device shows %q, want Desk Mic", a.Value)
+			}
+			return
+		}
+	}
+	t.Fatalf("no input device control; texts %q", tt.Texts())
+}

@@ -291,7 +291,7 @@ func (a *windowsAudio) Start(ctx context.Context, deviceID string, onChunk func(
 		defer close(done)
 		defer func() { close(queue); <-worker }()
 		err := onCOMThread(func(enum comObject) error {
-			return capture(ctx, enum, deviceID, queue, started)
+			return capture(ctx, enum, NormalizeDeviceID(deviceID), queue, started)
 		})
 		if err != nil {
 			select {
