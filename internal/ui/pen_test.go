@@ -147,3 +147,17 @@ func TestTailStartAndSpaces(t *testing.T) {
 func sumiLight() theme.Colors {
 	return theme.NewPalette(theme.Ink{Preset: theme.Sumi}, false).Colors()
 }
+
+// A letter the pen has not written must not get alpha 0: MyGo reads a span
+// color with alpha 0 as "no color" and draws it in the default ink.
+func TestPenUnwrittenLettersAreNotDefaultColored(t *testing.T) {
+	var p pen
+	p.set("hello there", "and more")
+	runPen(&p, 0.05)
+	spans := previewSpans(&p, 150, sumiLight())
+	for i, s := range spans[:len(spans)-1] {
+		if s.Color.A == 0 {
+			t.Errorf("span %d %q has alpha 0", i, s.Text)
+		}
+	}
+}

@@ -232,6 +232,9 @@ func strokeSpan(text string, s stroke, p theme.Colors) mu.Span {
 	a, b := p.Pencil, p.Ink
 	mix := func(x, y uint8) uint8 { return uint8(float32(x) + (float32(y)-float32(x))*s.ink + 0.5) }
 	col := mu.Color{R: mix(a.R, b.R), G: mix(a.G, b.G), B: mix(a.B, b.B), A: mix(a.A, b.A)}.Alpha(s.opacity)
+	// A span with alpha 0 means "no color" to MyGo and draws in the default
+	// text color, so a letter the pen has not written keeps alpha 1/255.
+	col.A = max(col.A, 1)
 	return mu.Span{Text: text, Color: col, Italic: s.ink < 0.5}
 }
 
