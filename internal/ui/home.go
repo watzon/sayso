@@ -80,7 +80,7 @@ func (a *App) homePage(c *mu.Context, p theme.Colors) {
 	mu.Row(c).Gap(32).AlignItems(mu.Start).Children(func() {
 		mu.Column(c).Gap(24).Grow(1).Basis(0).Children(func() {
 			mu.Row(c).AlignItems(mu.End).Gap(16).Wrap().Children(func() {
-				mu.Column(c).Gap(6).Grow(1).Children(func() {
+				mu.Column(c).Gap(6).Grow(1).Basis(480).Children(func() {
 					eyebrow(c, p, i18n.WeekdayDayMonth(now))
 					heading(c, p, greeting(now, a.cfg.General.DisplayName()), 40).Role(mu.RoleHeading)
 				})

@@ -991,3 +991,28 @@ func TestHistoryRowsAlignOneLineEntriesLeft(t *testing.T) {
 		t.Errorf("one-line entry starts at x=%v, multi-line at x=%v", x["short"], x[long])
 	}
 }
+
+// "Good morning, Watzon." wrapped onto several lines beside the hotkey
+// hint; the hint now moves below the greeting instead.
+func TestHomeGreetingStaysOnOneLine(t *testing.T) {
+	for _, w := range []int{HubMinWidth, 1000, HubWidth} {
+		e := newEnv(t)
+		e.a.d.Now = func() time.Time { return time.Date(2026, 11, 18, 9, 0, 0, 0, time.Local) }
+		e.a.cfg.General.Name = ptr("Watzon")
+		e.a.SetPage(PageHome)
+		tt := mu.NewTester(e.a.HubView, w, HubHeight)
+		found := false
+		for _, a := range tt.AccessAll() {
+			if a.Role == mu.RoleHeading && a.Name == greeting(e.a.now(), "Watzon") {
+				found = true
+				// The heading is 40 high; two lines would be about 98.
+				if a.Bounds.H > 70 {
+					t.Errorf("width %d: the greeting wraps: %+v", w, a.Bounds)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("width %d: no greeting heading", w)
+		}
+	}
+}
