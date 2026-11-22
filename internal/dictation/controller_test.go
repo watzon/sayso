@@ -392,6 +392,44 @@ func TestAStyleRunsWithItsProvider(t *testing.T) {
 	}
 }
 
+// preparing is a Styler that hears Prepare.
+type preparing struct {
+	upper
+	got chan config.Provider
+}
+
+func (p preparing) Prepare(provider config.Provider) { p.got <- provider }
+
+// A provider that runs a program starts it while the user speaks, and gets
+// the CLI timeout.
+func TestAClaudeProviderIsPreparedWhenTheMicrophoneOpens(t *testing.T) {
+	r := newRig(t, func(c *config.Config) {
+		c.AI.Enabled = true
+		id, model, path := "claude-code", "sonnet", "/nowhere/claude"
+		c.AI.Providers = []config.Provider{{ID: id, Name: "Claude Code", Kind: config.KindClaudeCLI, Model: &model, Path: &path}}
+		c.AI.DefaultProvider = &id
+		c.AI.ActiveStyle = "rambling"
+	})
+	lib := enhance.LoadStyles(filepath.Join(t.TempDir(), "styles"))
+	r.c.d.Styles = func() *enhance.StyleLibrary { return lib }
+	styler := preparing{got: make(chan config.Provider, 1)}
+	r.c.d.Styler = styler
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	select {
+	case p := <-styler.got:
+		if p.ID != "claude-code" {
+			t.Fatal(p.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the provider was not prepared")
+	}
+	if got := StyleTimeout(r.cfg.AI, r.cfg.AI.Providers[0]); got != 8*time.Second {
+		t.Fatal(got)
+	}
+	var _ Preparer = &DefaultStyler{}
+}
+
 func TestWhatADictationNeeds(t *testing.T) {
 	r := newRig(t, nil)
 	r.c.d.Engine = nil

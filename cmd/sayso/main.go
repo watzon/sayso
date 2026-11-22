@@ -265,6 +265,7 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 	})
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		ctl.Close()
+		enhance.StopSpares()
 		if plat != nil && plat.Hotkeys != nil {
 			plat.Hotkeys.Stop()
 		}

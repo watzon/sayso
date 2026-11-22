@@ -125,6 +125,12 @@ type Styler interface {
 	Run(job StyleJob) enhance.PipelineOutput
 }
 
+// Preparer is a Styler that can start a provider's program while the user
+// speaks (a spare claude process). Prepare returns at once.
+type Preparer interface {
+	Prepare(provider config.Provider)
+}
+
 // Observer hears what the overlay shows. Calls come from the controller
 // goroutine and must not block.
 type Observer interface {
@@ -624,6 +630,11 @@ func (c *Controller) startCapture(id SessionID) {
 	s.diagnostics.StartToCaptureMs = &ms
 	if recording {
 		c.startPreview(id, true)
+		if p, ok := c.d.Styler.(Preparer); ok {
+			if provider, ok := c.providerFor(c.sessionStyle(id)); ok {
+				go p.Prepare(provider)
+			}
+		}
 	}
 }
 
@@ -913,11 +924,17 @@ func (c *Controller) applyStyle(id SessionID, text string) {
 	}
 	provider, ok := c.providerFor(style)
 	if !ok || style.RunPlanOn(provider).Kind == enhance.PlanNothing {
+		styleID := ""
+		if style != nil {
+			styleID = style.ID
+		}
+		slog.Info("enhance: not used", "style", styleID, "ai_enabled", c.config().AI.Enabled, "provider_found", ok, "provider", provider.ID)
 		s.enhance = &store.EnhanceOutcome{Result: store.EnhanceNotUsed}
 		c.dispatch(Event{Kind: EvReadyToInsert, Session: id, Text: text})
 		return
 	}
 	if provider.NeedsModel() {
+		slog.Warn("enhance: no model is chosen", "provider", provider.ID, "kind", provider.Kind)
 		s.enhance = &store.EnhanceOutcome{Result: store.EnhanceFailed, ProviderID: provider.ID, Reason: "no model is chosen for it"}
 		c.dispatch(Event{Kind: EvReadyToInsert, Session: id, Text: text, HasEnhanceErr: true, EnhanceError: msg("overlay.error.no_model_chosen", "provider", provider.ID).String()})
 		return
@@ -1203,6 +1220,9 @@ func StyleTimeout(ai config.AI, p config.Provider) time.Duration {
 	return time.Duration(ai.CLITimeoutMs) * time.Millisecond
 }
 
+// Prepare starts a spare process for a provider that runs a program.
+func (d *DefaultStyler) Prepare(provider config.Provider) { enhance.Prepare(provider) }
+
 // Run runs one style step.
 func (d *DefaultStyler) Run(job StyleJob) enhance.PipelineOutput {
 	started := time.Now()
@@ -1210,7 +1230,8 @@ func (d *DefaultStyler) Run(job StyleJob) enhance.PipelineOutput {
 	if d.Config != nil {
 		cfg = *d.Config()
 	}
-	p := &enhance.TextPipeline{Replacer: enhance.NewReplacer(nil), Style: job.Style, BasePrompt: job.BasePrompt, Vocabulary: job.Vocabulary, Timeout: StyleTimeout(cfg.AI, job.Provider)}
+	p := &enhance.TextPipeline{Replacer: enhance.NewReplacer(nil), Style: job.Style, BasePrompt: job.BasePrompt, Vocabulary: job.Vocabulary, Timeout: StyleTimeout(cfg.AI, job.Provider),
+		ProviderKind: string(job.Provider.Kind)}
 	var setupMs uint64
 	if job.Provider.Kind == config.KindCleanupModel && job.Provider.Model != nil {
 		if info, ok := enhance.FindCleanupModel(*job.Provider.Model); ok && d.Cleaner != nil {

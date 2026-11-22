@@ -12,7 +12,7 @@ import (
 )
 
 // BuildEnhancer makes the enhancer of a provider (sayso-enhance build_enhancer).
-// The Claude CLI and ACP agent kinds are not ported yet: they report "not set up".
+// ACP agents are not ported yet: they report "not set up".
 func BuildEnhancer(p config.Provider, secrets providers.SecretStore, cfg config.AI, engineModel LanguageModel) Enhancer {
 	httpTimeout := time.Duration(cfg.HTTPTimeoutMs) * time.Millisecond
 	cliTimeout := time.Duration(cfg.CLITimeoutMs) * time.Millisecond
@@ -40,7 +40,13 @@ func BuildEnhancer(p config.Provider, secrets providers.SecretStore, cfg config.
 	case config.KindCleanupModel:
 		return stubEnhancer{id: p.ID, reason: "cleanup models run in the cleanup runtime"}
 	case config.KindClaudeCLI:
-		return stubEnhancer{id: p.ID, cloud: true, reason: "the Claude CLI provider is not available in this build"}
+		path := ""
+		if p.Path != nil {
+			path = *p.Path
+		}
+		e := NewClaudeCLI(p.ID, path, claudeModel(p)).WithThinking(p.ThinkingSent()).WithConfigDir(p.ConfigDirSet())
+		e.DefaultTimeout = cliTimeout
+		return e
 	case config.KindACP:
 		return stubEnhancer{id: p.ID, cloud: true, reason: "ACP agents are not available in this build"}
 	}
@@ -94,6 +100,8 @@ type TextPipeline struct {
 	Enhancer   Enhancer    // nil: no provider
 	Cleaner    *CleanerRun // set when the provider is a cleanup model
 	Timeout    time.Duration
+	// ProviderKind is the kind of the Enhancer's provider, for the log.
+	ProviderKind string
 }
 
 // stepTimeout is the style timeout plus 50 ms per word over 100 words.
@@ -146,6 +154,8 @@ func (p *TextPipeline) RunStyle(replaced string, reps []store.AppliedReplacement
 		return p.runCleanup(*p.Cleaner, replaced, reps)
 	}
 	if p.Enhancer == nil || !p.Style.UsesAI() || strings.TrimSpace(replaced) == "" {
+		slog.Info("enhance: skipped", "style", p.Style.ID, "has_provider", p.Enhancer != nil, "style_uses_ai", p.Style.UsesAI(),
+			"empty_text", strings.TrimSpace(replaced) == "")
 		return notUsed(replaced, reps, nil)
 	}
 	spoken := Spelled(replaced)
@@ -158,6 +168,8 @@ func (p *TextPipeline) RunStyle(replaced string, reps []store.AppliedReplacement
 	if timeout > 0 {
 		deadline = time.Now().Add(timeout)
 	}
+	slog.Info("enhance: start", "provider", p.Enhancer.ID(), "kind", p.ProviderKind, "style", p.Style.ID,
+		"timeout_ms", timeout.Milliseconds(), "words", len(strings.Fields(spoken)))
 	attempts := []store.EnhanceAttempt{}
 	attempt := func(r Request) (Response, error) {
 		started := time.Now()
@@ -200,11 +212,14 @@ func (p *TextPipeline) RunStyle(replaced string, reps []store.AppliedReplacement
 	timings := &store.EnhanceTimings{TimeoutMs: uint64(timeout.Milliseconds()),
 		PromptChars: utf8.RuneCountInString(req.SystemPrompt) + utf8.RuneCountInString(req.Transcript), Attempts: attempts}
 	if err != nil {
-		slog.Warn("style failed", "style", p.Style.ID, "provider", p.Enhancer.ID(), "error", err)
+		slog.Warn("enhance: failed", "provider", p.Enhancer.ID(), "kind", p.ProviderKind, "style", p.Style.ID,
+			"attempts", len(attempts), "elapsed_ms", elapsed, "error", err)
 		return PipelineOutput{Text: replaced, Replacements: reps,
 			Enhance:      store.EnhanceOutcome{Result: store.EnhanceFailed, ProviderID: p.Enhancer.ID(), Reason: err.Error()},
 			EnhanceError: err, ErrorFrom: p.Enhancer.ID(), Timings: timings}
 	}
+	slog.Info("enhance: ok", "provider", resp.ProviderID, "kind", p.ProviderKind, "style", p.Style.ID, "model", resp.Model,
+		"mode", resp.Mode, "attempts", len(attempts), "elapsed_ms", elapsed)
 	return PipelineOutput{Text: strings.TrimSpace(resp.Text), Replacements: reps,
 		Enhance: store.EnhanceOutcome{Result: store.EnhanceApplied, ProviderID: resp.ProviderID, Model: resp.Model, ElapsedMs: elapsed},
 		Timings: timings}
