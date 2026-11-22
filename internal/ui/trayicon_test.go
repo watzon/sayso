@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"os"
 	"testing"
+	"time"
 )
 
 func decodeIcon(t *testing.T, b []byte) image.Image {
@@ -83,5 +84,27 @@ func TestIncognitoDimsTheTray(t *testing.T) {
 	e.a.SetIncognito(false)
 	if len(shell.incognito) != 2 || !shell.incognito[0] || shell.incognito[1] {
 		t.Errorf("tray told %v", shell.incognito)
+	}
+}
+
+// A click on the tray icon opens the popover and a second one closes it;
+// the click that arrives just after a press closed the popover leaves it
+// closed instead of opening it again.
+func TestPopoverToggle(t *testing.T) {
+	var p popoverToggle
+	at := time.Unix(1000, 0)
+	if got := p.click(at, false); got != popoverShow {
+		t.Fatalf("first click: %v", got)
+	}
+	if got := p.click(at.Add(time.Second), true); got != popoverHide {
+		t.Fatalf("click on an open popover: %v", got)
+	}
+	// A press outside, or on the icon, closed it; the icon's click comes 80 ms later.
+	p.closed(at.Add(2 * time.Second))
+	if got := p.click(at.Add(2*time.Second+80*time.Millisecond), false); got != popoverNothing {
+		t.Errorf("the closing click opened it again: %v", got)
+	}
+	if got := p.click(at.Add(3*time.Second), false); got != popoverShow {
+		t.Errorf("a later click: %v", got)
 	}
 }

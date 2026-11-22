@@ -1180,3 +1180,23 @@ func TestHistoryShowTranscriptLinkIsLeftAligned(t *testing.T) {
 		t.Errorf("the link %+v in the transcript step %+v", link, step)
 	}
 }
+
+// Escape closes an open submenu of the popover first, then the popover
+// (Rust popover.rs).
+func TestPopoverEscape(t *testing.T) {
+	e := newEnv(t)
+	tt := mu.NewTester(e.a.PopoverView, PopoverW, PopoverH)
+	e.shell.shown[WinPopover] = true
+	e.a.pop.open = "model"
+	tt.Frame()
+	tt.Key(0, mu.KeyEscape)
+	tt.Frame()
+	if e.a.pop.open != "" || !e.shell.shown[WinPopover] {
+		t.Fatalf("first Escape: submenu %q, shown %v", e.a.pop.open, e.shell.shown[WinPopover])
+	}
+	tt.Key(0, mu.KeyEscape)
+	tt.Frame()
+	if e.shell.shown[WinPopover] {
+		t.Error("second Escape left the popover open")
+	}
+}

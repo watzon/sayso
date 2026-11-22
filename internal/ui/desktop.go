@@ -4,6 +4,7 @@ import (
 	"log"
 	"math"
 	"runtime"
+	"time"
 
 	"github.com/egoist/mygo"
 	maudio "github.com/egoist/mygo/audio"
@@ -11,17 +12,22 @@ import (
 
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/i18n"
+	"github.com/watzon/sayso/internal/platform"
 )
 
 // Desktop is the Shell of the running app: MyGo windows, the tray item
 // and its popover. Every method runs on the main thread.
 type Desktop struct {
-	a        *App
-	hub      *mygo.Window
-	overlay  *mygo.Window
-	wins     map[Window]*mygo.Window
-	tray     *mygo.Tray
-	quitting bool
+	a       *App
+	hub     *mygo.Window
+	overlay *mygo.Window
+	wins    map[Window]*mygo.Window
+	tray    *mygo.Tray
+	popover popoverToggle
+	// popoverFrom is whether Sayso was the active app when the popover
+	// opened: if not, closing it gives the keyboard back.
+	popoverFrom bool
+	quitting    bool
 	// region is the overlay's card, the part of its window that takes the mouse.
 	region mu.Rect
 }
@@ -258,9 +264,41 @@ func (d *Desktop) newPopover() *mygo.Window {
 	if d.tray == nil {
 		return nil
 	}
-	return mygo.NewFlyout(mygo.FlyoutOptions{
+	// Focusable: it closes as a menu does, on a press outside it (in
+	// another app, the desktop or a window of Sayso), when another window
+	// takes the keyboard or the app is deactivated, and on Escape (Rust
+	// popover.rs). A press on the tray icon only closes it.
+	w := mygo.NewFlyout(mygo.FlyoutOptions{
 		Tray: d.tray, Placement: mygo.PlacementBottom, Gap: 6, Width: PopoverW, Height: PopoverH,
-		Shadow: true, Popover: true, CornerRadius: 12, Content: mu.View(d.a.PopoverView),
+		Shadow: true, Popover: true, Focusable: true, CornerRadius: 12, Content: mu.View(d.a.PopoverView),
+	})
+	w.OnHide(func() { d.popoverClosed(w) })
+	w.OnClosed(func() { d.popoverClosed(w) })
+	return w
+}
+
+// popoverClosed notes the close, for the tray click, and gives the keyboard
+// back to the app the user came from: unless Sayso was active already, or
+// the click that closed the popover went to another window of Sayso (Rust
+// popover.rs hide and hide_popover).
+func (d *Desktop) popoverClosed(pop *mygo.Window) {
+	d.popover.closed(time.Now())
+	if d.popoverFrom {
+		return
+	}
+	// After the closing click has reached the window under it.
+	time.AfterFunc(120*time.Millisecond, func() {
+		mygo.RunOnMain(func() {
+			if !mygo.App.IsActive() || (pop.IsVisible() && !pop.IsDestroyed()) {
+				return
+			}
+			for _, w := range append([]*mygo.Window{d.hub}, d.windows()...) {
+				if w != nil && w != pop && !w.IsDestroyed() && w.IsVisible() && w.IsFocused() {
+					return
+				}
+			}
+			platform.DeactivateApp()
+		})
 	})
 }
 
@@ -283,11 +321,15 @@ func (d *Desktop) newTray() {
 	// The primary click opens the themed popover; the secondary click the
 	// plain menu, for screen readers and keyboard users.
 	d.tray.OnClick(func() {
-		if w := d.wins[WinPopover]; w != nil && w.IsVisible() {
+		w := d.wins[WinPopover]
+		visible := w != nil && !w.IsDestroyed() && w.IsVisible()
+		switch d.popover.click(time.Now(), visible) {
+		case popoverHide:
 			w.Hide()
-			return
+		case popoverShow:
+			d.popoverFrom = mygo.App.IsActive()
+			d.ShowWindow(WinPopover, true)
 		}
-		d.ShowWindow(WinPopover, true)
 	})
 	d.tray.OnRightClick(func() {
 		d.tray.SetMenu(menu)

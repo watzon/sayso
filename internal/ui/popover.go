@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"time"
+
 	mu "github.com/egoist/mygo/ui"
 
 	"github.com/watzon/sayso/internal/i18n"
@@ -30,6 +32,14 @@ func (a *App) PopoverView(c *mu.Context) {
 	p := a.look(c)
 	c.Root().Background(p.SheetRaised)
 	a.loadHome()
+	// Esc closes an open submenu first, then the popover (Rust popover.rs).
+	if c.Shortcut(0, mu.KeyEscape) {
+		if a.pop.open != "" {
+			a.pop.open = ""
+		} else {
+			a.d.Shell.ShowWindow(WinPopover, false)
+		}
+	}
 	mu.Column(c).Fill().Padding(8).Gap(6).Draw(a.grain(p, "sheet", 16)).Children(func() {
 		status, _, dot := a.engineSummary(p)
 		mu.Row(c).Padding(10, 10, 6, 10).Gap(10).AlignItems(mu.Center).Children(func() {
@@ -264,4 +274,37 @@ func (a *App) micName() string {
 		}
 	}
 	return i18n.T("popover.system_default")
+}
+
+// popoverToggle decides what a click on the tray icon does to the
+// popover. A press outside the popover closes it, and on some systems the
+// press on the icon does too, before the icon's click arrives: that click
+// must not open it again (Rust popover.rs).
+type popoverToggle struct{ closedAt time.Time }
+
+type popoverAction int
+
+const (
+	popoverNothing popoverAction = iota
+	popoverShow
+	popoverHide
+)
+
+// popoverReopen is how soon after the popover closed a click on the icon
+// is taken as the click that closed it.
+const popoverReopen = 300 * time.Millisecond
+
+// closed notes that the popover closed or hid at now.
+func (p *popoverToggle) closed(now time.Time) { p.closedAt = now }
+
+// click is what a click on the icon at now does, with the popover visible
+// or not.
+func (p *popoverToggle) click(now time.Time, visible bool) popoverAction {
+	switch {
+	case visible:
+		return popoverHide
+	case !p.closedAt.IsZero() && now.Sub(p.closedAt) < popoverReopen:
+		return popoverNothing
+	}
+	return popoverShow
 }
