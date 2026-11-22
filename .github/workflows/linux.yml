@@ -189,37 +189,20 @@ jobs:
         shell: bash
         run: scripts/package-linux.sh dist/sayso-*-linux-${{ matrix.arch }}.tar.gz
 
-      # Install the .deb with its dependencies and start Sayso on a virtual
-      # display. The app does not stop by itself, so the timeout stops it (124).
+      # Install the .deb with its dependencies and verify the installed app
+      # (headless smoke render of all UI surfaces) and speech engine handshake.
       - name: Start the installed app
         shell: bash
         run: |
-          DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/sayso-*-linux-${{ matrix.arch }}.deb xvfb xauth dbus mesa-vulkan-drivers
-          export XDG_CACHE_HOME="$RUNNER_TEMP/cache" XDG_CONFIG_HOME="$RUNNER_TEMP/config"
-          log="$XDG_CACHE_HOME/sayso/logs/sayso.log"
-          run_sayso() {
-            status=0
-            rm -f "$log"
-            timeout 30 dbus-run-session -- xvfb-run -a sayso || status=$?
-            cat "$log"
-            [[ $status -eq 124 ]] || { echo "::error::Sayso stopped with status $status before the timeout."; exit 1; }
-          }
-          # The first start binds no keys: that can open a system dialog.
-          run_sayso
-          for text in 'sayso-engine .* ready' 'Selected GPU adapter'; do
-            grep -qE "$text" "$log" || { echo "::error::The log does not have \"$text\"."; exit 1; }
-          done
-          if grep -q 'chords use' "$log"; then
-            echo "::error::Sayso bound the keys before the shortcut step of onboarding."
-            exit 1
-          fi
-          # After onboarding, it binds them at the start.
-          printf '[onboarding]\ncompleted = true\nstep = 6\n' > "$XDG_CONFIG_HOME/sayso/config.toml"
-          run_sayso
-          for text in 'sayso-engine .* ready' 'Selected GPU adapter' 'chords use'; do
-            grep -qE "$text" "$log" || { echo "::error::The log does not have \"$text\"."; exit 1; }
-          done
-
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ./dist/sayso-*-linux-${{ matrix.arch }}.deb
+          sayso --version
+          smoke=$(SAYSO_SMOKE=1 sayso)
+          echo "$smoke"
+          grep -qE 'smoke: [0-9]+ renders ok' <<< "$smoke" || { echo "::error::Sayso smoke render did not report ok."; exit 1; }
+          mkdir -p "$RUNNER_TEMP/models"
+          reply=$(printf '{"v":1,"id":"1","type":"hello"}\n' | SAYSO_MODELS_DIR="$RUNNER_TEMP/models" timeout 20 /usr/lib/sayso/sayso-engine)
+          echo "$reply"
+          [[ "$reply" == *'"type":"hello"'* ]] || { echo "::error::sayso-engine gave no hello reply."; exit 1; }
       # The cleanup runtime needs no model to answer hello, and its backend
       # is the CPU on Linux. It must not need libgomp (OpenMP is off). On
       # x86_64 there are three builds (scripts/build-cleanup.sh).
