@@ -52,10 +52,18 @@ else
 fi
 
 if [[ -z "${SAYSO_CLEANUP_PATH:-}" ]]; then
+  # Built as in the bundles (-tags ffi_no_embed): on macOS it loads the libffi
+  # in ../Frameworks/llama, as in Sayso.app; on Linux the system's libffi.so.8.
   echo "==> cleanup runtime (go)"
-  mkdir -p build/dev
-  go build -o build/dev/sayso-cleanup ./cmd/sayso-cleanup
-  export SAYSO_CLEANUP_PATH="$PWD/build/dev/sayso-cleanup"
+  cleanup_dir=build/dev
+  if [[ "$(uname -s)" == Darwin ]]; then
+    cleanup_dir=build/dev/cleanup/MacOS
+    mkdir -p build/dev/cleanup/Frameworks/llama
+    go run ./scripts/llama-libs ffi build/dev/cleanup/Frameworks/llama
+  fi
+  mkdir -p "$cleanup_dir"
+  go build -tags ffi_no_embed -ldflags="$(go run ./scripts/llama-libs ldflags)" -o "$cleanup_dir/sayso-cleanup" ./cmd/sayso-cleanup
+  export SAYSO_CLEANUP_PATH="$PWD/$cleanup_dir/sayso-cleanup"
   if [[ -z "${SAYSO_LLAMA_LIB_DIR:-}" ]]; then
     SAYSO_LLAMA_LIB_DIR=$(go run ./scripts/llama-libs fetch -out build/llama-libs)
     export SAYSO_LLAMA_LIB_DIR

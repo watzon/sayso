@@ -7,8 +7,8 @@
 # XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME, SAYSO_FAKE_MIC,
 # SAYSO_ENGINE_PATH, SAYSO_CLEANUP_PATH, and SAYSO_LLAMA_LIB_DIR pass through to
 # the app. Without SAYSO_CLEANUP_PATH, the script builds the cleanup runtime and
-# points it at the pinned llama.cpp libraries in build\llama-libs (the dev build
-# uses the libffi that its binding writes to the user cache). Press Ctrl+C to quit Sayso.
+# points it at the pinned llama.cpp libraries in build\llama-libs. It is built as
+# in the bundle (-tags ffi_no_embed), with libffi-8.dll beside it. Press Ctrl+C to quit Sayso.
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
@@ -28,7 +28,8 @@ if (-not $env:SAYSO_ENGINE_PATH) {
 
 if (-not $env:SAYSO_CLEANUP_PATH) {
     New-Item -ItemType Directory -Force 'build\dev' | Out-Null
-    Invoke-Checked 'cleanup runtime (go)' { go build -o build\dev\sayso-cleanup.exe .\cmd\sayso-cleanup }
+    Invoke-Checked 'cleanup runtime (go)' { go build -tags ffi_no_embed -o build\dev\sayso-cleanup.exe .\cmd\sayso-cleanup }
+    Invoke-Checked 'libffi' { go run .\scripts\llama-libs ffi build\dev }
     $env:SAYSO_CLEANUP_PATH = Join-Path $root 'build\dev\sayso-cleanup.exe'
     if (-not $env:SAYSO_LLAMA_LIB_DIR) {
         $env:SAYSO_LLAMA_LIB_DIR = (go run .\scripts\llama-libs fetch -out build\llama-libs)
