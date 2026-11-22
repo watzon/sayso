@@ -10,44 +10,43 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [[ "$(uname -s)" == Linux ]] || { echo "bundle-linux.sh runs on Linux" >&2; exit 1; }
-profile=release; cargo_flag=--release
-[[ "${1:-}" == "--debug" ]] && { profile=debug; cargo_flag=; }
+profile=release
+[[ "${1:-}" == "--debug" ]] && profile=debug
 version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
 arch=$(uname -m)
-target_dir=$(cargo metadata --format-version 1 --no-deps | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')
+export CGO_ENABLED=0
+if [[ "$profile" == release ]]; then ldflags=(-ldflags="-s -w" -tags mygo_noinspector); else ldflags=(); fi
 
-echo "==> app and engine (cargo, $profile)"
-cargo build -p sayso-app -p sayso-engine $cargo_flag
-# The bridge runs outside the Flatpak sandbox, on any Linux of the user, so it
-# has no library of the system. It is linked statically, and always a release
-# build. Only this crate gets the flag, because of --target.
-echo "==> bridge (cargo, release, static)"
-bridge_target="$arch-unknown-linux-gnu"
-RUSTFLAGS="-C target-feature=+crt-static" cargo build --release -p sayso-bridge --target "$bridge_target"
-bridge_bin="$target_dir/$bridge_target/release/sayso-bridge"
+echo "==> app and engine (go, $profile)"
+mkdir -p build/go
+go build ${ldflags[@]+"${ldflags[@]}"} -o build/go/sayso ./cmd/sayso
+go build ${ldflags[@]+"${ldflags[@]}"} -o build/go/sayso-engine ./cmd/sayso-engine
 
 name="sayso-$version-linux-$arch"
 out="${SAYSO_BUNDLE_DIR:-build}/$name"
 rm -rf "$out"
 mkdir -p "$out/bin" "$out/share/applications" "$out/share/metainfo" "$out/lib/udev/rules.d"
-install -m 755 "$target_dir/$profile/sayso" "$out/bin/sayso"
-install -m 755 "$target_dir/$profile/sayso-engine" "$out/bin/sayso-engine"
+install -m 755 build/go/sayso "$out/bin/sayso"
+install -m 755 build/go/sayso-engine "$out/bin/sayso-engine"
+# The engine loads sherpa-onnx, whisper.cpp, ggml, and parakeet at run time
+# (purego): SAYSO_NATIVE_LIBS_DIR holds the .so files that go beside it.
+if [[ -n "${SAYSO_NATIVE_LIBS_DIR:-}" ]]; then
+  install -m 755 "$SAYSO_NATIVE_LIBS_DIR"/*.so* "$out/bin/"
+fi
 # The cleanup runtime is its own Cargo workspace (it builds llama.cpp, which is
 # slow in a debug build), so it is always a release build. The app finds it
 # next to itself, like the engine. On x86_64 there are three builds, one for
 # each instruction set (scripts/build-cleanup.sh).
 scripts/build-cleanup.sh "$out/bin"
-install -m 755 "$bridge_bin" "$out/bin/sayso-bridge"
 cp packaging/linux/dev.sayso.Sayso.desktop "$out/share/applications/"
 cp packaging/linux/dev.sayso.Sayso.metainfo.xml "$out/share/metainfo/"
 cp packaging/linux/70-sayso-uinput.rules "$out/lib/udev/rules.d/"
 install -m 755 packaging/linux/install.sh "$out/install.sh"
 cp LICENSE "$out/"
-# The licenses of the libraries in the engine: parakeet.cpp and ggml (MIT), which
-# it links statically, and sherpa-onnx (Apache-2.0) and ONNX Runtime (MIT).
+# The licenses of the libraries that the engine loads: parakeet.cpp and ggml (MIT) and sherpa-onnx (Apache-2.0) and ONNX Runtime (MIT).
 # The cleanup runtime links llama.cpp statically, and its LICENSE has the same
 # text as ggml.txt.
-install -D -m 644 -t "$out/share/licenses/sayso" crates/sayso-engine/licenses/*.txt
+install -D -m 644 -t "$out/share/licenses/sayso" packaging/licenses/*.txt
 # The macOS icon set has the sizes the hicolor theme uses.
 for size in 16 32 128 256 512; do
   mkdir -p "$out/share/icons/hicolor/${size}x${size}/apps"

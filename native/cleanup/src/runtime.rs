@@ -8,7 +8,7 @@ use llama_cpp_2::model::LlamaModel;
 use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::{LogOptions, send_logs_to_tracing};
-use sayso_core::cleanup::protocol::{ErrorCode, PROTOCOL_VERSION, Reply, Request, Stop};
+use sayso_cleanup_models::protocol::{ErrorCode, PROTOCOL_VERSION, Reply, Request, Stop};
 use std::num::NonZeroU32;
 use std::path::Path;
 use std::time::Instant;

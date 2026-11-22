@@ -121,7 +121,7 @@ case "$system" in
     # The same files as bin/ and share/licenses/sayso in the app tarball
     # (scripts/bundle-linux.sh): the licenses of parakeet.cpp, ggml, sherpa-onnx,
     # and ONNX Runtime.
-    install -m 644 -t "$dir/licenses" crates/sayso-engine/licenses/*.txt
+    install -m 644 -t "$dir/licenses" packaging/licenses/*.txt
     ;;
 esac
 
@@ -135,7 +135,7 @@ case "$system" in
     esac ;;
   linux)
     system_name=Linux
-    # build.rs links the Vulkan loader (crates/sayso-engine/build.rs), and
+    # The engine loads the Vulkan loader through the native libraries, and
     # the glibc is the oldest one that the release build supports (linux.yml).
     requirements='glibc 2.35 or newer, and the Vulkan loader (`libvulkan.so.1`). On Debian and Ubuntu, the package is `libvulkan1`. The engine does not start without the loader, also when a model runs on the CPU.' ;;
 esac

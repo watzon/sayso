@@ -23,7 +23,7 @@ permissions:
 
 env:
   TAG: ${{ github.event.release.tag_name || inputs.tag }}
-  # Turns the updater on in the app (sayso-update, official_build).
+  # Turns the updater on in the app (internal/update).
   SAYSO_OFFICIAL_BUILD: "1"
 
 concurrency:
@@ -90,9 +90,11 @@ jobs:
       # The cleanup runtime (native/cleanup) is its own Cargo workspace.
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            native/cleanup
+          workspaces: native/cleanup
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
       - name: Install create-dmg
         run: brew install create-dmg
@@ -395,12 +397,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            native/cleanup
+          workspaces: native/cleanup
 
-      # whisper.cpp in the speech engine and llama.cpp in the cleanup runtime
-      # build with CMake, and their bindings need libclang (the runner has
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # llama.cpp in the cleanup runtime builds with CMake, and its bindings
+      # need libclang (the runner has
       # LLVM). Inno Setup makes the installer.
       - name: Install CMake and Inno Setup
         run: |
@@ -501,7 +505,7 @@ jobs:
       group: release-promote
       cancel-in-progress: false
     env:
-      # The id of the signing key in crates/sayso-update/src/keys.rs.
+      # The id of the signing key in internal/update.
       SAYSO_UPDATE_KEY_ID: "2026-10"
     steps:
       - name: Checkout the tag
@@ -578,10 +582,9 @@ jobs:
           print(json.dumps(payload, indent=2))
           PY
 
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
       - name: Sign the manifest
         env:
@@ -591,9 +594,9 @@ jobs:
             echo "::error::The secret SAYSO_UPDATE_SIGNING_KEY is not set. See docs/releasing.md."
             exit 1
           fi
-          cargo run --quiet -p sayso-update --example update_tool -- sign "$SAYSO_UPDATE_KEY_ID" payload.json > latest.json
+          go run ./scripts/update-tool sign "$SAYSO_UPDATE_KEY_ID" payload.json > latest.json
           # The app of this tag must accept the manifest with its own key list.
-          cargo run --quiet -p sayso-update --example update_tool -- verify latest.json
+          go run ./scripts/update-tool verify latest.json
 
       # The AUR package downloads the tarballs of the release, so its hashes
       # come from the files that the next step attaches. The files stay in the

@@ -8,7 +8,7 @@
 # only). llama.cpp compiles its kernels for one instruction set, and a
 # processor without it stops the runtime with SIGILL (issue #37). The app
 # starts the best build that the processor runs
-# (crates/sayso-core/src/cpu.rs). Elsewhere the folder gets one
+# (native/cleanup). Elsewhere the folder gets one
 # build, sayso-cleanup.
 #
 # Each build has its own target folder: the ggml options are CMake cache

@@ -28,11 +28,7 @@ To check that the engine works, send a `hello` request. The reply has the versio
 
 The protocol is described in [docs/engine-protocol.md](https://github.com/watzon/sayso/blob/v@VERSION@/docs/engine-protocol.md). The text of the protocol has the MIT license.
 
-The conformance suite checks that an engine follows the protocol. It is the crate `sayso-engine-conformance` in the [Sayso repository](https://github.com/watzon/sayso/tree/v@VERSION@/crates/sayso-engine-conformance). To run the checks that need no model, use Rust and run this command in a copy of the repository:
-
-```
-cargo run -p sayso-engine-conformance -- <path to the engine>
-```
+The conformance suite checks that an engine follows the protocol. It is in the [Sayso repository](https://github.com/watzon/sayso/tree/v@VERSION@/docs).
 
 ## Licenses
 

@@ -8,7 +8,7 @@ Sayso is a dictation app for macOS, Windows, and Linux. You press a key, speak, 
 
 ![The Sayso Hub in the light theme](docs/images/hub-home.png)
 
-Sayso is written in Rust with [GPUI](https://www.gpui.rs/). On macOS the speech engine is a Swift program that uses [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) and [FluidAudio](https://github.com/FluidInference/FluidAudio). On Windows and Linux it is a Rust program that uses [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), and also [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on Windows. The same developer made [Pindrop](https://github.com/watzon/pindrop).
+Sayso is written in Go with [MyGo](https://github.com/egoist/mygo). The SDK crates and the cleanup runtime are Rust. On macOS the speech engine is a Swift program that uses [WhisperKit](https://github.com/argmaxinc/argmax-oss-swift) and [FluidAudio](https://github.com/FluidInference/FluidAudio). On Windows and Linux it is a Go program that loads [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), and also [whisper.cpp](https://github.com/ggml-org/whisper.cpp) on Windows. The same developer made [Pindrop](https://github.com/watzon/pindrop).
 
 ## What Sayso does
 
@@ -135,7 +135,7 @@ The source code is free software under the [GNU General Public License, version 
 
 The official build is the signed and notarized app. It is free, and it needs no license key. Sayso is paid for by the people who use it: the download page at [justsayso.app](https://justsayso.app) asks what you want to pay, and $0 is a valid answer.
 
-Two crates are an exception. `crates/sayso-ink` and `crates/sayso-ui` (the colors, the paper, and the components) are MIT-licensed, so that other apps can look like Sayso. Each has its own `LICENSE` file. The fonts in `crates/sayso-ui/assets/fonts` keep their own SIL Open Font License files.
+The SDK is an exception. The crates in `crates/` and the packages in `packages/` are MIT-licensed, so that other apps can use Sayso's speech. Each has its own `LICENSE` file.
 
 The name Sayso and the app icon are not part of the license. If you publish a changed version, give it another name and another icon.
 
@@ -153,7 +153,7 @@ A one-time amount and a monthly amount are both possible. A sponsorship gives yo
 
 ### macOS
 
-You need Xcode 26 or later and Rust 1.98.1. `rust-toolchain.toml` selects the Rust version.
+You need Xcode 26 or later and Go (the version in `go.mod`). Rust 1.98.1 (`rust-toolchain.toml`) builds the SDK and the cleanup runtime.
 
 ```sh
 git clone https://github.com/watzon/sayso.git
@@ -166,7 +166,7 @@ open build/Sayso.app
 
 ### Windows
 
-You need the Visual Studio 2022 Build Tools (the "Desktop development with C++" workload and a Windows SDK), CMake, LLVM (for libclang; set `LIBCLANG_PATH` when it is not on `PATH`), and Rust 1.98.1.
+You need the Visual Studio 2022 Build Tools (the "Desktop development with C++" workload and a Windows SDK), CMake, LLVM (for libclang; set `LIBCLANG_PATH` when it is not on `PATH`), Go, and Rust 1.98.1.
 
 ```powershell
 git clone https://github.com/watzon/sayso.git
@@ -179,7 +179,7 @@ Add `-Installer` to also make the installer in `dist\`. That needs [Inno Setup 6
 
 ### Linux
 
-You need the packages in `scripts/linux-deps.sh` (Debian and Ubuntu names) and Rust 1.98.1.
+You need the packages in `scripts/linux-deps.sh` (Debian and Ubuntu names), Go, and Rust 1.98.1.
 
 ```sh
 git clone https://github.com/watzon/sayso.git

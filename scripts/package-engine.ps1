@@ -6,10 +6,8 @@
 #   dist\sayso-engine-<version>-windows-x64.zip
 #   dist\sayso-engine-<version>-windows-x64.zip.sha256
 #
-# The zip holds the folder sayso-engine-<version>\ with sayso-engine.exe and
-# its AVX and baseline builds (sayso-engine-avx.exe, sayso-engine-baseline.exe;
-# whisper.cpp is compiled for one instruction set, issue #37), its
-# DLLs (sherpa-onnx, ONNX Runtime, and the Visual C++ runtime), README.md,
+# The zip holds the folder sayso-engine-<version>\ with sayso-engine.exe (Go),
+# its DLLs (sherpa-onnx, ONNX Runtime, and the Visual C++ runtime), README.md,
 # LICENSE, and licenses\. The script copies these files from the app folder
 # that scripts\bundle-windows.ps1 makes (build\windows\Sayso, or Sayso in
 # SAYSO_BUNDLE_DIR), so the exes are the ones that were signed there. It never
@@ -34,7 +32,7 @@ if (-not $Folder) {
 }
 if (-not $Out) { $Out = Join-Path $root 'dist' }
 
-$exes = 'sayso-engine.exe', 'sayso-engine-avx.exe', 'sayso-engine-baseline.exe' | ForEach-Object { Join-Path $Folder $_ }
+$exes = @('sayso-engine.exe') | ForEach-Object { Join-Path $Folder $_ }
 foreach ($exe in $exes) {
     if (-not (Test-Path $exe)) { throw "the engine $exe does not exist. Run scripts\bundle-windows.ps1 first." }
 }

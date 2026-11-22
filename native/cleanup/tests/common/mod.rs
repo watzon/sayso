@@ -1,7 +1,7 @@
 //! A client that drives the built `sayso-cleanup` binary over its pipes.
 #![allow(dead_code)]
 
-use sayso_core::cleanup::protocol::{Reply, ReplyLine, Request, RequestLine};
+use sayso_cleanup_models::protocol::{Reply, ReplyLine, Request, RequestLine};
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 

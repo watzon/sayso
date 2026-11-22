@@ -137,7 +137,7 @@ package_appimage() {
 # and reads the keyboard (X11, /dev/uinput, /dev/input), and it starts the
 # `claude` and `codex` tools and `gsettings` of the host. It pauses media
 # players through MPRIS. `xdg-run/sayso:ro` lets a second sandbox of Sayso reach
-# `sayso-bridge`: read-only, so no app in a sandbox can replace the socket.
+# the bridge: read-only, so no app in a sandbox can replace the socket.
 flatpak_id=dev.sayso.Sayso
 flatpak_runtime=26.08
 package_flatpak() {

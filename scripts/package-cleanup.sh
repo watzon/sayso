@@ -119,7 +119,7 @@ cp LICENSE "$dir/LICENSE"
 # llama.cpp is linked statically, and it has the same MIT license text as ggml
 # (the app bundles ship this one file for it: scripts/bundle-linux.sh,
 # scripts/bundle-windows.ps1).
-install -m 644 crates/sayso-engine/licenses/ggml.txt "$dir/licenses/ggml.txt"
+install -m 644 packaging/licenses/ggml.txt "$dir/licenses/ggml.txt"
 
 # The libraries of the runtime must be the libraries of the system. A library
 # that is not part of the system would have to be in the file.

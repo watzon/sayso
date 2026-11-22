@@ -26,7 +26,6 @@ crossbeam-channel.workspace = true
 parking_lot.workspace = true
 tempfile.workspace = true
 log.workspace = true
-workspace-hack.workspace = true
 
 [dev-dependencies]
 tiny_http = "0.12"

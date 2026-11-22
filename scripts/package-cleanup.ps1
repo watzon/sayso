@@ -60,7 +60,7 @@ try {
     foreach ($dll in $crt) { Copy-Item (Join-Path $Folder $dll) $dir }
     Copy-Item LICENSE (Join-Path $dir 'LICENSE')
     # llama.cpp is linked statically, and it has the same MIT license text as ggml.
-    Copy-Item 'crates\sayso-engine\licenses\ggml.txt' (Join-Path $dir 'licenses')
+    Copy-Item 'packaging\licenses\ggml.txt' (Join-Path $dir 'licenses')
 
     # Start each build and send it a hello request. The runtime needs no model to
     # answer. A processor without the instructions of a build stops it with

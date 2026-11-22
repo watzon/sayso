@@ -2,7 +2,7 @@ name: Engine file check
 
 # Check the engine release files on runners that have no build tools. Each job
 # gets one file as an artifact (release-engine-<os>-<arch>), unpacks it, and
-# runs the core level of the conformance suite against the unpacked engine. The
+# checks the unpacked engine with the hello request. The
 # suite is a Rust crate, so each job installs Rust and builds only that crate.
 # No job builds an engine.
 #
@@ -13,7 +13,7 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: 'Commit or tag that made the files (it has the conformance suite and the version)'
+        description: 'Commit or tag that made the files (it has the version)'
         required: true
         type: string
 
@@ -157,9 +157,3 @@ jobs:
             echo "::error::The engine gave no hello reply with the version $VERSION."
             exit 1
           fi
-
-      - name: Run the conformance suite, core level
-        run: |
-          engine="engine-unpacked/sayso-engine-$VERSION/sayso-engine"
-          if [[ "$RUNNER_OS" == Windows ]]; then engine="$(cygpath -m "$PWD")/$engine.exe"; else engine="$PWD/$engine"; fi
-          cargo run -q -p sayso-engine-conformance -- "$engine"

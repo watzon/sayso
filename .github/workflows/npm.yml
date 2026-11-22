@@ -82,7 +82,7 @@ jobs:
       # The Intel addon is built on Apple silicon; the runtimes job runs it on macos-15-intel.
       - name: Build the fake engine
         if: ${{ !matrix.cross }}
-        run: cargo build -p sayso-engine-client --bin sayso-fake-engine
+        run: cargo build -p sayso-sdk --example sayso-fake-engine
       - name: Test the SDK
         if: ${{ !matrix.cross }}
         run: pnpm --filter @justsayso/sdk test
@@ -124,7 +124,7 @@ jobs:
         with:
           key: npm-fake-engine
       - name: Build the fake engine
-        run: cargo build -p sayso-engine-client --bin sayso-fake-engine
+        run: cargo build -p sayso-sdk --example sayso-fake-engine
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
