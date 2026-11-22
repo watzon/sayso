@@ -30,7 +30,9 @@ for arg in "$@"; do
 done
 command -v create-dmg >/dev/null || { echo "error: create-dmg is missing. Run: brew install create-dmg" >&2; exit 1; }
 
-SAYSO_BUNDLE_DIR=dist scripts/bundle.sh ${bundle_flags[@]+"${bundle_flags[@]}"}
+# A full bundle: the --debug fast path signs without a timestamp, and Apple
+# notarizes only timestamped signatures.
+SAYSO_BUNDLE_FULL=1 SAYSO_BUNDLE_DIR=dist scripts/bundle.sh ${bundle_flags[@]+"${bundle_flags[@]}"}
 app=dist/Sayso.app
 version=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$app/Contents/Info.plist")
 dmg="dist/Sayso-$version-macos-$(uname -m).dmg"

@@ -10,6 +10,7 @@
 #
 # --debug on a bundle whose other parts did not change (build/bundle.stamp)
 # builds only the Go app, puts it in the bundle, and signs the bundle again.
+# SAYSO_BUNDLE_FULL=1 turns that off (scripts/release.sh sets it).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 profile=release
@@ -36,10 +37,12 @@ engine_hash=$(hash_files "$engine_dir/Sources" "$engine_dir/Package.swift" "$eng
 bundle_inputs=(scripts/bundle.sh Cargo.toml native/cleanup packaging/Info.plist "$ent" packaging/macos assets/app/AppIcon.icns)
 bundle_stamp() {
   printf '%s\n' "$app" "$identity" "$engine_hash" "$(hash_files "${bundle_inputs[@]}")" \
-    "$(file_id "$engine_bin")" "$(file_id native/cleanup/target/release/sayso-cleanup)"
+    "$(file_id "$engine_bin")" "$(file_id native/cleanup/target/release/sayso-cleanup)" \
+    "$(file_id "$app/Contents/MacOS/SaysoEngine")" "$(file_id "$app/Contents/MacOS/sayso-cleanup")" \
+    "$(file_id "$app/Contents/Info.plist")"
 }
 
-if [[ "$profile" == debug && -x "$app/Contents/MacOS/Sayso" && -x "$app/Contents/MacOS/SaysoEngine" &&
+if [[ "$profile" == debug && "${SAYSO_BUNDLE_FULL:-}" != 1 && -x "$app/Contents/MacOS/Sayso" && -x "$app/Contents/MacOS/SaysoEngine" &&
   "$(cat build/bundle.stamp 2>/dev/null)" == "$(bundle_stamp)" ]]; then
   echo "==> app (go, debug), the rest of $app is unchanged"
   CGO_ENABLED=0 go build -o build/sayso ./cmd/sayso
@@ -49,7 +52,8 @@ if [[ "$profile" == debug && -x "$app/Contents/MacOS/Sayso" && -x "$app/Contents
   # Only the outer bundle: the signatures inside stay, and the identifier
   # keeps the permission grants.
   codesign --force --timestamp=none --options runtime --entitlements "$ent" --identifier dev.sayso.Sayso -s "$identity" "$app"
-  codesign --verify --deep --strict "$app" && echo "==> signature ok: $app"
+  codesign --verify --deep --strict "$app"
+  echo "==> signature ok: $app"
   exit 0
 fi
 
@@ -94,5 +98,6 @@ codesign --force --timestamp --options runtime --entitlements "$ent" --identifie
 # The cleanup runtime records no audio, so it gets no entitlements.
 codesign --force --timestamp --options runtime --identifier dev.sayso.Sayso.cleanup -s "$identity" "$app/Contents/MacOS/sayso-cleanup"
 codesign --force --timestamp --options runtime --entitlements "$ent" --identifier dev.sayso.Sayso -s "$identity" "$app"
-codesign --verify --deep --strict "$app" && echo "==> signature ok: $app"
+codesign --verify --deep --strict "$app"
+echo "==> signature ok: $app"
 bundle_stamp > build/bundle.stamp
