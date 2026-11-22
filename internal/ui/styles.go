@@ -463,9 +463,7 @@ func (a *App) styleEditor(c *mu.Context, p theme.Colors) {
 	})
 	mu.Row(c).Gap(12).AlignItems(mu.Start).Children(func() {
 		mu.Column(c).Grow(1).Basis(0).Children(func() {
-			a.labelled(c, p, i18n.T("styles.editor.model"), func() {
-				a.field(c, p, "styles.editor.model", i18n.T("styles.editor.model"), i18n.T("styles.editor.provider_model"), &d.model)
-			})
+			a.labelled(c, p, i18n.T("styles.editor.model"), func() { a.styleModelPicker(c, p, d) })
 		})
 		mu.Column(c).Width(150).Shrink(0).Children(func() {
 			a.labelled(c, p, i18n.T("styles.editor.timeout"), func() {
@@ -594,9 +592,46 @@ func (a *App) providerPicker(c *mu.Context, p theme.Colors, d *styleDraft) {
 	a.selectBtn(c, p, "styles.editor.provider", i18n.T("styles.editor.provider"), &sel, options, 0).AlignSelf(mu.Stretch).OnChange(func() {
 		for i, o := range options {
 			if o == sel {
+				// A model from one provider means nothing to another.
+				if d.provider != ids[i] {
+					d.model = ""
+				}
 				d.provider = ids[i]
 			}
 		}
+	})
+}
+
+// styleTarget is the provider a style runs on: its own, else the default.
+func (a *App) styleTarget(d *styleDraft) (config.Provider, bool) {
+	if d.provider != "" {
+		return a.cfg.AI.Provider(d.provider)
+	}
+	return a.defaultProvider()
+}
+
+// styleModelPicker is the model of the style: one of its provider's
+// models, or "Provider's model", which leaves it to the provider
+// (styles.rs model_field).
+func (a *App) styleModelPicker(c *mu.Context, p theme.Colors, d *styleDraft) {
+	target, ok := a.styleTarget(d)
+	if !ok {
+		uiText(c, i18n.T("styles.editor.add_provider_for_model"), 13, 400, p.Graphite)
+		return
+	}
+	label := i18n.T("styles.editor.provider_model")
+	switch {
+	case d.model != "":
+		label = a.modelLabel(target.ID, d.model)
+	case target.ModelName() != "":
+		label = i18n.T("styles.editor.provider_model_with", "model", a.modelLabel(target.ID, target.ModelName()))
+	}
+	mu.Row(c).Children(func() {
+		a.modelPicker(c, p, pickReq{
+			key: "styles.editor.model", listKey: target.ID, provider: target, label: label, chosen: true,
+			selected: d.model, extra: i18n.T("styles.editor.provider_model"), extraOn: d.model == "", field: true,
+			pick: func(id string) { d.model = id },
+		})
 	})
 }
 

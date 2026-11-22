@@ -12,5 +12,6 @@ model_picker:
   no_models: "이 제공업체에는 모델이 없어요."
   no_match: "필터와 일치하는 모델이 없어요."
   refresh: "새로고침"
+  use_typed: "‘%{model}’ 사용"
   count:
     other: "모델 %{count}개"

@@ -3,7 +3,6 @@ package ui
 import (
 	"fmt"
 	"math"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -318,6 +317,8 @@ func (a *App) providerListRow(c *mu.Context, p theme.Colors, pr config.Provider,
 	})
 	if clicked(c, r) {
 		a.set.provSel = pr.ID
+		// The list has the names and the thinking levels of the models.
+		a.loadProviderModels(pr.ID, false)
 	}
 }
 
@@ -378,37 +379,29 @@ func (a *App) providerDetail(c *mu.Context, p theme.Colors, i int) {
 		a.row(c, p, i18n.T("settings.providers.login"), i18n.T("settings.providers.chatgpt_note"), func() { a.chatGPTAccount(c, p, pr) })
 	case config.KindOpenAICompatible:
 		a.row(c, p, i18n.T("settings.providers.api_key"), a.keyLine(pr), func() { a.apiKeyRow(c, p, pr) })
-		a.row(c, p, i18n.T("settings.providers.model"), i18n.T("settings.providers.model_detail"), func() {
-			model := pr.ModelName()
-			a.fieldW(c, p, "providers.model."+pr.ID, i18n.T("settings.providers.model"), i18n.T("settings.providers.choose_model"), &model, 240).OnChange(func() {
-				for j := range ai.Providers {
-					if ai.Providers[j].ID == pr.ID {
-						ai.Providers[j].SetModel(model)
-					}
-				}
-				a.saveConfig()
-			})
-		})
 	case config.KindClaudeCLI:
 		a.row(c, p, i18n.T("settings.providers.config_folder"), i18n.T("settings.providers.config_folder_detail"), func() {
 			dir := pr.ConfigDirSet()
 			a.fieldW(c, p, "providers.config_dir."+pr.ID, i18n.T("settings.providers.config_folder"), "~/.claude", &dir, 240).OnChange(func() {
-				for j := range ai.Providers {
-					if ai.Providers[j].ID == pr.ID {
-						ai.Providers[j].ConfigDir = nil
-						if strings.TrimSpace(dir) != "" {
-							ai.Providers[j].ConfigDir = ptr(dir)
-						}
+				a.editProvider(pr.ID, func(p *config.Provider) {
+					p.ConfigDir = nil
+					if strings.TrimSpace(dir) != "" {
+						p.ConfigDir = ptr(dir)
 					}
-				}
-				a.saveConfig()
+				})
+				// Another folder is another login, with its own models.
+				a.dropModels(pr.ID)
 			})
 		})
-		a.row(c, p, i18n.T("settings.providers.model"), i18n.T("settings.providers.model_detail"), func() {
-			uiText(c, a.providerSub(pr), 13, 600, p.Ink)
-		})
 	}
-	if pr.Kind == config.KindClaudeCLI || pr.Kind == config.KindChatGPT {
+	// detail.rs: every provider with a model to choose gets the picker and
+	// the thinking levels of the chosen model. Apple Intelligence keeps its
+	// name in the head, and a cleanup model has one fixed model.
+	switch pr.Kind {
+	case config.KindChatGPT, config.KindClaudeCLI, config.KindOpenAICompatible:
+		a.row(c, p, i18n.T("settings.providers.model"), i18n.T("settings.providers.model_detail"), func() {
+			a.providerModelPicker(c, p, pr)
+		})
 		a.thinkingRow(c, p, pr)
 	}
 	a.row(c, p, i18n.T("settings.providers.default_provider"), i18n.T("settings.providers.default_provider_detail"), func() {
@@ -504,6 +497,7 @@ func (a *App) apiKeyRow(c *mu.Context, p theme.Colors, pr config.Provider) {
 				a.set.provErr = err.Error()
 			} else {
 				a.set.keyEdit[pr.ID] = ""
+				a.dropModels(pr.ID)
 				for j := range a.cfg.AI.Providers {
 					if a.cfg.AI.Providers[j].ID == pr.ID {
 						a.cfg.AI.Providers[j].APIKeyAccount = ptr(account)
@@ -521,6 +515,7 @@ func (a *App) chatGPTAccount(c *mu.Context, p theme.Colors, pr config.Provider) 
 	if signedIn {
 		if a.btn(c, p, "providers.chatgpt.sign_out."+pr.ID, i18n.T("settings.providers.sign_out"), btnSecondary) && a.d.Secrets != nil {
 			enhance.ChatGPTSignOut(a.d.Secrets, pr.ID)
+			a.dropModels(pr.ID)
 			a.refreshSecrets()
 		}
 		return
@@ -551,6 +546,10 @@ func (a *App) startChatGPTSignIn(id string) {
 				if ev.Finished != nil {
 					a.refreshSecrets()
 				}
+				if ev.Finished != nil && ev.Finished.State == "signed_in" {
+					// The names of the models come with the list.
+					a.loadProviderModels(id, true)
+				}
 				a.invalidate()
 			})
 		}
@@ -570,6 +569,7 @@ func (a *App) removeProvider(id string) {
 		out = append(out, pr)
 	}
 	ai.Providers = out
+	a.dropModels(id)
 	if ai.DefaultProvider != nil && *ai.DefaultProvider == id {
 		ai.DefaultProvider = nil
 	}
@@ -850,13 +850,13 @@ func (a *App) updatesSection(c *mu.Context, p theme.Colors) {
 	})
 }
 
-// thinkingRow picks the thinking level of a CLI provider: the levels of
-// model.rs thinking_choices when there is no model list, and the chosen
-// level when the list lacks it.
+// thinkingRow picks the thinking level of a provider: the levels of the
+// chosen model from its list (model.rs thinking_choices). A model without
+// levels has no row.
 func (a *App) thinkingRow(c *mu.Context, p theme.Colors, pr config.Provider) {
-	levels := []string{config.DefaultCLIThinking, "medium", "high"}
-	if t := pr.ThinkingChosen(); t != "" && !slices.Contains(levels, t) {
-		levels = config.SortThinking(append(levels, t))
+	levels := a.thinkingChoices(pr)
+	if len(levels) == 0 {
+		return
 	}
 	sent := pr.ThinkingSent()
 	keys, labels := make([]string, len(levels)), make([]string, len(levels))
@@ -869,13 +869,7 @@ func (a *App) thinkingRow(c *mu.Context, p theme.Colors, pr config.Provider) {
 	}
 	a.row(c, p, i18n.T("settings.providers.thinking"), i18n.T("settings.providers.thinking_detail"), func() {
 		if i := a.choice(c, p, keys, labels, chosen, false); i >= 0 {
-			ai := &a.cfg.AI
-			for j := range ai.Providers {
-				if ai.Providers[j].ID == pr.ID {
-					ai.Providers[j].SetThinking(ptr(levels[i]))
-				}
-			}
-			a.saveConfig()
+			a.editProvider(pr.ID, func(p *config.Provider) { p.SetThinking(ptr(levels[i])) })
 		}
 	})
 }

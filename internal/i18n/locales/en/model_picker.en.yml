@@ -12,6 +12,7 @@ model_picker:
   no_models: "This provider lists no models."
   no_match: "No model matches the filter."
   refresh: "Refresh"
+  use_typed: "Use “%{model}”"
   count:
     one: "%{count} model"
     other: "%{count} models"

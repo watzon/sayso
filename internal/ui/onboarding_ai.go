@@ -13,6 +13,7 @@ import (
 	"github.com/watzon/sayso/internal/enhance"
 	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/models"
+	"github.com/watzon/sayso/internal/providers"
 	"github.com/watzon/sayso/internal/theme"
 )
 
@@ -95,11 +96,9 @@ type aiForm struct {
 	baseURL   string
 	key       string
 	model     string
-	// The model list of the cloud form, fetched with (URL, key) fetched.
+	// fetched is the URL and key the cloud form's model list (App.pick,
+	// onbCloudList) was fetched with.
 	fetched  string
-	loading  bool
-	list     []enhance.ModelChoice
-	listErr  string
 	err      aiError
 	testing  bool
 	testDone bool
@@ -328,6 +327,13 @@ func (a *App) saveAI() bool {
 	if err := a.saveProvider(pr, key); err != nil {
 		f.testErr, f.testDone = err.Error(), true
 		return false
+	}
+	// Keep the list the user picked from, so Styles shows its names.
+	if ch, _ := a.aiChoice(); ch.kind == aiCloud {
+		if l := a.list(onbCloudList); l != nil && l.phase == listReady {
+			copied := *l
+			a.pick.lists[pr.ID] = &copied
+		}
 	}
 	// A cleanup model downloads in the background: the step does not wait.
 	if ch, _ := a.aiChoice(); ch.kind == aiCleanup {
@@ -652,92 +658,64 @@ func (a *App) cloudForm(c *mu.Context, p theme.Colors) {
 	})
 }
 
-// cloudModel is the model row of the cloud form: a list of the models the
-// endpoint reports, fetched when it opens.
+// onbCloudList is the key of the cloud form's model list in App.pick.
+const onbCloudList = "onboarding.cloud"
+
+// cloudDraft is the provider the cloud form would save, for its model
+// list. Its key stays in memory.
+func (a *App) cloudDraft() (config.Provider, providers.SecretStore) {
+	f := &a.onb.ai
+	account := "onboarding.draft"
+	secrets := providers.NewMemoryStore()
+	if key := strings.TrimSpace(f.key); key != "" {
+		secrets.Set(account, key)
+	}
+	return config.Provider{ID: onbCloudList, Name: "draft", Kind: config.KindOpenAICompatible,
+		BaseURL: strings.TrimRight(strings.TrimSpace(f.baseURL), "/"), APIKeyAccount: &account}, secrets
+}
+
+// cloudModel is the model row of the cloud form: a picker over the models
+// the endpoint reports, fetched when it opens (onboarding/ai.rs cloud_model).
 func (a *App) cloudModel(c *mu.Context, p theme.Colors) {
 	f := &a.onb.ai
 	mu.Row(c).Gap(12).AlignItems(mu.Center).Children(func() {
 		uiText(c, i18n.T("onboarding.ai.model"), 13, 500, p.Graphite).Width(cloudLabelWidth()).Shrink(0)
-		label := f.model
-		if label == "" {
-			label = i18n.T("onboarding.ai.choose_model")
-		}
-		for _, m := range f.list {
-			if m.ID == f.model {
+		label := i18n.T("onboarding.ai.choose_model")
+		if f.model != "" {
+			label = f.model
+			if m, ok := a.listedModel(onbCloudList, f.model); ok {
 				label = m.Name
 			}
 		}
-		sel := f.model
-		s := mu.SelectBase(a.k(c, "onboarding.ai.model"), &sel)
-		t := s.Trigger.Label(i18n.T("onboarding.ai.model_button", "name", i18n.T("onboarding.ai.model"), "value", label)).
-			Height(34).PaddingX(12).Gap(8).Radius(9).Grow(1).Basis(0).MinWidth(0).AlignItems(mu.Center).Cursor(mu.CursorPointer)
-		raisedSmall(t, p)
-		if s.Open() {
+		if a.pick.open == "onboarding.ai.model" {
 			a.loadCloudModels(false)
 		}
-		t.Children(func() {
-			col := p.Ink
-			if f.model == "" {
-				col = p.Accent
-			}
-			uiText(c, label, 13, 400, col).SingleLine().Ellipsis("…").Grow(1).Basis(0).MinWidth(0)
-			mu.Icon(c, icon("chevron-down")).FontSize(12).TextColor(p.Graphite)
-		})
-		s.Popup(func(panel mu.Element) {
-			floating(panel.Margin(4, 0, 0, 0).Padding(4).Radius(10).MinWidth(260).MaxHeight(280), p)
-			switch {
-			case f.loading:
-				uiText(c, i18n.T("model_picker.loading"), 13, 400, p.Graphite).Padding(8, 10)
-			case f.listErr != "":
-				uiText(c, i18n.T("model_picker.load_failed", "error", f.listErr), 13, 400, p.Danger).Padding(8, 10).MaxWidth(360)
-			case len(f.list) == 0:
-				uiText(c, i18n.T("model_picker.no_models"), 13, 400, p.Graphite).Padding(8, 10)
-			}
-			for _, m := range f.list {
-				it := s.Item(m.ID).Height(30).PaddingX(10).Gap(8).Radius(7).AlignItems(mu.Center)
-				if it.Highlighted() {
-					it.Background(p.Deboss)
+		draft, secrets := a.cloudDraft()
+		a.modelPicker(c, p, pickReq{
+			key: "onboarding.ai.model", listKey: onbCloudList, provider: draft, secrets: secrets,
+			label: label, chosen: f.model != "", selected: f.model, field: true, small: true,
+			a11y: i18n.T("onboarding.ai.model_button", "name", i18n.T("onboarding.ai.model"), "value", label),
+			pick: func(id string) {
+				if id != "" {
+					f.model, f.testDone, f.err = id, false, aiErrNone
 				}
-				it.Children(func() {
-					mu.Box(c).Width(14).Shrink(0).Children(func() {
-						if m.ID == f.model {
-							mu.Icon(c, icon("check")).FontSize(12).TextColor(p.Ink)
-						}
-					})
-					uiText(c, m.Name, 13, 500, p.Ink).SingleLine()
-				})
-			}
-		})
-		t.OnChange(func() {
-			f.model, f.testDone, f.err = sel, false, aiErrNone
+			},
 		})
 	})
 }
 
 // loadCloudModels fetches the model list for the URL and key of the form.
-// A changed URL or key fetches again even without force.
+// A changed URL or key fetches again even without force; the answer of
+// the old one is dropped.
 func (a *App) loadCloudModels(force bool) {
 	f := &a.onb.ai
-	url := strings.TrimRight(strings.TrimSpace(f.baseURL), "/")
-	key := strings.TrimSpace(f.key)
-	sig := url + "\n" + key
-	if f.loading || (!force && f.fetched == sig) {
-		return
+	draft, secrets := a.cloudDraft()
+	sig := draft.BaseURL + "\n" + strings.TrimSpace(f.key)
+	if f.fetched != sig {
+		f.fetched, force = sig, true
+		a.dropModels(onbCloudList)
 	}
-	f.fetched, f.loading, f.listErr = sig, true, ""
-	a.background(func() {
-		list, err := enhance.ListModels(url, key, 8*time.Second)
-		a.post(func() {
-			if f.fetched != sig {
-				return // the form changed while this list loaded
-			}
-			f.loading, f.list = false, list
-			if err != nil {
-				f.listErr = err.Error()
-			}
-			a.invalidate()
-		})
-	})
+	a.loadModels(onbCloudList, draft, secrets, force)
 }
 
 // cleanupDesc is "English only. Formats emails and lists."
