@@ -74,12 +74,17 @@ func (a *App) pollPermissions(c *mu.Context) {
 	}
 }
 
+// requestPermission asks for a permission off the UI thread (a system
+// prompt blocks), then marks the grants stale so the next frame reads them.
+// It runs through App.background: on its own goroutine in the app, and at
+// once without a UI loop (Deps.Post nil, as in tests), so a request always
+// ends, and its read happens, before anything after the click.
 func (a *App) requestPermission(kind string) {
 	pm := a.platformPermissions()
 	if pm == nil {
 		return
 	}
-	go func() {
+	a.background(func() {
 		var err error
 		switch kind {
 		case "microphone":
@@ -94,7 +99,7 @@ func (a *App) requestPermission(kind string) {
 		}
 		a.onb.access.permStale.Store(true)
 		a.post(a.invalidate)
-	}()
+	})
 }
 
 func (a *App) openPermissionSettings(kind string) {
