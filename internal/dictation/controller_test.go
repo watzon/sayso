@@ -75,10 +75,52 @@ func (s *fakeSounds) Play(c platform.SoundCue, _ []byte, _ float32) error {
 	return nil
 }
 
-type fakeMedia struct{ pauses, resumes int }
+type fakeMedia struct {
+	mu              sync.Mutex
+	pauses, resumes int
+	// hold, when set, keeps Pause and Resume until it closes: a slow player.
+	hold chan struct{}
+}
 
-func (m *fakeMedia) Pause() (bool, error) { m.pauses++; return true, nil }
-func (m *fakeMedia) Resume() error        { m.resumes++; return nil }
+func (m *fakeMedia) Pause() (bool, error) {
+	m.wait()
+	m.mu.Lock()
+	m.pauses++
+	m.mu.Unlock()
+	return true, nil
+}
+
+func (m *fakeMedia) Resume() error {
+	m.wait()
+	m.mu.Lock()
+	m.resumes++
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *fakeMedia) wait() {
+	if m.hold != nil {
+		<-m.hold
+	}
+}
+
+// waitCounts waits until the player was paused and resumed so many times.
+func (m *fakeMedia) waitCounts(t *testing.T, pauses, resumes int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		m.mu.Lock()
+		p, r := m.pauses, m.resumes
+		m.mu.Unlock()
+		if p == pauses && r == resumes {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("media paused %d and resumed %d times, want %d and %d", p, r, pauses, resumes)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
 
 type fakeHotkeys struct{ recording []bool }
 
@@ -271,8 +313,9 @@ func TestADictationGoesInAndToHistory(t *testing.T) {
 		t.Fatalf("%+v", r.host.done)
 	}
 	r.host.mu.Unlock()
-	if r.media.pauses != 1 || r.media.resumes != 1 || len(r.hot.recording) != 2 || !r.hot.recording[0] || r.hot.recording[1] {
-		t.Fatal(r.media, r.hot.recording)
+	r.media.waitCounts(t, 1, 1)
+	if len(r.hot.recording) != 2 || !r.hot.recording[0] || r.hot.recording[1] {
+		t.Fatal(r.hot.recording)
 	}
 	if r.host.gate.Dictating() {
 		t.Fatal("the gate is still held")
