@@ -1,0 +1,24 @@
+Sumi Light ink=#1D1B18 fill=#1D1B18 accent=#2D3C8C wash=#D7D7DE ground=#E9E4DA sheet=#F7F4EE raised=#FCFAF6 deboss=#E2DCD0 shade=#CFC8BB rule=#D8D1C4 onink=#F7F4EE gr=#6A655C pe=#8E887D dg=#8E2F22 dw=#F3E7DC su=#4E7A4A sh=#3C2E1C
+Sumi Dark ink=#ECE5D8 fill=#ECE5D8 accent=#8D9BE6 wash=#343540 ground=#171614 sheet=#201F1C raised=#292825 deboss=#141311 shade=#0E0D0C rule=#34322E onink=#201F1C gr=#A39D91 pe=#7D776C dg=#E08A7C dw=#3A2420 su=#8FB98A sh=#000000
+Sumi contrast 15.651806 13.158187
+Indigo Light ink=#2D3C8C fill=#2D3C8C accent=#8A5A12 wash=#E6DBCB ground=#E9E4DA sheet=#F7F4EE raised=#FCFAF6 deboss=#E2DCD0 shade=#CFC8BB rule=#D8D1C4 onink=#F7F4EE gr=#6A655C pe=#8E887D dg=#8E2F22 dw=#F3E7DC su=#4E7A4A sh=#3C2E1C
+Indigo Dark ink=#E8E3DC fill=#E8E3DC accent=#E0B464 wash=#433A29 ground=#171614 sheet=#201F1C raised=#292825 deboss=#141311 shade=#0E0D0C rule=#34322E onink=#201F1C gr=#A39D91 pe=#7D776C dg=#E08A7C dw=#3A2420 su=#8FB98A sh=#000000
+Indigo contrast 8.953297 12.912056
+IronGall Light ink=#2F3A4F fill=#2F3A4F accent=#886A30 wash=#E5DED0 ground=#E9E4DA sheet=#F7F4EE raised=#FCFAF6 deboss=#E2DCD0 shade=#CFC8BB rule=#D8D1C4 onink=#F7F4EE gr=#6A655C pe=#8E887D dg=#8E2F22 dw=#F3E7DC su=#4E7A4A sh=#3C2E1C
+IronGall Dark ink=#E8E4DC fill=#E8E4DC accent=#E2C58D wash=#433D30 ground=#171614 sheet=#201F1C raised=#292825 deboss=#141311 shade=#0E0D0C rule=#34322E onink=#201F1C gr=#A39D91 pe=#7D776C dg=#E08A7C dw=#3A2420 su=#8FB98A sh=#000000
+IronGall contrast 10.402279 12.998172
+Sepia Light ink=#6B4A2E fill=#6B4A2E accent=#305F88 wash=#D7DCDE ground=#E9E4DA sheet=#F7F4EE raised=#FCFAF6 deboss=#E2DCD0 shade=#CFC8BB rule=#D8D1C4 onink=#F7F4EE gr=#6A655C pe=#8E887D dg=#8E2F22 dw=#F3E7DC su=#4E7A4A sh=#3C2E1C
+Sepia Dark ink=#ECE4D8 fill=#ECE4D8 accent=#8DBBE2 wash=#343B40 ground=#171614 sheet=#201F1C raised=#292825 deboss=#141311 shade=#0E0D0C rule=#34322E onink=#201F1C gr=#A39D91 pe=#7D776C dg=#E08A7C dw=#3A2420 su=#8FB98A sh=#000000
+Sepia contrast 7.234805 13.071572
+Verdigris Light ink=#2F5E52 fill=#2F5E52 accent=#883046 wash=#E5D5D3 ground=#E9E4DA sheet=#F7F4EE raised=#FCFAF6 deboss=#E2DCD0 shade=#CFC8BB rule=#D8D1C4 onink=#F7F4EE gr=#6A655C pe=#8E887D dg=#8E2F22 dw=#F3E7DC su=#4E7A4A sh=#3C2E1C
+Verdigris Dark ink=#E8E6DB fill=#E8E6DB accent=#E28DA3 wash=#433334 ground=#171614 sheet=#201F1C raised=#292825 deboss=#141311 shade=#0E0D0C rule=#34322E onink=#201F1C gr=#A39D91 pe=#7D776C dg=#E08A7C dw=#3A2420 su=#8FB98A sh=#000000
+Verdigris contrast 6.726842 13.163610
+Oxblood Light ink=#6E2A24 fill=#6E2A24 accent=#308188 wash=#D7E2DE ground=#E9E4DA sheet=#F7F4EE raised=#FCFAF6 deboss=#E2DCD0 shade=#CFC8BB rule=#D8D1C4 onink=#F7F4EE gr=#6A655C pe=#8E887D dg=#8E2F22 dw=#F3E7DC su=#4E7A4A sh=#3C2E1C
+Oxblood Dark ink=#ECE3D8 fill=#ECE3D8 accent=#8DDBE2 wash=#344140 ground=#171614 sheet=#201F1C raised=#292825 deboss=#141311 shade=#0E0D0C rule=#34322E onink=#201F1C gr=#A39D91 pe=#7D776C dg=#E08A7C dw=#3A2420 su=#8FB98A sh=#000000
+Oxblood contrast 9.471750 12.985456
+custom Light ink=#123456 fill=#123456 accent=#885C30 wash=#E5DCD0 ground=#E9E4DA sheet=#F7F4EE raised=#FCFAF6 deboss=#E2DCD0 shade=#CFC8BB rule=#D8D1C4 onink=#F7F4EE gr=#6A655C pe=#8E887D dg=#8E2F22 dw=#F3E7DC su=#4E7A4A sh=#3C2E1C
+custom Dark ink=#E8E4DC fill=#E8E4DC accent=#E2B88D wash=#433B30 ground=#171614 sheet=#201F1C raised=#292825 deboss=#141311 shade=#0E0D0C rule=#34322E onink=#201F1C gr=#A39D91 pe=#7D776C dg=#E08A7C dw=#3A2420 su=#8FB98A sh=#000000
+custom contrast 11.584685 12.998172
+pale Light ink=#D0D0D0 fill=#D0D0D0 accent=#2D3C8C wash=#D7D7DE ground=#E9E4DA sheet=#F7F4EE raised=#FCFAF6 deboss=#E2DCD0 shade=#CFC8BB rule=#D8D1C4 onink=#F7F4EE gr=#6A655C pe=#8E887D dg=#8E2F22 dw=#F3E7DC su=#4E7A4A sh=#3C2E1C
+pale Dark ink=#ECE3D8 fill=#ECE3D8 accent=#8D9BE6 wash=#343540 ground=#171614 sheet=#201F1C raised=#292825 deboss=#141311 shade=#0E0D0C rule=#34322E onink=#201F1C gr=#A39D91 pe=#7D776C dg=#E08A7C dw=#3A2420 su=#8FB98A sh=#000000
+pale contrast 1.405032 12.985456
