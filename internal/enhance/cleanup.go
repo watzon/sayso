@@ -192,7 +192,9 @@ func (m *CleanupModelInfo) Runs(c CleanupSettings) bool {
 }
 
 // SupportsLanguage is true for a language code the model knows.
-func (m *CleanupModelInfo) SupportsLanguage(code string) bool { return slices.Contains(m.Languages, code) }
+func (m *CleanupModelInfo) SupportsLanguage(code string) bool {
+	return slices.Contains(m.Languages, code)
+}
 
 // FileURL is the URL of a file of the pinned revision.
 func (m *CleanupModelInfo) FileURL(file string) string {
@@ -540,8 +542,8 @@ func RestoreSpelling(sent, answer string, terms []string) string {
 }
 
 type wordPattern struct {
-	term     string
-	anyCase  bool
+	term         string
+	anyCase      bool
 	needS, needE bool
 }
 
@@ -602,11 +604,11 @@ type CleanupRequest struct {
 
 // CleanupResponse is the cleaned text.
 type CleanupResponse struct {
-	Text                 string
-	Model                string
-	ElapsedMs, LoadMs    uint64
-	Parts                uint32
-	TokensIn, TokensOut  uint32
+	Text                string
+	Model               string
+	ElapsedMs, LoadMs   uint64
+	Parts               uint32
+	TokensIn, TokensOut uint32
 }
 
 // CleanError is why a cleanup gave no text.

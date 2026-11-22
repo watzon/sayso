@@ -21,11 +21,11 @@ import (
 
 func TestParseOutput(t *testing.T) {
 	for in, want := range map[string]string{
-		`{"text":"Hello."}`:                     "Hello.",
-		"```json\n{\"text\": \"Hi\"}\n```":      "Hi",
+		`{"text":"Hello."}`:                          "Hello.",
+		"```json\n{\"text\": \"Hi\"}\n```":           "Hi",
 		`{"text":"{\"text\": \"Sayso is great.\"}"}`: "Sayso is great.",
-		`{"text":"{a, b} is a set."}`:           "{a, b} is a set.",
-		`{"text":"<transcript>x</transcript>"}`: "x",
+		`{"text":"{a, b} is a set."}`:                "{a, b} is a set.",
+		`{"text":"<transcript>x</transcript>"}`:      "x",
 	} {
 		if got, err := ParseOutput(in); err != nil || got != want {
 			t.Errorf("%q: %q %v", in, got, err)
@@ -244,10 +244,10 @@ func TestChatGPTEnhanceRefreshAndStream(t *testing.T) {
 
 func TestChatGPTStreamErrors(t *testing.T) {
 	for stream, kind := range map[string]ErrorKind{
-		"data: {\"type\":\"response.refusal.done\",\"refusal\":\"no\"}\n":                                                          ErrRefused,
+		"data: {\"type\":\"response.refusal.done\",\"refusal\":\"no\"}\n":                                                      ErrRefused,
 		"data: {\"type\":\"response.failed\",\"response\":{\"error\":{\"code\":\"usage_limit_reached\",\"message\":\"m\"}}}\n": ErrHTTP,
-		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"incomplete\"}}\n":                                       ErrInvalidOutput,
-		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"x\"}\n":                                                       ErrNetwork,
+		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"incomplete\"}}\n":                                   ErrInvalidOutput,
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"x\"}\n":                                                    ErrNetwork,
 	} {
 		_, _, err := readStream(strings.NewReader(stream))
 		if !IsKind(err, kind) {
@@ -314,7 +314,9 @@ func (f *fakeEnhancer) Enhance(r Request) (Response, error) {
 }
 
 func okReply(text string) func() (Response, error) {
-	return func() (Response, error) { return Response{Text: text, ProviderID: "fake", Model: "m", Mode: "json_schema"}, nil }
+	return func() (Response, error) {
+		return Response{Text: text, ProviderID: "fake", Model: "m", Mode: "json_schema"}, nil
+	}
 }
 
 func TestPipeline(t *testing.T) {

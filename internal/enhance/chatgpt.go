@@ -480,8 +480,8 @@ var (
 )
 
 type chatgptAccount struct {
-	secrets                  providers.SecretStore
-	name, baseURL, tokenURL  string
+	secrets                 providers.SecretStore
+	name, baseURL, tokenURL string
 }
 
 func (a chatgptAccount) send(path string, body any, deadline time.Time, timeoutMs uint64) (*http.Response, context.CancelFunc, error) {

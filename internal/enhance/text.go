@@ -94,8 +94,8 @@ type Replacer struct {
 }
 
 type compiledRule struct {
-	rule             store.Replacement
-	re               *regexp.Regexp
+	rule               store.Replacement
+	re                 *regexp.Regexp
 	needStart, needEnd bool
 }
 

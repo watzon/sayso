@@ -170,7 +170,9 @@ func TestCleanupKeyStates(t *testing.T) {
 }
 
 func TestRunPlan(t *testing.T) {
-	cm := func(model string) config.Provider { return config.Provider{ID: "p", Kind: config.KindCleanupModel, Model: &model} }
+	cm := func(model string) config.Provider {
+		return config.Provider{ID: "p", Kind: config.KindCleanupModel, Model: &model}
+	}
 	s1, sp := cm("s1-mini"), cm("spokenly-cleanup-1")
 	llm := config.Provider{ID: "p", Kind: config.KindAppleIntelligence}
 	plan := func(id string, p config.Provider) RunPlan { s := builtin(id); return s.RunPlanOn(p) }

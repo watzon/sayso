@@ -29,9 +29,9 @@ const (
 type CleanupFieldState int
 
 const (
-	CleanupAbsent   CleanupFieldState = iota // no key
-	CleanupOff                               // cleanup = false
-	CleanupSettingsSet                       // a [cleanup] table (or true)
+	CleanupAbsent      CleanupFieldState = iota // no key
+	CleanupOff                                  // cleanup = false
+	CleanupSettingsSet                          // a [cleanup] table (or true)
 )
 
 // CleanupField is the cleanup key of a style file.
