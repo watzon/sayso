@@ -137,7 +137,11 @@ func fakeCleanup() {
 		id := req["id"]
 		switch req["type"] {
 		case "hello":
-			reply(out, &mu, map[string]any{"id": id, "type": "hello", "version": 1, "llama_cpp": "b1", "backend": "cpu"})
+			hello := map[string]any{"id": id, "type": "hello", "version": 1, "llama_cpp": "b1", "backend": "cpu"}
+			if libs := os.Getenv("SAYSO_FAKE_CLEANUP_LIBS"); libs != "" {
+				hello["libraries"] = libs
+			}
+			reply(out, &mu, hello)
 		case "load":
 			loaded = req["model_id"].(string)
 			reply(out, &mu, map[string]any{"id": id, "type": "loaded", "model_id": loaded, "load_ms": 3})
@@ -151,8 +155,18 @@ func fakeCleanup() {
 			if req["prompt"] == "hang" {
 				time.Sleep(time.Hour)
 			}
+			if req["prompt"] == "crash" {
+				fmt.Fprintln(os.Stderr, "panic: cannot load libffi.so.8")
+				os.Exit(3)
+			}
 			reply(out, &mu, map[string]any{"id": id, "type": "completion", "text": " " + req["prompt"].(string) + ".", "stop": "end", "tokens_in": 3, "tokens_out": 2, "ms": 5})
 		}
+	}
+	// The end of stdin: a graceful stop.
+	if marker := os.Getenv("SAYSO_FAKE_CLEANUP_EXIT"); marker != "" {
+		f, _ := os.OpenFile(marker, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		fmt.Fprintln(f, "graceful")
+		f.Close()
 	}
 }
 
