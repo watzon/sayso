@@ -1,6 +1,7 @@
 package enhance
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -20,6 +21,7 @@ import (
 	"time"
 
 	"github.com/watzon/sayso/internal/engine"
+	"github.com/watzon/sayso/internal/llamalib"
 	"github.com/watzon/sayso/internal/update"
 )
 
@@ -574,10 +576,49 @@ func markReady(partial, info, path string, m *CleanupModelInfo) error {
 // TimePerToken is the time a cleanup gets per text token, on top of the style timeout.
 const TimePerToken = 15 * time.Millisecond
 
+// libsDownloadLimit bounds a download of the llama.cpp libraries.
+const libsDownloadLimit = 10 * time.Minute
+
 // RuntimeCleaner runs cleanup models in the sayso-cleanup runtime.
 type RuntimeCleaner struct {
 	Runtime   *engine.CleanupClient
 	ModelsDir string
+
+	// fetching is true while the llama.cpp libraries download.
+	fetching atomic.Bool
+	// fetchLibs downloads the libraries; tests replace it.
+	fetchLibs func(ctx context.Context) error
+}
+
+// fetchLibraries starts a download of the llama.cpp libraries into the user
+// cache (one at a time), where the runtime finds them at its next start. The
+// runtime says in its hello that it has no libraries. A package has them, so
+// this is for development builds and broken installs. The runtime could
+// download them itself, but only within the load limit of 15 s.
+func (c *RuntimeCleaner) fetchLibraries() {
+	if !c.fetching.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer c.fetching.Store(false)
+		ctx, cancel := context.WithTimeout(context.Background(), libsDownloadLimit)
+		defer cancel()
+		fetch := c.fetchLibs
+		if fetch == nil {
+			fetch = func(ctx context.Context) error {
+				a, ok := llamalib.Current()
+				if !ok {
+					return errors.New("no llama.cpp build for this system")
+				}
+				return llamalib.Fetch(ctx, nil, a, llamalib.UserCacheDir(a), "")
+			}
+		}
+		if err := fetch(ctx); err != nil {
+			slog.Warn("could not download the llama.cpp libraries of the cleanup runtime", "error", err)
+			return
+		}
+		slog.Info("downloaded the llama.cpp libraries of the cleanup runtime")
+	}()
 }
 
 // Preload loads model while the microphone records. Errors are logged.
@@ -591,7 +632,11 @@ func (c *RuntimeCleaner) Preload(model string) {
 		return
 	}
 	go func() {
-		if err := c.Runtime.EnsureLoaded(info.ID, path, NCtx); err != nil {
+		err := c.Runtime.EnsureLoaded(info.ID, path, NCtx)
+		if errors.Is(err, engine.ErrCleanupNoLibraries) {
+			c.fetchLibraries()
+		}
+		if err != nil {
 			slog.Warn("could not load the cleanup model ahead", "model", info.ID, "error", err)
 		}
 	}()
@@ -611,7 +656,7 @@ func (c *RuntimeCleaner) Clean(r CleanupRequest) (CleanupResponse, error) {
 	var resp CleanupResponse
 	var check error
 	called := time.Now()
-	err := c.Runtime.With(info.ID, path, NCtx, func(s *engine.CleanupSession) error {
+	err := c.Runtime.WithContext(r.Context, info.ID, path, NCtx, func(s *engine.CleanupSession) error {
 		resp.LoadMs = uint64(time.Since(called).Milliseconds())
 		begun := time.Now()
 		left := func(until time.Time) (time.Duration, error) {
@@ -675,6 +720,9 @@ func (c *RuntimeCleaner) Clean(r CleanupRequest) (CleanupResponse, error) {
 		resp.Parts = uint32(len(parts))
 		return nil
 	})
+	if errors.Is(err, engine.ErrCleanupNoLibraries) {
+		c.fetchLibraries()
+	}
 	if err != nil {
 		return CleanupResponse{}, toCleanError(err, r)
 	}
@@ -691,7 +739,10 @@ func toCleanError(err error, r CleanupRequest) error {
 	switch {
 	case errors.Is(err, engine.ErrCleanupTimeout):
 		return &CleanError{Kind: "timeout", Ms: uint64(r.Timeout.Milliseconds())}
-	case errors.Is(err, engine.ErrCleanupDisabled), errors.Is(err, engine.ErrStopped), errors.Is(err, engine.ErrCleanupNotInstalled):
+	case errors.Is(err, engine.ErrCleanupCancelled):
+		return &CleanError{Kind: "runtime", Message: err.Error()}
+	case errors.Is(err, engine.ErrCleanupDisabled), errors.Is(err, engine.ErrStopped), errors.Is(err, engine.ErrCleanupNotInstalled),
+		errors.Is(err, engine.ErrCleanupNoLibraries):
 		return &CleanError{Kind: "not_configured", Message: err.Error()}
 	case errors.As(err, &ce):
 		return &CleanError{Kind: "runtime", Message: err.Error()}

@@ -1,6 +1,7 @@
 package enhance
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"sort"
@@ -600,6 +601,8 @@ type CleanupRequest struct {
 	Settings  Settings
 	App, Site string
 	Timeout   time.Duration // one deadline for all parts; zero means none
+	// Context ends the cleanup early (the runtime is stopped); nil means none.
+	Context context.Context
 }
 
 // CleanupResponse is the cleaned text.
