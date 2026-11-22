@@ -161,6 +161,7 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 		log.Printf("engine: %v", err)
 	} else {
 		speech, err = ui.StartEngine(engine.Options{EnginePath: path, ModelsDir: p.ModelsDir(), CacheDir: p.CacheDir, StoreDir: p.ModelStoreDir()},
+			func() string { return ui.PreloadModel(a.ControllerConfig()) },
 			func(ev engine.Event) {
 				switch ev.Kind {
 				case engine.EventPartial:

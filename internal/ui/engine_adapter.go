@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/watzon/sayso/internal/bridge"
+	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/dictation"
 	"github.com/watzon/sayso/internal/engine"
 	"github.com/watzon/sayso/internal/models"
@@ -32,6 +34,8 @@ type EngineAdapter struct {
 	next int
 	// OnEvent sees every event (on the reader goroutine).
 	onEvent func(engine.Event)
+	// preload gives the model to load once the engine starts ("" loads none).
+	preload func() string
 }
 
 var (
@@ -39,9 +43,11 @@ var (
 	_ bridge.Engine = bridgeEngine{}
 )
 
-// StartEngine starts the engine program and follows its events. onEvent
-// sees each event on the reader goroutine.
-func StartEngine(opts engine.Options, onEvent func(engine.Event)) (*EngineAdapter, error) {
+// StartEngine starts the engine program and follows its events. Each time the
+// engine starts it asks for the state of every local model and then loads the
+// model preload gives, when that model is on disk. onEvent sees each event on
+// the reader goroutine.
+func StartEngine(opts engine.Options, preload func() string, onEvent func(engine.Event)) (*EngineAdapter, error) {
 	c, events, err := engine.Start(opts)
 	if err != nil {
 		return nil, err
@@ -50,7 +56,7 @@ func StartEngine(opts engine.Options, onEvent func(engine.Event)) (*EngineAdapte
 	if tmp == "" {
 		tmp = os.TempDir()
 	}
-	e := &EngineAdapter{c: c, tmp: tmp, timeout: 2 * time.Minute, subs: map[int]chan engine.Event{}, onEvent: onEvent}
+	e := &EngineAdapter{c: c, tmp: tmp, timeout: 2 * time.Minute, subs: map[int]chan engine.Event{}, onEvent: onEvent, preload: preload}
 	go e.follow(events)
 	return e, nil
 }
@@ -60,6 +66,7 @@ func (e *EngineAdapter) follow(events <-chan engine.Event) {
 		switch ev.Kind {
 		case engine.EventStarted, engine.EventRestarted:
 			e.state.Store(int32(bridge.EngineStarted))
+			go e.syncModels()
 		case engine.EventStartFailed, engine.EventCrashed:
 			e.state.Store(int32(bridge.EngineFailed))
 		}
@@ -74,6 +81,48 @@ func (e *EngineAdapter) follow(events <-chan engine.Event) {
 			}
 		}
 		e.mu.Unlock()
+	}
+}
+
+// localModelRefs are the local models of the catalog with their engine objects.
+func localModelRefs() []engine.ModelRef {
+	local := models.LocalModels()
+	refs := make([]engine.ModelRef, 0, len(local))
+	for _, m := range local {
+		refs = append(refs, engine.ModelRef{ID: string(m.ID), Engine: engineSpec(string(m.ID))})
+	}
+	return refs
+}
+
+// PreloadModel is the model to load when the engine starts: the dictation
+// model when Preload model is on, else "".
+func PreloadModel(cfg *config.Config) string {
+	if cfg == nil || !cfg.Dictation.PreloadModel {
+		return ""
+	}
+	return string(cfg.Dictation.Model)
+}
+
+// syncModels asks the engine which models are on disk (their model_state
+// events fill Status), then loads the preload model when it is on disk.
+func (e *EngineAdapter) syncModels() {
+	ctx, cancel := e.ctx()
+	defer cancel()
+	if err := e.c.ListModels(ctx, localModelRefs()); err != nil {
+		log.Printf("engine: list models: %v", err)
+		return
+	}
+	if e.preload == nil {
+		return
+	}
+	model := e.preload()
+	if _, ok := models.FindLocal(models.ModelID(model)); !ok {
+		return
+	}
+	if s := e.Status(model); s.IsOnDisk() && s.State != engine.StateReady {
+		if err := e.Load(model); err != nil {
+			log.Printf("engine: preload %s: %v", model, err)
+		}
 	}
 }
 
