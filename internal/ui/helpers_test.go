@@ -93,6 +93,8 @@ type fakeShell struct {
 	hub     int
 	quit    bool
 	theme   config.ThemeMode
+	// popoverCloses are the keep values of ClosePopover, in order.
+	popoverCloses []bool
 	// redraws is atomic: background loaders (Keychain, storage) redraw too.
 	redraws atomic.Int64
 }
@@ -107,6 +109,11 @@ func (s *fakeShell) SetOverlaySize(config.OverlaySize) {}
 func (s *fakeShell) OpenPath(p string)                 { s.opened = append(s.opened, p) }
 func (s *fakeShell) OpenURL(u string)                  { s.opened = append(s.opened, u) }
 func (s *fakeShell) Quit()                             { s.quit = true }
+
+func (s *fakeShell) ClosePopover(keep bool) {
+	s.shown[WinPopover] = false
+	s.popoverCloses = append(s.popoverCloses, keep)
+}
 
 type testEnv struct {
 	a     *App

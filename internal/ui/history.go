@@ -614,10 +614,15 @@ func (a *App) trail(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 			t.MaxLines(2).Ellipsis("…")
 		}
 		if len(e.Transcript) > 160 {
-			label := i18n.T("history.trail.show_transcript")
-			if a.link(c, p, "history.show_transcript", label, 13, 500, "") {
-				a.hist.showRaw = !a.hist.showRaw
-			}
+			// In a row, the link keeps the width of its label and starts at
+			// the transcript's edge; the step's column would stretch it and
+			// center the label.
+			mu.Row(c).Children(func() {
+				label := i18n.T("history.trail.show_transcript")
+				if a.link(c, p, "history.show_transcript", label, 13, 500, "") {
+					a.hist.showRaw = !a.hist.showRaw
+				}
+			})
 		}
 	})
 	n := 0

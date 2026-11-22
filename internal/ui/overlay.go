@@ -46,18 +46,47 @@ func OverlayWindowSize(o config.Overlay) (w, h int) {
 type overlayState struct {
 	previewBelow bool // the pill sits in the top half of its display
 	visible      bool
+	ready        bool // the motions below are set up
 	// pen writes the live preview out on the slip.
 	pen pen
-	// card is the visible card, which alone takes the mouse; region is
-	// the box the shell was last given for it, in window DIPs.
-	card   mu.Handle
-	region mu.Rect
+	// card is the visible card, which alone takes the mouse; cardShown is
+	// whether this frame built it; region is the box the shell was last
+	// given for it, in window DIPs.
+	card      mu.Handle
+	cardShown bool
+	region    mu.Rect
 	// text is the preview's paragraph, whose height says when it scrolls.
-	text mu.Handle
-	// layout names what the card shows; a change asks for one more frame,
-	// so that region follows the card's new size.
-	layout  string
+	text    mu.Handle
 	hovered bool // the pointer is over the pill, which opens it
+	// The motions (Rust overlay/motion.rs): the pill's card eases to the
+	// size of each state, grows in and shrinks out; the slip grows out of
+	// the pill (or feeds out of the notch) and goes back; the notch's
+	// wings open from the camera and close into it.
+	cardM, slipM morph
+	notch        notchMotion
+	// wings are the contents of the notch's left and right wings.
+	wings [2]mu.Handle
+	// slipPreview: the slip shows the last live preview while it goes back.
+	slipPreview bool
+	// phase names the state the card shows; phaseAt is the frame time it
+	// began, from which its content fades in.
+	phase   string
+	phaseAt time.Time
+	fade    float32
+	// layout names what the card shows. A change asks for one more frame,
+	// in which the motions measure the new content.
+	layout string
+	// probe logs frame gaps (a dev option); nil does nothing.
+	probe *frameProbe
+}
+
+// setUp makes the motions at rest and away.
+func (o *overlayState) setUp() {
+	if o.ready {
+		return
+	}
+	o.ready = true
+	o.cardM, o.slipM, o.notch = newMorph(exitShrink), newMorph(exitPoint), newNotchMotion()
 }
 
 // overlayInput is a shell that lets the mouse through the overlay window
@@ -75,7 +104,39 @@ func (a *App) OverlayVisible() bool {
 	if a.noticeShowing() {
 		return true
 	}
-	return a.cfg.Overlay.Style != config.OverlayNotch && a.cfg.Overlay.IdlePill
+	if !a.closesWhenIdle() {
+		return true
+	}
+	// The card closes with motion; the window hides at its end.
+	return a.overlayClosing()
+}
+
+// closesWhenIdle is true when the card goes away while no dictation runs:
+// the notch, or no idle pill.
+func (a *App) closesWhenIdle() bool {
+	return a.cfg.Overlay.Style == config.OverlayNotch || !a.cfg.Overlay.IdlePill
+}
+
+// overlayClosing is true while the card still closes.
+func (a *App) overlayClosing() bool {
+	if a.cfg.Overlay.Style == config.OverlayNotch {
+		return !a.ov.notch.gone()
+	}
+	return !a.ov.cardM.gone()
+}
+
+// overlayAnimates is true in the states that draw motion: the waveform and
+// pulse, the ink line of the processing stage, and the countdown of the
+// undo. The other notices are still, so the overlay draws them once and not
+// on every frame (Rust overlay animates).
+func (a *App) overlayAnimates() bool {
+	switch a.state.Kind {
+	case dictation.StateRecording, dictation.StateProcessing:
+		return true
+	case dictation.StateShowing:
+		return a.state.Notice.Kind == dictation.NoticeCancelled
+	}
+	return false
 }
 
 // OverlayClickThrough is true while recording: clicks reach the app below.
@@ -93,23 +154,68 @@ func (a *App) syncOverlay() {
 	}
 }
 
-// OverlayView is the view of the overlay window.
+// OverlayView is the view of the overlay window. While something moves it
+// asks for a frame each display refresh (AnimationFrame); at rest it asks
+// for none.
 func (a *App) OverlayView(c *mu.Context) {
+	a.ov.setUp()
+	if a.ov.probe != nil {
+		a.ov.probe.frame(c.Now(), time.Now(), a.state.Kind == dictation.StateRecording)
+	}
 	p := a.look(c)
 	c.Root().Background(mu.Color{})
+	if a.overlayAnimates() {
+		c.AnimationFrame()
+	}
+	a.overlayPhase(c)
+	a.wave.advance(c.Now())
 	a.writePreview(c)
+	a.ov.cardShown = false
 	if a.cfg.Overlay.Style == config.OverlayNotch {
 		c.SetZoom(1)
+		a.ov.slipM.exit = exitFold
 		a.notchView(c, p)
 	} else {
 		c.SetZoom(a.cfg.Overlay.Size.Scale())
+		a.ov.slipM.exit = exitPoint
 		a.pillView(c, p)
 	}
+	if key := a.overlayLayout(); key != a.ov.layout {
+		a.ov.layout = key
+		c.AnimationFrame()
+	}
 	a.followCard(c)
+	// The card has closed: hide the window until the next dictation.
+	if a.ov.visible && !a.OverlayVisible() {
+		a.post(a.syncOverlay)
+	}
+}
+
+// overlayLayout names what the card shows, for OverlayView.
+func (a *App) overlayLayout() string {
+	return fmt.Sprint(a.state.Kind, a.state.Stage, a.state.Notice.Kind, a.state.Notice.StyleName, a.ov.hovered, a.lastNotice,
+		a.noticeShowing(), a.incognito, a.cfg.Overlay.Size, a.cfg.Overlay.Style)
+}
+
+// overlayPhase notes when the card began to show its state, and how far
+// its content has faded in (Rust FADE_IN).
+func (a *App) overlayPhase(c *mu.Context) {
+	key := fmt.Sprint(a.state.Kind, a.state.Stage, a.state.Notice.Kind, a.noticeShowing())
+	if key != a.ov.phase {
+		a.ov.phase, a.ov.phaseAt = key, c.Now()
+	}
+	a.ov.fade = fade(float32(c.Now().Sub(a.ov.phaseAt).Seconds()), stillMotion(c))
+	if a.ov.fade < 1 {
+		c.AnimationFrame()
+	}
 }
 
 // reduceMotion is the system's setting for less motion.
 func reduceMotion(c *mu.Context) bool { return c.Preferences().ReduceMotion }
+
+// stillMotion is true when the overlay's motions show their end at once:
+// with reduce motion, and in frames that disable animations.
+func stillMotion(c *mu.Context) bool { return reduceMotion(c) || c.Instant() }
 
 // seconds is the clock of the overlay's ink (the ripple, the pulse), or 0
 // with reduce motion.
@@ -151,16 +257,16 @@ func (a *App) writePreview(c *mu.Context) {
 
 // followCard gives the shell the card's box, so that the rest of the window
 // lets the mouse through (Rust overlay: only the visible card takes it).
+// The box is the one the last frame laid out; while the card moves, each
+// frame moves the region with it, and a change asks for one more frame so
+// the region catches the card where it stops.
 func (a *App) followCard(c *mu.Context) {
-	key := a.overlayLayout()
-	if key != a.ov.layout {
-		// The card changes its size in this frame: look again in the next.
-		a.ov.layout = key
-		c.After(30 * time.Millisecond)
+	var r mu.Rect
+	if a.ov.cardShown {
+		r = a.ov.card.Bounds(c)
+		z := c.Zoom()
+		r = mu.Rect{X: r.X * z, Y: r.Y * z, W: r.W * z, H: r.H * z}
 	}
-	r := a.ov.card.Bounds(c)
-	z := c.Zoom()
-	r = mu.Rect{X: r.X * z, Y: r.Y * z, W: r.W * z, H: r.H * z}
 	if r == a.ov.region {
 		return
 	}
@@ -168,91 +274,112 @@ func (a *App) followCard(c *mu.Context) {
 	if s, ok := a.d.Shell.(overlayInput); ok {
 		s.SetOverlayInputRegion(r)
 	}
-	c.After(30 * time.Millisecond)
-}
-
-// overlayLayout names what the card shows, for followCard.
-func (a *App) overlayLayout() string {
-	return fmt.Sprint(a.state.Kind, a.state.Notice.Kind, a.ov.hovered, a.lastNotice, a.cfg.Overlay.Size, a.cfg.Overlay.Style)
+	c.AnimationFrame()
 }
 
 func (a *App) pillView(c *mu.Context, p theme.Colors) {
 	k := a.cfg.Overlay.Size.Scale()
 	// The slip and the pill sit at the window edge nearer the display edge;
-	// the slip grows away from it, so the pill never moves.
-	col := mu.Column(c).Fill().AlignItems(mu.Center).Gap(12).Justify(mu.End).Padding(0, 0, overlayMargin/k, 0)
+	// the slip grows away from it, so the pill never moves. The slip is the
+	// first child, so the pill draws over it and the slip comes out from
+	// behind the pill; a reversed column puts it under the pill.
+	col := mu.Column(c).Fill().AlignItems(mu.Center).Justify(mu.End).Padding(0, 0, overlayMargin/k, 0)
 	if a.ov.previewBelow {
-		col.Justify(mu.Start).Padding(overlayMargin/k, 0, 0, 0)
+		col.Reverse().Padding(overlayMargin/k, 0, 0, 0)
 	}
 	col.Children(func() {
-		if !a.ov.previewBelow {
-			a.previewSlip(c, p)
-		}
+		a.previewSlip(c, p)
 		a.pill(c, p)
-		if a.ov.previewBelow {
-			a.previewSlip(c, p)
-		}
 	})
 }
 
+// cardPresent is true when the pill's card shows something: not at rest
+// when the card closes while idle, and not for a discarded dictation.
+func (a *App) cardPresent() bool {
+	switch a.state.Kind {
+	case dictation.StateIdle:
+		return a.noticeShowing() || !a.closesWhenIdle()
+	case dictation.StateShowing:
+		return a.state.Notice.Kind != dictation.NoticeDiscarded
+	}
+	return true
+}
+
 // pill is the card itself. At rest it is a small dash; hovered, it says
-// how to dictate; while dictating or showing a notice it holds them.
+// how to dictate; while dictating or showing a notice it holds them. The
+// card eases to the size of each state, and the new state fades in.
 func (a *App) pill(c *mu.Context, p theme.Colors) {
+	present := a.cardPresent()
+	failed := a.state.Kind == dictation.StateShowing && a.state.Notice.Kind == dictation.NoticeInsertFailed
+	idle := a.state.Kind == dictation.StateIdle && !a.noticeShowing()
+	var content func()
+	if present {
+		content = func() {
+			mu.Row(c).Opacity(a.ov.fade).AlignItems(mu.Center).Children(func() {
+				if failed {
+					mu.Column(c).Width(320).Padding(14, 14, 12, 16).Gap(10).Role(mu.RoleStatus).Children(func() { a.failedBody(c, p) })
+					return
+				}
+				a.pillFace(c, p, idle)
+			})
+		}
+	} else {
+		a.ov.hovered = false
+	}
+	// The card holds the pressable part and, for a notice, its actions as
+	// siblings: a control inside a button is no control of its own.
+	card := a.morphBox(c, "overlay.card", &a.ov.cardM, present, alignCenter, content).Bind(&a.ov.card).DragWindow()
+	a.ov.cardShown = !a.ov.cardM.gone()
+	// The card's look follows the hover of the part inside it.
+	switch {
+	case failed:
+		floating(card.Radius(14), p)
+	case idle && present && !a.ov.hovered:
+		card.Radius(99).Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).
+			Shadow(0, 1, 2, 0, p.ShadowA(0.16)).Shadow(0, 4, 12, 0, p.ShadowA(0.12))
+	case idle && present:
+		card.Radius(99).Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).
+			Shadow(0, 1, 2, 0, p.ShadowA(0.16)).Shadow(0, 8, 22, 0, p.ShadowA(0.14))
+	default:
+		floating(card.Radius(99), p)
+	}
+}
+
+// pillFace is the pressable pill and, for a cancelled dictation, its Undo.
+func (a *App) pillFace(c *mu.Context, p theme.Colors, idle bool) {
 	label := i18n.T("overlay.a11y.start")
 	if a.Busy() {
 		label = i18n.T("overlay.a11y.stop")
 	}
-	idle := a.state.Kind == dictation.StateIdle && !a.noticeShowing()
-	failed := a.state.Kind == dictation.StateShowing && a.state.Notice.Kind == dictation.NoticeInsertFailed
-	if failed {
-		a.failedCard(c, p)
-		return
+	b := mu.ButtonBase(a.k(c, "overlay.pill")).Label(label).Radius(99).AlignItems(mu.Center).Justify(mu.Center)
+	hover := b.Hovered()
+	a.ov.hovered = hover
+	switch {
+	case idle && !hover:
+		b.Size(52, 14)
+	case idle:
+		b.Padding(7, 14, 7, 8).Gap(10)
 	}
-	// The shell holds the pressable part and, for a notice, its actions as
-	// siblings: a control inside a button is no control of its own.
-	shell := mu.Row(a.k(c, "overlay.card")).Bind(&a.ov.card).Shrink(0).Radius(99).AlignItems(mu.Center).DragWindow()
-	shell.Children(func() {
-		b := mu.ButtonBase(a.k(c, "overlay.pill")).Label(label).Radius(99).AlignItems(mu.Center).Justify(mu.Center)
-		hover := b.Hovered()
-		a.ov.hovered = hover
-		switch {
-		case idle && !hover:
-			b.Size(52, 14)
-		case idle:
-			b.Padding(7, 14, 7, 8).Gap(10)
+	b.Children(func() {
+		if idle {
+			a.idleContent(c, p, hover)
+			return
 		}
-		b.Children(func() {
-			if idle {
-				a.idleContent(c, p, hover)
-				return
-			}
-			a.pillContent(c, p, b, hover)
-		})
-		if clicked(c, b) {
-			switch a.state.Kind {
-			case dictation.StateShowing:
-				if a.d.Dictation != nil {
-					a.d.Dictation.Dismiss()
-				}
-			default:
-				a.Toggle()
-			}
-		}
-		if a.state.Kind == dictation.StateShowing && a.state.Notice.Kind == dictation.NoticeCancelled {
-			a.undoButton(c, p)
-		}
-		// The shell's look follows the hover of the part inside it.
-		switch {
-		case idle && !hover:
-			shell.Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).
-				Shadow(0, 1, 2, 0, p.ShadowA(0.16)).Shadow(0, 4, 12, 0, p.ShadowA(0.12))
-		case idle:
-			shell.Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).
-				Shadow(0, 1, 2, 0, p.ShadowA(0.16)).Shadow(0, 8, 22, 0, p.ShadowA(0.14))
-		default:
-			floating(shell, p)
-		}
+		a.pillContent(c, p, b, hover)
 	})
+	if clicked(c, b) {
+		switch a.state.Kind {
+		case dictation.StateShowing:
+			if a.d.Dictation != nil {
+				a.d.Dictation.Dismiss()
+			}
+		default:
+			a.Toggle()
+		}
+	}
+	if a.state.Kind == dictation.StateShowing && a.state.Notice.Kind == dictation.NoticeCancelled {
+		a.undoButton(c, p)
+	}
 }
 
 // idleContent is the dash at rest, and the hotkey when hovered.
@@ -286,7 +413,7 @@ func (a *App) pillContent(c *mu.Context, p theme.Colors, b mu.Element, hover boo
 			mu.Box(c).Size(12, 12).Radius(99).Background(p.Accent).
 				Shadow(0, 0, 0, 3+2*pulse, p.Accent.Alpha(0.16+0.1*pulse)).Shadow(0, 1, 1, 0, mu.RGBA(0x14, 0x18, 0x3C, 0.35))
 		})
-		inkWaveform(c, smoothedLevels(a.levelsInOrder(), 28), seconds(c), p.Ink).Size(232, 36).Shrink(0)
+		inkWaveform(c, a.wave.points(28), seconds(c), p.Ink).Size(232, 36).Shrink(0)
 		mono(c, a.elapsedLabel(), a.ts(13), p.Graphite).Width(a.ts(36)).TextAlign(mu.End)
 		if a.incognito {
 			debossed(mu.Row(c).Height(22).PaddingX(9).Shrink(0).Radius(99).AlignItems(mu.Center), p).Children(func() {
@@ -382,19 +509,9 @@ func (a *App) undoButton(c *mu.Context, p theme.Colors) {
 		countdownRing(c, left, p.OnInk).Size(18, 18).Shrink(0)
 		uiText(c, i18n.T("overlay.undo"), a.ts(14), 600, p.OnInk).SingleLine()
 	})
-	if left > 0 {
-		c.After(50 * time.Millisecond)
-	}
 	if clicked(c, b) && a.d.Dictation != nil {
 		a.d.Dictation.Undo()
 	}
-}
-
-// failedCard is a dictation that could not go in: a card with the reason,
-// the text, and Dismiss and Copy.
-func (a *App) failedCard(c *mu.Context, p theme.Colors) {
-	card := mu.Column(a.k(c, "overlay.card")).Bind(&a.ov.card).Width(320).Shrink(0).Radius(14).Padding(14, 14, 12, 16).Gap(10).Role(mu.RoleStatus)
-	floating(card, p).Children(func() { a.failedBody(c, p) })
 }
 
 // failedBody is the reason a dictation could not go in, its text, and
@@ -434,26 +551,58 @@ func (a *App) previewLoading() bool {
 	return id != "" && a.modelStatus(id).State == engine.StateOptimizing
 }
 
-// previewSlip is the live preview on the pill's slip.
+// slipGap is the room between the pill and its slip.
+const slipGap = 12
+
+// previewSlip is the live preview on the pill's slip. It grows out of the
+// center of the pill to its place, and goes back into the pill the same way
+// when the recording stops, with the last words on it.
 func (a *App) previewSlip(c *mu.Context, p theme.Colors) {
-	if a.state.Kind != dictation.StateRecording {
-		return
-	}
 	live := a.livePreview()
-	if !live && !a.previewLoading() {
+	loading := a.state.Kind == dictation.StateRecording && !live && a.previewLoading()
+	present := live || loading
+	if present {
+		a.ov.slipPreview = live
+	}
+	m := &a.ov.slipM
+	if !present && m.gone() {
+		a.ov.slipPreview = false
 		return
 	}
 	k := a.cfg.Overlay.Size.Scale()
-	slip := mu.Column(a.k(c, "overlay.preview")).Width(420).Shrink(0).Padding(14, 18).Radius(12).Background(p.Sheet).Role(mu.RoleStatus).
-		InsetShadow(0, 1, 0, 0, p.Highlight(0.9)).Shadow(0, 1, 2, 0, p.ShadowA(0.10)).Shadow(0, 10, 28, 0, p.ShadowA(0.12))
-	slip.Children(func() {
-		if !live {
-			slip.Padding(12, 18)
-			loadingLine(c, p, a.ts(15), 21)
-			return
+	var content func()
+	switch {
+	case live || (!present && a.ov.slipPreview):
+		content = func() {
+			mu.Column(a.k(c, "overlay.preview")).Width(420).Padding(14, 18).Role(mu.RoleStatus).Children(func() {
+				a.inkText(c, p, previewSpans(&a.ov.pen, int(slipLetters*k), p), 384, a.ts(17), 24.0/17)
+			})
 		}
-		a.inkText(c, p, previewSpans(&a.ov.pen, int(slipLetters*k), p), 384, a.ts(17), 24.0/17)
+	case loading:
+		content = func() {
+			mu.Column(a.k(c, "overlay.preview")).Width(420).Padding(12, 18).Role(mu.RoleStatus).Children(func() {
+				loadingLine(c, p, a.ts(15), 21)
+			})
+		}
+	}
+	wrap := mu.Box(c).Shrink(0)
+	wrap.Children(func() {
+		a.morphBox(c, "overlay.slip", m, present, alignCenter, content).Radius(12).Background(p.Sheet).
+			InsetShadow(0, 1, 0, 0, p.Highlight(0.9)).Shadow(0, 1, 2, 0, p.ShadowA(0.10)).Shadow(0, 10, 28, 0, p.ShadowA(0.12))
 	})
+	// How far the slip is from the center of the pill: all the way at the
+	// start, none at its place.
+	_, pill := a.ov.cardM.size()
+	_, h := m.size()
+	away := (1 - m.opacity()) * (slipGap + (pill+h)/2)
+	if a.ov.previewBelow {
+		wrap.Padding(slipGap, 0, 0, 0).Translate(0, -away)
+	} else {
+		wrap.Padding(0, 0, slipGap, 0).Translate(0, away)
+	}
+	if m.gone() {
+		a.ov.slipPreview = false
+	}
 }
 
 // loadingLine is a pencil line that draws across, and the reason in pencil
@@ -494,25 +643,66 @@ func (a *App) inkText(c *mu.Context, p theme.Colors, spans []mu.Span, w, size, l
 	})
 }
 
+// notchOpens is true when the notch opens its wings for the state.
+func (a *App) notchOpens() bool {
+	switch a.state.Kind {
+	case dictation.StateIdle:
+		return a.noticeShowing()
+	case dictation.StateShowing:
+		return a.state.Notice.Kind != dictation.NoticeDiscarded
+	}
+	return true
+}
+
 // notchView is the black notch with wings, and the slip under it (Paper
-// page "Overlay · Notch").
+// page "Overlay · Notch"). The wings open from the camera and close into
+// it; closed and at rest, nothing shows and the window hides.
 func (a *App) notchView(c *mu.Context, p theme.Colors) {
 	night := a.themes.get(a.cfg.Appearance.Ink, true).Colors
+	open := a.notchOpens()
+	// Both wings have the width of the wider content, so the middle stays
+	// on the camera; a wing grows to fit a longer label.
+	l, r := a.ov.wings[0].Bounds(c).W, a.ov.wings[1].Bounds(c).W
+	wing := max(max(l, r)+notchWingPad, notchWing)
+	if a.ov.notch.update(c.Now(), open, wing, stillMotion(c)) {
+		c.AnimationFrame()
+	}
+	if a.ov.notch.gone() {
+		return
+	}
+	a.ov.cardShown = true
+	ww := a.ov.notch.width()
 	mu.Column(c).Fill().AlignItems(mu.Center).Children(func() {
-		mu.Column(a.k(c, "overlay.card")).Bind(&a.ov.card).AlignItems(mu.Center).Shrink(0).Children(func() {
-			open := a.Busy() || a.state.Kind == dictation.StateShowing || a.noticeShowing()
-			n := mu.ButtonBase(a.k(c, "overlay.notch")).Label(i18n.T("overlay.a11y.name")).Height(notchHeight).AlignItems(mu.Center).Draw(paintNotch)
-			if !open {
-				// Closed, the notch is the camera housing; its window hides.
-				n.Width(notchCamera + 2*notchShoulder)
-			} else {
-				n.Width(notchWidth).Padding(0, notchShoulder+notchWingPad).Children(func() { a.notchWings(c, night, n.Hovered()) })
-			}
+		mu.Column(a.k(c, "overlay.card")).Bind(&a.ov.card).AlignItems(mu.Center).Shrink(0).Opacity(a.ov.notch.opacity()).Children(func() {
+			n := mu.ButtonBase(a.k(c, "overlay.notch")).Label(i18n.T("overlay.a11y.name")).Height(notchHeight).PaddingX(notchShoulder).
+				AlignItems(mu.Center).Draw(paintNotch)
+			n.Children(func() {
+				hover := n.Hovered()
+				a.notchWing(c, 0, ww, func() { a.leftWing(c, night, hover) })
+				mu.Box(c).Width(notchCamera).Shrink(0)
+				a.notchWing(c, 1, ww, func() { a.rightWing(c, night) })
+			})
 			if clicked(c, n) {
 				a.Toggle()
 			}
 			a.notchSlip(c, p)
 		})
+	})
+}
+
+// notchWing is one wing at width w. It clips its content, which sits at
+// its outer edge, so the content slides out from under the camera. The
+// padding closes with the wing, so a closed notch has the camera's size.
+func (a *App) notchWing(c *mu.Context, side int, w float32, content func()) {
+	pad := min(float32(notchWingPad), w)
+	wing := mu.Row(c).Width(w).Height(notchHeight).Shrink(0).ClipX().AlignItems(mu.Center)
+	if side == 0 {
+		wing.PaddingStart(pad).Justify(mu.Start)
+	} else {
+		wing.PaddingEnd(pad).Justify(mu.End)
+	}
+	wing.Children(func() {
+		mu.Row(c).Bind(&a.ov.wings[side]).Shrink(0).Gap(7).AlignItems(mu.Center).Children(content)
 	})
 }
 
@@ -540,40 +730,42 @@ func paintNotch(pt *mu.Painter, r mu.Rect) {
 	pt.FillPath(&path, mu.RGB(0, 0, 0))
 }
 
-// notchWings are the left wing (the state) and the right wing (the ink or
-// the line) of the open notch, in the colors of dark paper.
-func (a *App) notchWings(c *mu.Context, night theme.Colors, hover bool) {
-	mu.Row(c).Gap(7).Grow(1).AlignItems(mu.Center).Children(func() {
-		switch a.state.Kind {
-		case dictation.StateRecording:
-			if hover {
-				mu.Box(c).Size(9, 9).Shrink(0).Radius(2.5).Background(night.Accent)
-			} else {
-				mu.Box(c).Size(8, 8).Shrink(0).Radius(99).Background(night.Accent).
-					Shadow(0, 0, 0, 3, night.Accent.Alpha(0.18)).Shadow(0, 0, 8, 0, night.Accent.Alpha(0.55))
-			}
-			mono(c, a.elapsedLabel(), 12, night.Graphite)
-		case dictation.StateProcessing:
-			mu.Text(c, a.stageLabel()).Font(theme.Body).Italic().FontSize(13).TextColor(night.Graphite).SingleLine()
-		case dictation.StateShowing:
-			if a.state.Notice.Kind == dictation.NoticeInserted {
-				inkSeal(c, night, 20)
-			} else {
-				mu.Icon(c, icon("info")).FontSize(14).TextColor(night.Ink)
-			}
+// leftWing is the state, in the colors of dark paper.
+func (a *App) leftWing(c *mu.Context, night theme.Colors, hover bool) {
+	switch a.state.Kind {
+	case dictation.StateRecording:
+		if hover {
+			mu.Box(c).Size(9, 9).Shrink(0).Radius(2.5).Background(night.Accent)
+		} else {
+			mu.Box(c).Size(8, 8).Shrink(0).Radius(99).Background(night.Accent).
+				Shadow(0, 0, 0, 3, night.Accent.Alpha(0.18)).Shadow(0, 0, 8, 0, night.Accent.Alpha(0.55))
+		}
+		mono(c, a.elapsedLabel(), 12, night.Graphite)
+	case dictation.StateProcessing:
+		mu.Text(c, a.stageLabel()).Font(theme.Body).Italic().FontSize(13).TextColor(night.Graphite).SingleLine()
+	case dictation.StateShowing:
+		switch a.state.Notice.Kind {
+		case dictation.NoticeInserted:
+			inkSeal(c, night, 20)
+		case dictation.NoticeDiscarded:
 		default:
 			mu.Icon(c, icon("info")).FontSize(14).TextColor(night.Ink)
 		}
-	})
-	mu.Box(c).Width(notchCamera).Shrink(0)
-	mu.Row(c).Grow(1).Justify(mu.End).AlignItems(mu.Center).Children(func() {
-		switch a.state.Kind {
-		case dictation.StateRecording:
-			paleWaveform(c, smoothedLevels(a.levelsInOrder(), 28), seconds(c), night.Ink).Size(50, 20).Shrink(0)
-		case dictation.StateProcessing:
-			inkLine(c, processingProgress(float32(a.now().Sub(a.stateAt).Seconds()), reduceMotion(c)), night.Ink, night.Pencil).Size(58, 12).Shrink(0)
+	default:
+		if a.noticeShowing() {
+			mu.Icon(c, icon("info")).FontSize(14).TextColor(night.Ink)
 		}
-	})
+	}
+}
+
+// rightWing is the ink of the recording or the line of the processing stage.
+func (a *App) rightWing(c *mu.Context, night theme.Colors) {
+	switch a.state.Kind {
+	case dictation.StateRecording:
+		paleWaveform(c, a.wave.points(28), seconds(c), night.Ink).Size(50, 20).Shrink(0)
+	case dictation.StateProcessing:
+		inkLine(c, processingProgress(float32(a.now().Sub(a.stateAt).Seconds()), reduceMotion(c)), night.Ink, night.Pencil).Size(58, 12).Shrink(0)
+	}
 }
 
 // paleWaveform is the waveform in the notch: pale ink with denser layers.
@@ -582,36 +774,56 @@ func paleWaveform(c *mu.Context, levels []float32, phase float32, col mu.Color) 
 }
 
 // notchSlip is the slip under the notch: the live preview, or a notice. It
-// feeds out of the notch, so only its bottom corners are round, and the
-// notch shades its top.
+// feeds out of the notch and back in, so only its bottom corners are
+// round, and the notch shades its top.
 func (a *App) notchSlip(c *mu.Context, p theme.Colors) {
 	live, notice := a.livePreview(), a.state.Kind == dictation.StateShowing || (a.state.Kind == dictation.StateIdle && a.noticeShowing())
+	if a.state.Kind == dictation.StateShowing && a.state.Notice.Kind == dictation.NoticeDiscarded {
+		notice = false
+	}
 	loading := a.state.Kind == dictation.StateRecording && !live && a.previewLoading()
-	if !live && !notice && !loading {
+	present := live || notice || loading
+	if present {
+		// A notice has its own slip: when it goes, the slip feeds back in
+		// empty, not with an old preview.
+		a.ov.slipPreview = live
+	}
+	m := &a.ov.slipM
+	if !present && m.gone() {
+		a.ov.slipPreview = false
 		return
 	}
-	slip := mu.Column(a.k(c, "overlay.preview")).Width(notchSlipW).Shrink(0).Padding(13, 18, 15, 18).Radius(0, 0, 12, 12).Background(p.Sheet).
-		Role(mu.RoleStatus).InsetShadow(0, 7, 6, -6, p.Ink.Alpha(0.28)).Shadow(0, 1, 2, 0, p.ShadowA(0.14)).Shadow(0, 10, 24, 0, p.ShadowA(0.14))
-	slip.Children(func() {
-		switch {
-		case live:
-			a.inkText(c, p, previewSpans(&a.ov.pen, notchSlipLetters, p), notchSlipW-36, 16, 23.0/16)
-		case loading:
-			loadingLine(c, p, 15, 21)
-		case a.state.Kind == dictation.StateShowing && a.state.Notice.Kind == dictation.NoticeInsertFailed:
-			slip.Gap(10)
-			a.failedBody(c, p)
-		case a.state.Kind == dictation.StateShowing:
-			mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
-				uiText(c, a.notchNoticeTitle(), 14, 600, p.Ink).Grow(1).Shrink(1).SingleLine().Ellipsis("…")
-				if a.state.Notice.Kind == dictation.NoticeCancelled {
-					a.undoButton(c, p)
+	var content func()
+	if present || a.ov.slipPreview {
+		content = func() {
+			slip := mu.Column(a.k(c, "overlay.preview")).Width(notchSlipW).Padding(13, 18, 15, 18).Role(mu.RoleStatus)
+			slip.Children(func() {
+				switch {
+				case live || !present:
+					a.inkText(c, p, previewSpans(&a.ov.pen, notchSlipLetters, p), notchSlipW-36, 16, 23.0/16)
+				case loading:
+					loadingLine(c, p, 15, 21)
+				case a.state.Kind == dictation.StateShowing && a.state.Notice.Kind == dictation.NoticeInsertFailed:
+					slip.Gap(10)
+					a.failedBody(c, p)
+				case a.state.Kind == dictation.StateShowing:
+					mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
+						uiText(c, a.notchNoticeTitle(), 14, 600, p.Ink).Grow(1).Shrink(1).SingleLine().Ellipsis("…")
+						if a.state.Notice.Kind == dictation.NoticeCancelled {
+							a.undoButton(c, p)
+						}
+					})
+				default:
+					uiText(c, a.lastNotice, 14, 600, p.Ink)
 				}
 			})
-		default:
-			uiText(c, a.lastNotice, 14, 600, p.Ink)
 		}
-	})
+	}
+	a.morphBox(c, "overlay.slip", m, present, alignBottom, content).Radius(0, 0, 12, 12).Background(p.Sheet).
+		InsetShadow(0, 7, 6, -6, p.Ink.Alpha(0.28)).Shadow(0, 1, 2, 0, p.ShadowA(0.14)).Shadow(0, 10, 24, 0, p.ShadowA(0.14))
+	if m.gone() {
+		a.ov.slipPreview = false
+	}
 }
 
 // notchNoticeTitle is the title of a notice on the notch's slip.

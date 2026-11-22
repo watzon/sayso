@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"time"
+
 	mu "github.com/egoist/mygo/ui"
 
 	"github.com/watzon/sayso/internal/i18n"
@@ -30,6 +32,14 @@ func (a *App) PopoverView(c *mu.Context) {
 	p := a.look(c)
 	c.Root().Background(p.SheetRaised)
 	a.loadHome()
+	// Esc closes an open submenu first, then the popover (Rust popover.rs).
+	if c.Shortcut(0, mu.KeyEscape) {
+		if a.pop.open != "" {
+			a.pop.open = ""
+		} else {
+			a.d.Shell.ClosePopover(false)
+		}
+	}
 	mu.Column(c).Fill().Padding(8).Gap(6).Draw(a.grain(p, "sheet", 16)).Children(func() {
 		status, _, dot := a.engineSummary(p)
 		mu.Row(c).Padding(10, 10, 6, 10).Gap(10).AlignItems(mu.Center).Children(func() {
@@ -71,7 +81,7 @@ func (a *App) PopoverView(c *mu.Context) {
 		mu.Row(c).Gap(8).Padding(4, 4, 4, 4).AlignItems(mu.Center).Children(func() {
 			if a.button(c, p, "popover.open", i18n.T("popover.open_sayso"), bopt{grow: true}) {
 				if a.d.Shell != nil {
-					a.d.Shell.ShowWindow(WinPopover, false)
+					a.d.Shell.ClosePopover(true)
 					a.d.Shell.ShowHub()
 				}
 			}
@@ -227,7 +237,7 @@ func (a *App) popoverModels(c *mu.Context, p theme.Colors) {
 		a.popoverChoice(c, p, "popover.manage_models", i18n.T("popover.manage_models"), false, func() {
 			a.SetPage(PageModels)
 			if a.d.Shell != nil {
-				a.d.Shell.ShowWindow(WinPopover, false)
+				a.d.Shell.ClosePopover(true)
 				a.d.Shell.ShowHub()
 			}
 		})
@@ -264,4 +274,73 @@ func (a *App) micName() string {
 		}
 	}
 	return i18n.T("popover.system_default")
+}
+
+// popoverToggle decides what a click on the tray icon does to the
+// popover. A press outside the popover closes it, and on some systems the
+// press on the icon does too, before the icon's click arrives: that click
+// must not open it again (Rust popover.rs).
+type popoverToggle struct{ closedAt time.Time }
+
+type popoverAction int
+
+const (
+	popoverNothing popoverAction = iota
+	popoverShow
+	popoverHide
+)
+
+// popoverExit is why the popover closes, which decides where the keyboard
+// goes (Rust popover.rs hide and hide_popover).
+type popoverExit int
+
+const (
+	// exitGiveBack: Esc, the tray icon or a row's action closed it.
+	exitGiveBack popoverExit = iota
+	// exitKeep: Open Sayso or Manage models closed it to show the hub.
+	exitKeep
+	// exitDismissed: a press outside it or the loss of the keyboard
+	// closed it (the flyout's own close).
+	exitDismissed
+)
+
+// popoverReopen is how soon after a dismissal began a click on the icon is
+// taken as the press that dismissed it.
+const popoverReopen = 400 * time.Millisecond
+
+// closed notes that a dismissal of the popover began at now.
+func (p *popoverToggle) closed(now time.Time) { p.closedAt = now }
+
+// closing notes that the popover begins to close at now, for exit: only a
+// dismissal guards the icon's next click.
+func (p *popoverToggle) closing(now time.Time, exit popoverExit) {
+	if exit == exitDismissed {
+		p.closed(now)
+	}
+}
+
+// popoverGivesBack reports whether closing the popover for exit gives the
+// keyboard back to the app the user came from. A dismissal keeps Sayso
+// active only when its press landed in a window of Sayso the user works
+// in: AppKit makes the hub or the overlay key whatever the user did.
+func popoverGivesBack(exit popoverExit, pressInSayso bool) bool {
+	switch exit {
+	case exitKeep:
+		return false
+	case exitDismissed:
+		return !pressInSayso
+	}
+	return true
+}
+
+// click is what a click on the icon at now does, with the popover visible
+// or not.
+func (p *popoverToggle) click(now time.Time, visible bool) popoverAction {
+	switch {
+	case visible:
+		return popoverHide
+	case !p.closedAt.IsZero() && now.Sub(p.closedAt) < popoverReopen:
+		return popoverNothing
+	}
+	return popoverShow
 }
