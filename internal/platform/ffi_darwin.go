@@ -104,6 +104,7 @@ var (
 	axUIElementCopyAttributeValue  func(el uintptr, attr uintptr, value *uintptr) int32
 	axUIElementSetMessagingTimeout func(el uintptr, seconds float32) int32
 	isSecureEventInputEnabled      func() bool
+	copySymbolicHotKeys            func(out *uintptr) int32
 )
 
 const (
@@ -223,6 +224,7 @@ func bindDarwin() error {
 
 	carbon := openLib(pathCarbon)
 	purego.RegisterLibFunc(&isSecureEventInputEnabled, carbon, "IsSecureEventInputEnabled")
+	purego.RegisterLibFunc(&copySymbolicHotKeys, carbon, "CopySymbolicHotKeys")
 
 	at := openLib(pathAudioToolbox)
 	purego.RegisterLibFunc(&audioQueueNewInput, at, "AudioQueueNewInput")

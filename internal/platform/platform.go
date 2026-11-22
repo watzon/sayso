@@ -90,6 +90,26 @@ type HotkeyManager interface {
 	Stop() error
 }
 
+// HotkeyConflict is another program that reacts to a hotkey: an app, or a
+// shortcut of the system.
+type HotkeyConflict struct {
+	// Hotkey is the hotkey, as config.toml writes it.
+	Hotkey string
+	// App: Name is an app; else Name is the English name of a system shortcut.
+	App  bool
+	Name string
+	// Confirmed (App): Sayso read the app's setting; else it is the default.
+	Confirmed bool
+	// Enabled (system): the shortcut is on.
+	Enabled bool
+}
+
+// ConflictFinder finds the other programs that use a hotkey. A
+// HotkeyManager implements it where the system lets Sayso look (macOS).
+type ConflictFinder interface {
+	Conflicts(hotkey string) []HotkeyConflict
+}
+
 // InsertOptions configures how text is inserted into the focused app.
 type InsertOptions struct {
 	RestoreClipboard bool
