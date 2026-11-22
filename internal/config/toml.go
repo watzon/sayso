@@ -172,48 +172,167 @@ func joinPath(path, key string) string {
 	return path + "." + quoteKey(key)
 }
 
+// quoteKey writes a key as toml_writer's TomlKeyBuilder::as_default does:
+// bare, else a basic string without escapes, else a literal string, else a
+// basic string with escapes.
 func quoteKey(k string) string {
 	bare := k != ""
-	for _, c := range k {
+	single, double, escape, codes := false, false, false, false
+	for i := 0; i < len(k); i++ {
+		c := k[i]
 		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
 			bare = false
-			break
+		}
+		switch {
+		case c == '\'':
+			single = true
+		case c == '"':
+			double = true
+		case c == '\\':
+			escape = true
+		case c == '\t':
+		case c <= 0x1f || c == 0x7f:
+			codes = true
 		}
 	}
-	if bare {
+	switch {
+	case bare:
 		return k
+	case !codes && !escape && !double:
+		return writeTomlString(k, encBasic, false)
+	case !codes && !single:
+		return writeTomlString(k, encLiteral, false)
 	}
-	return quoteString(k)
+	return writeTomlString(k, encBasic, false)
 }
 
+type tomlEncoding int
+
+const (
+	encLiteral tomlEncoding = iota
+	encBasic
+	encMlLiteral
+	encMlBasic
+)
+
+// quoteString writes a string value as toml_writer's
+// TomlStringBuilder::as_default does (the writer toml-rs 0.9 uses): a basic
+// string when no escape is needed, else a literal string, else a multi-line
+// basic or literal string, else an escaped basic string.
 func quoteString(s string) string {
+	var maxSingle, maxDouble, single, double int
+	escape, codes, newline := false, false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '\'' {
+			single++
+			maxSingle = max(maxSingle, single)
+		} else {
+			single = 0
+		}
+		if c == '"' {
+			double++
+			maxDouble = max(maxDouble, double)
+		} else {
+			double = 0
+		}
+		switch {
+		case c == '\\':
+			escape = true
+		case c == '\t':
+		case c == '\n':
+			newline = true
+		case c <= 0x1f || c == 0x7f:
+			codes = true
+		}
+	}
+	switch {
+	case !codes && !escape && maxDouble == 0 && !newline:
+		return writeTomlString(s, encBasic, newline)
+	case !codes && maxSingle == 0 && !newline:
+		return writeTomlString(s, encLiteral, newline)
+	case !codes && !escape && maxDouble <= 2:
+		return writeTomlString(s, encMlBasic, newline)
+	case !codes && maxSingle <= 2:
+		return writeTomlString(s, encMlLiteral, newline)
+	case newline:
+		return writeTomlString(s, encMlBasic, newline)
+	}
+	return writeTomlString(s, encBasic, newline)
+}
+
+func writeTomlString(s string, enc tomlEncoding, newline bool) string {
+	delim := map[tomlEncoding]string{encLiteral: "'", encBasic: `"`, encMlLiteral: "'''", encMlBasic: `"""`}[enc]
+	ml := enc == encMlLiteral || enc == encMlBasic
 	var b strings.Builder
-	b.WriteByte('"')
-	for _, c := range s {
-		switch c {
-		case '"':
-			b.WriteString(`\"`)
-		case '\\':
-			b.WriteString(`\\`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\t':
-			b.WriteString(`\t`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\b':
-			b.WriteString(`\b`)
-		case '\f':
-			b.WriteString(`\f`)
-		default:
-			if c < 0x20 || c == 0x7f {
-				fmt.Fprintf(&b, `\u%04X`, c)
+	b.WriteString(delim)
+	if newline && ml {
+		b.WriteByte('\n')
+	}
+	if enc == encLiteral || enc == encMlLiteral {
+		b.WriteString(s)
+		b.WriteString(delim)
+		return b.String()
+	}
+	maxDouble := 0
+	if ml {
+		maxDouble = 2
+	}
+	stream := s
+	for stream != "" {
+		end, esc, seq := 0, "", 0
+	scan:
+		for i := 0; i < len(stream); i++ {
+			c := stream[i]
+			if c == '"' {
+				seq++
+				if seq > maxDouble {
+					esc = `\"`
+					break
+				}
 			} else {
-				b.WriteRune(c)
+				seq = 0
+			}
+			switch {
+			case c == 0x8:
+				esc = `\b`
+				break scan
+			case c == 0x9:
+				esc = `\t`
+				break scan
+			case c == 0xa:
+				if !ml {
+					esc = `\n`
+					break scan
+				}
+			case c == 0xc:
+				esc = `\f`
+				break scan
+			case c == 0xd:
+				esc = `\r`
+				break scan
+			case c == '"':
+			case c == '\\':
+				esc = `\\`
+				break scan
+			case c <= 0x1f || c == 0x7f:
+				break scan
+			}
+			end = i + 1
+		}
+		b.WriteString(stream[:end])
+		b.WriteString(esc)
+		if esc != "" {
+			stream = stream[end+1:]
+		} else {
+			stream = stream[end:]
+			if stream != "" {
+				fmt.Fprintf(&b, `\u%04X`, stream[0])
+				stream = stream[1:]
 			}
 		}
 	}
-	b.WriteByte('"')
+	b.WriteString(delim)
 	return b.String()
 }
 
