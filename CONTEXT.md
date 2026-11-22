@@ -179,7 +179,7 @@ The part of a style that a cleanup model uses (`[cleanup]` in the style file): t
 How a cleanup model writes capital letters and the final period: very casual, casual, or formal. It does not change words. Only Cleanup 1 has tones.
 
 **Cleanup runtime**
-The process `sayso-cleanup` (`native/cleanup`) that runs a cleanup model with llama.cpp. It knows no model: it loads a GGUF file and completes text. Sayso starts it at the first use and stops it after 10 minutes with no use.
+The process `sayso-cleanup` (`cmd/sayso-cleanup`) that runs a cleanup model with llama.cpp, from the prebuilt llama.cpp libraries of one pinned release that ship with Sayso (`internal/llamalib`). It knows no model: it loads a GGUF file and completes text. Sayso starts it at the first use, loads the model ahead when a cleanup model is a provider, and stops it after 10 minutes with no use. A stop is graceful (the runtime frees the model and llama.cpp and exits), except for a request past its deadline, which kills it. The SDKs use the Rust runtime of `native/cleanup`, which speaks the same protocol.
 
 **Thinking level**
 How much the model of a provider thinks before it answers, for example low, medium, or high. A higher level is slower. The levels are those that the provider reports for the model, with its model list: the Claude tool, the ChatGPT backend, and OpenRouter do. The user sets the level for each provider in Settings. With no choice, Claude and ChatGPT get low, and an OpenAI-compatible provider gets no level, so the model uses its own default. When the user chooses another model, a level that the model does not have becomes its lowest level. The level goes out as `--effort` (Claude), `reasoning.effort` (ChatGPT and OpenRouter), or `reasoning_effort` (other servers).

@@ -29,7 +29,7 @@ scripts/package-linux.sh build/sayso-*.tar.gz   # .deb, .rpm, AppImage, Flatpak 
 powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1   # Windows: build\windows\Sayso (-Installer for the installer)
 ```
 
-The release builds use `CGO_ENABLED=0 go build -tags mygo_noinspector -ldflags="-s -w" ./cmd/sayso`. On macOS the Swift engine (`native/macos/SaysoEngine`) goes into `Sayso.app`. On Windows and Linux the Go engine (`cmd/sayso-engine`) loads sherpa-onnx, whisper.cpp, and parakeet at run time; `SAYSO_NATIVE_LIBS_DIR` names the folder with those libraries for the bundle scripts. The cleanup runtime (`native/cleanup`) is its own Rust workspace.
+The release builds use `CGO_ENABLED=0 go build -tags mygo_noinspector -ldflags="-s -w" ./cmd/sayso`. On macOS the Swift engine (`native/macos/SaysoEngine`) goes into `Sayso.app`. On Windows and Linux the Go engine (`cmd/sayso-engine`) loads sherpa-onnx, whisper.cpp, and parakeet at run time; `SAYSO_NATIVE_LIBS_DIR` names the folder with those libraries for the bundle scripts. The cleanup runtime (`cmd/sayso-cleanup`) runs llama.cpp from pinned prebuilt libraries with yzma; the bundle scripts get them with `go run ./scripts/llama-libs fetch` into `build/llama-libs`, once. No app build needs Cargo. `scripts/bundle.sh` builds the Swift engine and the MediaRemoteAdapter framework again only when `native/macos` or the tools change, and a debug bundle is signed without secure timestamps.
 
 Always start the macOS bundle with `open`. macOS gives permissions to the app that starts a process, so a bundle started from a terminal uses the terminal's permissions. `scripts/bundle.sh` signs with the Developer ID identity of the maintainer. Set `SAYSO_SIGN_IDENTITY` to your own certificate, or to `-` for an ad hoc signature.
 
@@ -60,15 +60,17 @@ A pull request that changes the Linux packaging (`packaging/linux`, `scripts/bun
 | Path | Contents |
 |---|---|
 | `cmd/sayso`, `cmd/sayso-engine` | The Go/MyGo app, and the Go speech engine for Windows and Linux. |
+| `cmd/sayso-cleanup` | The cleanup runtime: llama.cpp through yzma, behind the JSON-lines protocol of the cleanup runtime. Only this program may import yzma (`internal/cleanupd/llama`). |
+| `internal/llamalib`, `scripts/llama-libs` | The pins of the llama.cpp libraries, and where the runtime finds them; the tool that downloads them for the bundle scripts and makes new pins. |
 | `internal/` | The Go packages of the app: dictation, platform, engine, store, providers, config, update, i18n. |
 | `native/macos/SaysoEngine` | Swift sidecar for the local models on macOS (FluidAudio, WhisperKit, Apple Speech). |
-| `native/cleanup` | The cleanup runtime: llama.cpp behind a JSON-lines protocol. Its own Cargo workspace. |
+| `native/cleanup` | The Rust cleanup runtime of the SDKs (`sayso-sdk`, `@justsayso/cleanup`, the `sayso-cleanup` release files): the same protocol, llama.cpp linked. Its own Cargo workspace. The app does not use it. |
 | `crates/sayso-protocol` | The engine and host protocol types. MIT. |
 | `crates/sayso-engine-sdk` | Rust helpers to write an engine. MIT. |
 | `crates/sayso-speech` | Speech types and the transcription pipeline pieces. MIT. |
 | `crates/sayso-capture` | Microphone and system audio capture. MIT. |
 | `crates/sayso-cleanup-models` | What Sayso knows about cleanup models: the catalog, the protocol, the checks. MIT. No I/O. |
-| `crates/sayso-cleanup-client` | Starts the cleanup runtime and downloads the model files. MIT. |
+| `crates/sayso-cleanup-client` | Starts the cleanup runtime and downloads the model files, for the Rust SDK. MIT. |
 | `crates/sayso-sdk` | The SDK for apps: `Speech`, the embedded session with the program engine and the microphone, cleanup, and Deepgram. MIT. |
 | `crates/sayso-node` | The native Node addon of `@justsayso/sdk`. MIT. |
 | `packages/` | The npm packages: `sdk`, `engine`, `cleanup`. |
