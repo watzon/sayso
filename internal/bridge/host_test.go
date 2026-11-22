@@ -477,17 +477,13 @@ func writeTone(t *testing.T, path string, rate, channels, seconds int) {
 	}
 }
 
-func TestLiveSessionsAreUnsupportedForNow(t *testing.T) {
+func TestALiveSessionWithTheMicNeedsItsGrant(t *testing.T) {
 	eng := newFakeEngine()
 	svc := &fakeServices{eng: eng, cfg: testConfig("x")}
 	_, path := startTestHost(t, svc, "[[apps]]\nname = \"App\"\npath = \"/opt/App\"\nallowed = true\ngranted = [\"session.live\"]\n")
 	c := dial(t, path)
 	c.send(`{"type":"hello","id":"h","protocol":1}`)
 	mustUntil(c, "h")
-	c.send(`{"type":"session_start","id":"1","sources":["client"]}`)
-	if r := mustUntil(c, "1").(*ErrorReply); *r.Code != CodeUnsupported || !strings.Contains(r.Message, "live sessions") {
-		t.Fatal(r)
-	}
 	c.send(`{"type":"session_start","id":"2","sources":["mic"]}`)
 	if r := mustUntil(c, "2").(*ErrorReply); *r.Code != CodeCapability || *r.Capability != CapAudioMic {
 		t.Fatal(r)
