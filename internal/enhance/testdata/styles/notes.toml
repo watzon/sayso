@@ -1,0 +1,11 @@
+id = "notes"
+name = "Notes"
+ink = "#3F6B5C"
+description = "Turn it into short bullets in your own words. One idea per line."
+prompt = """
+Turn this into a list of short bullet points. Each bullet is on its own line and starts with "- ". Keep all facts and the speaker's word choices. For "we gotta call the bank and then book the flight for may second", the reply is:
+- Call the bank
+- Book the flight for May 2"""
+
+[cleanup]
+layout = "list"

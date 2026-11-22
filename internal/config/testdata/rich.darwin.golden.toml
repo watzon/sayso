@@ -1,0 +1,162 @@
+[general]
+launch_at_login = false
+dock_icon_with_hub = true
+name = "Chris"
+language = "de"
+
+[hotkeys]
+toggle = "right_option"
+push_to_talk = "ctrl+opt+d"
+cancel = "single_escape"
+double_escape_ms = 400
+paste_last = "ctrl+cmd+v"
+cycle_style = "ctrl+opt+s"
+incognito = "ctrl+shift+i"
+enter_sends = true
+take_escape = true
+
+[style_hotkeys]
+email = "ctrl+opt+e"
+notes = "ctrl+banana"
+raw = 3
+
+[dictation]
+language = "auto"
+model = "openai:gpt-4o-transcribe"
+preview_model = "parakeet-eou-120m"
+live_preview = true
+spoken_punctuation = false
+min_duration_ms = 300
+max_duration_s = 600
+keep_model_minutes = 15
+preload_model = true
+
+[insertion]
+restore_clipboard = true
+restore_delay_ms = 450
+type_in_apps = [
+    "com.a.b",
+    "com.c.d",
+]
+smart_spacing = false
+trailing_space = true
+
+[overlay]
+style = "pill"
+notch_on_other_displays = true
+idle_pill = true
+hide_in_fullscreen = true
+follow_display = true
+show_preview = true
+size = "large"
+
+[audio]
+input_device = "USB Mic"
+pause_media = true
+
+[sounds]
+enabled = true
+volume = 1.0
+start = true
+stop = true
+cancel = true
+insert = false
+
+[ai]
+enabled = true
+active_style = "clean"
+default_provider = "openrouter"
+http_timeout_ms = 4000
+cli_timeout_ms = 8000
+
+[[ai.providers]]
+id = "openrouter"
+name = "OpenRouter"
+kind = "open_ai_compatible"
+base_url = "https://openrouter.ai/api/v1"
+model = "openai/gpt-5-mini"
+api_key_account = "openrouter"
+zero_data_retention = true
+thinking = "low"
+
+[[ai.providers]]
+alpha = "x"
+id = "future"
+kind = "quantum_llm"
+name = "Future"
+zeta = 1
+
+[ai.style_rules]
+enabled = true
+seeded = true
+
+[[ai.style_rules.rules]]
+style = "email"
+apps = ["com.apple.mail"]
+
+[[ai.cleanup_models]]
+id = "tidy"
+name = "Tidy"
+model = "cleanup-small"
+
+[[ai.chatgpt_accounts]]
+id = "codex"
+name = "ChatGPT"
+model = "gpt-5"
+thinking = "medium"
+
+[[ai.agents]]
+id = "oc"
+name = "OpenCode"
+command = "opencode"
+args = ["acp"]
+secret_env = ["API_KEY"]
+keep_running = true
+
+[ai.agents.env]
+A = "1"
+B = "2"
+
+[ai.agents.registry]
+id = "opencode"
+version = "1.2.3"
+
+[speech]
+timeout_ms = 30000
+
+[[speech.providers]]
+id = "openai"
+name = "OpenAI"
+kind = "open_ai"
+api_key_account = "speech.openai"
+models = ["gpt-x"]
+
+[models]
+vad = "auto"
+diarization = "auto"
+
+[history]
+enabled = true
+keep_text_days = 90
+save_audio = true
+keep_audio_days = 7
+site_icons = true
+
+[appearance]
+theme = "system"
+ink = "#AABBCC"
+paper_texture = true
+reduce_motion = true
+system_title_bar = true
+sidebar_collapsed = false
+
+[updates]
+check = true
+automatic = false
+
+[advanced]
+log_level = "debug"
+
+[onboarding]
+completed = true
+step = 6

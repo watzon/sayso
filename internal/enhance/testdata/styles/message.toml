@@ -1,0 +1,8 @@
+id = "message"
+name = "Message"
+ink = "#2D3C8C"
+description = "For chat, in your own words. No greeting, no sign-off."
+prompt = "This is a chat message. Keep the speaker's slang and contractions, and do not make it more formal. Add no greeting and no sign-off. Write emoji names the speaker says as emoji, and add no other emoji."
+
+[cleanup]
+tone = "casual"

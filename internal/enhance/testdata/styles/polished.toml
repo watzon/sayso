@@ -1,0 +1,5 @@
+id = "polished"
+name = "Polished"
+ink = "#2F3A4F"
+description = "Fix grammar and flow. Keep your word choices."
+prompt = """Fix every grammar mistake ("we was" becomes "we were", "it don't" becomes "it doesn't") and sentences that do not read well. Change only the words that the fix needs. Keep the speaker's word choices, tone, and all facts."""
