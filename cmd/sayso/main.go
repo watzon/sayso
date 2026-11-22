@@ -144,6 +144,10 @@ func run(o options, smoke bool) error {
 		i18n.SetLocale(i18n.Pseudo)
 	}
 	if smoke {
+		if db != nil {
+			// Windows cannot delete the smoke run's folder while sayso.db is open.
+			defer db.Close()
+		}
 		return ui.Smoke(a, os.Stdout)
 	}
 	return runApp(a, p, plat, db, secrets, apps, o)
