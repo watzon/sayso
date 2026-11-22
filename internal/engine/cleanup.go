@@ -185,6 +185,7 @@ func (c *CleanupClient) Unblock(model string) {
 
 func (c *CleanupClient) start() (*cleanupProcess, error) {
 	cmd := exec.Command(c.path)
+	hideConsoleWindow(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err

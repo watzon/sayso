@@ -162,6 +162,7 @@ func (c *Client) launch() error {
 		_ = os.MkdirAll(c.opts.ModelsDir, 0o755)
 	}
 	cmd := exec.Command(c.opts.EnginePath, c.opts.Args...)
+	hideConsoleWindow(cmd)
 	cmd.Env = c.environment()
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
