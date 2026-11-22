@@ -393,22 +393,26 @@ func (a *App) undoButton(c *mu.Context, p theme.Colors) {
 // failedCard is a dictation that could not go in: a card with the reason,
 // the text, and Dismiss and Copy.
 func (a *App) failedCard(c *mu.Context, p theme.Colors) {
-	n, ctl := a.state.Notice, a.d.Dictation
 	card := mu.Column(a.k(c, "overlay.card")).Bind(&a.ov.card).Width(320).Shrink(0).Radius(14).Padding(14, 14, 12, 16).Gap(10).Role(mu.RoleStatus)
-	floating(card, p).Children(func() {
-		uiText(c, n.Reason, a.ts(13), 600, p.Danger)
-		mu.Text(c, n.Text).Font(theme.Body).FontSize(a.ts(15)).LineHeight(21.0 / 15).TextColor(p.Ink).MaxLines(4).Ellipsis("…")
-		mu.Row(c).Gap(6).Justify(mu.End).Children(func() {
-			if a.button(c, p, "overlay.dismiss", i18n.T("overlay.dismiss"), bopt{size: sizeSmall}) && ctl != nil {
+	floating(card, p).Children(func() { a.failedBody(c, p) })
+}
+
+// failedBody is the reason a dictation could not go in, its text, and
+// Dismiss and Copy.
+func (a *App) failedBody(c *mu.Context, p theme.Colors) {
+	n, ctl := a.state.Notice, a.d.Dictation
+	uiText(c, n.Reason, a.ts(13), 600, p.Danger)
+	mu.Text(c, n.Text).Font(theme.Body).FontSize(a.ts(15)).LineHeight(21.0 / 15).TextColor(p.Ink).MaxLines(4).Ellipsis("…")
+	mu.Row(c).Gap(6).Justify(mu.End).Children(func() {
+		if a.button(c, p, "overlay.dismiss", i18n.T("overlay.dismiss"), bopt{size: sizeSmall}) && ctl != nil {
+			ctl.Dismiss()
+		}
+		if a.button(c, p, "overlay.copy", i18n.T("overlay.copy_text"), bopt{kind: btnPrimary, size: sizeSmall}) {
+			c.WriteClipboard(n.Text)
+			if ctl != nil {
 				ctl.Dismiss()
 			}
-			if a.button(c, p, "overlay.copy", i18n.T("overlay.copy_text"), bopt{kind: btnPrimary, size: sizeSmall}) {
-				c.WriteClipboard(n.Text)
-				if ctl != nil {
-					ctl.Dismiss()
-				}
-			}
-		})
+		}
 	})
 }
 
@@ -595,20 +599,8 @@ func (a *App) notchSlip(c *mu.Context, p theme.Colors) {
 		case loading:
 			loadingLine(c, p, 15, 21)
 		case a.state.Kind == dictation.StateShowing && a.state.Notice.Kind == dictation.NoticeInsertFailed:
-			n := a.state.Notice
-			uiText(c, n.Reason, 13, 600, p.Danger)
-			mu.Text(c, n.Text).Font(theme.Body).FontSize(15).LineHeight(21.0 / 15).TextColor(p.Ink).MaxLines(4).Ellipsis("…")
-			mu.Row(c).Gap(6).Justify(mu.End).Children(func() {
-				if a.button(c, p, "overlay.dismiss", i18n.T("overlay.dismiss"), bopt{size: sizeSmall}) && a.d.Dictation != nil {
-					a.d.Dictation.Dismiss()
-				}
-				if a.button(c, p, "overlay.copy", i18n.T("overlay.copy_text"), bopt{kind: btnPrimary, size: sizeSmall}) {
-					c.WriteClipboard(n.Text)
-					if a.d.Dictation != nil {
-						a.d.Dictation.Dismiss()
-					}
-				}
-			})
+			slip.Gap(10)
+			a.failedBody(c, p)
 		case a.state.Kind == dictation.StateShowing:
 			mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
 				uiText(c, a.notchNoticeTitle(), 14, 600, p.Ink).Grow(1).Shrink(1).SingleLine().Ellipsis("…")
