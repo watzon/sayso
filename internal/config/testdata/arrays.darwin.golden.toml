@@ -1,0 +1,126 @@
+[general]
+launch_at_login = false
+dock_icon_with_hub = true
+language = "system"
+
+[hotkeys]
+toggle = "opt+space"
+push_to_talk = ""
+cancel = "double_escape"
+double_escape_ms = 400
+paste_last = "ctrl+cmd+v"
+cycle_style = "ctrl+opt+s"
+incognito = ""
+enter_sends = false
+take_escape = true
+
+[style_hotkeys]
+bad = [
+    "a",
+    "b",
+]
+
+[dictation]
+language = "en"
+model = "parakeet-unified-en"
+preview_model = "auto"
+live_preview = true
+spoken_punctuation = false
+min_duration_ms = 300
+max_duration_s = 600
+preload_model = true
+
+[insertion]
+restore_clipboard = true
+restore_delay_ms = 450
+type_in_apps = []
+smart_spacing = false
+trailing_space = true
+
+[overlay]
+style = "pill"
+notch_on_other_displays = true
+idle_pill = true
+hide_in_fullscreen = true
+follow_display = true
+show_preview = true
+size = "large"
+
+[audio]
+pause_media = false
+
+[sounds]
+enabled = true
+volume = 0.35
+start = true
+stop = true
+cancel = true
+insert = false
+
+[ai]
+enabled = false
+active_style = "clean"
+providers = []
+http_timeout_ms = 4000
+cli_timeout_ms = 8000
+
+[ai.style_rules]
+enabled = true
+seeded = false
+
+[[ai.style_rules.rules]]
+style = "email"
+apps = [
+    "a",
+    "b",
+]
+
+[[ai.agents]]
+id = "oc"
+name = "O"
+command = "x"
+args = [
+    "acp",
+    "--x",
+]
+keep_running = true
+
+[speech]
+timeout_ms = 30000
+
+[[speech.providers]]
+id = "c"
+name = "C"
+kind = "open_ai_compatible"
+base_url = "http://localhost:1/v1"
+models = [
+    "m1",
+    "m2",
+]
+
+[models]
+vad = "auto"
+diarization = "auto"
+
+[history]
+enabled = true
+save_audio = true
+keep_audio_days = 30
+site_icons = true
+
+[appearance]
+theme = "system"
+ink = "sumi"
+paper_texture = true
+system_title_bar = true
+sidebar_collapsed = false
+
+[updates]
+check = true
+automatic = false
+
+[advanced]
+
+[onboarding]
+completed = false
+step = 0
