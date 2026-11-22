@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"math"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/enhance"
 	"github.com/watzon/sayso/internal/i18n"
+	"github.com/watzon/sayso/internal/models/languages"
 	"github.com/watzon/sayso/internal/theme"
 	"github.com/watzon/sayso/internal/update"
 )
@@ -26,21 +29,254 @@ func tr(key, fallback string) string {
 
 // ---- AI and providers ----
 
-func (a *App) providersSection(c *mu.Context, p theme.Colors) {
+// addProviderSel is the selection of the "Add a provider" card.
+const addProviderSel = "+add"
+
+var (
+	logoMu    sync.Mutex
+	logoCache = map[string]mu.ImageSource{}
+)
+
+// providerLogo is the decoded logo of a provider ("openai"), or nil.
+func providerLogo(name string) mu.ImageSource {
+	logoMu.Lock()
+	defer logoMu.Unlock()
+	if s, ok := logoCache[name]; ok {
+		return s
+	}
+	var src mu.ImageSource
+	if data := theme.ProviderLogo(name); data != nil {
+		src, _ = mu.DecodeImage(data)
+	}
+	logoCache[name] = src
+	return src
+}
+
+// logoName picks a provider's logo from its kind and address.
+func logoName(pr config.Provider) string {
+	switch pr.Kind {
+	case config.KindClaudeCLI:
+		return "claude-color"
+	case config.KindChatGPT:
+		return "openai"
+	case config.KindAppleIntelligence:
+		return "apple"
+	case config.KindCleanupModel:
+		// logo.rs cleanup: the publisher's app icon fills the plate.
+		if strings.HasPrefix(pr.ModelName(), "spokenly") {
+			return "spokenly"
+		}
+		return "superwhisper"
+	case config.KindACP:
+		for _, n := range []string{"opencode", "cursor", "gemini", "qwen", "kimi"} {
+			if strings.Contains(strings.ToLower(pr.Command+" "+pr.Name), n) {
+				if n == "gemini" || n == "qwen" || n == "kimi" {
+					return n + "-color"
+				}
+				return n
+			}
+		}
+	case config.KindOpenAICompatible:
+		u := strings.ToLower(pr.BaseURL)
+		switch {
+		case strings.Contains(u, "openrouter"):
+			return "openrouter"
+		case strings.Contains(u, "openai.com"):
+			return "openai"
+		case strings.Contains(u, ":11434"), strings.Contains(u, "ollama"):
+			return "ollama"
+		case strings.Contains(u, ":1234"), strings.Contains(u, "lmstudio"):
+			return "lmstudio"
+		}
+	}
+	return ""
+}
+
+// logoTile is a provider's logo on a raised tile, or its first letter.
+func logoTile(c *mu.Context, p theme.Colors, pr config.Provider, size float32) {
+	r := size * 0.25
+	t := mu.Box(c).Size(size, size).Shrink(0).Radius(r).Justify(mu.Center).AlignItems(mu.Center)
+	if size > 40 {
+		raised(t, p)
+	} else {
+		raisedSmall(t, p)
+	}
+	if pr.Kind == config.KindCleanupModel {
+		// An app icon fills its plate (logo.rs Mark::AppIcon).
+		if src := providerLogo(logoName(pr)); src != nil {
+			t.Radius(float32(math.Round(float64(size * 0.27)))).Clip().Children(func() {
+				mu.Image(c, src).Size(size, size)
+			})
+			return
+		}
+	}
+	t.Children(func() {
+		if src := providerLogo(logoName(pr)); src != nil {
+			mu.Image(c, src).Size(size*0.6, size*0.6).TextColor(p.Ink)
+			return
+		}
+		switch pr.Kind {
+		case config.KindCleanupModel:
+			mu.Icon(c, icon("audio")).FontSize(size * 0.55).TextColor(p.Ink)
+		default:
+			letter := "?"
+			for _, r := range pr.Name {
+				letter = strings.ToUpper(string(r))
+				break
+			}
+			heading(c, p, letter, size*0.5)
+		}
+	})
+}
+
+// providerGroup is the list group of a provider: 0 subscriptions, 1 keys
+// and servers, 2 on this computer.
+func providerGroup(pr config.Provider) int {
+	switch pr.Kind {
+	case config.KindClaudeCLI, config.KindChatGPT, config.KindACP:
+		return 0
+	case config.KindOpenAICompatible:
+		if pr.IsCloud() {
+			return 1
+		}
+	}
+	return 2
+}
+
+// providerSub is a provider's line under its name: model and thinking.
+func (a *App) providerSub(pr config.Provider) string {
+	switch pr.Kind {
+	case config.KindChatGPT:
+		if !a.savedSecrets().chatGPT[pr.ID] {
+			return i18n.T("settings.providers.not_signed_in")
+		}
+	case config.KindAppleIntelligence:
+		return i18n.T("settings.providers.apple_model_detail")
+	case config.KindCleanupModel:
+		// "No prompts · English", as providers/mod.rs summary.
+		for _, m := range enhance.CleanupCatalog() {
+			if m.ID == pr.ModelName() {
+				langs := i18n.TP("core.models.languages", len(m.Languages), nil)
+				if len(m.Languages) == 1 {
+					langs = languages.Name(m.Languages[0])
+				}
+				return i18n.T("settings.providers.no_prompts") + " · " + langs
+			}
+		}
+		return i18n.T("hub.place.local")
+	}
+	parts := []string{}
+	if m := pr.ModelName(); m != "" {
+		parts = append(parts, m)
+	}
+	if t := pr.ThinkingChosen(); t != "" {
+		parts = append(parts, t)
+	}
+	if len(parts) == 0 {
+		if pr.IsCloud() {
+			return i18n.T("hub.place.cloud")
+		}
+		return i18n.T("hub.place.local")
+	}
+	return strings.Join(parts, " · ")
+}
+
+// providerReady is false for a provider that cannot run yet.
+func (a *App) providerReady(pr config.Provider) bool {
+	switch pr.Kind {
+	case config.KindChatGPT:
+		return a.savedSecrets().chatGPT[pr.ID]
+	case config.KindOpenAICompatible:
+		return !pr.NeedsModel()
+	}
+	return true
+}
+
+func (a *App) providersSection(c *mu.Context, p theme.Colors, sub string) {
 	ai := &a.cfg.AI
-	a.group(c, p, "", func() {
-		a.toggleRow(c, p, "providers.ai_enabled", i18n.T("settings.providers.use_ai"), i18n.T("settings.providers.use_ai_short"), &ai.Enabled, a.saveConfig)
+	mu.Row(c).AlignItems(mu.End).Gap(24).Children(func() {
+		mu.Column(c).Gap(6).Grow(1).Basis(0).Children(func() {
+			display(c, p, a.section.title(), 44).Role(mu.RoleHeading)
+			uiText(c, sub, 15, 400, p.Graphite).LineHeight(22.0 / 15).MaxWidth(560)
+		})
+		mu.Row(c).Gap(14).AlignItems(mu.Center).Padding(0, 0, 4, 0).Children(func() {
+			mu.Column(c).Gap(2).AlignItems(mu.End).Children(func() {
+				uiText(c, i18n.T("settings.providers.use_ai"), 14, 600, p.Ink)
+				uiText(c, i18n.T("settings.providers.use_ai_short"), 12, 400, p.Graphite)
+			})
+			a.toggle(c, "providers.ai_enabled", i18n.T("settings.providers.use_ai"), &ai.Enabled, a.saveConfig)
+		})
+	})
+	sel := a.set.provSel
+	// ai.Provider("") is the default provider, so "" (nothing picked yet)
+	// must fall through to the pick below.
+	if _, ok := ai.Provider(sel); (sel == "" || !ok) && sel != addProviderSel {
+		sel = addProviderSel
+		if len(ai.Providers) > 0 {
+			sel = ai.Providers[0].ID
+			if ai.DefaultProvider != nil {
+				if _, ok := ai.Provider(*ai.DefaultProvider); ok {
+					sel = *ai.DefaultProvider
+				}
+			}
+		}
+	}
+	// The split fills the window below the header, as Rust's two panes do;
+	// the AI group comes after it.
+	_, winH := c.Size()
+	mu.Row(c).AlignItems(mu.Stretch).MinHeight(max(520, winH-190)).BorderWidth(1, 0, 0, 0).BorderColor(p.Rule).Children(func() {
+		mu.Column(c).Width(264).Shrink(0).Padding(16, 16, 16, 0).Gap(4).BorderEndWidth(1).BorderColor(p.Rule).Role(mu.RoleList).
+			Label(i18n.T("settings.providers.your_providers")).Children(func() {
+			groups := []string{i18n.T("settings.providers.group_subscriptions"), i18n.T("settings.providers.group_servers"),
+				i18n.T("settings.providers.group_on_this_computer", "computer", computer())}
+			for g, title := range groups {
+				first := true
+				// Apple Intelligence last in its group (providers/mod.rs grouped).
+				order := make([]config.Provider, 0, len(ai.Providers))
+				for _, apple := range []bool{false, true} {
+					for _, pr := range ai.Providers {
+						if (pr.Kind == config.KindAppleIntelligence) == apple {
+							order = append(order, pr)
+						}
+					}
+				}
+				for _, pr := range order {
+					if providerGroup(pr) != g {
+						continue
+					}
+					if first {
+						caps(c, p, title).Padding(10, 10, 6, 10)
+						first = false
+					}
+					a.providerListRow(c, p, pr, pr.ID == sel)
+				}
+			}
+			mu.Spacer(c)
+			a.addProviderCard(c, p, sel == addProviderSel)
+		})
+		mu.Column(c).Grow(1).Basis(0).MinWidth(0).Padding(24, 0, 8, 36).Children(func() {
+			if sel == addProviderSel {
+				a.addProviderForm(c, p)
+				return
+			}
+			for i := range ai.Providers {
+				if ai.Providers[i].ID == sel {
+					a.providerDetail(c, p, i)
+				}
+			}
+		})
+	})
+	a.group(c, p, i18n.T("settings.dictation.ai"), func() {
 		a.toggleRow(c, p, "providers.style_rules", i18n.T("settings.dictation.styles_by_app_site"), i18n.T("settings.dictation.styles_by_app_site_detail"), &ai.StyleRules.Enabled, a.saveConfig)
+		a.row(c, p, i18n.T("settings.dictation.ai_timeout"), i18n.T("settings.dictation.ai_timeout_detail"), func() {
+			a.uintSelect(c, "providers.http_timeout", i18n.T("settings.dictation.ai_timeout"), &ai.HTTPTimeoutMs,
+				[]uint64{2000, 4000, 8000, 15000, 30000}, secondsLabel)
+		})
+		a.row(c, p, i18n.T("settings.dictation.ai_timeout_cli"), i18n.T("settings.dictation.ai_timeout_cli_detail"), func() {
+			a.uintSelect(c, "providers.cli_timeout", i18n.T("settings.dictation.ai_timeout_cli"), &ai.CLITimeoutMs,
+				[]uint64{10000, 20000, 30000, 60000}, secondsLabel)
+		})
 	})
-	a.group(c, p, i18n.T("settings.providers.your_providers"), func() {
-		if len(ai.Providers) == 0 {
-			mu.Text(c, i18n.T("settings.providers.start_body")).FontSize(13).TextColor(p.Graphite).Padding(12, 0)
-		}
-		for i := range ai.Providers {
-			a.providerRow(c, p, i)
-		}
-	})
-	a.addProviderForm(c, p)
 	a.group(c, p, i18n.T("settings.providers.group_on_this_computer", "computer", computer()), func() {
 		for _, m := range enhance.CleanupCatalog() {
 			ready := a.d.Paths.DataDir != "" && enhance.CleanupModelReady(a.d.Paths.ModelsDir(), &m)
@@ -58,68 +294,93 @@ func (a *App) providersSection(c *mu.Context, p theme.Colors) {
 			})
 		}
 	})
-	a.group(c, p, i18n.T("settings.dictation.ai"), func() {
-		a.row(c, p, i18n.T("settings.dictation.ai_timeout"), i18n.T("settings.dictation.ai_timeout_detail"), func() {
-			a.uintSelect(c, "providers.http_timeout", i18n.T("settings.dictation.ai_timeout"), &ai.HTTPTimeoutMs,
-				[]uint64{2000, 4000, 8000, 15000, 30000}, secondsLabel)
+}
+
+func (a *App) providerListRow(c *mu.Context, p theme.Colors, pr config.Provider, on bool) {
+	r := mu.ButtonBase(a.k(c, "providers.select."+pr.ID)).Label(pr.Name).Role(mu.RoleListItem).Selected(on).
+		Padding(9, 10).Gap(10).Radius(12).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+	if on {
+		r.Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).Shadow(0, 1, 2, 0, p.ShadowA(0.14)).Shadow(0, 6, 16, 0, p.ShadowA(0.10))
+	} else if r.Hovered() {
+		r.Background(p.Deboss.Alpha(0.4))
+	}
+	r.Children(func() {
+		logoTile(c, p, pr, 28)
+		mu.Column(c).Gap(1).Grow(1).Basis(0).MinWidth(0).Children(func() {
+			uiText(c, pr.Name, 14, 600, p.Ink).SingleLine().Ellipsis("…")
+			uiText(c, a.providerSub(pr), 12, 400, p.Graphite).SingleLine().Ellipsis("…")
 		})
-		a.row(c, p, i18n.T("settings.dictation.ai_timeout_cli"), i18n.T("settings.dictation.ai_timeout_cli_detail"), func() {
-			a.uintSelect(c, "providers.cli_timeout", i18n.T("settings.dictation.ai_timeout_cli"), &ai.CLITimeoutMs,
-				[]uint64{10000, 20000, 30000, 60000}, secondsLabel)
+		dot := p.Success
+		if !a.providerReady(pr) {
+			dot = p.Pencil
+		}
+		mu.Box(c).Size(7, 7).Radius(99).Background(dot)
+	})
+	if clicked(c, r) {
+		a.set.provSel = pr.ID
+	}
+}
+
+func (a *App) addProviderCard(c *mu.Context, p theme.Colors, on bool) {
+	b := mu.ButtonBase(a.k(c, "providers.select.add")).Label(i18n.T("settings.providers.add_a_provider")).Padding(12).Gap(12).Radius(12).
+		AlignItems(mu.Center).Border(1, p.DebossShade).Cursor(mu.CursorPointer)
+	if on {
+		b.Background(p.Deboss.Alpha(0.5))
+	} else if b.Hovered() {
+		b.Background(p.Deboss.Alpha(0.35))
+	}
+	b.Children(func() {
+		raisedSmall(mu.Box(c).Size(28, 28).Radius(7).Justify(mu.Center).AlignItems(mu.Center), p).Children(func() {
+			mu.Icon(c, icon("plus")).FontSize(14).TextColor(p.Ink)
+		})
+		mu.Column(c).Gap(1).Grow(1).Basis(0).Children(func() {
+			uiText(c, i18n.T("settings.providers.add_a_provider"), 14, 600, p.Ink)
+			uiText(c, i18n.T("settings.providers.add_a_provider_short"), 12, 400, p.Graphite).SingleLine().Ellipsis("…")
 		})
 	})
+	if clicked(c, b) {
+		a.set.provSel = addProviderSel
+	}
 }
 
-func secondsLabel(ms uint64) string {
-	return i18n.T("settings.dictation.seconds", "seconds", i18n.Decimal(float64(ms)/1000, 0))
-}
-
-func (a *App) providerRow(c *mu.Context, p theme.Colors, i int) {
+// providerDetail is the right pane: the provider's head, its rows, and the
+// footer with Remove.
+func (a *App) providerDetail(c *mu.Context, p theme.Colors, i int) {
 	ai := &a.cfg.AI
 	pr := ai.Providers[i]
 	isDefault := ai.DefaultProvider != nil && *ai.DefaultProvider == pr.ID
-	place := i18n.T("hub.place.local")
-	if pr.IsCloud() {
-		place = i18n.T("hub.place.cloud")
-	}
-	detail := place
+	mu.Row(c).Gap(16).AlignItems(mu.Center).Padding(0, 0, 20, 0).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+		logoTile(c, p, pr, 52)
+		mu.Column(c).Gap(4).Grow(1).Basis(0).MinWidth(0).Children(func() {
+			mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
+				heading(c, p, pr.Name, 30).LineHeight(1.15).SingleLine().Ellipsis("…")
+				if isDefault {
+					badge(c, p, i18n.T("settings.providers.default_badge"), toneMuted, "")
+				}
+			})
+			mu.Row(c).Gap(6).AlignItems(mu.Center).Children(func() {
+				dot, line := p.Success, a.providerSub(pr)
+				if !a.providerReady(pr) {
+					dot = p.Pencil
+				}
+				if pr.Kind == config.KindChatGPT && a.savedSecrets().chatGPT[pr.ID] {
+					line = i18n.T("settings.providers.signed_in")
+				} else if pr.IsCloud() && pr.Kind != config.KindChatGPT {
+					line += " · " + i18n.T("hub.place.cloud")
+				}
+				mu.Box(c).Size(7, 7).Radius(99).Background(dot)
+				uiText(c, line, 13, 400, p.Graphite).SingleLine().Ellipsis("…")
+			})
+		})
+	})
 	switch pr.Kind {
 	case config.KindChatGPT:
-		detail = i18n.T("settings.providers.not_signed_in")
-		if a.savedSecrets().chatGPT[pr.ID] {
-			detail = i18n.T("settings.providers.signed_in")
-		}
-	default:
-		if pr.ModelName() != "" {
-			detail += " · " + pr.ModelName()
-		}
-	}
-	mu.Column(c).Gap(8).Padding(12, 0).Children(func() {
-		mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
-			mu.Column(c).Gap(2).Grow(1).Basis(0).Children(func() {
-				mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-					mu.Text(c, pr.Name).FontSize(14).FontWeight(600).TextColor(p.Ink)
-					if isDefault {
-						slip(c, p, i18n.T("settings.providers.default_badge"), p.Accent)
-					}
-				})
-				mu.Text(c, detail).FontSize(12.5).TextColor(p.Graphite)
-			})
-			if !isDefault && a.btn(c, p, "providers.default."+pr.ID, i18n.T("settings.providers.default_provider"), btnGhost) {
-				ai.DefaultProvider = ptr(pr.ID)
-				a.saveConfig()
-			}
-			if a.btn(c, p, "providers.remove."+pr.ID, i18n.T("settings.providers.remove"), btnDanger) {
-				a.removeProvider(pr.ID)
-			}
-		})
-		switch pr.Kind {
-		case config.KindChatGPT:
-			a.chatGPTAccount(c, p, pr)
-		case config.KindOpenAICompatible:
-			a.apiKeyRow(c, p, pr)
+		a.row(c, p, i18n.T("settings.providers.login"), i18n.T("settings.providers.chatgpt_note"), func() { a.chatGPTAccount(c, p, pr) })
+	case config.KindOpenAICompatible:
+		a.row(c, p, i18n.T("settings.providers.api_key"), a.keyLine(pr), func() { a.apiKeyRow(c, p, pr) })
+		a.row(c, p, i18n.T("settings.providers.model"), i18n.T("settings.providers.model_detail"), func() {
 			model := pr.ModelName()
-			a.field(c, p, "providers.model."+pr.ID, i18n.T("settings.providers.model"), i18n.T("settings.providers.choose_model"), &model).OnChange(func() {
+			a.fieldW(c, p, "providers.model."+pr.ID, i18n.T("settings.providers.model"), i18n.T("settings.providers.choose_model"), &model, 240).OnChange(func() {
 				for j := range ai.Providers {
 					if ai.Providers[j].ID == pr.ID {
 						ai.Providers[j].SetModel(model)
@@ -127,8 +388,97 @@ func (a *App) providerRow(c *mu.Context, p theme.Colors, i int) {
 				}
 				a.saveConfig()
 			})
+		})
+	case config.KindClaudeCLI:
+		a.row(c, p, i18n.T("settings.providers.config_folder"), i18n.T("settings.providers.config_folder_detail"), func() {
+			dir := pr.ConfigDirSet()
+			a.fieldW(c, p, "providers.config_dir."+pr.ID, i18n.T("settings.providers.config_folder"), "~/.claude", &dir, 240).OnChange(func() {
+				for j := range ai.Providers {
+					if ai.Providers[j].ID == pr.ID {
+						ai.Providers[j].ConfigDir = nil
+						if strings.TrimSpace(dir) != "" {
+							ai.Providers[j].ConfigDir = ptr(dir)
+						}
+					}
+				}
+				a.saveConfig()
+			})
+		})
+		a.row(c, p, i18n.T("settings.providers.model"), i18n.T("settings.providers.model_detail"), func() {
+			uiText(c, a.providerSub(pr), 13, 600, p.Ink)
+		})
+	}
+	if pr.Kind == config.KindClaudeCLI || pr.Kind == config.KindChatGPT {
+		a.thinkingRow(c, p, pr)
+	}
+	a.row(c, p, i18n.T("settings.providers.default_provider"), i18n.T("settings.providers.default_provider_detail"), func() {
+		on := isDefault
+		a.toggle(c, "providers.default."+pr.ID, i18n.T("settings.providers.default_provider"), &on, func() {
+			if on {
+				ai.DefaultProvider = ptr(pr.ID)
+			} else if isDefault {
+				ai.DefaultProvider = nil
+			}
+			a.saveConfig()
+		})
+	})
+	users := a.stylesUsing(pr.ID, isDefault)
+	detail := i18n.T("settings.providers.used_by_none")
+	if len(users) > 0 {
+		detail = i18n.TP("settings.providers.used_by_count", len(users), nil)
+	}
+	a.row(c, p, i18n.T("settings.providers.used_by"), detail, func() {
+		mu.Row(c).Gap(6).AlignItems(mu.Center).Children(func() {
+			for j, u := range users {
+				if j == 3 {
+					badge(c, p, fmt.Sprintf("+%d", len(users)-3), toneMuted, "")
+					break
+				}
+				debossed(mu.Box(c).Height(22).PaddingX(8).Radius(6).Justify(mu.Center), p).Children(func() {
+					uiText(c, u, 12, 600, p.Ink).SingleLine()
+				})
+			}
+		})
+	})
+	mu.Row(c).Gap(12).Padding(28, 0, 0, 0).AlignItems(mu.Center).Children(func() {
+		where := pr.BaseURL
+		if pr.Path != nil {
+			where = *pr.Path
+		}
+		mono(c, where, 12, p.Graphite).Grow(1).Basis(0).Ellipsis("…")
+		if a.button(c, p, "providers.remove."+pr.ID, i18n.T("settings.providers.remove_named", "name", pr.Name), bopt{kind: btnDanger}) {
+			a.removeProvider(pr.ID)
 		}
 	})
+	if a.set.provErr != "" {
+		uiText(c, a.set.provErr, 13, 500, p.Danger).PaddingY(8)
+	}
+}
+
+// keyLine says whether a provider's API key is saved.
+func (a *App) keyLine(pr config.Provider) string {
+	if a.savedSecrets().keys[keyAccount(pr)] {
+		return i18n.TOS("settings.providers.key_saved", nil)
+	}
+	return i18n.T("settings.providers.no_key")
+}
+
+// stylesUsing names the styles that run on a provider.
+func (a *App) stylesUsing(id string, isDefault bool) []string {
+	var out []string
+	for _, st := range a.styles.Styles() {
+		if !st.UsesAI() {
+			continue
+		}
+		if (st.Provider != nil && *st.Provider == id) || (st.Provider == nil && isDefault) {
+			out = append(out, styleName(&st))
+		}
+	}
+	return out
+}
+
+func secondsLabel(ms uint64) string {
+	return i18n.T("settings.dictation.seconds", "seconds", i18n.Decimal(float64(ms)/1000, 0))
 }
 
 func (a *App) apiKeyRow(c *mu.Context, p theme.Colors, pr config.Provider) {
@@ -143,7 +493,7 @@ func (a *App) apiKeyRow(c *mu.Context, p theme.Colors, pr config.Provider) {
 		if has {
 			placeholder = "••••••••"
 		}
-		mu.TextInput(a.k(c, "providers.key."+pr.ID), &v).Label(i18n.T("settings.providers.api_key")).Placeholder(placeholder).Password().Grow(1)
+		a.fieldW(c, p, "providers.key."+pr.ID, i18n.T("settings.providers.api_key"), placeholder, &v, 200).Password()
 		a.set.keyEdit[pr.ID] = v
 		label := i18n.T("settings.providers.add_key")
 		if has {
@@ -164,26 +514,20 @@ func (a *App) apiKeyRow(c *mu.Context, p theme.Colors, pr config.Provider) {
 			}
 		}
 	})
-	if has {
-		mu.Text(c, i18n.TOS("settings.providers.key_saved", nil)).FontSize(12).TextColor(p.Pencil)
-	}
 }
 
 func (a *App) chatGPTAccount(c *mu.Context, p theme.Colors, pr config.Provider) {
 	signedIn := a.savedSecrets().chatGPT[pr.ID]
-	mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-		mu.Text(c, i18n.T("settings.providers.chatgpt_account_detail")).FontSize(12.5).TextColor(p.Graphite).Grow(1).Basis(0)
-		if signedIn {
-			if a.btn(c, p, "providers.chatgpt.sign_out."+pr.ID, i18n.T("settings.providers.sign_out"), btnSecondary) && a.d.Secrets != nil {
-				enhance.ChatGPTSignOut(a.d.Secrets, pr.ID)
-				a.refreshSecrets()
-			}
-			return
+	if signedIn {
+		if a.btn(c, p, "providers.chatgpt.sign_out."+pr.ID, i18n.T("settings.providers.sign_out"), btnSecondary) && a.d.Secrets != nil {
+			enhance.ChatGPTSignOut(a.d.Secrets, pr.ID)
+			a.refreshSecrets()
 		}
-		if a.btn(c, p, "providers.chatgpt.sign_in."+pr.ID, i18n.T("settings.providers.sign_in"), btnPrimary) && a.d.Secrets != nil {
-			a.startChatGPTSignIn(pr.ID)
-		}
-	})
+		return
+	}
+	if a.btn(c, p, "providers.chatgpt.sign_in."+pr.ID, i18n.T("settings.providers.sign_in"), btnPrimary) && a.d.Secrets != nil {
+		a.startChatGPTSignIn(pr.ID)
+	}
 }
 
 func (a *App) startChatGPTSignIn(id string) {
@@ -236,25 +580,31 @@ func (a *App) removeProvider(id string) {
 // addProviderForm adds an OpenAI-compatible provider, or a ChatGPT one.
 func (a *App) addProviderForm(c *mu.Context, p theme.Colors) {
 	s := &a.set
-	a.group(c, p, i18n.T("settings.providers.add_a_provider"), func() {
-		mu.Text(c, i18n.T("settings.providers.add_a_provider_detail")).FontSize(12.5).TextColor(p.Graphite).Padding(10, 0, 0, 0)
-		mu.Column(c).Gap(8).Padding(10, 0).Children(func() {
+	mu.Column(c).Gap(14).Children(func() {
+		heading(c, p, i18n.T("settings.providers.add_a_provider"), 30).LineHeight(1.15)
+		uiText(c, i18n.T("settings.providers.add_a_provider_detail"), 14, 400, p.Graphite).LineHeight(1.4)
+		a.labelled(c, p, i18n.T("settings.providers.name"), func() {
 			a.field(c, p, "providers.new.name", i18n.T("settings.providers.name"), i18n.T("settings.providers.name_placeholder"), &s.provName)
+		})
+		a.labelled(c, p, i18n.T("settings.providers.base_url"), func() {
 			a.field(c, p, "providers.new.url", i18n.T("settings.providers.base_url"), "https://openrouter.ai/api/v1", &s.provURL)
-			mu.TextInput(a.k(c, "providers.new.key"), &s.provKey).Label(i18n.T("settings.providers.api_key")).
-				Placeholder(i18n.TOS("settings.providers.key_placeholder", nil)).Password()
+		})
+		a.labelled(c, p, i18n.T("settings.providers.api_key"), func() {
+			a.field(c, p, "providers.new.key", i18n.T("settings.providers.api_key"), i18n.TOS("settings.providers.key_placeholder", nil), &s.provKey).Password()
+		})
+		a.labelled(c, p, i18n.T("settings.providers.model"), func() {
 			a.field(c, p, "providers.new.model", i18n.T("settings.providers.model"), i18n.T("settings.providers.choose_model"), &s.provModel)
-			if s.provErr != "" {
-				mu.Text(c, s.provErr).FontSize(12.5).TextColor(p.Danger)
+		})
+		if s.provErr != "" {
+			uiText(c, s.provErr, 13, 500, p.Danger)
+		}
+		mu.Row(c).Gap(8).Children(func() {
+			if a.button(c, p, "providers.add", i18n.T("settings.providers.add_provider"), bopt{kind: btnPrimary, icon: "plus"}) {
+				a.AddProvider()
 			}
-			mu.Row(c).Gap(8).Children(func() {
-				if a.btn(c, p, "providers.add", i18n.T("settings.providers.add_provider"), btnPrimary) {
-					a.AddProvider()
-				}
-				if a.btn(c, p, "providers.add_chatgpt", i18n.T("settings.providers.gallery_chatgpt"), btnSecondary) {
-					a.addChatGPT()
-				}
-			})
+			if a.btn(c, p, "providers.add_chatgpt", i18n.T("settings.providers.gallery_chatgpt"), btnSecondary) {
+				a.addChatGPT()
+			}
 		})
 	})
 }
@@ -298,7 +648,7 @@ func (a *App) AddProvider() {
 		a.cfg.AI.DefaultProvider = ptr(id)
 	}
 	a.cfg.AI.Enabled = true
-	*s = settingsState{name: s.name, enginePath: s.enginePath, engineEdited: s.engineEdited, keyEdit: s.keyEdit, devices: s.devices, devicesRead: s.devicesRead}
+	*s = settingsState{name: s.name, enginePath: s.enginePath, engineEdited: s.engineEdited, keyEdit: s.keyEdit, devices: s.devices, devicesRead: s.devicesRead, provSel: id}
 	a.saveConfig()
 	a.refreshSecrets()
 	a.invalidate()
@@ -310,6 +660,7 @@ func (a *App) addChatGPT() {
 		return
 	}
 	a.cfg.AI.Providers = append(a.cfg.AI.Providers, config.Provider{ID: id, Name: "ChatGPT", Kind: config.KindChatGPT})
+	a.set.provSel = id
 	if a.cfg.AI.DefaultProvider == nil {
 		a.cfg.AI.DefaultProvider = ptr(id)
 	}
@@ -407,32 +758,34 @@ func (a *App) downloadCleanup(m enhance.CleanupModelInfo) {
 
 func (a *App) appsSection(c *mu.Context, p theme.Colors) {
 	if a.d.Apps == nil {
-		mu.Text(c, i18n.T("apps.settings.empty")).FontSize(13).TextColor(p.Graphite)
+		uiText(c, i18n.T("apps.settings.empty"), 15, 400, p.Graphite).PaddingY(4)
 		return
 	}
 	if a.d.Apps.IsBroken() {
-		mu.Text(c, i18n.T("apps.settings.broken", "path", a.d.Apps.Path())).FontSize(13).TextColor(p.Danger)
+		uiText(c, i18n.T("apps.settings.broken", "path", a.d.Apps.Path()), 13, 500, p.Danger)
 	}
 	apps := a.d.Apps.Current()
 	if apps == nil || len(apps.Apps) == 0 {
-		card(c, p).Children(func() { mu.Text(c, i18n.T("apps.settings.empty")).FontSize(13).TextColor(p.Graphite) })
+		// connected_apps.rs: a plain line, no group.
+		uiText(c, i18n.T("apps.settings.empty"), 15, 400, p.Graphite).PaddingY(4)
 		return
 	}
 	a.group(c, p, i18n.T("apps.settings.title"), func() {
 		for i := range apps.Apps {
 			rec := &apps.Apps[i]
 			id := rec.ID()
-			mu.Column(c).Gap(6).Padding(12, 0).Children(func() {
-				mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
+			mu.Column(c).Gap(10).PaddingY(14).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+				mu.Row(c).Gap(12).AlignItems(mu.Center).Children(func() {
+					a.appBadge(c, rec.ShownName(), "", 28)
 					mu.Column(c).Gap(2).Grow(1).Basis(0).Children(func() {
-						mu.Text(c, rec.ShownName()).FontSize(14).FontWeight(600).TextColor(p.Ink)
+						uiText(c, rec.ShownName(), 15, 600, p.Ink)
 						status := i18n.T("apps.settings.not_allowed")
 						if rec.Allowed {
 							status = i18n.T("settings.common.allowed")
 						}
-						mu.Text(c, status).FontSize(12.5).TextColor(p.Graphite)
+						uiText(c, status, 13, 400, p.Graphite)
 					})
-					if !rec.Allowed && a.btn(c, p, "apps.allow."+id, i18n.T("apps.settings.allow"), btnSecondary) {
+					if !rec.Allowed && a.btn(c, p, "apps.allow."+id, i18n.T("apps.settings.allow"), btnPrimary) {
 						a.appsErr(a.d.Apps.Allow(id))
 					}
 					if a.btn(c, p, "apps.revoke."+id, i18n.T("apps.settings.remove"), btnDanger) {
@@ -444,14 +797,15 @@ func (a *App) appsSection(c *mu.Context, p theme.Colors) {
 				})
 				caps := rec.Capabilities()
 				if len(caps) == 0 {
-					mu.Text(c, i18n.T("apps.settings.no_capabilities")).FontSize(12).TextColor(p.Pencil)
+					uiText(c, i18n.T("apps.settings.no_capabilities"), 13, 400, p.Graphite).PaddingStart(40)
 				}
-				for _, cp := range caps {
-					on := true
-					mu.Checkbox(a.k(c, "apps.grant."+id+"."+string(cp)), &on, capabilityLabel(cp)).OnChange(func() {
-						a.appsErr(a.d.Apps.SetGrant(id, cp, on))
-					})
-				}
+				mu.Row(c).Gap(6).Wrap().PaddingStart(40).Children(func() {
+					for _, cp := range caps {
+						if a.chip(c, p, "apps.grant."+id+"."+string(cp), capabilityLabel(cp), true) {
+							a.appsErr(a.d.Apps.SetGrant(id, cp, false))
+						}
+					}
+				})
 			})
 		}
 	})
@@ -493,5 +847,35 @@ func (a *App) updatesSection(c *mu.Context, p theme.Colors) {
 				a.CheckForUpdates()
 			}
 		})
+	})
+}
+
+// thinkingRow picks the thinking level of a CLI provider: the levels of
+// model.rs thinking_choices when there is no model list, and the chosen
+// level when the list lacks it.
+func (a *App) thinkingRow(c *mu.Context, p theme.Colors, pr config.Provider) {
+	levels := []string{config.DefaultCLIThinking, "medium", "high"}
+	if t := pr.ThinkingChosen(); t != "" && !slices.Contains(levels, t) {
+		levels = config.SortThinking(append(levels, t))
+	}
+	sent := pr.ThinkingSent()
+	keys, labels := make([]string, len(levels)), make([]string, len(levels))
+	chosen := 0
+	for i, l := range levels {
+		keys[i], labels[i] = "providers.thinking."+pr.ID+"."+l, config.ThinkingLabel(l)
+		if l == sent {
+			chosen = i
+		}
+	}
+	a.row(c, p, i18n.T("settings.providers.thinking"), i18n.T("settings.providers.thinking_detail"), func() {
+		if i := a.choice(c, p, keys, labels, chosen, false); i >= 0 {
+			ai := &a.cfg.AI
+			for j := range ai.Providers {
+				if ai.Providers[j].ID == pr.ID {
+					ai.Providers[j].SetThinking(ptr(levels[i]))
+				}
+			}
+			a.saveConfig()
+		}
 	})
 }

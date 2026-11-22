@@ -26,32 +26,32 @@ func (a *App) recorder(c *mu.Context, p theme.Colors, key, name string, hk *conf
 			}
 		}
 	}
-	mu.Row(c).Gap(6).AlignItems(mu.Center).Children(func() {
-		switch {
-		case listening:
-			mu.Text(c, i18n.T("settings.common.press_keys")).FontSize(13).TextColor(p.Accent)
-		case hk == nil:
-			mu.Text(c, i18n.T("onboarding.hotkeys.no_key")).FontSize(13).TextColor(p.Pencil)
-		default:
-			for _, k := range hk.Keycaps() {
-				keycap(c, p, k)
+	mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
+		debossed(mu.Row(c).Height(36).Padding(0, 12, 0, 4).Gap(10).Radius(10).AlignItems(mu.Center), p).Children(func() {
+			switch {
+			case listening:
+				uiText(c, i18n.T("settings.common.press_keys"), 13, 500, p.Accent).PaddingStart(8)
+			case hk == nil:
+				uiText(c, i18n.T("onboarding.hotkeys.no_key"), 13, 400, p.Graphite).PaddingStart(8)
+			default:
+				keycaps(c, p, hk.Keycaps(), false)
 			}
-		}
-		label := i18n.T("settings.common.change")
-		if hk == nil {
-			label = i18n.T("settings.common.record_key")
-		}
-		if listening {
-			label = i18n.T("onboarding.hotkeys.cancel")
-		}
-		if a.btn(c, p, key, label, btnSecondary) {
+			label := i18n.T("settings.common.change")
+			if hk == nil {
+				label = i18n.T("settings.common.record_key")
+			}
 			if listening {
-				a.set.recording = ""
-			} else {
-				a.set.recording = key
+				label = i18n.T("onboarding.hotkeys.cancel")
 			}
-		}
-		if hk != nil && !listening && a.btn(c, p, key+".clear", i18n.T("settings.common.clear"), btnGhost) {
+			if a.link(c, p, key, label, 13, 600, "") {
+				if listening {
+					a.set.recording = ""
+				} else {
+					a.set.recording = key
+				}
+			}
+		})
+		if hk != nil && !listening && a.button(c, p, key+".clear", i18n.T("settings.common.clear"), bopt{kind: btnGhost}) {
 			set(nil)
 		}
 	})

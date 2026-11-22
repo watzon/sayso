@@ -51,6 +51,11 @@ func (a *App) look(c *mu.Context) theme.Colors {
 	return th.Colors
 }
 
+// colors are this frame's colors, for helpers handed no palette.
+func (a *App) colors(c *mu.Context) theme.Colors {
+	return a.themes.get(a.cfg.Appearance.Ink, a.dark(c.Theme().Dark)).Colors
+}
+
 var (
 	iconMu    sync.Mutex
 	iconCache = map[string]*mu.SVG{}

@@ -187,4 +187,17 @@ type Services struct {
 	Media       MediaController
 	LoginItem   LoginItem
 	Dock        DockPolicy
+	// AppIcons renders app icons for badges; nil where the platform has
+	// none, and the badges show the app's first letter.
+	AppIcons AppIconSource
+}
+
+// AppIconSource renders the icon of an app.
+type AppIconSource interface {
+	// AppIconPNG is the icon of the app with bundleID as a PNG at least
+	// size px wide, or nil when the app is not found.
+	AppIconPNG(bundleID string, size int) []byte
+	// AppName is the name of the installed app with bundleID as Finder
+	// shows it, or "" when the app is not installed.
+	AppName(bundleID string) string
 }

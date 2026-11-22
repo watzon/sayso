@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"log"
+	"runtime"
 	"strings"
 	"time"
 
@@ -103,12 +104,14 @@ func (a *App) setHistoryFilter(f int) {
 func (a *App) historyPage(c *mu.Context, p theme.Colors) {
 	a.loadHistory()
 	if !a.cfg.History.Enabled && len(a.hist.entries) == 0 {
-		mu.Column(c).Fill().Padding(40, 48).Gap(14).Children(func() {
+		mu.Column(c).Fill().Padding(44, 52).Gap(20).Children(func() {
 			pageHeader(c, p, i18n.T("history.off.title"), i18n.T("history.off.body"))
-			if a.btn(c, p, "history.turn_on", i18n.T("history.off.turn_on"), btnPrimary) {
-				a.cfg.History.Enabled = true
-				a.saveConfig()
-			}
+			mu.Row(c).Children(func() {
+				if a.btn(c, p, "history.turn_on", i18n.T("history.off.turn_on"), btnPrimary) {
+					a.cfg.History.Enabled = true
+					a.saveConfig()
+				}
+			})
 		})
 		return
 	}
@@ -118,12 +121,12 @@ func (a *App) historyPage(c *mu.Context, p theme.Colors) {
 		listW = 300
 	}
 	mu.Row(c).Fill().AlignItems(mu.Stretch).Children(func() {
-		mu.Column(c).Width(listW).BorderEndWidth(1).BorderColor(p.Rule).Children(func() {
+		mu.Column(c).Width(listW).Shrink(0).BorderEndWidth(1).BorderColor(p.Rule).Children(func() {
 			a.historyToolbar(c, p)
-			mu.Scroll(c.Key("history.list")).Grow(1).Padding(0, 10, 16, 10).Role(mu.RoleList).
+			mu.Scroll(c.Key("history.list")).Grow(1).Padding(0, 20, 20, 28).Gap(4).Role(mu.RoleList).
 				Label(i18n.T("history.a11y.list")).Children(func() { a.historyList(c, p) })
 		})
-		mu.Scroll(c.Key("history.detail")).Grow(1).Basis(0).Padding(32, 36).Gap(20).Children(func() {
+		mu.Scroll(c.Key("history.detail")).Grow(1).Basis(0).Children(func() {
 			// With no entry the list says why; the detail stays blank.
 			if e, ok := a.selectedEntry(); ok {
 				a.historyDetail(c, p, e)
@@ -133,18 +136,17 @@ func (a *App) historyPage(c *mu.Context, p theme.Colors) {
 }
 
 func (a *App) historyToolbar(c *mu.Context, p theme.Colors) {
-	bar := c.TitleBar()
-	mu.Column(c).Padding(max(bar.Bottom, 0)+24, 16, 12, 16).Gap(10).Children(func() {
-		mu.Row(c).AlignItems(mu.Baseline).Gap(8).Children(func() {
-			heading(c, p, i18n.T("history.title"), 28).Role(mu.RoleHeading)
+	mu.Column(c).Padding(40, 20, 18, 28).Gap(18).Children(func() {
+		mu.Row(c).PaddingX(4).AlignItems(mu.End).Gap(8).Children(func() {
+			heading(c, p, i18n.T("history.title"), 32).LineHeight(40.0 / 32).Role(mu.RoleHeading).Grow(1)
 			count := i18n.TP("history.count", a.hist.total, map[string]any{"formatted": formatCount(a.hist.total)})
-			if len(a.hist.entries) != a.hist.total {
-				count = i18n.T("history.count_filtered", "shown", len(a.hist.entries), "total", a.hist.total)
-			}
-			mu.Text(c, count).FontSize(12.5).TextColor(p.Graphite)
+			uiText(c, count, 13, 400, p.Graphite).Padding(0, 0, 6, 0).SingleLine()
 		})
-		mu.SearchField(a.k(c, "history.search"), &a.hist.query).Label(i18n.T("history.search_placeholder")).
-			Placeholder(i18n.T("history.search_placeholder"))
+		mini := "⌘F"
+		if runtime.GOOS != "darwin" {
+			mini = "Ctrl F"
+		}
+		a.searchWell(c, p, "history.search", i18n.T("history.search_placeholder"), &a.hist.query, 38, 0, mini)
 		mu.Row(c).Gap(6).Wrap().Role(mu.RoleToolbar).Label(i18n.T("history.a11y.filters")).Children(func() {
 			chips := []struct {
 				key, label string
@@ -165,7 +167,7 @@ func (a *App) historyToolbar(c *mu.Context, p theme.Colors) {
 					appLabel = ac.Name
 				}
 			}
-			if a.chip(c, p, "history.filter.app", appLabel, a.hist.app != "") {
+			if a.chipT(c, p, "history.filter.app", appLabel, a.hist.app != "", "chevron-down") {
 				a.hist.appsOpen = !a.hist.appsOpen
 			}
 		})
@@ -175,37 +177,22 @@ func (a *App) historyToolbar(c *mu.Context, p theme.Colors) {
 	})
 }
 
-// chip is a filter chip; it reports a click.
-func (a *App) chip(c *mu.Context, p theme.Colors, key, label string, on bool) bool {
-	b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleToggleButton).Checked(on).
-		Padding(4, 11).Radius(99).Border(1, p.Rule).Cursor(mu.CursorPointer)
-	fg := p.Graphite
-	if on {
-		fg = p.OnInk
-		b.Background(p.InkFill).Border(1, p.InkFill)
-	} else if b.Hovered() {
-		b.Background(p.Deboss)
-	}
-	b.Children(func() { mu.Text(c, label).FontSize(12.5).FontWeight(500).TextColor(fg).SingleLine() })
-	return clicked(c, b)
-}
-
 func (a *App) appPicker(c *mu.Context, p theme.Colors) {
-	mu.Column(c).Padding(6).Radius(10).Background(p.SheetRaised).Border(1, p.Rule).Role(mu.RoleList).
+	floating(mu.Column(c).Padding(4).Radius(10).MaxHeight(320), p).Role(mu.RoleList).
 		Label(i18n.T("history.a11y.app_list")).Children(func() {
 		pick := func(key, label, bundle string) {
-			b := mu.ButtonBase(a.k(c, key)).Label(label).Padding(6, 8).Radius(6).Cursor(mu.CursorPointer)
+			b := mu.ButtonBase(a.k(c, key)).Label(label).Height(30).PaddingX(10).Gap(8).Radius(7).AlignItems(mu.Center).Cursor(mu.CursorPointer)
 			if b.Hovered() || a.hist.app == bundle {
 				b.Background(p.Deboss)
 			}
-			b.Children(func() { mu.Text(c, label).FontSize(13).TextColor(p.Ink) })
+			b.Children(func() { uiText(c, label, 13, 500, p.Ink).SingleLine() })
 			if clicked(c, b) {
 				a.hist.app, a.hist.appsOpen, a.hist.loaded = bundle, false, false
 			}
 		}
 		pick("history.app.all", i18n.T("history.all_apps"), "")
 		if len(a.hist.apps) == 0 {
-			mu.Text(c, i18n.T("history.app_none")).FontSize(12.5).TextColor(p.Graphite).Padding(6, 8)
+			uiText(c, i18n.T("history.app_none"), 13, 400, p.Graphite).Padding(6, 10)
 		}
 		for i, ac := range a.hist.apps {
 			pick(fmt.Sprintf("history.app.%d", i), i18n.T("history.a11y.app_option", "app", ac.Name, "count", ac.Count), ac.BundleID)
@@ -219,9 +206,9 @@ func (a *App) historyList(c *mu.Context, p theme.Colors) {
 		if a.hist.query != "" || a.hist.filter != filterAll || a.hist.app != "" {
 			title, body = i18n.T("history.no_match_title"), i18n.T("history.no_match_body")
 		}
-		mu.Column(c).Padding(24, 8).Gap(6).Children(func() {
-			mu.Text(c, title).FontSize(14).FontWeight(600).TextColor(p.Ink)
-			mu.Text(c, body).FontSize(12.5).TextColor(p.Graphite)
+		mu.Column(c).Padding(24, 10).Gap(6).Children(func() {
+			uiText(c, title, 14, 600, p.Ink)
+			uiText(c, body, 13, 400, p.Graphite)
 		})
 		return
 	}
@@ -229,8 +216,12 @@ func (a *App) historyList(c *mu.Context, p theme.Colors) {
 	day := ""
 	for _, e := range a.hist.entries {
 		if d := dayLabel(e.CreatedAt, now); d != day {
+			top := float32(14)
+			if day == "" {
+				top = 6
+			}
 			day = d
-			mu.Text(c, strings.ToUpper(d)).FontSize(11).FontWeight(600).LetterSpacing(1).TextColor(p.Pencil).Padding(14, 8, 6, 8)
+			caps(c, p, d).Padding(top, 10, 6, 10)
 		}
 		a.historyRow(c, p, e)
 	}
@@ -259,26 +250,32 @@ func entryApp(e store.HistoryEntry) string {
 
 func (a *App) historyRow(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 	sel := e.ID == a.hist.selected
-	tm := e.CreatedAt.In(a.now().Location()).Format("15:04")
+	tm := a.clockOf(e.CreatedAt)
+	bundle := ""
+	if e.App != nil {
+		bundle = e.App.BundleID
+	}
 	r := mu.ButtonBase(a.k(c, fmt.Sprintf("history.row.%d", e.ID))).Role(mu.RoleListItem).Selected(sel).
-		Label(i18n.T("history.a11y.entry", "app", entryApp(e), "time", tm)).Padding(10, 10).Gap(4).Radius(8).Column().AlignItems(mu.Stretch).Justify(mu.Start).Cursor(mu.CursorPointer)
+		Label(i18n.T("history.a11y.entry", "app", entryApp(e), "time", tm)).Padding(12).Gap(12).Radius(12).
+		AlignItems(mu.Start).Justify(mu.Start).Cursor(mu.CursorPointer)
 	if sel {
-		r.Background(p.SheetRaised).Border(1, p.Rule)
+		r.Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).Shadow(0, 1, 2, 0, p.ShadowA(0.14)).Shadow(0, 6, 16, 0, p.ShadowA(0.10))
 	} else if r.Hovered() {
-		r.Background(p.Deboss.Alpha(0.6))
+		r.Background(p.Deboss.Alpha(0.4))
 	}
 	r.Children(func() {
-		mu.Row(c).Gap(6).AlignItems(mu.Center).Children(func() {
-			mu.Text(c, entryApp(e)).FontSize(12).FontWeight(500).TextColor(p.Graphite).SingleLine().Grow(1)
-			if e.Enhance.Result == store.EnhanceApplied {
-				mu.Icon(c, icon("sparkle")).FontSize(12).TextColor(p.Accent)
+		a.appBadge(c, entryApp(e), bundle, 28)
+		mu.Column(c).Gap(4).Grow(1).Basis(0).MinWidth(0).AlignItems(mu.Stretch).Children(func() {
+			mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
+				uiText(c, entryApp(e), 13, 600, p.Ink).SingleLine().Grow(1)
+				mono(c, tm, 12, p.Graphite)
+			})
+			fg := p.Graphite
+			if sel {
+				fg = p.Ink
 			}
-			if e.AudioFile != "" {
-				mu.Icon(c, icon("audio")).FontSize(12).TextColor(p.Pencil)
-			}
-			mu.Text(c, tm).Font(theme.Mono).FontSize(11.5).TextColor(p.Pencil)
+			serif(c, e.FinalText, 14, fg).LineHeight(20.0 / 14).MaxLines(3).Ellipsis("…")
 		})
-		mu.Text(c, e.FinalText).Font(theme.Body).FontSize(13.5).TextColor(p.Ink).MaxLines(2).Ellipsis("…")
 	})
 	if clicked(c, r) && !sel {
 		a.selectEntry(e.ID)
@@ -300,41 +297,56 @@ func (a *App) hotkeyLabel() string {
 }
 
 func (a *App) historyDetail(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
-	when := e.CreatedAt.In(a.now().Location())
-	mu.Row(c).AlignItems(mu.Center).Gap(10).Children(func() {
-		mu.Column(c).Gap(2).Grow(1).Children(func() {
-			mu.Text(c, entryApp(e)).FontSize(13).FontWeight(500).TextColor(p.Graphite)
-			mu.Text(c, i18n.T("history.time_and_duration", "time", dayLabel(when, a.now())+" "+when.Format("15:04"),
-				"duration", durationLabel(e.DurationMs))).FontSize(12.5).TextColor(p.Pencil)
-		})
+	bundle := ""
+	if e.App != nil {
+		bundle = e.App.BundleID
+	}
+	mu.Row(c).Padding(40, 48, 20, 48).AlignItems(mu.Center).Gap(10).Children(func() {
+		a.appBadge(c, entryApp(e), bundle, 24)
+		uiText(c, entryApp(e), 14, 600, p.Ink).SingleLine()
+		uiText(c, a.clockOrDay(e.CreatedAt)+" · "+durationLabel(e.DurationMs), 14, 400, p.Graphite).SingleLine().Grow(1)
 		if a.hist.busy != "" {
-			mu.Text(c, a.hist.busy).FontSize(12.5).TextColor(p.Graphite)
+			uiText(c, a.hist.busy, 13, 400, p.Graphite)
 		}
 		label := i18n.T("history.a11y.more_actions")
 		more := mu.ButtonBase(a.k(c, "history.more")).Label(label).Tooltip(label).Size(30, 30).Radius(8).
 			Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer).HasPopup(mu.PopupMenu)
 		if more.Hovered() || a.hist.menuOpen {
-			more.Background(p.Deboss)
+			more.Background(p.Deboss.Alpha(0.55))
 		}
-		more.Children(func() { mu.Icon(c, icon("more")).FontSize(16).TextColor(p.Graphite) })
+		more.Children(func() { mu.Icon(c, icon("more")).FontSize(18).TextColor(p.Graphite) })
 		if clicked(c, more) {
 			a.hist.menuOpen, a.hist.confirm = !a.hist.menuOpen, false
 		}
 		mu.PopoverBase(c, more, &a.hist.menuOpen, func(panel mu.Element) { a.historyMenu(c, p, panel, e) })
 	})
-	if a.hist.confirm {
-		a.deleteConfirm(c, p, e)
-	}
-	mu.Text(c, e.FinalText).Font(theme.Body).FontSize(18).LineHeight(1.5).TextColor(p.Ink).Selectable().
-		Label(i18n.T("history.a11y.final_text"))
-	a.audioPlayer(c, p, e)
-	a.trail(c, p, e)
+	mu.Column(c).Padding(8, 48, 0, 48).Gap(28).Children(func() {
+		if a.hist.confirm {
+			a.deleteConfirm(c, p, e)
+		}
+		long := len(e.FinalText) > 140
+		text := mu.Scroll(c.Key(fmt.Sprintf("history.text.%d", e.ID))).MinHeight(66).MaxHeight(154)
+		if long {
+			text.DrawOver(func(pt *mu.Painter, r mu.Rect) {
+				f := mu.Rect{X: r.X, Y: r.Y + r.H - 28, W: r.W, H: 28}
+				pt.FillGradient(f, mu.LinearGradient{From: p.Sheet.Alpha(0), To: p.Sheet, Angle: 180}, 0)
+			})
+		}
+		text.Children(func() {
+			mu.Text(c, e.FinalText).Font(theme.Display).FontSize(33).FontWeight(500).LineHeight(44.0 / 33).TextColor(p.Ink).
+				Selectable().Label(i18n.T("history.a11y.final_text"))
+		})
+		a.audioPlayer(c, p, e)
+	})
+	mu.Column(c).Margin(28, 48, 0, 48).Padding(20, 4, 32, 4).BorderWidth(1, 0, 0, 0).BorderColor(p.Rule).Children(func() {
+		a.trail(c, p, e)
+	})
 }
 
 func durationLabel(ms uint64) string {
-	s := int(ms / 1000)
+	s := int((ms + 500) / 1000)
 	if s < 60 {
-		return i18n.T("hub.duration.seconds", "seconds", s)
+		return i18n.T("hub.duration.seconds", "seconds", max(s, 1))
 	}
 	return i18n.T("hub.duration.minutes_seconds", "minutes", s/60, "seconds", s%60)
 }
@@ -342,7 +354,7 @@ func durationLabel(ms uint64) string {
 // historyMenu is the 3-dot menu, drawn under its button.
 func (a *App) historyMenu(c *mu.Context, p theme.Colors, panel mu.Element, e store.HistoryEntry) {
 	item := func(key, label string, danger bool, fn func()) {
-		b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleMenuItem).Padding(7, 12).Radius(6).Cursor(mu.CursorPointer)
+		b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleMenuItem).Height(32).PaddingX(10).Radius(7).AlignItems(mu.Center).Cursor(mu.CursorPointer)
 		if b.Hovered() {
 			b.Background(p.Deboss)
 		}
@@ -350,7 +362,7 @@ func (a *App) historyMenu(c *mu.Context, p theme.Colors, panel mu.Element, e sto
 		if danger {
 			fg = p.Danger
 		}
-		b.Children(func() { mu.Text(c, label).FontSize(13).TextColor(fg).SingleLine() })
+		b.Children(func() { uiText(c, label, 13, 500, fg).SingleLine() })
 		if clicked(c, b) {
 			a.hist.menuOpen = false
 			fn()
@@ -360,8 +372,7 @@ func (a *App) historyMenu(c *mu.Context, p theme.Colors, panel mu.Element, e sto
 	if e.Enhance.Result == store.EnhanceApplied {
 		enhanceLabel = i18n.T("history.menu.re_enhance")
 	}
-	panel.Margin(6, 0, 0, 0).Width(220).Padding(5).Radius(10).Role(mu.RoleMenu).
-		Background(p.SheetRaised).Border(1, p.Rule).Shadow(0, 8, 24, 0, p.Shadow.Alpha(0.18))
+	floating(panel.Margin(6, 0, 0, 0).MinWidth(184).Padding(5).Radius(12).Role(mu.RoleMenu), p)
 	mu.Column(c).Children(func() {
 		item("history.copy", i18n.T("history.menu.copy"), false, func() { c.WriteClipboard(e.FinalText); a.hist.busy = i18n.T("history.status_copied") })
 		item("history.copy_meta", i18n.T("history.menu.copy_metadata"), false, func() { c.WriteClipboard(e.MetadataJSON()) })
@@ -374,12 +385,12 @@ func (a *App) historyMenu(c *mu.Context, p theme.Colors, panel mu.Element, e sto
 }
 
 func (a *App) deleteConfirm(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
-	mu.Row(c).Gap(10).Padding(10, 14).Radius(10).Background(p.DangerWash).AlignItems(mu.Center).Role(mu.RoleAlert).Children(func() {
-		mu.Text(c, i18n.T("history.confirm_delete")).FontSize(13).TextColor(p.Ink).Grow(1)
-		if a.btn(c, p, "history.delete_cancel", i18n.T("history.cancel"), btnGhost) {
+	mu.Row(c).Gap(10).Padding(10, 14).Radius(12).Background(p.DangerWash).AlignItems(mu.Center).Role(mu.RoleAlert).Children(func() {
+		uiText(c, i18n.T("history.confirm_delete"), 13, 500, p.Ink).Grow(1)
+		if a.button(c, p, "history.delete_cancel", i18n.T("history.cancel"), bopt{kind: btnGhost, size: sizeSmall}) {
 			a.hist.confirm = false
 		}
-		if a.btn(c, p, "history.delete_confirm", i18n.T("history.delete"), btnDanger) {
+		if a.button(c, p, "history.delete_confirm", i18n.T("history.delete"), bopt{kind: btnDanger, size: sizeSmall}) {
 			a.deleteEntry(e.ID)
 		}
 	})
@@ -461,7 +472,8 @@ func (a *App) reEnhance(e store.HistoryEntry) {
 	}()
 }
 
-// audioPlayer: the waveform, play/pause and the position slider.
+// audioPlayer is the debossed tray: the ink play button, the waveform
+// (which seeks), and the time.
 func (a *App) audioPlayer(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 	h := &a.hist
 	if e.AudioFile == "" {
@@ -469,7 +481,7 @@ func (a *App) audioPlayer(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 		if len(e.Waveform) > 0 {
 			note = i18n.T("history.audio.expired")
 		}
-		mu.Text(c, note).FontSize(12.5).TextColor(p.Pencil)
+		uiText(c, note, 13, 400, p.Graphite)
 		return
 	}
 	total := float64(e.DurationMs) / 1000
@@ -480,32 +492,61 @@ func (a *App) audioPlayer(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 			c.Invalidate()
 		}
 	}
-	card(c, p).Gap(10).Children(func() {
-		mu.Row(c).Gap(12).AlignItems(mu.Center).Children(func() {
+	mu.Column(c).Gap(10).Children(func() {
+		tray := mu.Row(c).Padding(14, 18, 14, 14).Gap(16).Radius(16).AlignItems(mu.Center).Background(p.Deboss).
+			InsetShadow(0, 2, 4, 0, p.ShadowA(0.18)).InsetShadow(0, -1, 0, 0, p.Highlight(0.75))
+		tray.Children(func() {
 			label, ic := i18n.T("history.a11y.play"), "play"
 			if h.playing {
 				label, ic = i18n.T("history.a11y.pause"), "pause"
 			}
-			if a.iconBtn(c, p, "history.play", ic, label) {
+			b := mu.ButtonBase(a.k(c, "history.play")).Label(label).Size(44, 44).Shrink(0).Radius(99).Background(p.InkFill).
+				InsetShadow(0, 1, 0, 0, white.Alpha(0.14)).InsetShadow(0, -2, 4, 0, black.Alpha(0.45)).Shadow(0, 2, 4, 0, p.ShadowA(0.28)).
+				Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer).Disabled(a.d.NewPlayer == nil)
+			if a.d.NewPlayer == nil {
+				b.Opacity(0.35)
+			}
+			b.Children(func() { mu.Icon(c, icon(ic)).FontSize(16).TextColor(p.OnInk) })
+			if clicked(c, b) {
 				a.togglePlay(e)
 			}
-			levels := make([]float32, len(e.Waveform))
-			for i, b := range e.Waveform {
-				levels[i] = float32(b) / 255 / 6
+			pos := h.position
+			played := float32(0)
+			if total > 0 {
+				played = float32(pos / total)
 			}
-			waveform(c, levels, p.Ink).Grow(1).Height(36)
-			mu.Text(c, i18n.T("history.player.position", "pos", clock(h.position), "total", clock(total))).
-				Font(theme.Mono).FontSize(12).TextColor(p.Graphite)
+			wave := e.Waveform
+			mu.SliderBase(a.k(c, "history.position"), &pos, 0, max(total, 0.1)).Label(i18n.T("history.a11y.position")).
+				Grow(1).Basis(0).Height(44).Cursor(mu.CursorPointer).OnChange(func() { a.seek(e, pos) }).
+				Draw(func(pt *mu.Painter, r mu.Rect) { paintWave(pt, r, wave, played, p.Ink, p.Ink.Alpha(0.35)) })
+			mono(c, clock(h.position)+" / "+clock(total), 12, p.Graphite).Shrink(0)
 		})
-		pos := h.position
-		mu.StepSlider(a.k(c, "history.position"), &pos, 0, max(total, 0.1), 5).
-			Label(i18n.T("history.a11y.position")).OnChange(func() { a.seek(e, pos) })
 		kept := i18n.T("history.audio.kept")
 		if d := a.cfg.History.KeepAudioDays; d != nil {
-			kept = i18n.T("history.audio.kept_until", "date", i18n.DayMonthYear(e.CreatedAt.AddDate(0, 0, int(*d))))
+			kept = i18n.T("history.audio.kept_until", "date", i18n.DayMonth(e.CreatedAt.AddDate(0, 0, int(*d))))
 		}
-		mu.Text(c, kept).FontSize(12).TextColor(p.Pencil)
+		uiText(c, kept, 13, 400, p.Graphite).PaddingX(4)
 	})
+}
+
+// paintWave draws the waveform as mirrored bars, the played part in ink.
+func paintWave(pt *mu.Painter, r mu.Rect, peaks []byte, played float32, on, off mu.Color) {
+	if len(peaks) == 0 {
+		pt.Fill(mu.Rect{X: r.X, Y: r.Y + r.H/2 - 0.5, W: r.W, H: 1}, off, 0)
+		return
+	}
+	const bar, gap = 2, 2
+	n := int((r.W + gap) / (bar + gap))
+	for i := range n {
+		v := float32(peaks[i*len(peaks)/max(n, 1)]) / 255
+		h := max(2, r.H*v)
+		x := r.X + float32(i)*(bar+gap)
+		col := off
+		if (x-r.X)/r.W < played {
+			col = on
+		}
+		pt.Fill(mu.Rect{X: x, Y: r.Y + (r.H-h)/2, W: bar, H: h}, col, 1)
+	}
 }
 
 func clock(s float64) string {
@@ -551,82 +592,116 @@ func (a *App) stopPlayer() {
 	a.hist.player, a.hist.playerFor, a.hist.playing, a.hist.position = nil, 0, false, 0
 }
 
-// trail is "How it got here": transcript, dictionary, style, insertion.
+// trailStep is one step of "How it got here".
+type trailStep struct {
+	title string
+	body  func()
+	last  bool
+}
+
+// trail is "How it got here": rings on a ruled rail, the last a filled dot.
 func (a *App) trail(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
-	mu.Column(c).Gap(10).Children(func() {
-		eyebrow(c, p, i18n.T("history.trail.title"))
-		step := func(iconName, text, detail string) {
-			mu.Row(c).Gap(10).AlignItems(mu.Start).Children(func() {
-				mu.Icon(c, icon(iconName)).FontSize(15).TextColor(p.Graphite)
-				mu.Column(c).Gap(2).Grow(1).Basis(0).Children(func() {
-					mu.Text(c, text).FontSize(13.5).TextColor(p.Ink)
-					if detail != "" {
-						mu.Text(c, detail).FontSize(12.5).TextColor(p.Graphite)
-					}
-				})
-			})
+	var steps []trailStep
+	add := func(title string, body func()) { steps = append(steps, trailStep{title: title, body: body}) }
+	model := a.modelName(models.ModelID(e.Model))
+	title := i18n.T("history.trail.transcript", "model", model)
+	if e.TranscribeMs > 0 {
+		title = i18n.T("history.trail.transcript_ms", "model", model, "ms", e.TranscribeMs)
+	}
+	add(title, func() {
+		t := mu.Text(c, e.Transcript).Font(theme.Display).Italic().FontSize(15).LineHeight(21.0 / 15).TextColor(p.Graphite).Selectable()
+		if !a.hist.showRaw {
+			t.MaxLines(2).Ellipsis("…")
 		}
-		model := a.modelName(models.ModelID(e.Model))
-		if e.TranscribeMs > 0 {
-			step("mic", i18n.T("history.trail.transcript_ms", "model", model, "ms", e.TranscribeMs), "")
-		} else {
-			step("mic", i18n.T("history.trail.transcript", "model", model), "")
-		}
-		if e.Transcript != e.FinalText {
-			if a.btn(c, p, "history.show_transcript", i18n.T("history.trail.show_transcript"), btnGhost) {
+		if len(e.Transcript) > 160 {
+			label := i18n.T("history.trail.show_transcript")
+			if a.link(c, p, "history.show_transcript", label, 13, 500, "") {
 				a.hist.showRaw = !a.hist.showRaw
 			}
-			if a.hist.showRaw {
-				mu.Text(c, e.Transcript).Font(theme.Body).FontSize(14).TextColor(p.Graphite).Padding(8, 12).Radius(8).Background(p.Deboss).Selectable()
-			}
-		}
-		n := 0
-		for _, r := range e.Replacements {
-			n += r.Count
-		}
-		if n == 0 {
-			step("dictionary", i18n.T("history.trail.dictionary_none"), "")
-		} else {
-			step("dictionary", i18n.TP("history.trail.dictionary", n, nil), "")
-		}
-		styleLabel := e.StyleID
-		if st, ok := a.styles.Get(e.StyleID); ok {
-			styleLabel = styleName(st)
-		}
-		switch e.Enhance.Result {
-		case store.EnhanceApplied:
-			step("sparkle", i18n.T("history.trail.style_applied", "style", styleLabel, "provider", e.Enhance.ProviderID,
-				"model", e.Enhance.Model, "seconds", i18n.Decimal(float64(e.Enhance.ElapsedMs)/1000, 1)), "")
-		case store.EnhanceFailed:
-			step("warning", i18n.T("history.trail.style_failed", "style", styleLabel, "provider", e.Enhance.ProviderID),
-				i18n.T("history.trail.style_failed_detail", "reason", e.Enhance.Reason))
-		default:
-			if e.StyleID == "" || e.StyleID == "raw" {
-				step("sparkle", i18n.T("history.trail.raw_no_ai"), "")
-			} else {
-				step("sparkle", i18n.T("history.trail.style_unused", "style", styleLabel), i18n.T("history.trail.ai_not_run"))
-			}
-		}
-		app := i18n.T("history.trail.the_app")
-		if e.App != nil && e.App.Name != "" {
-			app = e.App.Name
-			if e.App.Site != "" {
-				app = i18n.T("history.trail.site_in_app", "site", e.App.Site, "app", e.App.Name)
-			}
-		}
-		switch e.Insert.Result {
-		case store.InsertPasted:
-			k := "history.trail.pasted_kept"
-			if e.Insert.ClipboardRestored {
-				k = "history.trail.pasted_restored"
-			}
-			step("arrow-right", i18n.T(k, "app", app), "")
-		case store.InsertTyped:
-			step("keyboard", i18n.T("history.trail.typed", "app", app), "")
-		case store.InsertNotInserted:
-			step("close", i18n.T("history.trail.cancelled"), "")
-		case store.InsertFailed:
-			step("warning", i18n.T("history.trail.not_inserted", "reason", e.Insert.Reason), "")
 		}
 	})
+	n := 0
+	for _, r := range e.Replacements {
+		n += r.Count
+	}
+	if n == 0 {
+		add(i18n.T("history.trail.dictionary_none"), nil)
+	} else {
+		add(i18n.TP("history.trail.dictionary", n, nil), func() {
+			for _, r := range e.Replacements {
+				uiText(c, "“"+r.From+"” → “"+r.To+"”", 14, 400, p.Graphite).LineHeight(18.0 / 14)
+			}
+		})
+	}
+	styleLabel := e.StyleID
+	var styleDesc string
+	if st, ok := a.styles.Get(e.StyleID); ok {
+		styleLabel, styleDesc = styleName(st), styleDescription(st)
+	}
+	desc := func(s string) func() {
+		if s == "" {
+			return nil
+		}
+		return func() { uiText(c, s, 14, 400, p.Graphite).LineHeight(18.0 / 14) }
+	}
+	switch e.Enhance.Result {
+	case store.EnhanceApplied:
+		add(i18n.T("history.trail.style_applied", "style", styleLabel, "provider", e.Enhance.ProviderID,
+			"model", e.Enhance.Model, "seconds", i18n.Decimal(float64(e.Enhance.ElapsedMs)/1000, 2)), desc(styleDesc))
+	case store.EnhanceFailed:
+		add(i18n.T("history.trail.style_failed", "style", styleLabel, "provider", e.Enhance.ProviderID),
+			desc(i18n.T("history.trail.style_failed_detail", "reason", e.Enhance.Reason)))
+	default:
+		if e.StyleID == "" || e.StyleID == "raw" {
+			add(i18n.T("history.trail.raw_no_ai"), nil)
+		} else {
+			add(i18n.T("history.trail.style_unused", "style", styleLabel), desc(i18n.T("history.trail.ai_not_run")))
+		}
+	}
+	app := i18n.T("history.trail.the_app")
+	if e.App != nil && e.App.Name != "" {
+		app = e.App.Name
+		if e.App.Site != "" {
+			app = i18n.T("history.trail.site_in_app", "site", e.App.Site, "app", e.App.Name)
+		}
+	}
+	switch e.Insert.Result {
+	case store.InsertPasted:
+		k := "history.trail.pasted_kept"
+		if e.Insert.ClipboardRestored {
+			k = "history.trail.pasted_restored"
+		}
+		add(i18n.T(k, "app", app), nil)
+	case store.InsertTyped:
+		add(i18n.T("history.trail.typed", "app", app), nil)
+	case store.InsertNotInserted:
+		add(i18n.T("history.trail.cancelled"), nil)
+	case store.InsertFailed:
+		add(i18n.T("history.trail.not_inserted", "reason", e.Insert.Reason), nil)
+	}
+	if len(steps) > 0 {
+		steps[len(steps)-1].last = true
+	}
+	caps(c, p, i18n.T("history.trail.title")).Padding(0, 0, 14, 0)
+	for _, s := range steps {
+		mu.Row(c).Gap(16).AlignItems(mu.Stretch).Children(func() {
+			last := s.last
+			mu.Box(c).Width(12).Shrink(0).Draw(func(pt *mu.Painter, r mu.Rect) {
+				cx, top := r.X+r.W/2, r.Y+3
+				if last {
+					pt.Fill(mu.Rect{X: cx - 8, Y: top - 3, W: 16, H: 16}, p.Accent.Alpha(0.18), 8)
+					pt.Fill(mu.Rect{X: cx - 5, Y: top, W: 10, H: 10}, p.Accent, 5)
+					return
+				}
+				pt.Stroke(mu.Rect{X: cx - 5, Y: top, W: 10, H: 10}, p.Ink, 5, 1)
+				pt.Fill(mu.Rect{X: cx - 0.75, Y: top + 14, W: 1.5, H: r.Y + r.H - top - 16}, p.Rule, 0)
+			})
+			mu.Column(c).Gap(3).Grow(1).Basis(0).Padding(0, 0, 16, 0).Children(func() {
+				uiText(c, s.title, 13, 600, p.Ink).LineHeight(16.0 / 13)
+				if s.body != nil {
+					s.body()
+				}
+			})
+		})
+	}
 }

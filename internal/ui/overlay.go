@@ -86,19 +86,39 @@ func (a *App) pillView(c *mu.Context, p theme.Colors) {
 	})
 }
 
-// pill is the slip itself.
+// pill is the slip itself. At rest it is a small dash; hovered, it says
+// how to dictate; while dictating or showing a notice it holds them.
 func (a *App) pill(c *mu.Context, p theme.Colors) {
 	label := i18n.T("overlay.a11y.start")
 	if a.Busy() {
 		label = i18n.T("overlay.a11y.stop")
 	}
+	idle := a.state.Kind == dictation.StateIdle && !a.noticeShowing()
 	// The slip holds the pressable part and, for a notice, its actions as
 	// siblings: a control inside a button is no control of its own.
-	mu.Row(c).Padding(0, 6, 0, 0).Height(44).Gap(4).Radius(22).AlignItems(mu.Center).
-		Background(p.SheetRaised).Border(1, p.Rule).
-		Shadow(0, 2, 6, 0, p.Shadow.Alpha(0.12)).Shadow(0, 10, 26, -6, p.Shadow.Alpha(0.2)).DragWindow().Children(func() {
-		b := mu.ButtonBase(a.k(c, "overlay.pill")).Label(label).Padding(0, 10, 0, 16).FillHeight().Gap(10).Radius(22).AlignItems(mu.Center)
-		b.Children(func() { a.pillContent(c, p) })
+	shell := mu.Row(c).Gap(4).Radius(99).AlignItems(mu.Center).Background(p.SheetRaised).
+		InsetShadow(0, 1, 0, 0, p.Highlight(1)).Shadow(0, 1, 2, 0, p.ShadowA(0.16)).Shadow(0, 4, 12, 0, p.ShadowA(0.12)).DragWindow()
+	if !idle {
+		shell.Height(44).Padding(0, 6, 0, 0)
+	}
+	shell.Children(func() {
+		b := mu.ButtonBase(a.k(c, "overlay.pill")).Label(label).Radius(99).AlignItems(mu.Center).Justify(mu.Center)
+		hover := b.Hovered()
+		switch {
+		case idle && !hover:
+			b.Size(52, 14)
+		case idle:
+			b.Padding(7, 14, 7, 8).Gap(10)
+		default:
+			b.Padding(0, 10, 0, 16).FillHeight().Gap(10)
+		}
+		b.Children(func() {
+			if idle {
+				a.idleContent(c, p, hover)
+				return
+			}
+			a.pillContent(c, p)
+		})
 		if clicked(c, b) {
 			switch a.state.Kind {
 			case dictation.StateShowing:
@@ -115,13 +135,25 @@ func (a *App) pill(c *mu.Context, p theme.Colors) {
 	})
 }
 
+// idleContent is the dash at rest, and the hotkey when hovered.
+func (a *App) idleContent(c *mu.Context, p theme.Colors, hover bool) {
+	if !hover {
+		mu.Box(c).Size(18, 2).Radius(2).Background(p.Ink.Alpha(0.55))
+		return
+	}
+	if h := a.cfg.Hotkeys.Toggle; h != nil {
+		keycaps(c, p, h.Keycaps(), a.cfg.Overlay.Size.Scale() < 0.8)
+	}
+	uiText(c, i18n.T("overlay.to_dictate"), 14, 500, p.Graphite).SingleLine()
+}
+
 func (a *App) pillContent(c *mu.Context, p theme.Colors) {
 	switch a.state.Kind {
 	case dictation.StateRecording:
 		dot := mu.Box(c).Size(10, 10).Radius(99).Background(p.Accent)
 		dot.Opacity(0.55 + 0.45*dot.Loop("breath", 1400*time.Millisecond, mu.EaseInOut))
 		waveform(c, a.levelsInOrder()[16:], p.Ink).Width(120).Height(22)
-		mu.Text(c, a.elapsedLabel()).Font(theme.Mono).FontSize(13).TextColor(p.Graphite)
+		mono(c, a.elapsedLabel(), 13, p.Graphite)
 		if a.incognito {
 			mu.Icon(c, icon("eye")).FontSize(14).TextColor(p.Accent).Label(i18n.T("overlay.incognito"))
 		}
@@ -131,87 +163,89 @@ func (a *App) pillContent(c *mu.Context, p theme.Colors) {
 		line.Draw(func(pt *mu.Painter, r mu.Rect) {
 			pt.Fill(mu.Rect{X: r.X, Y: r.Y + r.H/2 - 1, W: r.W * t, H: 2}, p.Ink, 1)
 		})
-		mu.Text(c, a.stageLabel()).FontSize(13).TextColor(p.Ink)
+		uiText(c, a.stageLabel(), 14, 500, p.Ink)
 	case dictation.StateShowing:
 		a.noticeContent(c, p)
 	default:
 		if a.noticeShowing() {
-			mu.Icon(c, icon("info")).FontSize(15).TextColor(p.Graphite)
-			mu.Text(c, a.lastNotice).FontSize(13).TextColor(p.Ink).SingleLine().Ellipsis("…").MaxWidth(300).Role(mu.RoleStatus)
-			return
+			noticeIcon(c, p, "info", p.Ink)
+			uiText(c, a.lastNotice, 14, 600, p.Ink).SingleLine().Ellipsis("…").MaxWidth(300).Role(mu.RoleStatus)
 		}
-		if h := a.cfg.Hotkeys.Toggle; h != nil {
-			for _, k := range h.Keycaps() {
-				keycap(c, p, k)
-			}
-		}
-		mu.Text(c, i18n.T("overlay.to_dictate")).FontSize(13).TextColor(p.Graphite)
 	}
+}
+
+// noticeIcon is a notice's icon in a 28 px debossed circle.
+func noticeIcon(c *mu.Context, p theme.Colors, name string, col mu.Color) {
+	debossed(mu.Box(c).Size(28, 28).Shrink(0).Radius(99).Justify(mu.Center).AlignItems(mu.Center), p).Children(func() {
+		mu.Icon(c, icon(name)).FontSize(14).TextColor(col)
+	})
 }
 
 // noticeContent: Inserted, Cancelled (with Undo), or a failure (with Copy).
 func (a *App) noticeContent(c *mu.Context, p theme.Colors) {
 	n := a.state.Notice
+	title := func(s string) { uiText(c, s, 14, 600, p.Ink).SingleLine().Ellipsis("…").MaxWidth(260) }
 	switch n.Kind {
 	case dictation.NoticeInserted:
-		mu.Icon(c, icon("check")).FontSize(15).TextColor(p.Success)
+		noticeIcon(c, p, "check", p.Ink)
 		text := i18n.T("overlay.inserted")
 		if n.StyleName != "" {
 			text += " · " + n.StyleName
 		}
-		mu.Text(c, text).FontSize(13).TextColor(p.Ink)
+		title(text)
 	case dictation.NoticeInsertedRaw:
-		mu.Icon(c, icon("warning")).FontSize(15).TextColor(p.Pencil)
-		mu.Text(c, i18n.T("overlay.inserted_raw")).FontSize(13).TextColor(p.Ink)
+		noticeIcon(c, p, "warning", p.Ink)
+		title(i18n.T("overlay.inserted_raw"))
 	case dictation.NoticeCancelled, dictation.NoticeDiscarded:
-		mu.Text(c, i18n.T("overlay.cancelled")).FontSize(13).TextColor(p.Graphite)
+		noticeIcon(c, p, "close", p.Ink)
+		title(i18n.T("overlay.cancelled"))
 	case dictation.NoticeNoSpeech:
-		mu.Text(c, i18n.T("overlay.error.no_speech")).FontSize(13).TextColor(p.Graphite)
+		noticeIcon(c, p, "mic", p.Ink)
+		title(i18n.T("overlay.error.no_speech"))
 	case dictation.NoticeInsertFailed:
-		mu.Icon(c, icon("warning")).FontSize(15).TextColor(p.Danger)
-		mu.Text(c, n.Reason).FontSize(13).TextColor(p.Ink).SingleLine().Ellipsis("…").MaxWidth(200)
+		noticeIcon(c, p, "warning", p.Danger)
+		title(n.Reason)
 	default:
-		mu.Icon(c, icon("warning")).FontSize(15).TextColor(p.Danger)
+		noticeIcon(c, p, "warning", p.Danger)
 		msg := n.Message
 		if msg == "" {
 			msg = a.lastNotice
 		}
-		mu.Text(c, msg).FontSize(13).TextColor(p.Ink).SingleLine().Ellipsis("…").MaxWidth(260)
+		title(msg)
 	}
 }
 
 // noticeActions are a notice's buttons: Undo, Copy, Dismiss.
 func (a *App) noticeActions(c *mu.Context, p theme.Colors) {
 	n, ctl := a.state.Notice, a.d.Dictation
-	if n.Kind == dictation.NoticeCancelled && a.btn(c, p, "overlay.undo", i18n.T("overlay.undo"), btnGhost) && ctl != nil {
+	if n.Kind == dictation.NoticeCancelled && a.button(c, p, "overlay.undo", i18n.T("overlay.undo"), bopt{kind: btnGhost, size: sizeSmall, icon: "undo"}) && ctl != nil {
 		ctl.Undo()
 	}
-	if n.Kind == dictation.NoticeInsertFailed && a.btn(c, p, "overlay.copy", i18n.T("overlay.copy_text"), btnSecondary) {
+	if n.Kind == dictation.NoticeInsertFailed && a.button(c, p, "overlay.copy", i18n.T("overlay.copy_text"), bopt{size: sizeSmall, icon: "copy"}) {
 		c.WriteClipboard(n.Text)
 		if ctl != nil {
 			ctl.Dismiss()
 		}
 	}
 	if (n.Kind == dictation.NoticeInsertFailed || n.Kind == dictation.NoticeError) &&
-		a.iconBtn(c, p, "overlay.dismiss", "close", i18n.T("overlay.dismiss")) && ctl != nil {
+		a.iconBtnSized(c, p, "overlay.dismiss", "close", i18n.T("overlay.dismiss"), 28, 14) && ctl != nil {
 		ctl.Dismiss()
 	}
 }
 
 // previewSlip is the live preview: committed words in ink, the tentative
-// tail in pencil.
+// tail in pencil italic.
 func (a *App) previewSlip(c *mu.Context, p theme.Colors) {
 	if !a.cfg.Overlay.ShowPreview || a.state.Kind != dictation.StateRecording {
 		return
 	}
-	mu.Box(c).MaxWidth(420).Padding(8, 12).Radius(10).Background(p.SheetRaised).Border(1, p.Rule).
-		Shadow(0, 4, 14, 0, p.Shadow.Alpha(0.14)).Role(mu.RoleStatus).Children(func() {
+	raised(mu.Box(c).MaxWidth(420).Padding(14, 18).Radius(12), p).Background(p.Sheet).Role(mu.RoleStatus).Children(func() {
 		if a.committed == "" && a.tentative == "" {
-			mu.Text(c, i18n.T("overlay.preview_loading")).FontSize(13).TextColor(p.Pencil)
+			mu.Text(c, i18n.T("overlay.preview_loading")).Font(theme.Body).Italic().FontSize(17).TextColor(p.Pencil)
 			return
 		}
-		mu.RichText(c, mu.Span{Text: a.committed, Color: p.Ink}, mu.Span{Text: " " + a.tentative, Color: p.Pencil}).
-			Font(theme.Body).FontSize(14).MaxLines(3)
+		mu.RichText(c, mu.Span{Text: a.committed, Color: p.Ink}, mu.Span{Text: " " + a.tentative, Color: p.Pencil, Italic: true}).
+			Font(theme.Body).FontSize(17).LineHeight(24.0 / 17).MaxLines(3)
 	})
 }
 

@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"log"
+	"math"
+	"strings"
 	"time"
 
 	mu "github.com/egoist/mygo/ui"
@@ -10,7 +12,9 @@ import (
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/dictation"
 	"github.com/watzon/sayso/internal/engine"
+	"github.com/watzon/sayso/internal/enhance"
 	"github.com/watzon/sayso/internal/i18n"
+	"github.com/watzon/sayso/internal/platform"
 	"github.com/watzon/sayso/internal/store"
 	"github.com/watzon/sayso/internal/theme"
 )
@@ -28,6 +32,7 @@ func (a *App) dataChanged() {
 	a.home.loaded = false
 	a.hist.loaded = false
 	a.dict.loaded = false
+	a.sty.names = nil
 	a.publish()
 }
 
@@ -76,78 +81,87 @@ func (a *App) homePage(c *mu.Context, p theme.Colors) {
 	a.loadHome()
 	now := a.now()
 	w, _ := c.Size()
-	wide := w >= 1100
-	mu.Row(c).Gap(32).AlignItems(mu.Start).Children(func() {
-		mu.Column(c).Gap(24).Grow(1).Basis(0).Children(func() {
-			mu.Row(c).AlignItems(mu.End).Gap(16).Wrap().Children(func() {
-				mu.Column(c).Gap(6).Grow(1).Basis(480).Children(func() {
-					eyebrow(c, p, i18n.WeekdayDayMonth(now))
-					heading(c, p, greeting(now, a.cfg.General.DisplayName()), 40).Role(mu.RoleHeading)
-				})
-				a.hotkeyHint(c, p)
-			})
-			a.dictateStrip(c, p)
-			rule(c, p)
-			if a.cfg.History.Enabled {
-				a.statsStrip(c, p)
-			} else {
-				a.historyOffCard(c, p)
-			}
-			a.recentList(c, p)
-			if !wide {
-				a.homeSide(c, p)
-			}
+	narrow := w-sidebarWidth < 820
+	greetSize := float32(44)
+	if narrow {
+		greetSize = 36
+	}
+	mu.Row(c).AlignItems(mu.End).Justify(mu.SpaceBetween).Gap(24).Children(func() {
+		mu.Column(c).Gap(10).Grow(1).Basis(0).MinWidth(0).Children(func() {
+			uiText(c, strings.ToUpper(i18n.WeekdayDayMonth(now)), 13, 500, p.Graphite).SingleLine()
+			display(c, p, greeting(now, a.cfg.General.DisplayName()), greetSize).Role(mu.RoleHeading).SingleLine().Ellipsis("…")
 		})
-		if wide {
-			mu.Column(c).Width(300).Gap(20).Children(func() { a.homeSide(c, p) })
+		mu.Box(c).Padding(0, 0, 6, 0).Shrink(0).Children(func() { a.hotkeyHint(c, p) })
+	})
+	if a.Busy() {
+		a.dictateStrip(c, p)
+	}
+	if a.cfg.History.Enabled {
+		a.statsStrip(c, p, narrow)
+	} else {
+		a.historyOffCard(c, p)
+	}
+	body := mu.Row(c).Gap(40).AlignItems(mu.Start)
+	if narrow {
+		body.Column()
+	}
+	body.Children(func() {
+		mu.Column(c).Grow(1).Basis(0).MinWidth(0).Children(func() { a.recentList(c, p) })
+		side := mu.Column(c).Gap(28)
+		if narrow {
+			side.Grow(1)
+		} else {
+			side.Width(300).Shrink(0)
 		}
+		side.Children(func() { a.homeSide(c, p) })
 	})
 }
 
+// hotkeyHint is "Press ⌥ Space anywhere to dictate"; it is also the button
+// that starts and stops a dictation from the hub.
 func (a *App) hotkeyHint(c *mu.Context, p theme.Colors) {
-	mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-		h := a.cfg.Hotkeys.Toggle
-		if h == nil {
-			mu.Text(c, i18n.T("home.hint.no_hotkey")).FontSize(14).TextColor(p.Graphite)
-			if a.btn(c, p, "home.set_hotkey", i18n.T("home.hint.set_hotkey"), btnGhost) {
+	h := a.cfg.Hotkeys.Toggle
+	if h == nil {
+		mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
+			uiText(c, i18n.T("home.hint.no_hotkey"), 14, 400, p.Graphite)
+			if a.link(c, p, "home.set_hotkey", i18n.T("home.hint.set_hotkey"), 14, 500, "") {
 				a.OpenSettings(SecDictation)
 			}
-			return
-		}
-		mu.Text(c, i18n.T("home.hint.press")).FontSize(14).TextColor(p.Graphite)
-		for _, k := range h.Keycaps() {
-			keycap(c, p, k)
-		}
-		mu.Text(c, i18n.T("home.hint.anywhere")).FontSize(14).TextColor(p.Graphite)
+		})
+		return
+	}
+	label := i18n.T("popover.start_dictation")
+	if a.Busy() {
+		label = i18n.T("popover.stop_dictation")
+	}
+	b := mu.ButtonBase(a.k(c, "home.dictate")).Label(label).Gap(8).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+	b.Children(func() {
+		uiText(c, i18n.T("home.hint.press"), 14, 400, p.Graphite)
+		keycaps(c, p, h.Keycaps(), false)
+		uiText(c, i18n.T("home.hint.anywhere"), 14, 400, p.Graphite)
 	})
+	if clicked(c, b) {
+		a.Toggle()
+	}
 }
 
-// dictateStrip starts and stops a dictation from the hub, with the live
-// state beside the button.
+// dictateStrip shows a dictation started from the hub while it runs.
 func (a *App) dictateStrip(c *mu.Context, p theme.Colors) {
-	mu.Row(c).Gap(12).AlignItems(mu.Center).Children(func() {
-		label := i18n.T("popover.start_dictation")
-		if a.Busy() {
-			label = i18n.T("popover.stop_dictation")
-		}
-		if a.btn(c, p, "home.dictate", label, btnPrimary) {
-			a.Toggle()
-		}
-		if a.Busy() {
-			if a.btn(c, p, "home.cancel", i18n.T("styles.cancel"), btnSecondary) {
-				a.CancelDictation()
-			}
-		}
+	debossed(mu.Row(c).Gap(14).Padding(10, 14).Radius(12).AlignItems(mu.Center), p).Children(func() {
 		switch a.state.Kind {
 		case dictation.StateRecording:
-			waveform(c, a.levelsInOrder()[24:], p.Ink).Width(140).Height(24)
-			mu.Text(c, a.elapsedLabel()).Font(theme.Mono).FontSize(13).TextColor(p.Graphite)
+			statusDot(c, p.Accent)
+			waveform(c, a.levelsInOrder()[24:], p.Ink).Grow(1).Height(24)
+			mono(c, a.elapsedLabel(), 12, p.Graphite)
 		case dictation.StateProcessing:
 			mu.Spinner(c)
-			mu.Text(c, a.stageLabel()).FontSize(13).TextColor(p.Graphite)
+			uiText(c, a.stageLabel(), 13, 400, p.Graphite).Grow(1)
 		}
 		if a.incognito {
-			slip(c, p, i18n.T("overlay.incognito"), p.Accent)
+			badge(c, p, i18n.T("overlay.incognito"), toneAccent, "eye")
+		}
+		if a.button(c, p, "home.cancel", i18n.T("styles.cancel"), bopt{size: sizeSmall}) {
+			a.CancelDictation()
 		}
 	})
 }
@@ -170,59 +184,75 @@ func (a *App) stageLabel() string {
 	return i18n.T("overlay.stage.transcribing")
 }
 
-func (a *App) statsStrip(c *mu.Context, p theme.Colors) {
+// statsStrip is the four figures between two rules.
+func (a *App) statsStrip(c *mu.Context, p theme.Colors, narrow bool) {
 	s := a.home.stats
-	stat := func(label, value string, first bool) {
-		col := mu.Column(c).Gap(6).Grow(1).Basis(0)
+	size := float32(40)
+	if narrow {
+		size = 34
+	}
+	cell := func(label string, grow float32, first bool, value func()) {
+		col := mu.Column(c).Gap(6).Grow(grow).Basis(0).MinWidth(0)
 		if !first {
-			col.PaddingStart(20).BorderStartWidth(1).BorderColor(p.Rule)
+			col.PaddingStart(24).BorderStartWidth(1).BorderColor(p.Rule)
 		}
 		col.Children(func() {
-			mu.Text(c, label).FontSize(12.5).TextColor(p.Graphite)
-			if value == "" {
-				mu.Text(c, i18n.T("home.stats.none_yet")).Font(theme.Display).FontSize(22).TextColor(p.Pencil)
-				return
-			}
-			mu.Text(c, value).Font(theme.Display).FontSize(28).FontWeight(600).TextColor(p.Ink).SingleLine()
+			uiText(c, label, 13, 500, p.Graphite).LineHeight(16.0 / 13).SingleLine()
+			value()
 		})
 	}
-	mu.Row(c).Gap(20).Children(func() {
-		stat(i18n.T("home.stats.words_today"), formatCount(s.WordsToday), true)
-		stat(i18n.T("home.stats.time_saved"), i18n.T("home.stats.minutes", "minutes", s.MinutesSavedToday), false)
-		pace := ""
-		if s.PaceWPM > 0 {
-			pace = i18n.T("home.stats.wpm", "wpm", s.PaceWPM)
+	figure := func(v string) func() {
+		return func() {
+			if v == "" {
+				heading(c, p, i18n.T("home.stats.none_yet"), 32).Opacity(0.45).SingleLine()
+				return
+			}
+			display(c, p, v, size).SingleLine()
 		}
-		stat(i18n.T("home.stats.pace"), pace, false)
-		mu.Column(c).Gap(6).Grow(1).Basis(0).PaddingStart(20).BorderStartWidth(1).BorderColor(p.Rule).Children(func() {
-			mu.Text(c, i18n.T("home.stats.this_week")).FontSize(12.5).TextColor(p.Graphite)
-			a.weekBars(c, p, s)
+	}
+	pace := ""
+	if s.PaceWPM > 0 {
+		pace = i18n.T("home.stats.wpm", "wpm", s.PaceWPM)
+	}
+	mu.Row(c).PaddingY(24).BorderWidth(1, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+		cell(i18n.T("home.stats.words_today"), 1, true, figure(formatCount(s.WordsToday)))
+		cell(i18n.T("home.stats.time_saved"), 1, false, figure(i18n.T("home.stats.minutes", "minutes", s.MinutesSavedToday)))
+		cell(i18n.T("home.stats.pace"), 1, false, figure(pace))
+		cell(i18n.T("home.stats.this_week"), 1.3, false, func() {
+			mu.Row(c).AlignItems(mu.End).Gap(12).Children(func() {
+				mu.Box(c).Grow(1).MinWidth(0).Children(figure(formatCount(s.WordsThisWeek)))
+				a.weekBars(c, p, s)
+			})
 		})
 	})
 }
 
+// weekBars are the words of each day this week: today in ink, past days
+// in shade, the days to come a stub.
 func (a *App) weekBars(c *mu.Context, p theme.Colors, s Stats) {
 	most := 1
 	for _, n := range s.WeekByDay {
 		most = max(most, n)
 	}
-	mu.Box(c).Height(36).Label(formatCount(s.WordsThisWeek)).Draw(func(pt *mu.Painter, r mu.Rect) {
-		w := (r.W - 6*4) / 7
+	mu.Box(c).Size(7*8+6*6, 44).Shrink(0).Label(formatCount(s.WordsThisWeek)).Draw(func(pt *mu.Painter, r mu.Rect) {
 		for i, n := range s.WeekByDay {
-			h := max(r.H*float32(n)/float32(most), 2)
-			col := p.Pencil
-			if i == s.TodayIndex {
-				col = p.Ink
+			h, col := float32(6), p.Rule
+			if n > 0 && i <= s.TodayIndex {
+				h = float32(math.Round(float64(6 + 34*float32(n)/float32(most))))
+				col = p.DebossShade
+				if i == s.TodayIndex {
+					col = p.Ink
+				}
 			}
-			pt.Fill(mu.Rect{X: r.X + float32(i)*(w+4), Y: r.Y + r.H - h, W: w, H: h}, col, 2)
+			pt.Fill(mu.Rect{X: r.X + float32(i)*14, Y: r.Y + r.H - h, W: 8, H: h}, col, 3)
 		}
 	})
 }
 
 func (a *App) historyOffCard(c *mu.Context, p theme.Colors) {
 	card(c, p).Children(func() {
-		mu.Text(c, i18n.T("home.history_off.title")).FontSize(15).FontWeight(600).TextColor(p.Ink)
-		mu.Text(c, i18n.T("home.history_off.block_detail")).FontSize(13).TextColor(p.Graphite)
+		uiText(c, i18n.T("home.history_off.title"), 15, 600, p.Ink)
+		uiText(c, i18n.T("home.history_off.block_detail"), 13, 400, p.Graphite)
 		mu.Row(c).Gap(8).Children(func() {
 			if a.btn(c, p, "home.history_on", i18n.T("home.history_off.turn_on"), btnPrimary) {
 				a.cfg.History.Enabled = true
@@ -236,47 +266,81 @@ func (a *App) historyOffCard(c *mu.Context, p theme.Colors) {
 }
 
 func (a *App) recentList(c *mu.Context, p theme.Colors) {
-	mu.Column(c).Gap(8).Children(func() {
-		mu.Row(c).AlignItems(mu.Center).Children(func() {
-			eyebrow(c, p, i18n.T("home.recent.title"))
-			mu.Spacer(c)
-			if len(a.home.recent) > 0 && a.btn(c, p, "home.open_history", i18n.T("home.recent.open_history"), btnGhost) {
-				a.SetPage(PageHistory)
-			}
-		})
-		if len(a.home.recent) == 0 {
-			hk := i18n.T("home.recent.your_hotkey")
-			if h := a.cfg.Hotkeys.Toggle; h != nil {
-				hk = h.CompactLabel()
-			}
-			card(c, p).Children(func() {
-				mu.Text(c, i18n.T("home.recent.empty_title")).FontSize(15).FontWeight(600).TextColor(p.Ink)
-				mu.Text(c, i18n.T("home.recent.empty_body", "hotkey", hk)).FontSize(13).TextColor(p.Graphite)
-			})
-			return
+	mu.Row(c).AlignItems(mu.Center).Padding(0, 0, 8, 0).Children(func() {
+		heading(c, p, i18n.T("home.recent.title"), 22).Role(mu.RoleHeading).Grow(1)
+		if len(a.home.recent) > 0 && a.link(c, p, "home.open_history", i18n.T("home.recent.open_history"), 14, 500, "") {
+			a.SetPage(PageHistory)
 		}
-		mu.Column(c).Radius(12).Background(p.SheetRaised).Border(1, p.Rule).Dividers(1, p.Rule).Clip().Children(func() {
-			for i, e := range a.home.recent {
-				a.recentRow(c, p, i, e)
-			}
-		})
 	})
+	if len(a.home.recent) == 0 {
+		hk := i18n.T("home.recent.your_hotkey")
+		if h := a.cfg.Hotkeys.Toggle; h != nil {
+			hk = h.CompactLabel()
+		}
+		mu.Column(c).Gap(4).PaddingY(16).BorderWidth(1, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+			uiText(c, i18n.T("home.recent.empty_title"), 15, 600, p.Ink)
+			uiText(c, i18n.T("home.recent.empty_body", "hotkey", hk), 13, 400, p.Graphite)
+		})
+		return
+	}
+	mu.Column(c).Role(mu.RoleList).Children(func() {
+		for i, e := range a.home.recent {
+			a.recentRow(c, p, i, e)
+		}
+	})
+}
+
+// clockOf is an entry's time as kit::clock writes it: "9:41", "13:05".
+func (a *App) clockOf(t time.Time) string {
+	return strings.TrimPrefix(t.In(a.now().Location()).Format("15:04"), "0")
+}
+
+// clockOrDay is the time of an entry from today, or its short day.
+func (a *App) clockOrDay(t time.Time) string {
+	now := a.now()
+	l := t.In(now.Location())
+	if y1, m1, d1 := l.Date(); func() bool { y2, m2, d2 := now.Date(); return y1 == y2 && m1 == m2 && d1 == d2 }() {
+		return a.clockOf(t)
+	}
+	return i18n.DayMonthShort(l)
+}
+
+// durationClock is a length as "0:07" or "1:32".
+func durationClock(ms uint64) string {
+	s := (ms + 500) / 1000
+	return fmt.Sprintf("%d:%02d", s/60, s%60)
+}
+
+// entryStyle is the name and ink of the style an entry ran.
+func (a *App) entryStyle(e store.HistoryEntry) (string, string) {
+	id := e.StyleID
+	if id == "" {
+		id = "raw"
+	}
+	if st, ok := a.styles.Get(id); ok {
+		return styleName(st), st.Ink
+	}
+	return id, ""
 }
 
 func (a *App) recentRow(c *mu.Context, p theme.Colors, i int, e store.HistoryEntry) {
 	app := i18n.T("home.recent.unknown_app")
+	bundle := ""
 	if e.App != nil && e.App.Name != "" {
-		app = e.App.Name
+		app, bundle = e.App.Name, e.App.BundleID
 	}
-	r := mu.ButtonBase(a.k(c, fmt.Sprintf("home.recent.%d", i))).Label(app+", "+e.FinalText).
-		Padding(10, 14).Gap(12).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+	r := mu.ButtonBase(a.k(c, fmt.Sprintf("home.recent.%d", i))).Label(app+", "+e.FinalText).Role(mu.RoleListItem).
+		Height(62).PaddingX(4).Gap(14).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Cursor(mu.CursorPointer)
 	if r.Hovered() {
-		r.Background(p.Sheet)
+		r.Background(p.Deboss.Alpha(0.35))
 	}
 	r.Children(func() {
-		mu.Text(c, e.CreatedAt.In(a.now().Location()).Format("15:04")).Font(theme.Mono).FontSize(12).TextColor(p.Pencil).Width(44)
-		mu.Text(c, e.FinalText).Font(theme.Body).FontSize(14).TextColor(p.Ink).SingleLine().Ellipsis("…").Grow(1).Basis(0)
-		mu.Text(c, app).FontSize(12).TextColor(p.Graphite).SingleLine()
+		mono(c, a.clockOrDay(e.CreatedAt), 12, p.Graphite).Width(56).Shrink(0)
+		a.appBadge(c, app, bundle, 28)
+		serif(c, oneLine(e.FinalText), 15, p.Ink).SingleLine().Ellipsis("…").Grow(1).Basis(0).MinWidth(0)
+		name, ink := a.entryStyle(e)
+		styleTag(c, p, name, ink)
+		mono(c, durationClock(e.DurationMs), 12, p.Graphite).Width(36).Shrink(0).TextAlign(mu.End)
 	})
 	if clicked(c, r) {
 		a.hist.selected = e.ID
@@ -284,38 +348,113 @@ func (a *App) recentRow(c *mu.Context, p theme.Colors, i int, e store.HistoryEnt
 	}
 }
 
+// oneLine joins the lines of a text for a one-line row.
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
 // homeSide is the Default Style card and the checklist.
 func (a *App) homeSide(c *mu.Context, p theme.Colors) {
+	a.defaultStyleCard(c, p)
+	items := a.checklist()
+	all := true
+	for _, it := range items {
+		all = all && it.ok
+	}
+	head := i18n.T("home.checklist.needs_attention")
+	if all {
+		head = i18n.T("home.checklist.all_set")
+	}
+	mu.Column(c).PaddingX(4).Gap(12).Children(func() {
+		caps(c, p, head)
+		mu.Column(c).Gap(10).Children(func() {
+			for _, it := range items {
+				a.checkRow(c, p, it)
+			}
+		})
+	})
+}
+
+// defaultStyleCard is the default style on its stack of cards.
+func (a *App) defaultStyleCard(c *mu.Context, p theme.Colors) {
 	st, _ := a.styles.Get(a.ActiveStyle())
-	card(c, p).Children(func() {
-		eyebrow(c, p, i18n.T("home.style.default"))
-		if st != nil {
-			mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-				seal(c, st.Ink, p)
-				mu.Text(c, styleName(st)).Font(theme.Display).FontSize(20).FontWeight(600).TextColor(p.Ink)
+	mu.Column(c).Padding(10, 0, 0, 0).Children(func() {
+		under := theme.Over(p.Sheet, p.Deboss, 0.5)
+		mu.Box(c).Absolute().Top(0).Left(14).Right(14).Height(40).Radius(12).Background(p.Deboss).Shadow(0, 1, 2, 0, p.ShadowA(0.10))
+		mu.Box(c).Absolute().Top(5).Left(7).Right(7).Height(40).Radius(12).Background(under).Shadow(0, 1, 2, 0, p.ShadowA(0.10))
+		mu.Column(c).ZIndex(1).Padding(18, 20).Gap(12).Radius(12).Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).
+			Shadow(0, 1, 2, 0, p.ShadowA(0.14)).Shadow(0, 10, 26, 0, p.ShadowA(0.12)).Children(func() {
+			mu.Row(c).Height(22).AlignItems(mu.Center).Children(func() {
+				caps(c, p, i18n.T("home.style.default")).Grow(1)
+				if st != nil && st.UsesAI() && a.cfg.AI.Enabled {
+					if prov, ok := a.defaultProvider(); ok {
+						if prov.IsCloud() {
+							badge(c, p, i18n.T("hub.place.cloud"), toneAccent, "cloud")
+						} else {
+							badge(c, p, i18n.T("hub.place.local"), toneMuted, "")
+						}
+					}
+				}
 			})
-			mu.Text(c, styleDescription(st)).FontSize(13).TextColor(p.Graphite)
-			mu.Text(c, a.styleRoute(st)).FontSize(12).TextColor(p.Pencil)
-		}
-		if a.btn(c, p, "home.change_style", i18n.T("home.style.change"), btnSecondary) {
-			a.SetPage(PageStyles)
-		}
+			if st != nil {
+				display(c, p, styleName(st), 28).LineHeight(30.0 / 28)
+				uiText(c, a.styleDetail(st), 14, 400, p.Graphite).LineHeight(20.0 / 14)
+			}
+			mu.Row(c).Gap(6).Padding(4, 0, 0, 0).AlignItems(mu.Center).Children(func() {
+				if a.button(c, p, "home.change_style", i18n.T("home.style.change"), bopt{size: sizeSmall}) {
+					a.SetPage(PageStyles)
+				}
+				if h := a.cfg.Hotkeys.CycleStyle; h != nil {
+					mu.Box(c).Label(i18n.T("home.style.cycle_hotkey")).Children(func() {
+						keycapStack(mu.Box(c).Height(22).PaddingX(6).Radius(5).Justify(mu.Center).AlignItems(mu.Center), p).Children(func() {
+							mono(c, h.CompactLabel(), 11, p.Ink)
+						})
+					})
+				}
+			})
+		})
 	})
-	card(c, p).Gap(4).Children(func() {
-		items := a.checklist()
-		all := true
-		for _, it := range items {
-			all = all && it.ok
+}
+
+// styleDetail is a style's description and where it runs, as one paragraph.
+func (a *App) styleDetail(st *enhance.Style) string {
+	desc := styleDescription(st)
+	var where string
+	switch {
+	case !st.UsesAI():
+		where = i18n.T("home.style.detail_no_ai", "computer", computer())
+	case !a.cfg.AI.Enabled:
+		where = i18n.T("home.style.detail_needs_provider")
+	default:
+		prov, ok := a.defaultProvider()
+		switch {
+		case !ok:
+			where = i18n.T("home.style.detail_needs_provider")
+		case prov.NeedsModel():
+			where = i18n.T("home.style.detail_needs_model", "provider", prov.Name)
+		case prov.IsCloud():
+			where = i18n.T("home.style.detail_cloud", "provider", prov.Name, "model", prov.ModelName())
+		default:
+			where = i18n.T("home.style.detail_local", "computer", computer(), "provider", prov.Name, "model", prov.ModelName())
 		}
-		head := i18n.T("home.checklist.needs_attention")
-		if all {
-			head = i18n.T("home.checklist.all_set")
+	}
+	if desc == "" {
+		return where
+	}
+	return desc + " " + where
+}
+
+// micDetail is the microphone in use, or detail when it is not known.
+func (a *App) micDetail(detail string) string {
+	if detail == "" {
+		return ""
+	}
+	if a.cfg.Audio.InputDevice != nil {
+		for _, d := range a.audioDevices() {
+			if d.ID == platform.NormalizeDeviceID(*a.cfg.Audio.InputDevice) {
+				return d.Name
+			}
 		}
-		eyebrow(c, p, head)
-		for _, it := range items {
-			a.checkRow(c, p, it)
-		}
-	})
+	}
+	return detail
 }
 
 type checkItem struct {
@@ -358,47 +497,28 @@ func (a *App) checklist() []checkItem {
 	case engine.StateDownloading:
 		modelDetail = i18n.T("home.checklist.downloading", "percent", int(ms.Fraction*100))
 	}
-	engineDetail := i18n.T("app.engine.ready")
-	if !a.engineRunning() {
-		engineDetail = i18n.T("home.checklist.engine_stopped")
-	}
 	return []checkItem{
-		{"home.check.mic", i18n.T("home.checklist.microphone"), allowed(perm.mic), perm.mic, i18n.T("home.checklist.allow"), request("microphone")},
+		{"home.check.mic", i18n.T("home.checklist.microphone"), a.micDetail(allowed(perm.mic)), perm.mic, i18n.T("home.checklist.allow"), request("microphone")},
 		{"home.check.ax", i18n.TOS("os.permission.accessibility", nil), allowed(perm.ax), perm.ax, i18n.T("home.checklist.allow"), request("accessibility")},
 		{"home.check.model", i18n.T("home.checklist.model"), modelDetail, ms.IsOnDisk(), i18n.T("home.checklist.open_models"), func() { a.SetPage(PageModels) }},
 		{"home.check.dictionary", i18n.T("home.checklist.dictionary"), i18n.T("home.checklist.dictionary_summary",
 			"words", i18n.TP("home.checklist.words", a.home.words, nil), "rules", i18n.TP("home.checklist.rules", a.home.rules, nil)),
 			a.home.words > 0, i18n.T("home.checklist.add_words"), func() { a.SetPage(PageDictionary) }},
-		{"home.check.engine", i18n.T("home.checklist.engine"), engineDetail, a.engineRunning(), "", nil},
 	}
 }
 
 func (a *App) checkRow(c *mu.Context, p theme.Colors, it checkItem) {
-	mu.Row(c).Gap(10).Padding(6, 0).AlignItems(mu.Center).Children(func() {
-		mark, col := "warning", p.Danger
-		if it.ok {
-			mark, col = "check", p.Success
-		}
-		mu.Icon(c, icon(mark)).FontSize(15).TextColor(col)
-		mu.Column(c).Gap(1).Grow(1).Basis(0).Children(func() {
-			mu.Text(c, it.title).FontSize(13.5).FontWeight(500).TextColor(p.Ink)
-			if it.detail != "" {
-				mu.Text(c, it.detail).FontSize(12).TextColor(p.Graphite).SingleLine().Ellipsis("…")
+	mu.Row(c).Gap(10).AlignItems(mu.Center).Label(it.title).Children(func() {
+		checkDot(c, p, it.ok)
+		uiText(c, it.title, 14, 400, p.Ink).LineHeight(18.0 / 14).Grow(1).Basis(0).SingleLine()
+		if !it.ok && it.do != nil {
+			if a.link(c, p, it.key, it.action, 13, 500, "") {
+				it.do()
 			}
-		})
-		if !it.ok && it.do != nil && a.btn(c, p, it.key, it.action, btnGhost) {
-			it.do()
+			return
 		}
+		uiText(c, it.detail, 13, 400, p.Graphite).SingleLine().Ellipsis("…").MaxWidth(170).TextAlign(mu.End)
 	})
-}
-
-// seal is a style's ink dot.
-func seal(c *mu.Context, hex string, p theme.Colors) {
-	col := p.Ink
-	if rgb, ok := theme.ParseRgb(hex); ok {
-		col = theme.UIColor(rgb)
-	}
-	mu.Box(c).Size(12, 12).Radius(99).Background(col)
 }
 
 // styleRoute is where a style runs, as one line.

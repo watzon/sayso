@@ -25,6 +25,27 @@ type Colors struct {
 	Success, Shadow                        ui.Color
 }
 
+// ShadowA is the paper's shadow color at alpha a. Dark paper needs deeper
+// shadows to read, so a is tripled there, up to .7 (Rust paper.rs).
+func (c Colors) ShadowA(a float32) ui.Color {
+	if c.Dark {
+		return c.Shadow.Alpha(min(a*3, 0.7))
+	}
+	return c.Shadow.Alpha(a)
+}
+
+// Highlight is the white catch-light on a paper edge at alpha a; on dark
+// paper it is a faint .07 of that.
+func (c Colors) Highlight(a float32) ui.Color {
+	if c.Dark {
+		return ui.RGBA(255, 255, 255, a*0.07)
+	}
+	return ui.RGBA(255, 255, 255, a)
+}
+
+// Over composites top at alpha a over the opaque base (the under-sheets).
+func Over(base, top ui.Color, a float32) ui.Color { return base.Mix(top, a) }
+
 // UIColor converts an Rgb to a MyGo color.
 func UIColor(c Rgb) ui.Color { return ui.RGB(c.R(), c.G(), c.B()) }
 

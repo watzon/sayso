@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -92,11 +93,12 @@ type fakeShell struct {
 	hub     int
 	quit    bool
 	theme   config.ThemeMode
-	redraws int
+	// redraws is atomic: background loaders (Keychain, storage) redraw too.
+	redraws atomic.Int64
 }
 
 func newFakeShell() *fakeShell                         { return &fakeShell{shown: map[Window]bool{}} }
-func (s *fakeShell) Invalidate()                       { s.redraws++ }
+func (s *fakeShell) Invalidate()                       { s.redraws.Add(1) }
 func (s *fakeShell) ShowHub()                          { s.hub++ }
 func (s *fakeShell) ShowOverlay(show bool)             { s.overlay = show }
 func (s *fakeShell) ShowWindow(w Window, show bool)    { s.shown[w] = show }
@@ -209,6 +211,16 @@ func pressLast(t *testing.T, tt *mu.Tester, name string) {
 		t.Fatalf("no control named %q", name)
 	}
 	tt.ClickAt(hit.Bounds.X+hit.Bounds.W/2, hit.Bounds.Y+hit.Bounds.H/2)
+}
+
+// controlBounds is the box of the first control with an accessible name.
+func controlBounds(tt *mu.Tester, name string) (mu.Rect, bool) {
+	for _, a := range tt.AccessAll() {
+		if a.Name == name && a.Role != mu.RoleText && a.Role != mu.RoleNone {
+			return a.Bounds, true
+		}
+	}
+	return mu.Rect{}, false
 }
 
 func hasControl(tt *mu.Tester, name string) bool {
