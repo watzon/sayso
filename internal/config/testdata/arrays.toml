@@ -1,0 +1,18 @@
+[ai.style_rules]
+enabled = true
+[[ai.style_rules.rules]]
+style = "email"
+apps = ["a", "b"]
+[[ai.agents]]
+id = "oc"
+name = "O"
+command = "x"
+args = ["acp", "--x"]
+[[speech.providers]]
+id = "c"
+name = "C"
+kind = "open_ai_compatible"
+base_url = "http://localhost:1/v1"
+models = ["m1", "m2"]
+[style_hotkeys]
+bad = ["a", "b"]

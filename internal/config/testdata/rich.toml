@@ -1,0 +1,105 @@
+[general]
+name = "Chris"
+language = "de"
+
+[hotkeys]
+toggle = "right_option"
+push_to_talk = "ctrl+opt+d"
+cancel = "single_escape"
+incognito = "ctrl+shift+i"
+enter_sends = true
+
+[style_hotkeys]
+email = "ctrl+opt+e"
+notes = "ctrl+banana"
+raw = 3
+message = ""
+
+[dictation]
+language = "auto"
+model = "openai:gpt-4o-transcribe"
+preview_model = "parakeet-eou-120m"
+keep_model_minutes = 15
+
+[insertion]
+type_in_apps = ["com.a.b", "com.c.d"]
+
+[audio]
+input_device = "USB Mic"
+pause_media = true
+
+[sounds]
+volume = 1
+
+[ai]
+enabled = true
+default_provider = "openrouter"
+
+[[ai.providers]]
+id = "openrouter"
+name = "OpenRouter"
+kind = "open_ai_compatible"
+base_url = "https://openrouter.ai/api/v1"
+model = "openai/gpt-5-mini"
+api_key_account = "openrouter"
+zero_data_retention = true
+thinking = "low"
+
+[[ai.providers]]
+id = "codex"
+name = "Codex CLI"
+kind = "codex_cli"
+path = "/usr/local/bin/codex"
+model = "gpt-5"
+thinking = "medium"
+
+[[ai.providers]]
+id = "future"
+name = "Future"
+kind = "quantum_llm"
+zeta = 1
+alpha = "x"
+
+[[ai.cleanup_models]]
+id = "tidy"
+name = "Tidy"
+model = "cleanup-small"
+
+[[ai.agents]]
+id = "oc"
+name = "OpenCode"
+command = "opencode"
+args = ["acp"]
+secret_env = ["API_KEY"]
+env = { B = "2", A = "1" }
+registry = { id = "opencode", version = "1.2.3" }
+
+[ai.style_rules]
+enabled = true
+seeded = true
+
+[[ai.style_rules.rules]]
+style = "email"
+apps = ["com.apple.mail"]
+
+[[speech.providers]]
+id = "openai"
+name = "OpenAI"
+kind = "open_ai"
+api_key_account = "speech.openai"
+models = ["gpt-x"]
+
+[history]
+keep_text_days = 90
+keep_audio_days = 7
+
+[appearance]
+ink = "#AABBCC"
+reduce_motion = true
+
+[advanced]
+log_level = "debug"
+
+[onboarding]
+completed = true
+step = 6

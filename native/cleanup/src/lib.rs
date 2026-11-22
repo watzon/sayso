@@ -2,7 +2,7 @@
 //!
 //! It knows no cleanup model. It loads one GGUF file with llama.cpp and
 //! completes raw text with greedy decoding. The protocol types are in
-//! `sayso_core::cleanup::protocol`. See `NOTES.md`.
+//! `sayso_cleanup_models::protocol`. See `NOTES.md`.
 
 pub mod runtime;
 pub mod serve;

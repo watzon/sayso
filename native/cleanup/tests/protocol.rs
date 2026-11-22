@@ -3,7 +3,7 @@
 mod common;
 
 use common::Session;
-use sayso_core::cleanup::protocol::{ErrorCode, PROTOCOL_VERSION, Reply, Request};
+use sayso_cleanup_models::protocol::{ErrorCode, PROTOCOL_VERSION, Reply, Request};
 
 fn assert_error(reply: Reply, expected: ErrorCode) {
     match reply {

@@ -1,0 +1,86 @@
+[
+ {
+  "in": "plain",
+  "toml": "plain = \"plain\"\n"
+ },
+ {
+  "in": "it's",
+  "toml": "\"it's\" = \"it's\"\n"
+ },
+ {
+  "in": "say \"hi\"",
+  "toml": "'say \"hi\"' = 'say \"hi\"'\n"
+ },
+ {
+  "in": "C:\\Users\\x",
+  "toml": "'C:\\Users\\x' = 'C:\\Users\\x'\n"
+ },
+ {
+  "in": "it's \"q\"",
+  "toml": "\"it's \\\"q\\\"\" = \"\"\"it's \"q\"\"\"\"\n"
+ },
+ {
+  "in": "a\nb",
+  "toml": "\"a\\nb\" = \"\"\"\na\nb\"\"\"\n"
+ },
+ {
+  "in": "a\nb \"q\" it's",
+  "toml": "\"a\\nb \\\"q\\\" it's\" = \"\"\"\na\nb \"q\" it's\"\"\"\n"
+ },
+ {
+  "in": "back\\slash it's",
+  "toml": "\"back\\\\slash it's\" = '''back\\slash it's'''\n"
+ },
+ {
+  "in": "tab\there",
+  "toml": "\"tab\\there\" = \"tab\\there\"\n"
+ },
+ {
+  "in": "bell\u0007",
+  "toml": "\"bell\\u0007\" = \"bell\\u0007\"\n"
+ },
+ {
+  "in": "'''x",
+  "toml": "\"'''x\" = \"'''x\"\n"
+ },
+ {
+  "in": "x'''y\nz",
+  "toml": "\"x'''y\\nz\" = \"\"\"\nx'''y\nz\"\"\"\n"
+ },
+ {
+  "in": "\"\"\"",
+  "toml": "'\"\"\"' = '\"\"\"'\n"
+ },
+ {
+  "in": "ends\"",
+  "toml": "'ends\"' = 'ends\"'\n"
+ },
+ {
+  "in": "a\r\nb",
+  "toml": "\"a\\r\\nb\" = \"\"\"\na\\r\nb\"\"\"\n"
+ },
+ {
+  "in": "",
+  "toml": "\"\" = \"\"\n"
+ },
+ {
+  "in": "k e y",
+  "toml": "\"k e y\" = \"k e y\"\n"
+ },
+ {
+  "in": "é ü",
+  "toml": "\"é ü\" = \"é ü\"\n"
+ },
+ {
+  "in": "del",
+  "toml": "\"del\\u007F\" = \"del\\u007F\"\n"
+ },
+ {
+  "in": "multi\n\"\"\"\n",
+  "toml": "\"multi\\n\\\"\\\"\\\"\\n\" = '''\nmulti\n\"\"\"\n'''\n"
+ },
+ {
+  "in": "both ' and \\ and \"",
+  "toml": "\"both ' and \\\\ and \\\"\" = '''both ' and \\ and \"'''\n"
+ }
+]

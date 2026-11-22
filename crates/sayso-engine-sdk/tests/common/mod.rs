@@ -16,7 +16,7 @@ fn workspace_root() -> PathBuf {
 /// 1. The program in `SAYSO_ENGINE`, for example the engine of a release file.
 /// 2. macOS: the Swift engine, built with `swift build -c release` when it is not there.
 /// 3. Linux and Windows: `sayso-engine` of this workspace, built with
-///    `cargo build -p sayso-engine --no-default-features`. That build needs no GPU toolchain
+///    `CGO_ENABLED=0 go build ./cmd/sayso-engine`. That build needs no GPU toolchain
 ///    and no parakeet.cpp. The engine is GPL, so the SDK (MIT) has no dependency on it:
 ///    the tests only run its program.
 pub fn engine_program() -> &'static Path {
@@ -25,7 +25,7 @@ pub fn engine_program() -> &'static Path {
         if let Some(program) = std::env::var_os("SAYSO_ENGINE") {
             return PathBuf::from(program);
         }
-        if cfg!(target_os = "macos") { build_swift_engine() } else { build_rust_engine() }
+        if cfg!(target_os = "macos") { build_swift_engine() } else { build_go_engine() }
     })
 }
 
@@ -39,21 +39,26 @@ fn build_swift_engine() -> PathBuf {
     program.canonicalize().expect("the Swift engine exists after the build")
 }
 
-fn build_rust_engine() -> PathBuf {
-    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let output = Command::new(cargo)
-        .args(["build", "-p", "sayso-engine", "--no-default-features", "--message-format=json-render-diagnostics"])
+fn build_go_engine() -> PathBuf {
+    let go = std::env::var_os("GO").unwrap_or_else(|| "go".into());
+    let target_dir = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace_root().join("target"));
+    std::fs::create_dir_all(&target_dir).expect("cannot create target dir for sayso-engine");
+    let mut out = target_dir.join("sayso-engine");
+    if cfg!(windows) {
+        out.set_extension("exe");
+    }
+    let status = Command::new(go)
+        .args(["build", "-o"])
+        .arg(&out)
+        .arg("./cmd/sayso-engine")
+        .env("CGO_ENABLED", "0")
         .current_dir(workspace_root())
-        .stderr(std::process::Stdio::inherit())
-        .output()
-        .expect("cannot run cargo");
-    assert!(output.status.success(), "cargo build -p sayso-engine failed");
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|message| message["reason"] == "compiler-artifact" && message["target"]["name"] == "sayso-engine")
-        .find_map(|message| message["executable"].as_str().map(PathBuf::from))
-        .expect("cargo built no sayso-engine program")
+        .status()
+        .expect("cannot run go; install Go or set SAYSO_ENGINE");
+    assert!(status.success(), "go build ./cmd/sayso-engine failed");
+    out.canonicalize().expect("the Go engine exists after the build")
 }
 
 /// Start the engine with an empty models folder. Keep the folder as long as the engine runs.

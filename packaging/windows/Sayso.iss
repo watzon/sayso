@@ -42,7 +42,7 @@ UninstallDisplayIcon={app}\Sayso.exe
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-; Sayso holds this mutex while it runs (sayso-platform-windows, window.rs).
+; Sayso holds this mutex while it runs (internal/platform).
 ; Setup asks the user to quit Sayso first.
 AppMutex=Local\dev.sayso.Sayso.instance
 CloseApplications=yes
@@ -84,8 +84,6 @@ Filename: "{app}\Sayso.exe"; Description: "{cm:LaunchProgram,Sayso}"; Flags: now
 ; Quit a running Sayso, so its files can be removed.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM Sayso.exe /F"; Flags: runhidden; RunOnceId: "QuitSayso"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-engine.exe /F"; Flags: runhidden; RunOnceId: "QuitEngine"
-Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-engine-avx.exe /F"; Flags: runhidden; RunOnceId: "QuitEngineAvx"
-Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-engine-baseline.exe /F"; Flags: runhidden; RunOnceId: "QuitEngineBaseline"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanup"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup-avx.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanupAvx"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup-baseline.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanupBaseline"

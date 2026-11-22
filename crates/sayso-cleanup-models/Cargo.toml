@@ -14,7 +14,6 @@ serde.workspace = true
 thiserror.workspace = true
 regex.workspace = true
 whatlang = "0.18"
-workspace-hack.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

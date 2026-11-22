@@ -4,13 +4,17 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Debug       debug app (faster), release engine
 #   powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer   also dist\Sayso-<version>-windows-x64-setup.exe
 #
-# The folder holds Sayso.exe, the speech engine sayso-engine.exe with its AVX and
-# baseline builds (sayso-engine-avx.exe, sayso-engine-baseline.exe) and the
-# sherpa-onnx and ONNX Runtime DLLs, the cleanup runtime sayso-cleanup.exe with
-# its AVX and baseline builds (sayso-cleanup-avx.exe, sayso-cleanup-baseline.exe),
-# the runtime files they need (the Visual C++ runtime), and the licenses. It runs from where it is, so it is
-# also the portable build. The installer needs Inno Setup 6 (ISCC.exe on PATH,
-# or in its default folder). Set SAYSO_BUNDLE_DIR to use another folder.
+# The folder holds Sayso.exe (Go, CGO_ENABLED=0), the speech engine
+# sayso-engine.exe (Go), the native libraries that the engine loads at run time
+# (sherpa-onnx, ONNX Runtime, whisper.cpp, ggml: DLLs), the cleanup runtime
+# sayso-cleanup.exe with its AVX and baseline builds (sayso-cleanup-avx.exe,
+# sayso-cleanup-baseline.exe), the Visual C++ runtime, and the licenses. It runs
+# from where it is, so it is also the portable build. The installer needs Inno
+# Setup 6 (ISCC.exe on PATH, or in its default folder). Set SAYSO_BUNDLE_DIR to
+# use another folder.
+#
+# SAYSO_NATIVE_LIBS_DIR is the folder with the engine's DLLs (every *.dll in it
+# is copied beside the engine). It is required for a release build.
 #
 # Signing: set SAYSO_SIGN_CERT to a .pfx file and SAYSO_SIGN_PASSWORD to its
 # password, and the exes and the installer are signed with signtool. Without
@@ -24,7 +28,6 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
-$profile = if ($Debug) { 'debug' } else { 'release' }
 
 function Invoke-Checked([string]$what, [scriptblock]$block) {
     Write-Host "==> $what"
@@ -32,17 +35,13 @@ function Invoke-Checked([string]$what, [scriptblock]$block) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" }
 }
 
-# CMake, Ninja, and libclang for the speech engine and the cleanup runtime.
+$env:CGO_ENABLED = '0'
+# CMake, Ninja, and libclang for the cleanup runtime (llama.cpp).
 . (Join-Path $PSScriptRoot 'windows-env.ps1')
-# ggml (whisper.cpp in the engine, llama.cpp in the cleanup runtime) compiles
-# its kernels for one instruction set, and a processor without it stops the
-# program (issue #37). So each of the two has three builds, each in its own
-# target folder: AVX2 (with FMA, F16C, and BMI2), AVX, and x86-64 only. The
-# app starts the best one that the processor runs (crates\sayso-core\src\cpu.rs).
-# whisper-rs-sys and llama-cpp-sys-2 pass GGML_* variables to CMake; with
-# GGML_NATIVE off, ggml turns all of these on. GGML_NATIVE is off for every
-# build, so the AVX2 build does not take the instructions of the build machine
-# (whisper-rs-sys leaves it on, and MSVC then tests the CPU of the machine).
+# ggml in llama.cpp compiles its kernels for one instruction set, and a
+# processor without it stops the program (issue #37). So the cleanup runtime has
+# three builds, each in its own target folder: AVX2 (with FMA, F16C, and BMI2),
+# AVX, and x86-64 only. The app starts the best one that the processor runs.
 $avxOff = @('GGML_AVX2', 'GGML_FMA', 'GGML_F16C', 'GGML_BMI2')
 $baselineOff = @('GGML_SSE42', 'GGML_AVX') + $avxOff
 function Invoke-Builds([string]$what, [object[]]$builds, [scriptblock]$cargo) {
@@ -56,21 +55,6 @@ function Invoke-Builds([string]$what, [object[]]$builds, [scriptblock]$cargo) {
         }
     }
 }
-# whisper.cpp is slow in a debug build, so the engine is always a release build.
-$engineBuilds = @(
-    @{ Name = 'sayso-engine.exe'; Dir = 'target'; Off = @() },
-    @{ Name = 'sayso-engine-avx.exe'; Dir = 'target\engine-avx'; Off = $avxOff },
-    @{ Name = 'sayso-engine-baseline.exe'; Dir = 'target\engine-baseline'; Off = $baselineOff }
-)
-# whisper-rs-sys does not run its build script again when a GGML_* variable
-# changes, so a whisper.cpp built before in the folder (by cargo build, or from
-# the CI cache) would keep its instructions. Build it again each time.
-Invoke-Builds 'engine' $engineBuilds {
-    param($dir)
-    cargo clean -p whisper-rs-sys --release --target-dir $dir
-    if ($LASTEXITCODE -ne 0) { return }
-    cargo build -p sayso-engine --release --target-dir $dir
-}
 # llama.cpp is slow in a debug build, so the runtime is always a release build.
 $cleanupBuilds = @(
     @{ Name = 'sayso-cleanup.exe'; Dir = 'native\cleanup\target'; Off = @() },
@@ -78,33 +62,36 @@ $cleanupBuilds = @(
     @{ Name = 'sayso-cleanup-baseline.exe'; Dir = 'native\cleanup\target\baseline'; Off = $baselineOff }
 )
 Invoke-Builds 'cleanup runtime' $cleanupBuilds { param($dir) cargo build --release --manifest-path native\cleanup\Cargo.toml --target-dir $dir }
+
+$buildDir = Join-Path $root 'build'
+New-Item -ItemType Directory -Force $buildDir | Out-Null
 if ($Debug) {
-    Invoke-Checked 'app (cargo, debug)' { cargo build -p sayso-app }
+    Invoke-Checked 'app (go, debug)' { go build -o build\sayso.exe .\cmd\sayso }
 } else {
-    Invoke-Checked 'app (cargo, release)' { cargo build -p sayso-app --release }
+    # -H=windowsgui makes a GUI program with no console window.
+    Invoke-Checked 'app (go, release)' { go build -tags mygo_noinspector -ldflags='-s -w -H=windowsgui' -o build\sayso.exe .\cmd\sayso }
 }
+Invoke-Checked 'engine (go, release)' { go build -ldflags='-s -w' -o build\sayso-engine.exe .\cmd\sayso-engine }
 
 $bundle = if ($env:SAYSO_BUNDLE_DIR) { $env:SAYSO_BUNDLE_DIR } else { Join-Path $root 'build\windows' }
 $app = Join-Path $bundle 'Sayso'
 if (Test-Path $app) { Remove-Item -Recurse -Force $app }
 New-Item -ItemType Directory -Force $app | Out-Null
 
-Copy-Item "target\$profile\sayso.exe" (Join-Path $app 'Sayso.exe')
-# The app finds the engine builds next to its exe (crates\sayso-engine-client\src\client.rs).
-foreach ($build in $engineBuilds) {
-    Copy-Item (Join-Path $build.Dir 'release\sayso-engine.exe') (Join-Path $app $build.Name)
+Copy-Item 'build\sayso.exe' (Join-Path $app 'Sayso.exe')
+# The app finds the engine next to its exe.
+Copy-Item 'build\sayso-engine.exe' (Join-Path $app 'sayso-engine.exe')
+# The engine loads its native libraries from its own folder.
+if ($env:SAYSO_NATIVE_LIBS_DIR) {
+    Get-ChildItem $env:SAYSO_NATIVE_LIBS_DIR -Filter '*.dll' | Copy-Item -Destination $app
+} elseif (-not $Debug) {
+    throw 'set SAYSO_NATIVE_LIBS_DIR to the folder with the engine DLLs (sherpa-onnx, onnxruntime, whisper, ggml)'
 }
-# sherpa-onnx comes as DLLs on Windows (crates\sayso-engine\Cargo.toml). Its
-# build script downloads them with their import libraries; ship every DLL of
-# that folder beside the engine.
-$sherpaApi = Get-ChildItem 'target\sherpa-onnx-prebuilt' -Recurse -Filter 'sherpa-onnx-c-api.dll' | Select-Object -First 1
-if (-not $sherpaApi) { throw 'sherpa-onnx-c-api.dll was not found in target\sherpa-onnx-prebuilt' }
-Get-ChildItem $sherpaApi.DirectoryName -Filter '*.dll' | Copy-Item -Destination $app
-# The app finds the cleanup runtime next to its exe (crates\sayso-cleanup-client\src\runtime.rs).
+# The app finds the cleanup runtime next to its exe .
 foreach ($build in $cleanupBuilds) {
     Copy-Item (Join-Path $build.Dir 'release\sayso-cleanup.exe') (Join-Path $app $build.Name)
 }
-# The three exes need the Visual C++ runtime. Ship it beside them (app-local), so
+# The cleanup exes need the Visual C++ runtime. Ship it beside them (app-local), so
 # the app also runs where vc_redist is not installed.
 $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
@@ -114,11 +101,11 @@ foreach ($dll in 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvc
     Copy-Item (Join-Path $crt.FullName $dll) $app
 }
 Copy-Item LICENSE (Join-Path $app 'LICENSE.txt')
-Copy-Item crates\sayso-ui\assets\fonts\licenses -Recurse (Join-Path $app 'licenses')
-# whisper.cpp in the engine is ggml's code, under ggml's MIT License. sherpa-onnx
+New-Item -ItemType Directory -Force (Join-Path $app 'licenses') | Out-Null
+# whisper.cpp is ggml's code, under ggml's MIT License. sherpa-onnx
 # (Apache-2.0) and ONNX Runtime (MIT) come as the DLLs above.
 foreach ($name in 'ggml.txt', 'sherpa-onnx.txt', 'onnxruntime.txt') {
-    Copy-Item (Join-Path crates\sayso-engine\licenses $name) (Join-Path $app 'licenses')
+    Copy-Item (Join-Path packaging\licenses $name) (Join-Path $app 'licenses')
 }
 
 function Sign-File([string]$path) {
@@ -132,7 +119,7 @@ function Sign-File([string]$path) {
     if ($LASTEXITCODE -ne 0) { throw "signing $path failed" }
 }
 Sign-File (Join-Path $app 'Sayso.exe')
-foreach ($build in $engineBuilds) { Sign-File (Join-Path $app $build.Name) }
+Sign-File (Join-Path $app 'sayso-engine.exe')
 foreach ($build in $cleanupBuilds) { Sign-File (Join-Path $app $build.Name) }
 Write-Host "==> app folder: $app"
 

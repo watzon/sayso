@@ -1,8 +1,9 @@
 name: CI
 
-# A push runs only the dependency-rule check, which needs no build and takes seconds.
+# Every push and pull request runs the dependency rules, the Go tests (CGO_ENABLED=0),
+# the Rust SDK tests (cargo test --workspace), and the TypeScript SDK tests (pnpm test).
 # A change to only documents (Markdown, docs/, the license, the funding file) runs nothing.
-# The test suite builds GPUI and takes minutes, so it runs only when you start it:
+# The slow jobs (cleanup runtime, engine files) run only when you start them:
 #   gh workflow run ci.yml
 on:
   push:
@@ -36,72 +37,49 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      # cargo-hakari checks that workspace-hack is current. It resolves the
-      # dependencies, but builds nothing.
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-hakari@0.9.39
-      # The other rules read only the manifests (cargo metadata --no-deps).
+      # The rules read only the manifests (cargo metadata --no-deps).
       - name: Check the dependency rules
         run: RUSTUP_TOOLCHAIN=stable scripts/check-deps.sh
-      # The translated system files must match the system catalogs.
-      - name: Check the translated system files
-        run: python3 scripts/i18n-system-files.py --check
       # The Rust code in docs/sdk-guide must be the code of the examples that CI compiles.
       - name: Check the code of the SDK guide
         run: python3 scripts/check-sdk-guide.py
 
-  test:
-    name: Tests and clippy (manual)
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: macos-26
-    timeout-minutes: 60
+  go:
+    name: Go tests, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, ubuntu-24.04, windows-2025]
+    env:
+      CGO_ENABLED: '0'
     steps:
       - uses: actions/checkout@v4
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Vet
+        run: go vet ./internal/... ./cmd/...
       - name: Test
-        run: cargo test --workspace
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      # The Rust engine and the fake engine run the suite in cargo test. The
-      # Swift engine is not a Cargo crate, so it runs the suite here.
-      - name: Engine conformance, Swift engine
-        run: |
-          swift build -c release --package-path native/macos/SaysoEngine
-          cargo run -q -p sayso-engine-conformance -- native/macos/SaysoEngine/.build/release/SaysoEngine \
-            --model parakeet-tdt-v2 --engine-json '{"kind":"parakeet_tdt","version":"v2"}' \
-            --store silero-vad '{"kind":"fluid_vad"}'
-
-  test-linux:
-    name: Tests and clippy, Linux (manual)
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install the build packages
-        run: scripts/linux-deps.sh
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      # sherpa-onnx-sys downloads its native library to target/sherpa-onnx-prebuilt
-      # and links from there. The cache keeps the folders in that path, but
-      # deletes the files in them, and the build script does not download when
-      # the lib folder is there. When no library file is there, remove the
-      # folder and clean the crate, so the build script downloads again.
-      # Without this, a change to Cargo.lock fails with "could not find native
-      # static library sherpa-onnx-c-api".
-      - name: Get the sherpa-onnx library again when the cache does not have it
+        run: go test ./internal/... ./cmd/...
+      - name: Build the app and the engine like a release
         shell: bash
         run: |
-          libs=$(find target/sherpa-onnx-prebuilt -type f \( -name '*.a' -o -name '*.lib' \) 2>/dev/null | head -n 1 || true)
-          if [[ -z "$libs" ]]; then
-            rm -rf target/sherpa-onnx-prebuilt
-            cargo clean -p sherpa-onnx-sys
-            cargo clean -p sherpa-onnx-sys --release
-          fi
+          go build -tags mygo_noinspector -ldflags="-s -w" -o "${RUNNER_TEMP}/sayso" ./cmd/sayso
+          go build -ldflags="-s -w" -o "${RUNNER_TEMP}/sayso-engine" ./cmd/sayso-engine
+
+  rust-sdk:
+    name: Rust SDK tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux audio headers
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev
+      - name: Install the Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
       - name: Test
         run: cargo test --workspace
       # packages/sdk/src/protocol must be what sayso-protocol writes (feature ts).
@@ -110,51 +88,32 @@ jobs:
       # Each npm package has the version of Cargo.toml (docs/releasing.md, step 2).
       - name: Check the version of the npm packages
         run: python3 scripts/npm-packages.py check-versions
-      # Not a workspace member, so cargo test --workspace does not run it.
-      - name: Test the vendored crate
-        run: cargo test -p gpui-pre-wgpu --test sayso
-      - name: Two engines on one model store
-        run: cargo test -p sayso-engine --test conformance -- --ignored
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-  test-windows:
-    name: Tests and clippy, Windows (manual)
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: windows-2025
-    timeout-minutes: 90
+  ts-sdk:
+    name: TypeScript SDK tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Install Linux audio headers
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - name: Install CMake
-        shell: pwsh
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - name: Build the addon and the fake engine
         run: |
-          choco install cmake --no-progress -y
-          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-      # sherpa-onnx-sys downloads its native library to target/sherpa-onnx-prebuilt
-      # and links from there. The cache keeps the folders in that path, but
-      # deletes the files in them, and the build script does not download when
-      # the lib folder is there. When no library file is there, remove the
-      # folder and clean the crate, so the build script downloads again.
-      # Without this, a change to Cargo.lock fails with "could not find native
-      # static library sherpa-onnx-c-api".
-      - name: Get the sherpa-onnx library again when the cache does not have it
-        shell: bash
-        run: |
-          libs=$(find target/sherpa-onnx-prebuilt -type f \( -name '*.a' -o -name '*.lib' \) 2>/dev/null | head -n 1 || true)
-          if [[ -z "$libs" ]]; then
-            rm -rf target/sherpa-onnx-prebuilt
-            cargo clean -p sherpa-onnx-sys
-            cargo clean -p sherpa-onnx-sys --release
-          fi
+          node packages/sdk/scripts/build-addon.mjs
+          cargo build -p sayso-sdk --example sayso-fake-engine
+          pnpm build
       - name: Test
-        run: cargo test --workspace
-      - name: Two engines on one model store
-        run: cargo test -p sayso-engine --test conformance -- --ignored
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: pnpm test
 
   # The cleanup runtime (native/cleanup, the sayso-cleanup binary) is its own
   # Cargo workspace. It builds llama.cpp with CMake, so no job above builds it.
@@ -263,9 +222,10 @@ jobs:
       # The cleanup runtime (native/cleanup) is its own Cargo workspace.
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            native/cleanup
+          workspaces: native/cleanup
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       # "-" signs ad hoc, because CI has no Developer ID certificate.
       - name: Build the app bundle, not signed with a Developer ID
         env:
@@ -319,25 +279,18 @@ jobs:
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            .
-            native/cleanup
+          workspaces: native/cleanup
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - name: Install CMake and Inno Setup
         run: |
           choco install cmake innosetup --no-progress -y
           "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-      # Same as the test jobs above: the cache can keep the folders of the
-      # sherpa-onnx library without its files.
-      - name: Get the sherpa-onnx library again when the cache does not have it
-        shell: bash
-        run: |
-          libs=$(find target/sherpa-onnx-prebuilt -type f \( -name '*.a' -o -name '*.lib' \) 2>/dev/null | head -n 1 || true)
-          if [[ -z "$libs" ]]; then
-            rm -rf target/sherpa-onnx-prebuilt
-            cargo clean -p sherpa-onnx-sys
-            cargo clean -p sherpa-onnx-sys --release
-          fi
       # No SAYSO_SIGN_CERT, so nothing is signed. The installer is for tests on a VM.
+      # The engine DLLs (sherpa-onnx, ONNX Runtime, whisper.cpp, ggml) come from a
+      # folder that SAYSO_NATIVE_LIBS_DIR names; the runner has none, so set it to a
+      # download step before this one runs a release build.
       - name: Build the app folder and the installer, not signed
         run: scripts\bundle-windows.ps1 -Installer
       - name: Keep the installer

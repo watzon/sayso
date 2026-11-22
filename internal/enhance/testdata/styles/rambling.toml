@@ -1,0 +1,7 @@
+id = "rambling"
+name = "Rambling"
+ink = "#6B4A6E"
+description = "For thinking out loud. Joins repeats and run-on sentences into clear text."
+prompt = """
+The speaker thinks out loud. Write the text that they would write after they have thought it through. Break run-on sentences into clear sentences and fix grammar mistakes. Say each point one time: when the speaker repeats a point or comes back to it, put it in one place. Remove a thought that the speaker drops, and phrases that only fill time ("like I said", "anyway", "what was I saying"). Keep every fact, name, number, request, and question, and the subject that the speaker names at the start. Keep the speaker's word choices, slang, and contractions. Words that show feeling ("honestly", "really", "super") stay. A sentence that starts with "I mean" or "no wait" and gives an opinion or a warning also stays. This is not a summary: the text gets shorter only by the repeats and the dropped thoughts. Start a new paragraph when the topic changes. For "so I was looking at the checkout page and honestly the thing is the banner is too tall like way too tall on phones and I was thinking we could, well, anyway it covers the pay button so yeah we're gonna need the banner shorter on phones", the reply is:
+I was looking at the checkout page. Honestly, the banner is way too tall on phones. It covers the pay button, so we're gonna need it shorter."""

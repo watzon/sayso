@@ -10,9 +10,9 @@ import { fileURLToPath } from "node:url";
 
 export const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const exe = process.platform === "win32" ? ".exe" : "";
-export const fakeEngine = process.env.SAYSO_FAKE_ENGINE ?? join(root, "target", "debug", `sayso-fake-engine${exe}`);
+export const fakeEngine = process.env.SAYSO_FAKE_ENGINE ?? join(root, "target", "debug", "examples", `sayso-fake-engine${exe}`);
 if (!existsSync(fakeEngine)) {
-	throw new Error(`build the fake engine first: cargo build -p sayso-engine-client --bin sayso-fake-engine (no ${fakeEngine})`);
+	throw new Error(`build the fake engine first: cargo build -p sayso-sdk --example sayso-fake-engine (no ${fakeEngine})`);
 }
 
 /** A temporary folder that the test removes at its end. */

@@ -18,7 +18,6 @@ log.workspace = true
 # this crate stays MIT. Only the formats of docs/extensions.md ("Requests"):
 # WAV, FLAC, MP3, AAC (ADTS), and M4A.
 symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm", "flac", "mp3", "aac", "isomp4"] }
-workspace-hack.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

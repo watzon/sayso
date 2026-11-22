@@ -16,7 +16,6 @@ sayso-speech.workspace = true
 crossbeam-channel.workspace = true
 log.workspace = true
 cpal = "0.18.2"
-workspace-hack.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The Core Audio process tap.

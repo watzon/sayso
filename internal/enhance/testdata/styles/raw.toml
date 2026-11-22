@@ -1,0 +1,5 @@
+id = "raw"
+name = "Raw"
+ink = "#B8B1A4"
+description = "No AI. Only your dictionary replacements run."
+prompt = ""

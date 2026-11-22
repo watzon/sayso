@@ -106,7 +106,10 @@ package_appimage() {
   cp -R "$stage/bin" "$stage/share" "$appdir/usr/"
   # One folder for each library, so AppRun can add one and not the others.
   for lib in "${appimage_fallback_libs[@]}"; do
-    path=$(ldd "$stage/bin/sayso" | awk -v lib="$lib" '$1 == lib && $3 ~ /^\// { print $3 }')
+    path=$({ ldd "$stage/bin/sayso" 2>/dev/null || true; } | awk -v lib="$lib" '$1 == lib && $3 ~ /^\// { print $3 }')
+    if [[ -z "$path" ]]; then
+      path=$(PATH="$PATH:/sbin:/usr/sbin" ldconfig -p | awk -v lib="$lib" '$1 == lib && $NF ~ /^\// { print $NF; exit }')
+    fi
     [[ -n "$path" ]] || { echo "This system does not have $lib, which the AppImage must hold" >&2; exit 1; }
     path=$(realpath "$path")
     install -D -m 644 "$path" "$appdir/usr/lib/fallback/$lib/$lib"
@@ -137,7 +140,7 @@ package_appimage() {
 # and reads the keyboard (X11, /dev/uinput, /dev/input), and it starts the
 # `claude` and `codex` tools and `gsettings` of the host. It pauses media
 # players through MPRIS. `xdg-run/sayso:ro` lets a second sandbox of Sayso reach
-# `sayso-bridge`: read-only, so no app in a sandbox can replace the socket.
+# the bridge: read-only, so no app in a sandbox can replace the socket.
 flatpak_id=dev.sayso.Sayso
 flatpak_runtime=26.08
 package_flatpak() {

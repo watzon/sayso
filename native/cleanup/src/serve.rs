@@ -1,7 +1,7 @@
 //! The request loop: one JSON object per line in, one per line out.
 
 use crate::runtime::Runtime;
-use sayso_core::cleanup::protocol::{ErrorCode, Reply, ReplyLine, Request, RequestLine};
+use sayso_cleanup_models::protocol::{ErrorCode, Reply, ReplyLine, Request, RequestLine};
 use std::io::{BufRead, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -44,7 +44,7 @@ pub fn handle_line(runtime: &mut Runtime, line: &str) -> ReplyLine {
     };
     let id = request.id.clone();
     // A newer client can still ask for the version with `hello`.
-    if request.v != sayso_core::cleanup::protocol::PROTOCOL_VERSION
+    if request.v != sayso_cleanup_models::protocol::PROTOCOL_VERSION
         && request.request != Request::Hello
     {
         return error_line(

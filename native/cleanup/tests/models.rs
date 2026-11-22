@@ -9,7 +9,7 @@
 mod common;
 
 use common::Session;
-use sayso_core::cleanup::protocol::{ErrorCode, Reply, Request, Stop};
+use sayso_cleanup_models::protocol::{ErrorCode, Reply, Request, Stop};
 
 const S1_PROMPT: &str = "<|im_start|>system\nYou are a text normalizer for speech-to-text transcripts. The input begins with a control line specifying the styling, structure, and context settings; clean the transcript to match those settings and output only the cleaned text.<|im_end|>\n<|im_start|>user\n[Styling: semi-formal] [Structure: prose] [Context: general]\num so the meeting is on tuesday no wait wednesday at three thirty<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n";
 const SPOKENLY_PROMPT: &str =

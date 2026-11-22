@@ -1,0 +1,7 @@
+id = "clean"
+name = "Clean"
+ink = "#1D1B18"
+description = "Remove filler words and fix punctuation. Keep your wording."
+prompt = "Keep the speaker's own words and word order. Do not rephrase."
+
+[cleanup]
