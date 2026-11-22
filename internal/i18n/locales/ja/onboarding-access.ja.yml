@@ -37,11 +37,15 @@ onboarding:
   hotkeys:
     title: "キーを選択"
     lead: "キーを押してテストしてください。Sayso は、ほかのアプリが同じキーを使っていないかを確認します。"
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "キーを押してテストしてください。Sayso は、ほかの Sayso の操作が同じキーを使っていないかを確認します。"
     start_stop: "開始/停止"
     push_to_talk: "押して話す"
     no_key: "キー未設定"
     press_new_keys: "新しいキーを押してください。中止するには Esc を押します。"
     no_conflict: "ほかのアプリはこのキーを使っていません。"
+    no_clash: "ほかの Sayso の操作はこのキーを使っていません。"
+    pressed_now: "動作しています。いま %{keys} が押されています。"
     conflict: "ほかのアプリがこのキーを使っています。下をご覧ください。"
     set_a_key: "音声入力を開始/停止するキーを設定してください。"
     change: "変更"

@@ -14,6 +14,7 @@ import (
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/dictation"
 	"github.com/watzon/sayso/internal/engine"
+	"github.com/watzon/sayso/internal/enhance"
 	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/paths"
 	"github.com/watzon/sayso/internal/providers"
@@ -150,6 +151,8 @@ func newEnv(t *testing.T) *testEnv {
 		ReleaseNotes: testNotes,
 	})
 	e.a.TrackKeys = true
+	// Onboarding never looks for the AI tools of the machine that runs the tests.
+	e.a.detectAI = func(enhance.LanguageModel) detected { return detected{} }
 	RegisterFonts()
 	return e
 }

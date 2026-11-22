@@ -68,8 +68,13 @@ func TestEveryRequiredKeyIsBuilt(t *testing.T) {
 		a.cfg.Overlay.Style = s.style
 		mu.NewTester(s.view, PillWindowW, PillWindowH).Frame()
 	}
-	for _, v := range []func(*mu.Context){a.PopoverView, a.OnboardingView, a.WhatsNewView, a.UpdateView} {
+	for _, v := range []func(*mu.Context){a.PopoverView, a.WhatsNewView, a.UpdateView} {
 		mu.NewTester(v, OnboardingW, OnboardingH).Frame()
+	}
+	// Onboarding builds its footer actions per step (Skip is on the AI step).
+	for s := range OnboardingSteps {
+		a.onb.step = s
+		mu.NewTester(a.OnboardingView, OnboardingW, OnboardingH).Frame()
 	}
 	if miss := missingKeys(a.Keys(), requiredKeys); len(miss) > 0 {
 		t.Errorf("keys never built: %v", miss)
@@ -673,14 +678,22 @@ func TestPopover(t *testing.T) {
 
 func TestOnboardingWalksSevenSteps(t *testing.T) {
 	e := newEnv(t)
+	// The model step needs a model on disk to go on (onboarding/mod.rs).
+	e.eng.setState(string(e.a.FinalModel()), engine.ModelStatus{State: engine.StateDownloaded})
 	tt := mu.NewTester(e.a.OnboardingView, OnboardingW, OnboardingH)
-	press(t, tt, i18n.T("onboarding.footer.get_started"))
-	for i := 1; i < OnboardingSteps-1; i++ {
+	for i, action := range []string{
+		i18n.T("onboarding.footer.get_started"), // welcome
+		i18n.T("onboarding.footer.continue"),    // model
+		i18n.T("onboarding.footer.skip"),        // AI
+		i18n.T("onboarding.footer.skip"),        // permissions, none granted
+		i18n.T("onboarding.footer.continue"),    // hotkeys
+		i18n.T("onboarding.footer.finish"),      // practice
+	} {
 		if e.a.OnboardingStep() != i {
 			t.Fatalf("step %d, want %d", e.a.OnboardingStep(), i)
 		}
 		tt.Frame()
-		press(t, tt, i18n.T("onboarding.footer.skip"))
+		press(t, tt, action)
 	}
 	tt.Frame()
 	if !tt.HasText(i18n.T("onboarding.done.title")) {

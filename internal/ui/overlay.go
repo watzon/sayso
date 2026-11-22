@@ -423,7 +423,7 @@ func (a *App) pillContent(c *mu.Context, p theme.Colors, b mu.Element, hover boo
 	case dictation.StateProcessing:
 		b.Padding(10, 18).Gap(12)
 		inkLine(c, processingProgress(float32(a.now().Sub(a.stateAt).Seconds()), reduceMotion(c)), p.Ink, p.Pencil).Size(150, 36).Shrink(0)
-		mu.Text(c, a.stageLabel()).Font(theme.Body).Italic().FontSize(a.ts(16)).LineHeight(20.0 / 16).TextColor(p.Graphite).SingleLine()
+		mu.Text(c, a.stageLabel()).Font(serifFont(theme.Body)).Italic().FontSize(a.ts(16)).LineHeight(20.0 / 16).TextColor(p.Graphite).SingleLine()
 	case dictation.StateShowing:
 		a.noticeContent(c, p, b)
 	default:
@@ -519,7 +519,7 @@ func (a *App) undoButton(c *mu.Context, p theme.Colors) {
 func (a *App) failedBody(c *mu.Context, p theme.Colors) {
 	n, ctl := a.state.Notice, a.d.Dictation
 	uiText(c, n.Reason, a.ts(13), 600, p.Danger)
-	mu.Text(c, n.Text).Font(theme.Body).FontSize(a.ts(15)).LineHeight(21.0 / 15).TextColor(p.Ink).MaxLines(4).Ellipsis("…")
+	mu.Text(c, n.Text).Font(serifFont(theme.Body)).FontSize(a.ts(15)).LineHeight(21.0 / 15).TextColor(p.Ink).MaxLines(4).Ellipsis("…")
 	mu.Row(c).Gap(6).Justify(mu.End).Children(func() {
 		if a.button(c, p, "overlay.dismiss", i18n.T("overlay.dismiss"), bopt{size: sizeSmall}) && ctl != nil {
 			ctl.Dismiss()
@@ -610,7 +610,7 @@ func (a *App) previewSlip(c *mu.Context, p theme.Colors) {
 func loadingLine(c *mu.Context, p theme.Colors, size, line float32) {
 	mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
 		inkLine(c, processingProgress(seconds(c), reduceMotion(c)), p.Pencil, p.Pencil.Alpha(0.5)).Size(34, 10).Shrink(0)
-		mu.Text(c, i18n.T("overlay.preview_loading")).Font(theme.Body).Italic().FontSize(size).LineHeight(line / 15).TextColor(p.Pencil)
+		mu.Text(c, i18n.T("overlay.preview_loading")).Font(serifFont(theme.Body)).Italic().FontSize(size).LineHeight(line / 15).TextColor(p.Pencil)
 	})
 }
 
@@ -620,7 +620,7 @@ func loadingLine(c *mu.Context, p theme.Colors, size, line float32) {
 // show and the slip keeps its height.
 func (a *App) inkText(c *mu.Context, p theme.Colors, spans []mu.Span, w, size, lineHeight float32) {
 	for i := range spans {
-		spans[i].Font, spans[i].Size = theme.Body, size
+		spans[i].Font, spans[i].Size = serifFont(theme.Body), size
 	}
 	// The caret: a 1.5 px indigo bar standing on the baseline, 5 px after the
 	// tail (Paper); spans ends with Rust's caret glyph, whose color it takes.
@@ -637,7 +637,7 @@ func (a *App) inkText(c *mu.Context, p theme.Colors, spans []mu.Span, w, size, l
 		box.MaskLinearGradient(mu.LinearGradient{From: mu.RGBA(0, 0, 0, 0), To: mu.RGB(0, 0, 0), Angle: 180, End: 0.6 / slipLines})
 	}
 	box.Children(func() {
-		mu.RichText(c, spans...).Bind(&a.ov.text).Width(w).Shrink(0).Font(theme.Body).FontSize(size).LineHeight(lineHeight).DrawObjects(func(pt *mu.Painter, _ int, r mu.Rect) {
+		mu.RichText(c, spans...).Bind(&a.ov.text).Width(w).Shrink(0).Font(serifFont(theme.Body)).FontSize(size).LineHeight(lineHeight).DrawObjects(func(pt *mu.Painter, _ int, r mu.Rect) {
 			pt.Fill(r, caret, 1)
 		})
 	})
@@ -742,7 +742,7 @@ func (a *App) leftWing(c *mu.Context, night theme.Colors, hover bool) {
 		}
 		mono(c, a.elapsedLabel(), 12, night.Graphite)
 	case dictation.StateProcessing:
-		mu.Text(c, a.stageLabel()).Font(theme.Body).Italic().FontSize(13).TextColor(night.Graphite).SingleLine()
+		mu.Text(c, a.stageLabel()).Font(serifFont(theme.Body)).Italic().FontSize(13).TextColor(night.Graphite).SingleLine()
 	case dictation.StateShowing:
 		switch a.state.Notice.Kind {
 		case dictation.NoticeInserted:

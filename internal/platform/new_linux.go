@@ -9,6 +9,7 @@ func New() (*Services, error) {
 	ins := newLinuxInserter(s)
 	return &Services{
 		Audio:       newLinuxAudio(),
+		Meter:       newLinuxAudio(),
 		Hotkeys:     newLinuxHotkeys(s),
 		Inserter:    ins,
 		Context:     &linuxContext{session: s},

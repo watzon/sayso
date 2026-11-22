@@ -37,11 +37,15 @@ onboarding:
   hotkeys:
     title: "Elige tus teclas"
     lead: "Pulsa las teclas para probarlas. Sayso comprueba que ninguna otra app use las mismas teclas."
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "Pulsa las teclas para probarlas. Sayso comprueba que ninguna otra acción de Sayso use las mismas teclas."
     start_stop: "Iniciar y detener"
     push_to_talk: "Mantener para hablar"
     no_key: "Sin tecla definida"
     press_new_keys: "Pulsa las teclas nuevas. Pulsa Esc para parar."
     no_conflict: "Ninguna otra app usa estas teclas."
+    no_clash: "Ninguna otra acción de Sayso usa estas teclas."
+    pressed_now: "Funciona. %{keys} está pulsado ahora."
     conflict: "Otra app usa estas teclas. Mira abajo."
     set_a_key: "Define una tecla para iniciar y detener el dictado."
     change: "Cambiar"

@@ -37,11 +37,15 @@ onboarding:
   hotkeys:
     title: "키 선택"
     lead: "키를 눌러 테스트하세요. 다른 앱이 같은 키를 쓰지 않는지 Sayso가 확인해요."
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "키를 눌러 테스트하세요. 다른 Sayso 동작이 같은 키를 쓰지 않는지 Sayso가 확인해요."
     start_stop: "시작 및 중지"
     push_to_talk: "누르고 말하기"
     no_key: "설정된 키 없음"
     press_new_keys: "새 키를 누르세요. 멈추려면 Esc를 누르세요."
     no_conflict: "이 키를 쓰는 다른 앱이 없어요."
+    no_clash: "이 키를 쓰는 다른 Sayso 동작이 없어요."
+    pressed_now: "작동해요. 지금 %{keys}이(가) 눌려 있어요."
     conflict: "다른 앱이 이 키를 쓰고 있어요. 아래를 확인하세요."
     set_a_key: "받아쓰기를 시작하고 중지할 키를 설정하세요."
     change: "변경"

@@ -175,7 +175,7 @@ func (a *App) sidebar(c *mu.Context, p theme.Colors, rail bool) {
 		mu.Row(c).Height(30).PaddingX(8).Gap(10).AlignItems(mu.Center).Justify(alignIf(rail)).Children(func() {
 			mu.Icon(c, icon("wordmark")).FontSize(22).TextColor(p.Ink)
 			if !rail {
-				mu.Text(c, "Sayso").Font(theme.Display).FontSize(24).FontWeight(600).TextColor(p.Ink)
+				mu.Text(c, "Sayso").Font(serifFont(theme.Display)).FontSize(24).FontWeight(600).TextColor(p.Ink)
 			}
 		})
 		mu.Column(c).Gap(2).Children(func() {
@@ -313,7 +313,7 @@ func (a *App) settingsSidebar(c *mu.Context, p theme.Colors, rail bool) {
 		b.Children(func() {
 			mu.Icon(c, icon("chevron-left")).FontSize(16).TextColor(p.Ink)
 			if !rail {
-				mu.Text(c, i18n.T("hub.nav.settings")).Font(theme.Display).FontSize(22).FontWeight(600).TextColor(p.Ink)
+				mu.Text(c, i18n.T("hub.nav.settings")).Font(serifFont(theme.Display)).FontSize(22).FontWeight(600).TextColor(p.Ink)
 			}
 		})
 		if clicked(c, b) {

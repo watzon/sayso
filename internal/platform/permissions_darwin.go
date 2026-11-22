@@ -61,11 +61,13 @@ func (macPermissions) Status() PermissionStatus {
 	if loadDarwin() != nil {
 		return PermissionStatus{NeedsInputPerms: true}
 	}
+	mic := microphoneAuthorization()
 	return PermissionStatus{
-		Microphone:      microphoneAuthorization() == micAuthorized,
-		Accessibility:   axIsProcessTrusted(),
-		InputMonitoring: cgPreflightListenEventAccess(),
-		NeedsInputPerms: true,
+		Microphone:       mic == micAuthorized,
+		MicrophoneDenied: mic == micDenied || mic == micRestricted,
+		Accessibility:    axIsProcessTrusted(),
+		InputMonitoring:  cgPreflightListenEventAccess(),
+		NeedsInputPerms:  true,
 	}
 }
 

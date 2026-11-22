@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +57,33 @@ func TestGoldenPaperKit(t *testing.T) {
 			name = "testdata/golden-paper-kit-dark.png"
 		}
 		golden.Match(t, tt, name, golden.Tolerance{Channel: 8, PerMille: 5})
+	}
+}
+
+// Every onboarding step as the Paper page "Onboarding" draws it, at the
+// 960×640 window with the macOS title bar inset, light and dark. Nothing is
+// granted, detected or downloaded, so each step shows its first state.
+func TestGoldenOnboarding(t *testing.T) {
+	names := []string{"welcome", "model", "ai", "permissions", "hotkeys", "practice", "done"}
+	for _, dark := range []bool{false, true} {
+		for s := range OnboardingSteps {
+			e := newEnv(t)
+			if dark {
+				e.a.cfg.Appearance.Theme = config.ThemeDark
+			}
+			e.a.onb.step = s
+			tt := mu.NewTesterWith(e.a.OnboardingView, OnboardingW, OnboardingH, mu.TesterOptions{Preferences: mu.Preferences{ReduceMotion: true}})
+			tt.SetTitleBar(mu.TitleBar{Height: 28, Left: 78, Bottom: 28})
+			tt.SetDark(dark)
+			tt.Frame()
+			tt.Frame()
+			mode := "light"
+			if dark {
+				mode = "dark"
+			}
+			name := fmt.Sprintf("testdata/golden-onboarding-%02d-%s-%s.png", s+1, names[s], mode)
+			golden.Match(t, tt, name, golden.Tolerance{Channel: 8, PerMille: 5})
+		}
 	}
 }
 

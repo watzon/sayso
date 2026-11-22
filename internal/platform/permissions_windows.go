@@ -49,7 +49,8 @@ func microphoneAllowed() bool {
 }
 
 func (windowsPermissions) Status() PermissionStatus {
-	return PermissionStatus{Microphone: microphoneAllowed(), Accessibility: true, InputMonitoring: true, NeedsInputPerms: false}
+	mic := microphoneAllowed()
+	return PermissionStatus{Microphone: mic, MicrophoneDenied: !mic, Accessibility: true, InputMonitoring: true, NeedsInputPerms: false}
 }
 
 func openURI(uri string) error {

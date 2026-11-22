@@ -37,11 +37,15 @@ onboarding:
   hotkeys:
     title: "选择快捷键"
     lead: "按下快捷键进行测试。Sayso 会检查是否有其他 App 使用了相同的按键。"
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "按下快捷键进行测试。Sayso 会检查是否有其他 Sayso 操作使用了相同的按键。"
     start_stop: "开始和停止"
     push_to_talk: "按住说话"
     no_key: "未设置按键"
     press_new_keys: "按下新的按键。按 Esc 停止。"
     no_conflict: "没有其他 App 使用这些按键。"
+    no_clash: "没有其他 Sayso 操作使用这些按键。"
+    pressed_now: "可以使用。现在按下了 %{keys}。"
     conflict: "另一个 App 使用了这些按键。请参阅下方说明。"
     set_a_key: "设置一个用于开始和停止听写的按键。"
     change: "更改"

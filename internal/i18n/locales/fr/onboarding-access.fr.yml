@@ -37,11 +37,15 @@ onboarding:
   hotkeys:
     title: "Choisissez vos touches"
     lead: "Appuyez sur les touches pour les tester. Sayso vérifie qu’aucune autre app n’utilise les mêmes touches."
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "Appuyez sur les touches pour les tester. Sayso vérifie qu’aucune autre action de Sayso n’utilise les mêmes touches."
     start_stop: "Démarrer et arrêter"
     push_to_talk: "Maintenir pour parler"
     no_key: "Aucune touche définie"
     press_new_keys: "Appuyez sur les nouvelles touches. Appuyez sur Esc pour arrêter."
     no_conflict: "Aucune autre app n’utilise ces touches."
+    no_clash: "Aucune autre action de Sayso n’utilise ces touches."
+    pressed_now: "Ça marche. %{keys} est enfoncé."
     conflict: "Une autre app utilise ces touches. Voir ci-dessous."
     set_a_key: "Définissez une touche pour démarrer et arrêter la dictée."
     change: "Modifier"
