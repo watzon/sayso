@@ -243,6 +243,30 @@ func TestHomeShowsGreetingStatsAndRecent(t *testing.T) {
 	}
 }
 
+// A dictation shows on the overlay only: Home keeps its greeting, hint and
+// stats, with no strip of its own (Paper Hub/Home). Escape still cancels.
+func TestHomeShowsNoDictationStrip(t *testing.T) {
+	e := newEnv(t)
+	e.a.cfg.General.Name = ptr("Ada")
+	e.a.cfg.Hotkeys.Toggle = ptr(config.MustHotkey("opt+space"))
+	tt := e.hub(t)
+	e.a.state = dictation.State{Kind: dictation.StateRecording}
+	tt.Frame()
+	if hasControl(tt, i18n.T("styles.cancel")) {
+		t.Errorf("Home shows a Cancel while recording: %q", tt.Texts())
+	}
+	if tt.HasText(e.a.elapsedLabel()) {
+		t.Errorf("Home shows the dictation timer: %q", tt.Texts())
+	}
+	if !tt.HasText("Good afternoon, Ada.") || !hasControl(tt, i18n.T("popover.stop_dictation")) {
+		t.Errorf("greeting or hint missing: %q", tt.Texts())
+	}
+	tt.Key(0, mu.KeyEscape)
+	if e.dict.count("cancel") != 1 {
+		t.Errorf("Escape did not cancel: %v", e.dict.calls)
+	}
+}
+
 func TestHomeHistoryOffCard(t *testing.T) {
 	e := newEnv(t)
 	e.a.cfg.History.Enabled = false
