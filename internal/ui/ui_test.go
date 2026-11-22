@@ -30,7 +30,7 @@ var requiredKeys = []string{
 	"settings.back", "settings.nav.general", "settings.nav.dictation", "settings.nav.audio", "settings.nav.providers",
 	"settings.nav.overlay", "settings.nav.appearance", "settings.nav.history", "settings.nav.apps", "settings.nav.updates",
 	"settings.nav.advanced", "settings.open_config",
-	"home.dictate", "home.cancel", "home.change_style",
+	"home.dictate", "home.change_style",
 	"history.search", "history.filter.all", "history.filter.enhanced", "history.filter.audio", "history.copy", "history.copy_meta", "history.delete",
 	"dict.filter", "dict.add_word", "dict.add_replacement", "dict.try_input",
 	"styles.new", "styles.base_prompt", "styles.editor.save", "styles.editor.cancel",
@@ -57,11 +57,6 @@ func TestEveryRequiredKeyIsBuilt(t *testing.T) {
 	a.SetPage(PageHistory)
 	tt.Frame()
 	press(t, tt, i18n.T("history.a11y.more_actions"))
-	// Home while recording shows Cancel.
-	a.SetPage(PageHome)
-	a.state = dictation.State{Kind: dictation.StateRecording}
-	tt.Frame()
-	a.state = dictation.State{}
 	// The style editor.
 	a.SetPage(PageStyles)
 	tt.Frame()
@@ -234,17 +229,33 @@ func TestHomeShowsGreetingStatsAndRecent(t *testing.T) {
 	if e.dict.count("toggle") != 1 {
 		t.Errorf("dictate called %v", e.dict.calls)
 	}
-	e.a.state = dictation.State{Kind: dictation.StateRecording}
-	tt.Frame()
-	press(t, tt, i18n.T("styles.cancel"))
-	if e.dict.count("cancel") != 1 {
-		t.Errorf("cancel called %v", e.dict.calls)
-	}
-	e.a.state = dictation.State{}
-	tt.Frame()
 	press(t, tt, "Notes, the quick brown fox jumps")
 	if e.a.Page() != PageHistory || e.a.hist.selected != id {
 		t.Errorf("recent row went to page %v, entry %d", e.a.Page(), e.a.hist.selected)
+	}
+}
+
+// A dictation shows on the overlay only: Home keeps its greeting, hint and
+// stats, with no strip of its own (Paper Hub/Home). Escape still cancels.
+func TestHomeShowsNoDictationStrip(t *testing.T) {
+	e := newEnv(t)
+	e.a.cfg.General.Name = ptr("Ada")
+	e.a.cfg.Hotkeys.Toggle = ptr(config.MustHotkey("opt+space"))
+	tt := e.hub(t)
+	e.a.state = dictation.State{Kind: dictation.StateRecording}
+	tt.Frame()
+	if hasControl(tt, i18n.T("styles.cancel")) {
+		t.Errorf("Home shows a Cancel while recording: %q", tt.Texts())
+	}
+	if tt.HasText(e.a.elapsedLabel()) {
+		t.Errorf("Home shows the dictation timer: %q", tt.Texts())
+	}
+	if !tt.HasText("Good afternoon, Ada.") || !hasControl(tt, i18n.T("popover.stop_dictation")) {
+		t.Errorf("greeting or hint missing: %q", tt.Texts())
+	}
+	tt.Key(0, mu.KeyEscape)
+	if e.dict.count("cancel") != 1 {
+		t.Errorf("Escape did not cancel: %v", e.dict.calls)
 	}
 }
 
@@ -515,6 +526,8 @@ func TestOverlayPillStates(t *testing.T) {
 	a.cfg.Overlay.IdlePill = true
 	a.cfg.Hotkeys.Toggle = ptr(config.MustHotkey("opt+space"))
 	tt := mu.NewTester(a.OverlayView, PillWindowW, PillWindowH)
+	settle := func() { tt.Frame(); tt.Advance(time.Second) }
+	settle()
 	// At rest the idle pill is a small dash (Rust overlay idle_pill); it
 	// says how to dictate only while the pointer is over it.
 	if tt.HasText(i18n.T("overlay.to_dictate")) {
@@ -525,7 +538,7 @@ func TestOverlayPillStates(t *testing.T) {
 		t.Fatalf("no idle pill: %q", tt.Texts())
 	}
 	tt.Move(r.X+r.W/2, r.Y+r.H/2)
-	tt.Frame()
+	settle()
 	if !tt.HasText(i18n.T("overlay.to_dictate")) {
 		t.Errorf("hovered idle pill: %q", tt.Texts())
 	}
@@ -539,41 +552,43 @@ func TestOverlayPillStates(t *testing.T) {
 	}
 	a.cfg.Overlay.ShowPreview = true
 	a.Preview("hello", "wor")
-	tt.Frame()
+	settle()
 	if !hasControl(tt, i18n.T("overlay.a11y.stop")) {
 		t.Errorf("recording pill: %q", tt.Texts())
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateProcessing})
-	tt.Frame()
+	settle()
 	if !tt.HasText(i18n.T("overlay.stage.transcribing")) {
 		t.Errorf("processing pill: %q", tt.Texts())
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateShowing, Notice: dictation.Notice{Kind: dictation.NoticeCancelled}})
-	tt.Frame()
+	settle()
 	press(t, tt, i18n.T("overlay.undo"))
 	if e.dict.count("undo") != 1 {
 		t.Error("undo did not reach the controller")
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateShowing, Notice: dictation.Notice{Kind: dictation.NoticeInserted, StyleName: "Clean"}})
-	tt.Frame()
+	settle()
 	// The style is a tag beside "Inserted" (Paper Overlay, Inserted).
 	if !tt.HasText(i18n.T("overlay.inserted")) || !tt.HasText("Clean") {
 		t.Errorf("done pill: %q", tt.Texts())
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateShowing, Notice: dictation.Notice{Kind: dictation.NoticeError, Message: "Mic broke"}})
-	tt.Frame()
+	settle()
 	if !tt.HasText("Mic broke") {
 		t.Errorf("failed pill: %q", tt.Texts())
 	}
 	a.Notice(dictation.Message{Key: "overlay.notice.no_engine"})
 	a.StateChanged(dictation.State{Kind: dictation.StateIdle})
-	tt.Frame()
+	settle()
 	if !tt.HasText(i18n.T("overlay.notice.no_engine")) {
 		t.Errorf("an idle notice does not show: %q", tt.Texts())
 	}
 	a.lastNotice = ""
 	a.cfg.Overlay.IdlePill = false
 	a.StateChanged(dictation.State{Kind: dictation.StateIdle})
+	// The card shrinks out first; the window hides at the end (Rust hide_after_close).
+	settle()
 	if e.shell.overlay {
 		t.Error("idle without the idle pill should hide the overlay")
 	}
@@ -584,12 +599,15 @@ func TestOverlaySizesZoom(t *testing.T) {
 	e.a.cfg.Overlay.IdlePill = true
 	e.a.cfg.Overlay.Size = config.OverlayMedium
 	tt := mu.NewTester(e.a.OverlayView, PillWindowW, PillWindowH)
+	// The card eases to each size; let it settle.
+	settle := func() { tt.Frame(); tt.Advance(time.Second) }
+	settle()
 	medium := inkWidth(tt)
 	e.a.cfg.Overlay.Size = config.OverlayLarge
-	tt.Frame()
+	settle()
 	large := inkWidth(tt)
 	e.a.cfg.Overlay.Size = config.OverlaySmall
-	tt.Frame()
+	settle()
 	small := inkWidth(tt)
 	if !(small < medium && medium < large) {
 		t.Errorf("drawn widths small %d, medium %d, large %d", small, medium, large)
@@ -1143,5 +1161,72 @@ func TestSettingsHistoryRetentionAndDeleteAudio(t *testing.T) {
 	}
 	if n, _ := e.db.Count(store.HistoryQuery{}); n != 1 {
 		t.Errorf("%d entries after Delete audio, want the entry kept", n)
+	}
+}
+
+// "Show full transcript" under the italic transcript of "How it got here"
+// starts at the transcript's left edge, as a link, not centered in the
+// step (Paper History).
+func TestHistoryShowTranscriptLinkIsLeftAligned(t *testing.T) {
+	e := newEnv(t)
+	long := strings.Repeat("a long dictation that needs more than two lines in the trail ", 4)
+	e.addEntry(t, long, "Notes", false)
+	e.a.SetPage(PageHistory)
+	tt := e.hub(t)
+	link, ok := controlBounds(tt, i18n.T("history.trail.show_transcript"))
+	if !ok {
+		t.Fatalf("no link: %q", tt.Texts())
+	}
+	title := i18n.T("history.trail.transcript", "model", e.a.modelName(models.ModelID("parakeet-tdt-v3")))
+	var step mu.Rect
+	for _, a := range tt.AccessAll() {
+		if a.Role == mu.RoleText && a.Name == title {
+			step = a.Bounds
+		}
+	}
+	if step.W == 0 {
+		t.Fatalf("no trail title %q: %q", title, tt.Texts())
+	}
+	// The link is as wide as its label: a link stretched across the step
+	// centers its label in it.
+	if d := link.X - step.X; d > 1 || d < -1 || link.W > step.W/2 {
+		t.Errorf("the link %+v in the transcript step %+v", link, step)
+	}
+}
+
+// Escape closes an open submenu of the popover first, then the popover
+// (Rust popover.rs).
+func TestPopoverEscape(t *testing.T) {
+	e := newEnv(t)
+	tt := mu.NewTester(e.a.PopoverView, PopoverW, PopoverH)
+	e.shell.shown[WinPopover] = true
+	e.a.pop.open = "model"
+	tt.Frame()
+	tt.Key(0, mu.KeyEscape)
+	tt.Frame()
+	if e.a.pop.open != "" || !e.shell.shown[WinPopover] {
+		t.Fatalf("first Escape: submenu %q, shown %v", e.a.pop.open, e.shell.shown[WinPopover])
+	}
+	tt.Key(0, mu.KeyEscape)
+	tt.Frame()
+	if e.shell.shown[WinPopover] {
+		t.Error("second Escape left the popover open")
+	}
+}
+
+// Escape gives the keyboard back to the app the user came from; Open Sayso
+// keeps it in Sayso for the hub (Rust popover.rs hide and hide_popover).
+func TestPopoverClosesSayWhereTheKeyboardGoes(t *testing.T) {
+	e := newEnv(t)
+	tt := mu.NewTester(e.a.PopoverView, PopoverW, PopoverH)
+	e.shell.shown[WinPopover] = true
+	tt.Frame()
+	tt.Key(0, mu.KeyEscape)
+	tt.Frame()
+	e.shell.shown[WinPopover] = true
+	press(t, tt, i18n.T("popover.open_sayso"))
+	tt.Frame()
+	if len(e.shell.popoverCloses) != 2 || e.shell.popoverCloses[0] || !e.shell.popoverCloses[1] || e.shell.hub != 1 {
+		t.Fatalf("closes (keep) %v, hub shown %d times; want [false true] and 1", e.shell.popoverCloses, e.shell.hub)
 	}
 }

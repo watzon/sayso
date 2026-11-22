@@ -394,30 +394,6 @@ func card(c *mu.Context, p theme.Colors) mu.Element {
 	return raised(mu.Column(c).Padding(18, 20).Gap(12).Radius(12), p)
 }
 
-// waveform draws levels as bars.
-func waveform(c *mu.Context, levels []float32, col mu.Color) mu.Element {
-	return mu.Box(c).Draw(func(pt *mu.Painter, r mu.Rect) {
-		n := len(levels)
-		if n == 0 {
-			return
-		}
-		gap := float32(2)
-		w := (r.W - gap*float32(n-1)) / float32(n)
-		if w < 1 {
-			w = 1
-		}
-		for i, l := range levels {
-			v := l * 6
-			if v > 1 {
-				v = 1
-			}
-			h := r.H * (0.08 + 0.92*v)
-			x := r.X + float32(i)*(w+gap)
-			pt.Fill(mu.Rect{X: x, Y: r.Y + (r.H-h)/2, W: w, H: h}, col, w/2)
-		}
-	})
-}
-
 // clicked reports a click on el and asks for another frame, so that what
 // the click changed shows at once in the elements built before it.
 func clicked(c *mu.Context, el mu.Element) bool {

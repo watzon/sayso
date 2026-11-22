@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	mu "github.com/egoist/mygo/ui"
@@ -27,6 +28,10 @@ type dictState struct {
 	err     string
 	// wordField is the add-word input, which the header's Add focuses.
 	wordField mu.Handle
+	// addOpen opens the dashed "+ Add word" slip into a well; removeShown
+	// shows each word's remove button, by word.
+	addOpen     tween
+	removeShown map[int64]*tween
 }
 
 func (a *App) loadDictionary() {
@@ -34,7 +39,7 @@ func (a *App) loadDictionary() {
 		return
 	}
 	a.dict.loaded = true
-	a.dict.words, a.dict.reps = nil, nil
+	a.dict.words, a.dict.reps, a.dict.removeShown = nil, nil, nil
 	if a.d.Store == nil {
 		return
 	}
@@ -151,16 +156,28 @@ func (a *App) wordsSection(c *mu.Context, p theme.Colors, f string) {
 	})
 }
 
+// wordSlip is a word on a raised slip, with its remove button. The button
+// keeps its place when hidden and fades in on hover or focus, so a slip
+// never changes its size: a slip at the end of a line would jump to the
+// next one as the pointer crossed it.
 func (a *App) wordSlip(c *mu.Context, p theme.Colors, w store.Word) {
-	s := mu.Row(c).Height(32).PaddingX(12).Gap(6).Radius(6).AlignItems(mu.Center).Background(p.SheetRaised).
+	d := &a.dict
+	s := mu.Row(c).Height(32).Padding(0, 6, 0, 12).Gap(4).Radius(6).AlignItems(mu.Center).Background(p.SheetRaised).
 		InsetShadow(0, 1, 0, 0, p.Highlight(1)).Shadow(0, 1, 2, 0, p.ShadowA(0.16)).Shadow(0, 3, 8, 0, p.ShadowA(0.06))
 	s.Children(func() {
 		serif(c, w.Text, 15, p.Ink).SingleLine()
 		b := mu.ButtonBase(a.k(c, fmt.Sprintf("dict.remove_word.%d", w.ID))).Label(i18n.T("dictionary.remove_word", "word", w.Text)).
-			Size(16, 16).Radius(99).Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer)
-		if !s.Hovered() && !b.Focused() {
-			b.Opacity(0).Width(0).MarginStart(-6)
-		} else if b.Hovered() {
+			Size(18, 18).Shrink(0).Radius(99).Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+		if d.removeShown == nil {
+			d.removeShown = map[int64]*tween{}
+		}
+		shown := d.removeShown[w.ID]
+		if shown == nil {
+			shown = &tween{}
+			d.removeShown[w.ID] = shown
+		}
+		b.Opacity(unit(shown.update(c, s.Hovered() || b.Focused())))
+		if b.Hovered() {
 			b.Background(p.Deboss)
 		}
 		b.Children(func() { mu.Icon(c, icon("close")).FontSize(10).TextColor(p.Graphite) })
@@ -171,17 +188,31 @@ func (a *App) wordSlip(c *mu.Context, p theme.Colors, w store.Word) {
 	})
 }
 
-// addWordSlip is the dashed "+ Add word" slip; it is a well while you type.
-// Its + adds the word.
+// addWordSlip is the dashed "+ Add word" slip; it opens into a well while
+// you type, easing its width, its fill and its border. Its + adds the word.
+// The slip fits its label, measured in the language of the app, and the
+// well is wider, for the word.
 func (a *App) addWordSlip(c *mu.Context, p theme.Colors) {
 	d := &a.dict
 	typing := d.newWord != "" || d.wordField.Focused(c)
-	s := mu.Row(c).Height(32).PaddingX(10).Gap(6).Radius(6).AlignItems(mu.Center)
-	if typing {
-		debossed(s, p).Width(170)
-	} else {
-		// GPUI draws this "dashed" border solid on a rounded box.
-		s.Border(1, p.DebossShade).PaddingX(12).Width(106)
+	label := i18n.T("dictionary.add_word")
+	lw, _ := c.MeasureText(0, mu.Span{Text: label, Size: 14, Weight: 400})
+	// Border, padding, the +, the gap, the label and the caret's room.
+	rest := 2 + 2*addSlipPad + 16 + 6 + float32(math.Ceil(float64(lw))) + 8
+	well := max(170, rest+48)
+	t := d.addOpen.update(c, typing)
+	o := unit(t)
+	s := mu.Row(c).Height(32).Width(rest + (well-rest)*t).Shrink(0).PaddingX(addSlipPad).Gap(6).Radius(6).AlignItems(mu.Center)
+	// The dashed slip's border fades as the well's fill and shade come in.
+	s.Border(1, p.DebossShade.Alpha(1-o)).BorderStyle(mu.BorderDashed)
+	fill := p.Deboss.Alpha(o)
+	if !typing && s.Hovered() {
+		fill = p.Deboss.Alpha(max(o, 0.4))
+	}
+	s.Background(fill).InsetShadow(0, 1, 3, 0, p.ShadowA(0.22*o)).InsetShadow(0, -1, 0, 0, p.Highlight(0.75*o))
+	if d.wordField.Focused(c) {
+		// The focus ring of the well.
+		s.Shadow(0, 0, 0, 2, p.Accent.Alpha(0.35*o))
 	}
 	s.Children(func() {
 		add := mu.ButtonBase(a.k(c, "dict.add_word")).Label(i18n.T("dictionary.add_word")).Size(16, 16).Radius(4).
@@ -195,10 +226,13 @@ func (a *App) addWordSlip(c *mu.Context, p theme.Colors) {
 			}
 		}
 		in := mu.TextInputBase(a.k(c, "dict.new_word"), &d.newWord).Bind(&d.wordField).Label(i18n.T("dictionary.placeholder.new_word")).
-			Placeholder(i18n.T("dictionary.add_word")).PlaceholderColor(p.Graphite).FontSize(14).TextColor(p.Ink).Grow(1).Basis(0)
+			Placeholder(label).PlaceholderColor(p.Graphite).FontSize(14).TextColor(p.Ink).Grow(1).Basis(0).MinWidth(0)
 		in.OnSubmit(func() { a.AddWord(d.newWord) })
 	})
 }
+
+// addSlipPad is the padding at each end of the add-word slip.
+const addSlipPad = 12
 
 func (a *App) replacementsLedger(c *mu.Context, p theme.Colors, f string) {
 	d := &a.dict
