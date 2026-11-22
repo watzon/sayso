@@ -80,10 +80,11 @@ func TestDictionaryChipsKeepTheirSizeOnHover(t *testing.T) {
 
 // labelWidth is the width of the add-word label at 14 DIPs, as the hub
 // measures it.
-func labelWidth(t *testing.T) float32 {
+func labelWidth(t *testing.T, a *App) float32 {
 	t.Helper()
 	var w float32
 	mu.NewTester(func(c *mu.Context) {
+		a.look(c)
 		w, _ = c.MeasureText(0, mu.Span{Text: i18n.T("dictionary.add_word"), Size: 14, Weight: 400})
 	}, 100, 100)
 	return w
@@ -100,7 +101,7 @@ func TestDictionaryAddSlipFitsItsLabel(t *testing.T) {
 			tt := e.hub(t)
 			tt.Advance(time.Second)
 			name := i18n.T("dictionary.placeholder.new_word")
-			need := labelWidth(t)
+			need := labelWidth(t, e.a)
 			in, ok := controlBounds(tt, name)
 			if !ok {
 				t.Fatalf("no field %q: %q", name, tt.Texts())
