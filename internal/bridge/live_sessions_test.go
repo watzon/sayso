@@ -530,6 +530,12 @@ func TestLiveClientSessionGivesPartialsSegmentsARecordingAndSpeakers(t *testing.
 	audio := toPCM(concat(silenceMs(1000), speechMs(2000), silenceMs(1000), speechMs(1500), silenceMs(1000)))
 	sendClient(t, f.sessions, 1, session, audio)
 	eventually(t, "the first segment comes before the stop", func() bool { return len(sink.segments()) > 0 })
+	// Partials pass through the event bus on their own goroutine, and a stop
+	// does not wait for the last one; wait for it before stopping.
+	eventually(t, "the preview stream got all the audio", func() bool {
+		partials := sink.partials()
+		return len(partials) > 0 && partials[len(partials)-1].Tentative == "6500 ms"
+	})
 	if text := mustStop(t, f, 1, session); text != "part1 part2" {
 		t.Fatal(text)
 	}
