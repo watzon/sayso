@@ -111,6 +111,29 @@ func TestPopoverToggle(t *testing.T) {
 	}
 }
 
+// Only a dismissal, the press that may be on the icon itself, keeps the
+// icon's next click from opening the popover again, for 400 ms from the
+// start of the close (Rust popover.rs LAST_FOCUS_CLOSE). Esc, the icon and
+// the rows close it on purpose: a click right after opens it again.
+func TestPopoverReopenGuard(t *testing.T) {
+	at := time.Unix(1000, 0)
+	var p popoverToggle
+	p.closing(at, exitDismissed)
+	if got := p.click(at.Add(350*time.Millisecond), false); got != popoverNothing {
+		t.Errorf("click 350 ms after a dismissal: %v", got)
+	}
+	if got := p.click(at.Add(450*time.Millisecond), false); got != popoverShow {
+		t.Errorf("click 450 ms after a dismissal: %v", got)
+	}
+	for _, exit := range []popoverExit{exitGiveBack, exitKeep} {
+		var p popoverToggle
+		p.closing(at, exit)
+		if got := p.click(at.Add(50*time.Millisecond), false); got != popoverShow {
+			t.Errorf("click 50 ms after close %v: %v", exit, got)
+		}
+	}
+}
+
 // Closing the popover gives the keyboard back to the app the user came
 // from, unless the hub takes it (Open Sayso) or the press that dismissed
 // the popover landed in a window of Sayso the user works in. Which window

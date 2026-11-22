@@ -304,12 +304,20 @@ const (
 	exitDismissed
 )
 
-// popoverReopen is how soon after the popover closed a click on the icon
-// is taken as the click that closed it.
-const popoverReopen = 300 * time.Millisecond
+// popoverReopen is how soon after a dismissal began a click on the icon is
+// taken as the press that dismissed it.
+const popoverReopen = 400 * time.Millisecond
 
-// closed notes that the popover closed or hid at now.
+// closed notes that a dismissal of the popover began at now.
 func (p *popoverToggle) closed(now time.Time) { p.closedAt = now }
+
+// closing notes that the popover begins to close at now, for exit: only a
+// dismissal guards the icon's next click.
+func (p *popoverToggle) closing(now time.Time, exit popoverExit) {
+	if exit == exitDismissed {
+		p.closed(now)
+	}
+}
 
 // popoverGivesBack reports whether closing the popover for exit gives the
 // keyboard back to the app the user came from. A dismissal keeps Sayso

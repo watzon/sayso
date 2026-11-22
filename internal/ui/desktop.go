@@ -310,7 +310,7 @@ func (d *Desktop) popoverClosed(exit popoverExit, pressInSayso bool) {
 		return
 	}
 	d.popoverClosing = true
-	d.popover.closed(time.Now())
+	d.popover.closing(time.Now(), exit)
 	if !popoverGivesBack(exit, pressInSayso) {
 		return
 	}
