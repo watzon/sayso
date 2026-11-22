@@ -30,7 +30,7 @@ var requiredKeys = []string{
 	"settings.back", "settings.nav.general", "settings.nav.dictation", "settings.nav.audio", "settings.nav.providers",
 	"settings.nav.overlay", "settings.nav.appearance", "settings.nav.history", "settings.nav.apps", "settings.nav.updates",
 	"settings.nav.advanced", "settings.open_config",
-	"home.dictate", "home.cancel", "home.change_style",
+	"home.dictate", "home.change_style",
 	"history.search", "history.filter.all", "history.filter.enhanced", "history.filter.audio", "history.copy", "history.copy_meta", "history.delete",
 	"dict.filter", "dict.add_word", "dict.add_replacement", "dict.try_input",
 	"styles.new", "styles.base_prompt", "styles.editor.save", "styles.editor.cancel",
@@ -57,11 +57,6 @@ func TestEveryRequiredKeyIsBuilt(t *testing.T) {
 	a.SetPage(PageHistory)
 	tt.Frame()
 	press(t, tt, i18n.T("history.a11y.more_actions"))
-	// Home while recording shows Cancel.
-	a.SetPage(PageHome)
-	a.state = dictation.State{Kind: dictation.StateRecording}
-	tt.Frame()
-	a.state = dictation.State{}
 	// The style editor.
 	a.SetPage(PageStyles)
 	tt.Frame()
@@ -229,14 +224,6 @@ func TestHomeShowsGreetingStatsAndRecent(t *testing.T) {
 	if e.dict.count("toggle") != 1 {
 		t.Errorf("dictate called %v", e.dict.calls)
 	}
-	e.a.state = dictation.State{Kind: dictation.StateRecording}
-	tt.Frame()
-	press(t, tt, i18n.T("styles.cancel"))
-	if e.dict.count("cancel") != 1 {
-		t.Errorf("cancel called %v", e.dict.calls)
-	}
-	e.a.state = dictation.State{}
-	tt.Frame()
 	press(t, tt, "Notes, the quick brown fox jumps")
 	if e.a.Page() != PageHistory || e.a.hist.selected != id {
 		t.Errorf("recent row went to page %v, entry %d", e.a.Page(), e.a.hist.selected)
