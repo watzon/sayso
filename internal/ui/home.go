@@ -93,9 +93,6 @@ func (a *App) homePage(c *mu.Context, p theme.Colors) {
 		})
 		mu.Box(c).Padding(0, 0, 6, 0).Shrink(0).Children(func() { a.hotkeyHint(c, p) })
 	})
-	if a.Busy() {
-		a.dictateStrip(c, p)
-	}
 	if a.cfg.History.Enabled {
 		a.statsStrip(c, p, narrow)
 	} else {
@@ -143,27 +140,6 @@ func (a *App) hotkeyHint(c *mu.Context, p theme.Colors) {
 	if clicked(c, b) {
 		a.Toggle()
 	}
-}
-
-// dictateStrip shows a dictation started from the hub while it runs.
-func (a *App) dictateStrip(c *mu.Context, p theme.Colors) {
-	debossed(mu.Row(c).Gap(14).Padding(10, 14).Radius(12).AlignItems(mu.Center), p).Children(func() {
-		switch a.state.Kind {
-		case dictation.StateRecording:
-			statusDot(c, p.Accent)
-			waveform(c, a.levelsInOrder()[24:], p.Ink).Grow(1).Height(24)
-			mono(c, a.elapsedLabel(), 12, p.Graphite)
-		case dictation.StateProcessing:
-			mu.Spinner(c)
-			uiText(c, a.stageLabel(), 13, 400, p.Graphite).Grow(1)
-		}
-		if a.incognito {
-			badge(c, p, i18n.T("overlay.incognito"), toneAccent, "eye")
-		}
-		if a.button(c, p, "home.cancel", i18n.T("styles.cancel"), bopt{size: sizeSmall}) {
-			a.CancelDictation()
-		}
-	})
 }
 
 func (a *App) elapsedLabel() string {

@@ -194,9 +194,25 @@ func TestMacNewLoadsEveryFramework(t *testing.T) {
 	if on, err := s.LoginItem.Enabled(); err != nil || on {
 		t.Errorf("login item: %v %v", on, err)
 	}
-	// The test binary has no MediaRemote adapter beside it, so nothing pauses.
-	if was, err := s.Media.Pause(); was || err != nil {
-		t.Errorf("media pause: %v %v", was, err)
+	// Media pauses through osascript, which needs nothing in the bundle. The
+	// test does not call Pause: it would pause the media of the person.
+	if m, ok := s.Media.(*macMedia); !ok {
+		t.Errorf("media: %T", s.Media)
+	} else if _, ok := m.backend.(*jxaMedia); !ok {
+		t.Errorf("media backend: %T", m.backend)
+	}
+}
+
+// The fallback loads MediaRemote and reads without hanging. It sends nothing.
+func TestMacDirectMediaReads(t *testing.T) {
+	d, err := loadDirectMedia()
+	if err != nil {
+		t.Fatal(err)
+	}
+	now, err := d.nowPlaying()
+	t.Logf("direct now playing: %+v %v", now, err)
+	if err != nil {
+		t.Error(err)
 	}
 }
 

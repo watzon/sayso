@@ -67,3 +67,12 @@ func (macDock) SetShowInDock(show bool) error {
 	dispatchAsyncF(dispatchMainQ, 0, dockCallback)
 	return nil
 }
+
+// DeactivateApp gives the keyboard back to the app the user came from, as
+// the Rust popover did when it closed. Call it on the main thread.
+func DeactivateApp() {
+	if loadDarwin() != nil {
+		return
+	}
+	withPool(func() { class("NSApplication").Send(sel("sharedApplication")).Send(sel("deactivate")) })
+}

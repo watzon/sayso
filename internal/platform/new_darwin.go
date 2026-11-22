@@ -8,6 +8,7 @@ func New() (*Services, error) {
 	}
 	return &Services{
 		Audio:       &macAudio{},
+		Meter:       &macAudio{},
 		Hotkeys:     newMacHotkeys(),
 		Inserter:    &macInserter{},
 		Context:     macContext{},

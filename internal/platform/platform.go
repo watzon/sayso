@@ -90,6 +90,26 @@ type HotkeyManager interface {
 	Stop() error
 }
 
+// HotkeyConflict is another program that reacts to a hotkey: an app, or a
+// shortcut of the system.
+type HotkeyConflict struct {
+	// Hotkey is the hotkey, as config.toml writes it.
+	Hotkey string
+	// App: Name is an app; else Name is the English name of a system shortcut.
+	App  bool
+	Name string
+	// Confirmed (App): Sayso read the app's setting; else it is the default.
+	Confirmed bool
+	// Enabled (system): the shortcut is on.
+	Enabled bool
+}
+
+// ConflictFinder finds the other programs that use a hotkey. A
+// HotkeyManager implements it where the system lets Sayso look (macOS).
+type ConflictFinder interface {
+	Conflicts(hotkey string) []HotkeyConflict
+}
+
 // InsertOptions configures how text is inserted into the focused app.
 type InsertOptions struct {
 	RestoreClipboard bool
@@ -129,10 +149,13 @@ type ContextProvider interface {
 
 // PermissionStatus reports OS permission states.
 type PermissionStatus struct {
-	Microphone      bool
-	Accessibility   bool
-	InputMonitoring bool
-	NeedsInputPerms bool
+	Microphone bool
+	// MicrophoneDenied: the user said no (macOS), or microphone access is
+	// off (Windows). False while the system has not asked yet.
+	MicrophoneDenied bool
+	Accessibility    bool
+	InputMonitoring  bool
+	NeedsInputPerms  bool
 }
 
 // Permissions checks and requests OS permissions.
@@ -178,7 +201,10 @@ type DockPolicy interface {
 
 // Services bundles all platform services for the current OS.
 type Services struct {
-	Audio       AudioCapture
+	Audio AudioCapture
+	// Meter is a second capture for the microphone test of onboarding, so
+	// the test never holds the capture a dictation needs; nil has no test.
+	Meter       AudioCapture
 	Hotkeys     HotkeyManager
 	Inserter    Inserter
 	Context     ContextProvider

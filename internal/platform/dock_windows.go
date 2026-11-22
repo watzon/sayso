@@ -5,3 +5,6 @@ package platform
 type windowsDock struct{}
 
 func (windowsDock) SetShowInDock(bool) error { return nil }
+
+// DeactivateApp does nothing here: the window manager gives the keyboard back.
+func DeactivateApp() {}

@@ -338,7 +338,12 @@ func (a *App) chip(c *mu.Context, p theme.Colors, key, label string, on bool) bo
 }
 
 func (a *App) chipT(c *mu.Context, p theme.Colors, key, label string, on bool, trail string) bool {
-	b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleToggleButton).Checked(on).
+	return clicked(c, a.chipBase(c, p, key, label, on, trail, mu.RoleToggleButton))
+}
+
+// chipBase is a chip with its role (a toggle, or a radio of a group).
+func (a *App) chipBase(c *mu.Context, p theme.Colors, key, label string, on bool, trail string, role mu.Role) mu.Element {
+	b := mu.ButtonBase(a.k(c, key)).Label(label).Role(role).Checked(on).
 		Height(28).PaddingX(11).Gap(6).Radius(99).AlignItems(mu.Center).Shrink(0).Cursor(mu.CursorPointer)
 	fg, weight := p.Graphite, 500
 	if on {
@@ -356,7 +361,7 @@ func (a *App) chipT(c *mu.Context, p theme.Colors, key, label string, on bool, t
 			mu.Icon(c, icon(trail)).FontSize(10).TextColor(fg)
 		}
 	})
-	return clicked(c, b)
+	return b
 }
 
 // pageHead is a page's title (display 44), intro and actions at the right,
@@ -387,30 +392,6 @@ func rule(c *mu.Context, p theme.Colors) {
 // card is a raised sheet with no border.
 func card(c *mu.Context, p theme.Colors) mu.Element {
 	return raised(mu.Column(c).Padding(18, 20).Gap(12).Radius(12), p)
-}
-
-// waveform draws levels as bars.
-func waveform(c *mu.Context, levels []float32, col mu.Color) mu.Element {
-	return mu.Box(c).Draw(func(pt *mu.Painter, r mu.Rect) {
-		n := len(levels)
-		if n == 0 {
-			return
-		}
-		gap := float32(2)
-		w := (r.W - gap*float32(n-1)) / float32(n)
-		if w < 1 {
-			w = 1
-		}
-		for i, l := range levels {
-			v := l * 6
-			if v > 1 {
-				v = 1
-			}
-			h := r.H * (0.08 + 0.92*v)
-			x := r.X + float32(i)*(w+gap)
-			pt.Fill(mu.Rect{X: x, Y: r.Y + (r.H-h)/2, W: w, H: h}, col, w/2)
-		}
-	})
 }
 
 // clicked reports a click on el and asks for another frame, so that what

@@ -144,7 +144,7 @@ func display(c *mu.Context, p theme.Colors, s string, size float32) mu.Element {
 // heading is a title in Fraunces SemiBold, with the line height of the
 // Rust type scale (44/48, 22/28...).
 func heading(c *mu.Context, p theme.Colors, s string, size float32) mu.Element {
-	e := mu.Text(c, s).Font(theme.Display).FontSize(size).FontWeight(600).TextColor(p.Ink).LineHeight(headingLine(size))
+	e := mu.Text(c, s).Font(serifFont(theme.Display)).FontSize(size).FontWeight(600).TextColor(p.Ink).LineHeight(headingLine(size))
 	// MyGo never makes a line shorter than the font's ascent and descent
 	// (Fraunces: about 1.18 em), where GPUI sets 44/48 and 40/44. Negative
 	// margins give the line back the height Rust lays it out at.
@@ -183,7 +183,7 @@ func uiText(c *mu.Context, s string, size float32, weight int, col mu.Color) mu.
 
 // serif is list text: Fraunces (display cut) Regular 15/18.
 func serif(c *mu.Context, s string, size float32, col mu.Color) mu.Element {
-	return mu.Text(c, s).Font(theme.Display).FontSize(size).FontWeight(400).TextColor(col)
+	return mu.Text(c, s).Font(serifFont(theme.Display)).FontSize(size).FontWeight(400).TextColor(col)
 }
 
 // mono is IBM Plex Mono Medium.

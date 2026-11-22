@@ -204,9 +204,16 @@ type Controller struct {
 	quit     chan struct{}
 	done     chan struct{}
 	epoch    time.Time
-	mediaWas bool
-	pending  string
-	stopOnce sync.Once
+	// media pauses and resumes the media player in order, off this
+	// goroutine; nil without a media service. mediaDone closes once
+	// mediaLoop ended, after Close.
+	media     chan bool
+	mediaDone chan struct{}
+	// trackedRecording is the recording state the hotkeys and the media
+	// were last told.
+	trackedRecording bool
+	pending          string
+	stopOnce         sync.Once
 
 	stateMu sync.Mutex
 	state   State
@@ -232,6 +239,13 @@ func New(d Deps) *Controller {
 		t = *d.Timing
 	}
 	c := &Controller{d: d, machine: NewMachine(t), sessions: map[SessionID]*session{}, work: make(chan func(), 256), quit: make(chan struct{}), done: make(chan struct{}), epoch: d.Now()}
+	if d.Platform.Media != nil {
+		c.media, c.mediaDone = make(chan bool, 16), make(chan struct{})
+		go func() {
+			defer close(c.mediaDone)
+			mediaLoop(d.Platform.Media, c.media, c.quit)
+		}()
+	}
 	go c.loop()
 	return c
 }
@@ -279,8 +293,19 @@ func (c *Controller) Close() {
 		}
 		close(c.quit)
 		<-c.done
+		// The resume of the music a dictation paused runs before the app
+		// exits, within reason: the macOS player takes a second or two.
+		if c.mediaDone != nil {
+			select {
+			case <-c.mediaDone:
+			case <-time.After(mediaQuitWait):
+			}
+		}
 	})
 }
+
+// mediaQuitWait bounds how long Close waits for the media player.
+const mediaQuitWait = 3 * time.Second
 
 // Dispatch sends an event to the machine.
 func (c *Controller) Dispatch(e Event) { c.do(func() { c.dispatch(e) }) }
@@ -369,10 +394,29 @@ func (c *Controller) dispatch(e Event) {
 		return
 	}
 	wasRecording := c.machine.IsRecording()
-	for _, fx := range c.machine.Handle(e, c.nowMs()) {
+	effects := c.machine.Handle(e, c.nowMs())
+	st := c.machine.State
+	recording := c.machine.IsRecording()
+	if recording && !wasRecording {
+		// The overlay shows the recording at once: the effects of a start
+		// (the focused app, the microphone) can take a while, and a
+		// failure comes as an event of its own.
+		c.track(st, recording, wasRecording)
+		c.publish(st)
+	}
+	for _, fx := range effects {
 		c.run(fx)
 	}
-	st := c.machine.State
+	st = c.machine.State
+	recording = c.machine.IsRecording()
+	c.track(st, recording, wasRecording)
+	c.publish(st)
+}
+
+// track holds the dictation gate while a dictation runs, and tells the
+// hotkeys and the media player when the recording starts or stops. It
+// does each change once.
+func (c *Controller) track(st State, recording, wasRecording bool) {
 	if c.d.Host != nil {
 		if g := c.d.Host.DictationGate(); g != nil {
 			if st.Kind == StateRecording || st.Kind == StateProcessing {
@@ -382,35 +426,66 @@ func (c *Controller) dispatch(e Event) {
 			}
 		}
 	}
-	recording := c.machine.IsRecording()
-	if recording != wasRecording {
-		if c.d.Platform.Hotkeys != nil {
-			c.d.Platform.Hotkeys.SetRecording(recording)
-		}
-		if media := c.d.Platform.Media; media != nil {
-			if !recording {
-				// The resume plays only what the pause stopped.
-				if c.mediaWas {
-					if err := media.Resume(); err != nil {
-						slog.Warn("dictation: media resume failed", "err", err)
-					}
-				}
-				c.mediaWas = false
-			} else if c.config().Audio.PauseMedia {
-				was, err := media.Pause()
-				if err != nil {
-					slog.Warn("dictation: media pause failed", "err", err)
-				}
-				c.mediaWas = was
-			}
+	if recording == wasRecording || recording == c.trackedRecording {
+		return
+	}
+	c.trackedRecording = recording
+	if c.d.Platform.Hotkeys != nil {
+		c.d.Platform.Hotkeys.SetRecording(recording)
+	}
+	if c.media != nil && (!recording || c.config().Audio.PauseMedia) {
+		select {
+		case c.media <- recording:
+		case <-c.quit:
 		}
 	}
+}
+
+// publish tells the observer the state, when it changed.
+func (c *Controller) publish(st State) {
 	c.stateMu.Lock()
 	changed := c.state != st
 	c.state = st
 	c.stateMu.Unlock()
 	if changed && c.d.Observer != nil {
 		c.d.Observer.StateChanged(st)
+	}
+}
+
+// mediaLoop pauses the media player for true and resumes it for false, in
+// order. The macOS adapter runs a program for each, which can take a
+// second or more, so it never runs on the controller goroutine: the
+// overlay would wait for it. On quit it resumes what it paused, whether or
+// not the resume queued behind the pause was taken first.
+func mediaLoop(media platform.MediaController, ops <-chan bool, quit <-chan struct{}) {
+	was := false
+	for {
+		select {
+		case <-quit:
+			if was {
+				if err := media.Resume(); err != nil {
+					slog.Warn("dictation: media resume failed", "err", err)
+				}
+			}
+			return
+		case pause := <-ops:
+			switch {
+			case pause && !was:
+				w, err := media.Pause()
+				if err != nil {
+					slog.Warn("dictation: media pause failed", "err", err)
+				}
+				was = w
+			case !pause:
+				// The resume plays only what the pause stopped.
+				if was {
+					if err := media.Resume(); err != nil {
+						slog.Warn("dictation: media resume failed", "err", err)
+					}
+				}
+				was = false
+			}
+		}
 	}
 }
 

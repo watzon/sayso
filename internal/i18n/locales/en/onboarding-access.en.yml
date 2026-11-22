@@ -37,11 +37,15 @@ onboarding:
   hotkeys:
     title: "Choose your keys"
     lead: "Press the keys to test them. Sayso checks that no other app uses the same keys."
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "Press the keys to test them. Sayso checks that no other Sayso action uses the same keys."
     start_stop: "Start and stop"
     push_to_talk: "Push to talk"
     no_key: "No key set"
     press_new_keys: "Press the new keys. Press Esc to stop."
     no_conflict: "No other app uses these keys."
+    no_clash: "No other Sayso action uses these keys."
+    pressed_now: "Works. %{keys} is pressed now."
     conflict: "Another app uses these keys. See below."
     set_a_key: "Set a key to start and stop dictation."
     change: "Change"

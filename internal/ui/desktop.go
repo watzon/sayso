@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"bytes"
-	"image/png"
 	"log"
 	"math"
 	"runtime"
@@ -14,17 +12,23 @@ import (
 
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/i18n"
+	"github.com/watzon/sayso/internal/platform"
 )
 
 // Desktop is the Shell of the running app: MyGo windows, the tray item
 // and its popover. Every method runs on the main thread.
 type Desktop struct {
-	a        *App
-	hub      *mygo.Window
-	overlay  *mygo.Window
-	wins     map[Window]*mygo.Window
-	tray     *mygo.Tray
-	quitting bool
+	a       *App
+	hub     *mygo.Window
+	overlay *mygo.Window
+	wins    map[Window]*mygo.Window
+	tray    *mygo.Tray
+	popover popoverToggle
+	// popoverClosing is set once the popover's close was handled: Sayso
+	// closing it, or the flyout's dismissal, of which OnHide and OnClosed
+	// hear again.
+	popoverClosing bool
+	quitting       bool
 	// region is the overlay's card, the part of its window that takes the mouse.
 	region mu.Rect
 }
@@ -140,6 +144,13 @@ func (d *Desktop) Invalidate() {
 	}
 }
 
+// InvalidateOverlay redraws the overlay alone.
+func (d *Desktop) InvalidateOverlay() {
+	if d.overlay != nil && !d.overlay.IsDestroyed() {
+		d.overlay.Invalidate()
+	}
+}
+
 func (d *Desktop) windows() []*mygo.Window {
 	out := make([]*mygo.Window, 0, len(d.wins))
 	for _, w := range d.wins {
@@ -211,8 +222,30 @@ func (d *Desktop) ShowWindow(which Window, show bool) {
 		}
 		d.wins[which] = w
 	}
+	if which == WinPopover {
+		d.popoverClosing = false
+	}
 	w.Show()
 	w.Focus()
+	if which == WinOnboarding {
+		d.a.enteredStep(d.a.onb.step)
+	}
+}
+
+// ClosePopover closes the tray popover on purpose: keep leaves the keyboard
+// in Sayso, for the hub that shows next; otherwise it goes back to the app
+// the user came from.
+func (d *Desktop) ClosePopover(keep bool) {
+	w := d.wins[WinPopover]
+	if w == nil || w.IsDestroyed() || !w.IsVisible() {
+		return
+	}
+	exit := exitGiveBack
+	if keep {
+		exit = exitKeep
+	}
+	d.popoverClosed(exit, false)
+	w.Hide()
 }
 
 func (d *Desktop) newWindow(which Window) *mygo.Window {
@@ -220,6 +253,10 @@ func (d *Desktop) newWindow(which Window) *mygo.Window {
 	switch which {
 	case WinOnboarding:
 		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("onboarding.welcome.title"), OnboardingW, OnboardingH, mu.View(d.a.OnboardingView)
+		// A fixed size, as the Rust window; the traffic lights sit in the
+		// sheet's 52 px top bar, as the Paper artboards place them.
+		opts.DisableResize, opts.DisableMinimize = true, false
+		opts.TrafficLightPosition = &mygo.Point{X: 28, Y: 30}
 	case WinPermissions:
 		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("settings.permissions.title"), PermissionsW, PermissionsH, mu.View(d.a.PermissionsView)
 	case WinWhatsNew:
@@ -236,6 +273,12 @@ func (d *Desktop) newWindow(which Window) *mygo.Window {
 	}
 	w := mygo.NewWindow(opts)
 	w.OnClose(func(e *mygo.CloseEvent) {
+		if which == WinOnboarding {
+			// The step stays saved; the microphone test and a key
+			// recording end with the window.
+			d.a.stopMeter()
+			d.a.cancelRecording()
+		}
 		if !d.quitting {
 			e.PreventDefault()
 			w.Hide()
@@ -254,10 +297,71 @@ func (d *Desktop) newPopover() *mygo.Window {
 	if d.tray == nil {
 		return nil
 	}
-	return mygo.NewFlyout(mygo.FlyoutOptions{
+	// Focusable: it closes as a menu does, on a press outside it (in
+	// another app, the desktop or a window of Sayso), when another window
+	// takes the keyboard or the app is deactivated, and on Escape (Rust
+	// popover.rs). A press on the tray icon only closes it.
+	w := mygo.NewFlyout(mygo.FlyoutOptions{
 		Tray: d.tray, Placement: mygo.PlacementBottom, Gap: 6, Width: PopoverW, Height: PopoverH,
-		Shadow: true, Popover: true, CornerRadius: 12, Content: mu.View(d.a.PopoverView),
+		Shadow: true, Popover: true, Focusable: true, CornerRadius: 12, Content: mu.View(d.a.PopoverView),
 	})
+	// The flyout's own close, at its start: a press outside it or the loss
+	// of the keyboard. OnHide and OnClosed come after its fade, and only
+	// matter for a close OnClose did not hear.
+	w.OnClose(func(*mygo.CloseEvent) { d.popoverClosed(exitDismissed, d.pressInSayso(w)) })
+	w.OnHide(func() { d.popoverClosed(exitDismissed, d.pressInSayso(w)) })
+	w.OnClosed(func() { d.popoverClosed(exitDismissed, d.pressInSayso(w)) })
+	return w
+}
+
+// popoverClosed handles the start of the popover's close, once: it guards
+// the tray click after a dismissal, and gives the keyboard back to the app
+// the user came from when exit says so (Rust popover.rs hide and
+// hide_popover).
+func (d *Desktop) popoverClosed(exit popoverExit, pressInSayso bool) {
+	if d.popoverClosing {
+		return
+	}
+	d.popoverClosing = true
+	d.popover.closing(time.Now(), exit)
+	if !popoverGivesBack(exit, pressInSayso) {
+		return
+	}
+	// After the press that dismissed it has reached the window under it.
+	delay := time.Duration(0)
+	if exit == exitDismissed {
+		delay = 120 * time.Millisecond
+	}
+	time.AfterFunc(delay, func() {
+		mygo.RunOnMain(func() {
+			if mygo.App.IsActive() {
+				platform.DeactivateApp()
+			}
+		})
+	})
+}
+
+// pressInSayso reports whether the pointer is over the hub or a secondary
+// window: a press there keeps Sayso active. The popover does not count,
+// nor the overlay, which the user never types in.
+func (d *Desktop) pressInSayso(pop *mygo.Window) bool {
+	var boxes []mygo.Rectangle
+	for _, w := range append([]*mygo.Window{d.hub}, d.windows()...) {
+		if w != nil && w != pop && !w.IsDestroyed() && w.IsVisible() {
+			boxes = append(boxes, w.Bounds())
+		}
+	}
+	return pointInWindows(mygo.Screen.CursorScreenPoint(), boxes)
+}
+
+// pointInWindows reports whether p is in one of boxes.
+func pointInWindows(p mygo.Point, boxes []mygo.Rectangle) bool {
+	for _, b := range boxes {
+		if p.X >= b.X && p.X < b.X+b.Width && p.Y >= b.Y && p.Y < b.Y+b.Height {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Desktop) newTray() {
@@ -271,7 +375,7 @@ func (d *Desktop) newTray() {
 		{Label: i18n.T("tray.quit"), Accelerator: "CmdOrCtrl+Q", Click: click(d.Quit)},
 	})
 	var err error
-	d.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "sayso", Icon: trayIcon(), IconIsTemplate: runtime.GOOS == "darwin", ToolTip: "Sayso"})
+	d.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "sayso", Icon: trayIcon(d.a.incognito), IconIsTemplate: trayTemplate, ToolTip: "Sayso"})
 	if err != nil {
 		log.Printf("tray: %v", err)
 		return
@@ -279,11 +383,14 @@ func (d *Desktop) newTray() {
 	// The primary click opens the themed popover; the secondary click the
 	// plain menu, for screen readers and keyboard users.
 	d.tray.OnClick(func() {
-		if w := d.wins[WinPopover]; w != nil && w.IsVisible() {
-			w.Hide()
-			return
+		w := d.wins[WinPopover]
+		visible := w != nil && !w.IsDestroyed() && w.IsVisible()
+		switch d.popover.click(time.Now(), visible) {
+		case popoverHide:
+			d.ClosePopover(false)
+		case popoverShow:
+			d.ShowWindow(WinPopover, true)
 		}
-		d.ShowWindow(WinPopover, true)
 	})
 	d.tray.OnRightClick(func() {
 		d.tray.SetMenu(menu)
@@ -291,18 +398,14 @@ func (d *Desktop) newTray() {
 	})
 }
 
-// trayIcon draws the wordmark icon as a PNG.
-func trayIcon() []byte {
-	img := mu.Render(func(c *mu.Context) {
-		mu.Box(c).Fill().Justify(mu.Center).AlignItems(mu.Center).Children(func() {
-			mu.Icon(c, icon("wordmark")).FontSize(16).TextColor(mu.RGB(0, 0, 0))
-		})
-	}, 18, 18, 2)
-	var b bytes.Buffer
-	if err := png.Encode(&b, img); err != nil {
-		return nil
+// SetTrayIncognito dims the tray icon while incognito is on.
+func (d *Desktop) SetTrayIncognito(on bool) {
+	if d.tray == nil {
+		return
 	}
-	return b.Bytes()
+	if err := d.tray.SetIcon(trayIcon(on), trayTemplate); err != nil {
+		log.Printf("tray: %v", err)
+	}
 }
 
 // SetThemeMode sets the appearance of the native chrome.
@@ -346,19 +449,4 @@ func (d *Desktop) OpenURL(url string) {
 func (d *Desktop) Quit() {
 	d.quitting = true
 	mygo.App.Quit()
-}
-
-// Tick redraws the windows that animate a dictation, at 30 frames per
-// second while recording (the levels and the timer), else not at all.
-func (d *Desktop) Tick() {
-	t := time.NewTicker(time.Second / 30)
-	go func() {
-		for range t.C {
-			mygo.RunOnMain(func() {
-				if d.a.Busy() && d.overlay != nil {
-					d.overlay.Invalidate()
-				}
-			})
-		}
-	}()
 }

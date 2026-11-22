@@ -75,10 +75,52 @@ func (s *fakeSounds) Play(c platform.SoundCue, _ []byte, _ float32) error {
 	return nil
 }
 
-type fakeMedia struct{ pauses, resumes int }
+type fakeMedia struct {
+	mu              sync.Mutex
+	pauses, resumes int
+	// hold, when set, keeps Pause and Resume until it closes: a slow player.
+	hold chan struct{}
+}
 
-func (m *fakeMedia) Pause() (bool, error) { m.pauses++; return true, nil }
-func (m *fakeMedia) Resume() error        { m.resumes++; return nil }
+func (m *fakeMedia) Pause() (bool, error) {
+	m.wait()
+	m.mu.Lock()
+	m.pauses++
+	m.mu.Unlock()
+	return true, nil
+}
+
+func (m *fakeMedia) Resume() error {
+	m.wait()
+	m.mu.Lock()
+	m.resumes++
+	m.mu.Unlock()
+	return nil
+}
+
+func (m *fakeMedia) wait() {
+	if m.hold != nil {
+		<-m.hold
+	}
+}
+
+// waitCounts waits until the player was paused and resumed so many times.
+func (m *fakeMedia) waitCounts(t *testing.T, pauses, resumes int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		m.mu.Lock()
+		p, r := m.pauses, m.resumes
+		m.mu.Unlock()
+		if p == pauses && r == resumes {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("media paused %d and resumed %d times, want %d and %d", p, r, pauses, resumes)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
 
 type fakeHotkeys struct{ recording []bool }
 
@@ -271,8 +313,9 @@ func TestADictationGoesInAndToHistory(t *testing.T) {
 		t.Fatalf("%+v", r.host.done)
 	}
 	r.host.mu.Unlock()
-	if r.media.pauses != 1 || r.media.resumes != 1 || len(r.hot.recording) != 2 || !r.hot.recording[0] || r.hot.recording[1] {
-		t.Fatal(r.media, r.hot.recording)
+	r.media.waitCounts(t, 1, 1)
+	if len(r.hot.recording) != 2 || !r.hot.recording[0] || r.hot.recording[1] {
+		t.Fatal(r.hot.recording)
 	}
 	if r.host.gate.Dictating() {
 		t.Fatal("the gate is still held")
@@ -516,5 +559,78 @@ func TestWhatADictationNeeds(t *testing.T) {
 	}
 	if msg("k", "a", 1).String() != "k{a=1}" {
 		t.Fatal(msg("k", "a", 1).String())
+	}
+}
+
+// slowContext is a focused app that takes until release to answer, as an
+// app busy with its own work answers Accessibility.
+type slowContext struct{ release chan struct{} }
+
+func (c slowContext) ActiveApp() (platform.ActiveApp, error) {
+	<-c.release
+	return fakeContext{}.ActiveApp()
+}
+
+// The overlay shows a recording at once: a media player that takes its
+// time to pause, or to resume, holds neither the recording state nor the
+// processing state.
+func TestSlowMediaDoesNotHoldTheStates(t *testing.T) {
+	r := newRig(t, nil)
+	hold := make(chan struct{})
+	free := sync.OnceFunc(func() { close(hold) })
+	t.Cleanup(free) // before the rig closes, so a held controller can stop
+	r.media.hold = hold
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	r.audio.speak(16000)
+	r.c.Toggle()
+	r.obs.waitFor(t, "processing")
+	free()
+	r.obs.waitFor(t, "done")
+	r.media.waitCounts(t, 1, 1)
+}
+
+// Quitting while the player still pauses leaves the user's music playing:
+// the resume queued behind the pause plays before Close returns.
+func TestCloseResumesTheMediaItPaused(t *testing.T) {
+	for i := range 20 {
+		r := newRig(t, nil)
+		hold := make(chan struct{})
+		r.media.hold = hold
+		r.c.Toggle()
+		r.obs.waitFor(t, "recording")
+		r.c.Cancel()
+		r.obs.waitFor(t, "cancelled")
+		time.AfterFunc(20*time.Millisecond, func() { close(hold) })
+		r.c.Close()
+		r.media.mu.Lock()
+		p, res := r.media.pauses, r.media.resumes
+		r.media.mu.Unlock()
+		if p != 1 || res != 1 {
+			t.Fatalf("run %d: paused %d and resumed %d times by Close, want 1 and 1", i, p, res)
+		}
+	}
+}
+
+// The recording state comes before the focused app is known: the overlay
+// does not wait for Accessibility. The dictation still learns the app.
+func TestRecordingShowsBeforeTheFocusedApp(t *testing.T) {
+	r := newRig(t, nil)
+	release := make(chan struct{})
+	free := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(free) // before the rig closes, so a held controller can stop
+	r.c.d.Platform.Context = slowContext{release: release}
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	free()
+	r.audio.speak(16000)
+	r.c.Toggle()
+	r.obs.waitFor(t, "done")
+	<-r.history.saved
+	r.history.mu.Lock()
+	e := r.history.entries[0]
+	r.history.mu.Unlock()
+	if e.App == nil || e.App.BundleID != "com.example.notes" {
+		t.Fatalf("app %+v", e.App)
 	}
 }

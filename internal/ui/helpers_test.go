@@ -14,6 +14,7 @@ import (
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/dictation"
 	"github.com/watzon/sayso/internal/engine"
+	"github.com/watzon/sayso/internal/enhance"
 	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/paths"
 	"github.com/watzon/sayso/internal/providers"
@@ -93,6 +94,8 @@ type fakeShell struct {
 	hub     int
 	quit    bool
 	theme   config.ThemeMode
+	// popoverCloses are the keep values of ClosePopover, in order.
+	popoverCloses []bool
 	// redraws is atomic: background loaders (Keychain, storage) redraw too.
 	redraws atomic.Int64
 }
@@ -107,6 +110,11 @@ func (s *fakeShell) SetOverlaySize(config.OverlaySize) {}
 func (s *fakeShell) OpenPath(p string)                 { s.opened = append(s.opened, p) }
 func (s *fakeShell) OpenURL(u string)                  { s.opened = append(s.opened, u) }
 func (s *fakeShell) Quit()                             { s.quit = true }
+
+func (s *fakeShell) ClosePopover(keep bool) {
+	s.shown[WinPopover] = false
+	s.popoverCloses = append(s.popoverCloses, keep)
+}
 
 type testEnv struct {
 	a     *App
@@ -143,6 +151,8 @@ func newEnv(t *testing.T) *testEnv {
 		ReleaseNotes: testNotes,
 	})
 	e.a.TrackKeys = true
+	// Onboarding never looks for the AI tools of the machine that runs the tests.
+	e.a.detectAI = func(enhance.LanguageModel) detected { return detected{} }
 	RegisterFonts()
 	return e
 }

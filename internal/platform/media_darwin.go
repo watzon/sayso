@@ -1,23 +1,25 @@
 package platform
 
-// Pause and resume the now-playing app through the MediaRemote adapter of
-// the app bundle (native/macos/MediaRemoteAdapter). Ported from
+// Pause and resume the now-playing app. Ported from
 // sayso-platform-macos/src/media.rs.
 //
 // Since macOS 15.4 the private MediaRemote framework answers only Apple
-// processes. /usr/bin/perl is one, so the adapter script runs under perl and
-// loads the adapter framework. macOS has one now-playing app, so this pauses
-// one player at most. A run outside the app bundle has no adapter and pauses
-// nothing.
+// processes. /usr/bin/osascript is one, so a JavaScript for Automation script
+// (media_darwin.js, embedded) reads the now-playing app and sends the
+// commands. Before macOS 15.4 MediaRemote has no MRNowPlayingRequest, but it
+// answers any process, so Sayso then calls it directly
+// (media_fallback_darwin.go). macOS has one now-playing app, so this pauses
+// one player at most.
 
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
+	"log/slog"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,9 +27,10 @@ import (
 )
 
 const (
-	mediaPlay  = "0"
-	mediaPause = "1"
-	// mediaRunLimit stops a perl that hangs. The adapter itself stops a read after 2 s.
+	mediaPlay  = 0
+	mediaPause = 1
+	// mediaRunLimit stops an osascript that hangs. A "get" takes about 0.05 s
+	// and a "send" about 0.35 s.
 	mediaRunLimit = 4 * time.Second
 	// The app can report "playing" for a moment after the pause, so the
 	// resume reads the state again for a while before it gives up.
@@ -35,50 +38,57 @@ const (
 	mediaResumeWait  = 200 * time.Millisecond
 )
 
-type macMedia struct {
-	adapter *mediaAdapter
-	mu      sync.Mutex
-	paused  string // the player that Sayso paused, empty when none
+//go:embed media_darwin.js
+var mediaScript string
+
+// errMediaUnsupported means that this macOS has no MRNowPlayingRequest.
+var errMediaUnsupported = errors.New("media: MRNowPlayingRequest is missing")
+
+// mediaBackend reads the now-playing app and sends it commands. nowPlaying
+// gives nil when no app plays media.
+type mediaBackend interface {
+	nowPlaying() (*nowPlaying, error)
+	send(command int) error
 }
 
-type mediaAdapter struct {
-	script, framework string
+type macMedia struct {
+	mu      sync.Mutex
+	backend mediaBackend
+	// fallback is used once the backend reports errMediaUnsupported.
+	fallback func() mediaBackend
+	paused   string // the player that Sayso paused, empty when none
 }
 
 func newMacMedia() *macMedia {
-	m := &macMedia{}
-	if exe, err := os.Executable(); err == nil {
-		m.adapter = adapterInBundle(exe)
+	return &macMedia{
+		backend:  &jxaMedia{run: runOsascript},
+		fallback: newDirectMedia,
 	}
-	return m
 }
 
-// adapterInBundle finds the adapter in Sayso.app/Contents for the executable
-// Sayso.app/Contents/MacOS/Sayso.
-func adapterInBundle(exe string) *mediaAdapter {
-	contents := filepath.Dir(filepath.Dir(exe))
-	a := &mediaAdapter{
-		script:    filepath.Join(contents, "Resources", "mediaremote-adapter.pl"),
-		framework: filepath.Join(contents, "Frameworks", "MediaRemoteAdapter.framework"),
+func (m *macMedia) current() (mediaBackend, *nowPlaying, error) {
+	m.mu.Lock()
+	b := m.backend
+	m.mu.Unlock()
+	now, err := b.nowPlaying()
+	if !errors.Is(err, errMediaUnsupported) {
+		return b, now, err
 	}
-	if st, err := os.Stat(a.script); err != nil || !st.Mode().IsRegular() {
-		return nil
-	}
-	if st, err := os.Stat(a.framework); err != nil || !st.IsDir() {
-		return nil
-	}
-	return a
+	slog.Info("media: MRNowPlayingRequest is missing, calling MediaRemote directly")
+	b = m.fallback()
+	m.mu.Lock()
+	m.backend = b
+	m.mu.Unlock()
+	now, err = b.nowPlaying()
+	return b, now, err
 }
 
 func (m *macMedia) Pause() (bool, error) {
-	if m.adapter == nil {
-		return false, nil
-	}
-	now, err := m.adapter.nowPlaying()
+	b, now, err := m.current()
 	if err != nil || now == nil || !now.playing {
 		return false, err
 	}
-	if _, err := m.adapter.run("send", mediaPause); err != nil {
+	if err := b.send(mediaPause); err != nil {
 		return false, err
 	}
 	m.mu.Lock()
@@ -92,14 +102,14 @@ func (m *macMedia) Resume() error {
 	player := m.paused
 	m.paused = ""
 	m.mu.Unlock()
-	if m.adapter == nil || player == "" {
+	if player == "" {
 		return nil
 	}
 	for attempt := 0; attempt < mediaResumeTries; attempt++ {
 		if attempt > 0 {
 			time.Sleep(mediaResumeWait)
 		}
-		now, err := m.adapter.nowPlaying()
+		b, now, err := m.current()
 		if err != nil {
 			return err
 		}
@@ -108,8 +118,7 @@ func (m *macMedia) Resume() error {
 			return nil
 		}
 		if !now.playing {
-			_, err := m.adapter.run("send", mediaPlay)
-			return err
+			return b.send(mediaPlay)
 		}
 	}
 	return nil
@@ -120,22 +129,41 @@ type nowPlaying struct {
 	playing bool
 }
 
-func (a *mediaAdapter) nowPlaying() (*nowPlaying, error) {
-	out, err := a.run("get", "--no-artwork", "--allow-missing-title")
+// jxaMedia runs media_darwin.js. run gets the arguments of the script and
+// gives its output.
+type jxaMedia struct {
+	run func(args ...string) (string, error)
+}
+
+func (j *jxaMedia) nowPlaying() (*nowPlaying, error) {
+	out, err := j.run("get")
 	if err != nil {
 		return nil, err
+	}
+	var probe struct {
+		Unsupported bool `json:"unsupported"`
+	}
+	if json.Unmarshal([]byte(strings.TrimSpace(out)), &probe) == nil && probe.Unsupported {
+		return nil, errMediaUnsupported
 	}
 	return parseNowPlaying(out), nil
 }
 
-func (a *mediaAdapter) run(args ...string) (string, error) {
+func (j *jxaMedia) send(command int) error {
+	_, err := j.run("send", strconv.Itoa(command))
+	return err
+}
+
+func runOsascript(args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), mediaRunLimit)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "/usr/bin/perl", append([]string{a.script, a.framework}, args...)...)
+	// osascript reads the script from stdin when the first argument is "-".
+	cmd := exec.CommandContext(ctx, "/usr/bin/osascript", append([]string{"-l", "JavaScript", "-"}, args...)...)
+	cmd.Stdin = strings.NewReader(mediaScript)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("media: the adapter failed %q: %v: %s", args[0], err, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("media: osascript %q failed: %v: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.String(), nil
 }

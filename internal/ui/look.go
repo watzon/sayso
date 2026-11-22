@@ -8,6 +8,7 @@ import (
 	mu "github.com/egoist/mygo/ui"
 
 	"github.com/watzon/sayso/internal/config"
+	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/theme"
 )
 
@@ -91,3 +92,7 @@ func RegisterFonts() {
 		}
 	})
 }
+
+// serifFont is a bundled serif with the fallbacks of the interface
+// language, for the characters it lacks (CJK and Cyrillic).
+func serifFont(family string) string { return theme.SerifFor(family, i18n.CurrentLocale()) }
