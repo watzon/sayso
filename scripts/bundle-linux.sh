@@ -19,8 +19,8 @@ if [[ "$profile" == release ]]; then ldflags=(-ldflags="-s -w" -tags mygo_noinsp
 
 echo "==> app and engine (go, $profile)"
 mkdir -p build/go
-go build ${ldflags[@]+"${ldflags[@]}"} -o build/go/sayso ./cmd/sayso
-go build ${ldflags[@]+"${ldflags[@]}"} -o build/go/sayso-engine ./cmd/sayso-engine
+go build -buildvcs=false ${ldflags[@]+"${ldflags[@]}"} -o build/go/sayso ./cmd/sayso
+go build -buildvcs=false ${ldflags[@]+"${ldflags[@]}"} -o build/go/sayso-engine ./cmd/sayso-engine
 
 name="sayso-$version-linux-$arch"
 out="${SAYSO_BUNDLE_DIR:-build}/$name"
