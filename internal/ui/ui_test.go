@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/models"
 	"github.com/watzon/sayso/internal/platform"
+	"github.com/watzon/sayso/internal/providers"
 	"github.com/watzon/sayso/internal/store"
 )
 
@@ -821,4 +823,58 @@ func TestSettingsAudioShowsADeviceSavedByTheRustApp(t *testing.T) {
 		}
 	}
 	t.Fatalf("no input device control; texts %q", tt.Texts())
+}
+
+// gatedSecrets is a secret store whose reads wait, as a Keychain read waits
+// on a system prompt.
+type gatedSecrets struct {
+	providers.SecretStore
+	gate chan struct{}
+}
+
+func (g gatedSecrets) Get(account string) string {
+	<-g.gate
+	return g.SecretStore.Get(account)
+}
+
+// Settings › Providers read the Keychain while it rendered, which froze the
+// app behind a Keychain prompt. Rendering must not wait on a secret read.
+func TestSettingsProvidersRenderNeverWaitsOnTheKeychain(t *testing.T) {
+	e := newEnv(t)
+	mem := providers.NewMemoryStore()
+	mem.Set("provider.my-server", "sk-test")
+	gate := make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(gate) }) }
+	t.Cleanup(release)
+	e.a.d.Secrets = gatedSecrets{mem, gate}
+	e.a.cfg.AI.Providers = []config.Provider{
+		{ID: "my-server", Name: "My Server", Kind: config.KindOpenAICompatible, BaseURL: "http://localhost:8080/v1", APIKeyAccount: ptr("provider.my-server")},
+		{ID: "chatgpt", Name: "ChatGPT", Kind: config.KindChatGPT},
+	}
+	e.a.OpenSettings(SecProviders)
+
+	rendered := make(chan *mu.Tester, 1)
+	go func() { tt := e.hub(t); tt.Frame(); rendered <- tt }()
+	var tt *mu.Tester
+	select {
+	case tt = <-rendered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("rendering Settings › Providers waited on a secret read")
+	}
+	saved := i18n.TOS("settings.providers.key_saved", nil)
+	if strings.Contains(strings.Join(tt.Texts(), "\n"), saved) {
+		t.Fatal("the key showed as saved before the store answered")
+	}
+
+	release()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		tt.Frame()
+		if strings.Contains(strings.Join(tt.Texts(), "\n"), saved) {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("the saved key never showed; texts %q", tt.Texts())
 }

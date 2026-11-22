@@ -176,6 +176,7 @@ type App struct {
 	page         Page
 	section      Section
 	inSettings   bool
+	secrets      secretsCache
 	settingsFrom Page
 
 	// Dictation, as the controller last reported it.
@@ -337,6 +338,9 @@ func (a *App) OpenSettings(s Section) {
 		a.settingsFrom = a.page
 	}
 	a.inSettings, a.section, a.page = true, s, PageSettings
+	if s == SecProviders {
+		a.refreshSecrets()
+	}
 	a.invalidate()
 }
 

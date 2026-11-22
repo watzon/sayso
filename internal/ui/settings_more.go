@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	mu "github.com/egoist/mygo/ui"
@@ -84,9 +85,8 @@ func (a *App) providerRow(c *mu.Context, p theme.Colors, i int) {
 	detail := place
 	switch pr.Kind {
 	case config.KindChatGPT:
-		st := enhance.ChatGPTStatus(a.d.Secrets, pr.ID)
 		detail = i18n.T("settings.providers.not_signed_in")
-		if st.State == "signed_in" {
+		if a.savedSecrets().chatGPT[pr.ID] {
 			detail = i18n.T("settings.providers.signed_in")
 		}
 	default:
@@ -135,11 +135,8 @@ func (a *App) apiKeyRow(c *mu.Context, p theme.Colors, pr config.Provider) {
 	if a.set.keyEdit == nil {
 		a.set.keyEdit = map[string]string{}
 	}
-	account := "provider." + pr.ID
-	if pr.APIKeyAccount != nil {
-		account = *pr.APIKeyAccount
-	}
-	has := a.d.Secrets != nil && a.d.Secrets.Get(account) != ""
+	account := keyAccount(pr)
+	has := a.savedSecrets().keys[account]
 	mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
 		v := a.set.keyEdit[pr.ID]
 		placeholder := i18n.TOS("settings.providers.key_placeholder", nil)
@@ -163,6 +160,7 @@ func (a *App) apiKeyRow(c *mu.Context, p theme.Colors, pr config.Provider) {
 					}
 				}
 				a.saveConfig()
+				a.refreshSecrets()
 			}
 		}
 	})
@@ -172,12 +170,13 @@ func (a *App) apiKeyRow(c *mu.Context, p theme.Colors, pr config.Provider) {
 }
 
 func (a *App) chatGPTAccount(c *mu.Context, p theme.Colors, pr config.Provider) {
-	st := enhance.ChatGPTStatus(a.d.Secrets, pr.ID)
+	signedIn := a.savedSecrets().chatGPT[pr.ID]
 	mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
 		mu.Text(c, i18n.T("settings.providers.chatgpt_account_detail")).FontSize(12.5).TextColor(p.Graphite).Grow(1).Basis(0)
-		if st.State == "signed_in" {
+		if signedIn {
 			if a.btn(c, p, "providers.chatgpt.sign_out."+pr.ID, i18n.T("settings.providers.sign_out"), btnSecondary) && a.d.Secrets != nil {
 				enhance.ChatGPTSignOut(a.d.Secrets, pr.ID)
+				a.refreshSecrets()
 			}
 			return
 		}
@@ -205,6 +204,9 @@ func (a *App) startChatGPTSignIn(id string) {
 				if ev.Finished != nil && ev.Finished.State != "signed_in" {
 					a.set.provErr = i18n.T("app.sign_in.not_finished")
 				}
+				if ev.Finished != nil {
+					a.refreshSecrets()
+				}
 				a.invalidate()
 			})
 		}
@@ -228,6 +230,7 @@ func (a *App) removeProvider(id string) {
 		ai.DefaultProvider = nil
 	}
 	a.saveConfig()
+	a.refreshSecrets()
 }
 
 // addProviderForm adds an OpenAI-compatible provider, or a ChatGPT one.
@@ -297,6 +300,7 @@ func (a *App) AddProvider() {
 	a.cfg.AI.Enabled = true
 	*s = settingsState{name: s.name, enginePath: s.enginePath, keyEdit: s.keyEdit, devices: s.devices, devicesRead: s.devicesRead}
 	a.saveConfig()
+	a.refreshSecrets()
 	a.invalidate()
 }
 
@@ -310,6 +314,77 @@ func (a *App) addChatGPT() {
 		a.cfg.AI.DefaultProvider = ptr(id)
 	}
 	a.saveConfig()
+	a.refreshSecrets()
+}
+
+// secretSnapshot is what Settings › Providers knows of the saved secrets.
+// A Keychain read can wait on a system prompt, so refreshSecrets reads them
+// on another goroutine and the views read only this copy.
+type secretSnapshot struct {
+	keys    map[string]bool // account → an API key is saved
+	chatGPT map[string]bool // provider id → signed in
+}
+
+// secretsCache holds the latest secretSnapshot; gen drops the answer of an
+// older refresh that finishes after a newer one.
+type secretsCache struct {
+	mu   sync.Mutex
+	gen  uint64
+	snap secretSnapshot
+}
+
+func keyAccount(pr config.Provider) string {
+	if pr.APIKeyAccount != nil {
+		return *pr.APIKeyAccount
+	}
+	return "provider." + pr.ID
+}
+
+// savedSecrets is the last snapshot (never a Keychain read).
+func (a *App) savedSecrets() secretSnapshot {
+	a.secrets.mu.Lock()
+	defer a.secrets.mu.Unlock()
+	return a.secrets.snap
+}
+
+// refreshSecrets reads, off the UI thread, which providers have a saved key
+// or a ChatGPT sign-in, then redraws.
+func (a *App) refreshSecrets() {
+	store := a.d.Secrets
+	if store == nil {
+		return
+	}
+	var accounts, chatGPT []string
+	for _, pr := range a.cfg.AI.Providers {
+		switch pr.Kind {
+		case config.KindChatGPT:
+			chatGPT = append(chatGPT, pr.ID)
+		case config.KindOpenAICompatible:
+			accounts = append(accounts, keyAccount(pr))
+		}
+	}
+	a.secrets.mu.Lock()
+	a.secrets.gen++
+	gen := a.secrets.gen
+	a.secrets.mu.Unlock()
+	go func() {
+		snap := secretSnapshot{keys: map[string]bool{}, chatGPT: map[string]bool{}}
+		for _, acc := range accounts {
+			snap.keys[acc] = store.Get(acc) != ""
+		}
+		for _, id := range chatGPT {
+			snap.chatGPT[id] = enhance.ChatGPTStatus(store, id).State == "signed_in"
+		}
+		a.secrets.mu.Lock()
+		fresh := a.secrets.gen == gen
+		if fresh {
+			a.secrets.snap = snap
+		}
+		a.secrets.mu.Unlock()
+		if fresh {
+			a.post(a.invalidate)
+		}
+	}()
 }
 
 func (a *App) downloadCleanup(m enhance.CleanupModelInfo) {
