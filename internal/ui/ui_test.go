@@ -19,6 +19,7 @@ import (
 	"github.com/watzon/sayso/internal/platform"
 	"github.com/watzon/sayso/internal/providers"
 	"github.com/watzon/sayso/internal/store"
+	"github.com/watzon/sayso/internal/update"
 )
 
 // requiredKeys are the automation keys the brief names; every one must be
@@ -877,4 +878,56 @@ func TestSettingsProvidersRenderNeverWaitsOnTheKeychain(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("the saved key never showed; texts %q", tt.Texts())
+}
+
+// An app that asks for no capability still gets the list of the models, and
+// the question shows who the app is, as the Rust app did.
+func TestApprovalDialogShowsModelsReadAndTheAppIdentity(t *testing.T) {
+	e := newEnv(t)
+	q := bridge.ApprovalQuestion{Name: "notetaker", Identity: bridge.Identity{Kind: bridge.IdentityPath, Path: "/usr/local/bin/notetaker"}}
+	e.a.asks = append(e.a.asks, &approvalAsk{q: q, answer: make(chan bool, 1)})
+	tt := mu.NewTester(e.a.ApprovalView, ApprovalW, ApprovalH)
+	if !tt.HasText(i18n.T("apps.capability.models_read")) {
+		t.Errorf("no models.read line: %q", tt.Texts())
+	}
+	if !tt.HasText("/usr/local/bin/notetaker") {
+		t.Errorf("no executable path: %q", tt.Texts())
+	}
+	for _, a := range tt.AccessAll() {
+		if a.Name == i18n.T("apps.approval.allow") && a.Role != mu.RoleText {
+			if b := a.Bounds; b.Y+b.H > ApprovalH {
+				t.Errorf("Allow is cut off: %+v in a window %v high", b, ApprovalH)
+			}
+			return
+		}
+	}
+	t.Error("no Allow button")
+}
+
+func TestIdentityText(t *testing.T) {
+	for _, c := range []struct {
+		id   bridge.Identity
+		want string
+	}{
+		{bridge.Identity{Kind: bridge.IdentitySigned, TeamID: "MB5789APU7", Identifier: "app.justsayso.notes"}, "app.justsayso.notes · MB5789APU7"},
+		{bridge.Identity{Kind: bridge.IdentityFlatpak, AppID: "org.example.Notes"}, "org.example.Notes · Flatpak"},
+		{bridge.Identity{}, ""},
+	} {
+		if got := identityText(c.id); got != c.want {
+			t.Errorf("identityText(%+v) = %q, want %q", c.id, got, c.want)
+		}
+	}
+}
+
+// Finishing onboarding marks What's New seen, so it does not open on the
+// next launch of a new user.
+func TestFinishOnboardingMarksWhatsNewSeen(t *testing.T) {
+	e := newEnv(t)
+	if update.WhatsNewSeen(e.paths.StateFile()) != nil {
+		t.Fatal("a fresh install has seen What's New")
+	}
+	e.a.FinishOnboarding()
+	if update.WhatsNewDue(update.WhatsNewSeen(e.paths.StateFile()), update.MustVersion(update.Version)) {
+		t.Error("What's New is due right after onboarding")
+	}
 }

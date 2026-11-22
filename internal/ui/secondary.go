@@ -69,6 +69,12 @@ func (a *App) setOnboardingStep(s int) {
 func (a *App) FinishOnboarding() {
 	a.cfg.Onboarding.Completed = true
 	a.saveConfig()
+	// A new user has nothing to compare with: What's New waits for the next version.
+	if a.d.Paths.DataDir != "" {
+		if err := update.MarkWhatsNewSeen(a.d.Paths.StateFile()); err != nil {
+			log.Printf("whats new: %v", err)
+		}
+	}
 	a.showWindow(WinOnboarding, false)
 	if a.d.Shell != nil {
 		a.d.Shell.ShowHub()
@@ -573,10 +579,16 @@ func (a *App) ApprovalView(c *mu.Context) {
 			}
 			heading(c, p, title, 22)
 			signer := i18n.T("apps.approval.not_signed")
-			if q.Signer != "" {
+			switch {
+			case q.Signer != "":
 				signer = i18n.T("apps.approval.signed_by", "org", q.Signer)
+			case q.Identity.Kind == bridge.IdentitySigned && q.Identity.TeamID != "":
+				signer = i18n.T("apps.approval.signed")
 			}
 			mu.Text(c, signer).FontSize(12.5).TextColor(p.Pencil)
+			if id := identityText(q.Identity); id != "" {
+				mu.Text(c, id).Font(theme.Mono).FontSize(12).TextColor(p.Graphite)
+			}
 			if q.ClaimedName != "" && q.ClaimedName != q.Name {
 				mu.Text(c, i18n.T("apps.approval.claimed", "name", q.ClaimedName)).FontSize(12.5).TextColor(p.Pencil)
 			}
@@ -585,7 +597,12 @@ func (a *App) ApprovalView(c *mu.Context) {
 				mu.Text(c, i18n.T("apps.approval.interpreter")).FontSize(13).TextColor(p.Danger)
 			}
 			eyebrow(c, p, i18n.T("apps.approval.asks_to"))
-			for _, cp := range q.Capabilities {
+			shown := q.Capabilities
+			if len(shown) == 0 {
+				// An app that asks for nothing still gets the list of the models.
+				shown = []bridge.Capability{bridge.CapModelsRead}
+			}
+			for _, cp := range shown {
 				mu.Row(c).Gap(8).Children(func() {
 					mu.Icon(c, icon("check")).FontSize(13).TextColor(p.Graphite)
 					mu.Text(c, capabilityLabel(cp)).FontSize(13).TextColor(p.Ink)
@@ -609,4 +626,24 @@ func (a *App) ApprovalView(c *mu.Context) {
 			}
 		})
 	})
+}
+
+// identityText is the team and identifier, the executable path, or the
+// Flatpak id of an app, as the approval question shows it.
+func identityText(id bridge.Identity) string {
+	switch id.Kind {
+	case bridge.IdentitySigned:
+		if id.TeamID == "" {
+			return ""
+		}
+		return id.Identifier + " · " + id.TeamID
+	case bridge.IdentityPath:
+		if id.Path == "" {
+			return ""
+		}
+		return bridge.VisiblePath(id.Path)
+	case bridge.IdentityFlatpak:
+		return id.AppID + " · Flatpak"
+	}
+	return ""
 }
