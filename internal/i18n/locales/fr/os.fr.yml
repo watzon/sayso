@@ -1,0 +1,26 @@
+_version: 1
+
+# Words for this computer and its settings. A key that ends in _mac,
+# _windows, or _other is the version for that system.
+os:
+  computer_mac: "Mac"
+  computer_windows: "PC"
+  computer_other: "ordinateur"
+  secret_store_mac: "le trousseau"
+  secret_store_windows: "le Gestionnaire d’identification Windows"
+  secret_store_other: "le trousseau du système"
+  sound_settings_mac: "Réglages Système › Son"
+  sound_settings_windows: "Paramètres › Système › Son"
+  sound_settings_other: "les réglages du son"
+  optimizing_mac: "Optimisation pour votre Mac"
+  optimizing_windows: "Chargement du modèle"
+  optimizing_other: "Préparation du modèle"
+  permission:
+    microphone: "Microphone"
+    accessibility_mac: "Accessibilité"
+    accessibility_other: "Accès au collage"
+    input_monitoring_mac: "Surveillance de l’entrée"
+    input_monitoring_other: "Accès au clavier"
+  open_permission_settings_mac: "Ouvrir Réglages Système"
+  open_permission_settings_windows: "Ouvrir Paramètres"
+  open_permission_settings_other: "Ouvrir le guide d’installation"

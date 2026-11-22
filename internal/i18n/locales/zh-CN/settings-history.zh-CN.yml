@@ -1,0 +1,62 @@
+_version: 1
+
+settings:
+  history:
+    title: "历史记录与隐私"
+    subtitle_mac: "Sayso 保留什么、保留多久，以及哪些数据会离开这台 Mac。"
+    subtitle_windows: "Sayso 保留什么、保留多久，以及哪些数据会离开这台电脑。"
+    subtitle_other: "Sayso 保留什么、保留多久，以及哪些数据会离开这台电脑。"
+    history: "历史记录"
+    save: "保存历史记录"
+    save_detail: "Sayso 会保留每条听写，方便你再次查找。"
+    save_detail_off: "历史记录已关闭。Sayso 不会保存新听写的文本和音频。"
+    keep_text: "文本保留时间"
+    keep_text_detail: "文本过期后，Sayso 会删除整个条目。"
+    save_audio: "保存音频"
+    save_audio_detail: "让你可以重新播放或重新转录听写。"
+    keep_audio: "音频保留时间"
+    keep_audio_detail: "音频过期后，只删除音频文件，文本会保留。"
+    forever: "永久"
+    days:
+      other: "%{count} 天"
+    site_icons: "显示网站图标"
+    site_icons_detail: "用于在网页中进行的听写。Sayso 从网站获取图标。如果网站未提供图标，Sayso 会询问 DuckDuckGo，DuckDuckGo 会看到网站名称。"
+    leaves: "哪些数据会离开这台%{computer}"
+    leaves_cloud: "你的模型是云端模型。Sayso 会将每条听写的音频和你的词典词语发送至 %{name}。当风格使用 AI 时，Sayso 会将转录文本、风格提示词和你的词典词语发送给该风格的服务商。不会发送其他任何数据。"
+    leaves_cloud_icons: "你的模型是云端模型。Sayso 会将每条听写的音频和你的词典词语发送至 %{name}。当风格使用 AI 时，Sayso 会将转录文本、风格提示词和你的词典词语发送给该风格的服务商。对于在网页中进行的听写，Sayso 会向该网站请求图标，如果网站未提供，则向 DuckDuckGo 请求。不会发送其他任何数据。"
+    leaves_local: "语音识别在这台%{computer}上运行，你的音频永远不会离开它。当风格使用 AI 时，Sayso 会将转录文本、风格提示词和你的词典词语发送给该风格的服务商。不会发送其他任何数据。"
+    leaves_local_icons: "语音识别在这台%{computer}上运行，你的音频永远不会离开它。当风格使用 AI 时，Sayso 会将转录文本、风格提示词和你的词典词语发送给该风格的服务商。对于在网页中进行的听写，Sayso 会向该网站请求图标，如果网站未提供，则向 DuckDuckGo 请求。不会发送其他任何数据。"
+    ai_off: "AI 已关闭。任何文本都不会离开这台%{computer}。"
+    cloud: "云端"
+    this_computer: "这台%{computer}"
+    data: "这台%{computer}上的数据"
+    in_total: "共计"
+    data_history: "历史记录"
+    data_audio: "音频"
+    data_models: "模型"
+    cancel: "取消"
+    clear_history: "清除历史记录"
+    delete_all: "全部删除"
+    delete_audio: "删除音频"
+    entries_confirm:
+      other: "要删除全部 %{number} 个条目及其音频吗？此操作无法撤销。"
+    entries_none: "历史记录为空。"
+    entries:
+      other: "%{number} 个条目。"
+    entries_kept:
+      other: "%{number} 个条目。这些条目会一直保留，直到你清除。"
+    recordings_confirm:
+      other: "要删除 %{number} 段录音吗？各条目的文本会保留。此操作无法撤销。"
+    recordings_none: "没有保存音频。"
+    recordings:
+      other: "%{number} 段录音。“删除音频”会保留各条目的文本。"
+    models_none: "未下载本地模型。"
+    models:
+      other: "%{count} 个本地模型。请在“模型”页面中删除模型。"
+    open_models: "打开“模型”"
+    show_mac: "在访达中显示"
+    show_windows: "在文件资源管理器中显示"
+    show_other: "打开文件夹"
+    import_group: "导入"
+    import_pindrop: "从 Pindrop 导入"
+    import: "导入"

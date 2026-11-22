@@ -1,0 +1,28 @@
+_version: 1
+
+settings:
+  audio:
+    title: "Audio"
+    subtitle: "Votre microphone et la durée d’enregistrement de Sayso."
+    input: "Entrée"
+    system_default: "Par défaut du système"
+    follows_mac: "Suit l’entrée de Réglages Système › Son."
+    follows_other: "Suit l’entrée par défaut du système."
+    follows_now_mac: "Actuellement %{name}. Suit l’entrée de Réglages Système › Son."
+    follows_now_other: "Actuellement %{name}. Suit l’entrée par défaut du système."
+    no_microphone: "Sayso n’a trouvé aucun microphone. Branchez-en un, ou consultez %{settings}."
+    allow_to_test: "Autorisez l’accès au microphone pour le tester ici."
+    allow_microphone: "Autoriser le microphone"
+    meter_failed: "Le microphone n’a pas démarré : %{error}. Choisissez une autre entrée, ou consultez %{settings}."
+    test_paused: "Le test s’interrompt pendant que vous dictez."
+    say_something: "Dites quelque chose. L’encre suit votre voix."
+    recording: "Enregistrement"
+    live_preview: "Aperçu en direct"
+    live_preview_detail: "Diffuse vos mots dans l’indicateur pendant que vous parlez. Consomme un peu plus d’énergie."
+    live_preview_unavailable: "Votre modèle n’a pas d’aperçu en direct dans cette langue. Téléchargez-en un qui en a un dans Modèles, par exemple Parakeet EOU pour l’anglais."
+    pause_media: "Mettre le média en pause"
+    pause_media_detail: "Met en pause la musique et les vidéos pendant que vous dictez, et les relance à l’arrêt."
+    max_length: "Durée maximale"
+    max_length_detail: "L’enregistrement s’arrête de lui-même après cette durée."
+    length_seconds: "%{seconds} s"
+    length_minutes: "%{minutes} min"

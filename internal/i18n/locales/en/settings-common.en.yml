@@ -1,0 +1,19 @@
+_version: 1
+
+# Text that more than one settings page shares.
+settings:
+  common:
+    change: "Change"
+    clear: "Clear"
+    record_key: "Record a key"
+    press_keys: "Press keys to record…"
+    press_keys_here: "Press keys in this window…"
+    allowed: "Allowed"
+    blocked: "Blocked"
+    waiting: "Waiting"
+    reveal: "Reveal"
+    change_hotkey: "%{name}: %{keys}. Change"
+    clear_hotkey: "Clear %{name}"
+    record_hotkey: "Record %{name}"
+    volume: "Volume"
+    reveal_named: "Reveal %{name}"

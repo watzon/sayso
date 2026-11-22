@@ -1,0 +1,15 @@
+_version: 1
+
+settings:
+  permissions:
+    title: "Permessi"
+    subtitle_mac: "Cosa può fare Sayso su questo Mac e perché."
+    subtitle_windows: "Cosa può fare Sayso su questo PC e perché."
+    subtitle_other: "Cosa può fare Sayso su questo computer e perché."
+    microphone_detail: "Permette a Sayso di sentirti mentre detti. Obbligatorio."
+    accessibility_detail: "Permette a Sayso di incollare il testo nell'app che stai usando. Obbligatorio."
+    input_monitoring_detail: "Serve per «tieni premuto per parlare», per Esc che annulla e per registrare i tasti in altre app."
+    request: "Richiedi"
+    note_mac: "Questa pagina si aggiorna da sola quando cambi un permesso in Impostazioni di Sistema. Se un permesso resta disattivato dopo averlo attivato, esci da Sayso e riaprilo."
+    note_windows: "Questa pagina si aggiorna da sola quando cambi un permesso in Impostazioni. Se un permesso resta disattivato dopo averlo attivato, esci da Sayso e riaprilo."
+    note_other: "Questa pagina si aggiorna da sola quando un permesso cambia. Dopo esserti unito al gruppo input, esci e accedi di nuovo."

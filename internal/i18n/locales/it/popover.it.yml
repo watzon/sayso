@@ -1,0 +1,26 @@
+_version: 1
+
+popover:
+  cloud: "Cloud"
+  title: "Sayso"
+  system_default: "Predefinito del sistema"
+  no_model_downloaded: "Nessun modello scaricato."
+  no_microphone: "Nessun microfono trovato."
+  last: "Ultima · %{app} · %{time}"
+  incognito: "Incognito"
+  history_off: "Cronologia disattivata"
+  # %{number} is the count with a thousands separator.
+  words_today:
+    one: "%{number} parola oggi"
+    many: "%{number} di parole oggi"
+    other: "%{number} parole oggi"
+  stop_dictation: "Ferma dettatura"
+  start_dictation: "Avvia dettatura"
+  copy: "Copia"
+  style: "Stile"
+  model: "Modello"
+  microphone: "Microfono"
+  manage_models: "Gestisci modelli…"
+  not_saved: "Non salvata nella cronologia"
+  open_sayso: "Apri Sayso"
+  quit: "Esci"

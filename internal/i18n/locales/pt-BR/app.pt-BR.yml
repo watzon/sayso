@@ -1,0 +1,51 @@
+_version: 1
+
+# Text of the app shell. Shown only on a system that has no backend yet.
+app:
+  hotkeys_not_built: "Os atalhos ainda não existem para este sistema."
+  insertion_not_built: "A inserção ainda não existe para este sistema."
+  sign_in:
+    start_failed: "O Sayso não conseguiu iniciar o login: %{error}"
+    not_finished: "O login não terminou. Selecione Entrar para tentar de novo."
+    code_failed: "O Sayso não conseguiu enviar o código: %{error}"
+  # The status line at the foot of the Hub sidebar.
+  engine:
+    ready: "Pronto"
+    no_model: "Sem modelo"
+    choose_model: "Abra Modelos para escolher um"
+    download_model: "Abra Modelos para baixar"
+    stopped: "Mecanismo parado"
+    restarting: "Reiniciando…"
+    optimizing: "Otimizando"
+    downloading: "Baixando"
+    loading: "Carregando"
+    model_error: "Erro no modelo"
+    detail_cloud: "%{model} · Nuvem"
+    detail_downloading: "%{model} · %{percent}%"
+    detail_not_in_memory: "%{model} · fora da memória"
+  # The import from Pindrop. %{number} is the count with a thousands separator.
+  pindrop:
+    idle: "Copia seus ditados, seu dicionário e seus presets de prompt do Pindrop para o Sayso. O Pindrop e os dados dele ficam como estão."
+    running: "Importando do Pindrop…"
+    dictations:
+      one: "%{number} ditado"
+      many: "%{number} de ditados"
+      other: "%{number} ditados"
+    words:
+      one: "%{number} palavra"
+      many: "%{number} de palavras"
+      other: "%{number} palavras"
+    replacements:
+      one: "%{number} substituição"
+      many: "%{number} de substituições"
+      other: "%{number} substituições"
+    styles:
+      one: "%{number} estilo"
+      many: "%{number} de estilos"
+      other: "%{number} estilos"
+    added: "Adicionado: %{items}."
+    list_separator: ", "
+    list_end: "%{first} e %{last}"
+    nothing_new: "Tudo do Pindrop já está no Sayso."
+    failed: "A importação não terminou e nada foi adicionado: %{reason}. Tente de novo."
+    style_description: "Importado do Pindrop."

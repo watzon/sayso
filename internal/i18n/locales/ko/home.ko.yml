@@ -1,0 +1,64 @@
+_version: 1
+
+home:
+  greeting:
+    morning: "좋은 아침이에요."
+    afternoon: "좋은 오후예요."
+    evening: "좋은 저녁이에요."
+    morning_name: "%{name}님, 좋은 아침이에요."
+    afternoon_name: "%{name}님, 좋은 오후예요."
+    evening_name: "%{name}님, 좋은 저녁이에요."
+  hint:
+    press: "어느 앱에서나"
+    anywhere: "키를 눌러 받아쓰기"
+    no_hotkey: "단축키가 설정되지 않았어요."
+    set_hotkey: "단축키 설정"
+  stats:
+    none_yet: "아직 없음"
+    this_week: "이번 주"
+    words_today: "오늘 단어 수"
+    time_saved: "절약한 시간"
+    minutes: "%{minutes}분"
+    wpm: "%{wpm} wpm"
+    pace: "말하는 속도"
+  history_off:
+    title: "기록이 꺼져 있어요"
+    turn_on: "기록 켜기"
+    open_settings: "기록 설정 열기"
+    strip_detail: "Sayso가 새 받아쓰기를 저장하지 않아서 통계가 없어요. 아래 항목은 이전 기록이에요."
+    block_detail: "Sayso가 받아쓰기를 보관하지 않아서 최근 항목과 통계가 없어요. 마지막 텍스트 붙여넣기는 Sayso를 종료할 때까지 계속 작동해요."
+  recent:
+    title: "최근"
+    open_history: "기록 열기"
+    your_hotkey: "받아쓰기 단축키"
+    empty_title: "아직 받아쓰기가 없어요"
+    empty_body: "아무 앱에서나 %{hotkey}를 누르고 말하세요. 받아쓰기가 여기에 표시돼요."
+    unknown_app: "알 수 없는 앱"
+  style:
+    default: "기본 스타일"
+    cycle_hotkey: "스타일 전환 단축키"
+    change: "스타일 변경"
+    detail_no_ai: "%{computer} 밖으로 나가는 데이터가 없어요."
+    detail_needs_provider: "AI가 꺼져 있어서 Sayso가 전사 텍스트를 삽입해요. 설정에서 제공업체를 추가하세요."
+    detail_needs_model: "%{provider}에 선택한 모델이 없어서 Sayso가 전사 텍스트를 삽입해요. 설정에서 모델을 선택하세요."
+    detail_local: "%{computer}에서 실행: %{provider} · %{model}."
+    detail_cloud: "전송 대상: %{provider} · %{model}."
+  checklist:
+    all_set: "모두 준비됨"
+    needs_attention: "확인 필요"
+    microphone: "마이크"
+    model: "모델"
+    dictionary: "사전"
+    engine: "엔진"
+    engine_stopped: "중지됨. 다시 시작하는 중"
+    allowed: "허용됨"
+    allow: "허용"
+    open_models: "모델 열기"
+    download: "다운로드"
+    add_words: "단어 추가"
+    downloading: "다운로드 중 %{percent}%"
+    dictionary_summary: "%{words} · %{rules}"
+    words:
+      other: "단어 %{count}개"
+    rules:
+      other: "규칙 %{count}개"

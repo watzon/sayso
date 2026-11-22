@@ -1,0 +1,19 @@
+_version: 1
+
+# Text that more than one settings page shares.
+settings:
+  common:
+    change: "Cambia"
+    clear: "Cancella"
+    record_key: "Registra un tasto"
+    press_keys: "Premi i tasti da registrare…"
+    press_keys_here: "Premi i tasti in questa finestra…"
+    allowed: "Consentito"
+    blocked: "Bloccato"
+    waiting: "In attesa"
+    reveal: "Mostra"
+    change_hotkey: "%{name}: %{keys}. Cambia"
+    clear_hotkey: "Cancella %{name}"
+    record_hotkey: "Registra %{name}"
+    volume: "Volume"
+    reveal_named: "Mostra %{name}"

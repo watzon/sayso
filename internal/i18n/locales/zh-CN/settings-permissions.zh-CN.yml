@@ -1,0 +1,15 @@
+_version: 1
+
+settings:
+  permissions:
+    title: "权限"
+    subtitle_mac: "Sayso 可以在这台 Mac 上做什么，以及原因。"
+    subtitle_windows: "Sayso 可以在这台电脑上做什么，以及原因。"
+    subtitle_other: "Sayso 可以在这台电脑上做什么，以及原因。"
+    microphone_detail: "让 Sayso 在你听写时听到你的声音。必需。"
+    accessibility_detail: "让 Sayso 将文本粘贴到你正在使用的 App 中。必需。"
+    input_monitoring_detail: "用于按住说话、按 Esc 取消，以及在其他 App 中录制按键。"
+    request: "请求"
+    note_mac: "当你在系统设置中更改权限时，此页面会自动更新。如果打开权限后它仍显示为关闭，请退出 Sayso 并重新打开。"
+    note_windows: "当你在“设置”中更改权限时，此页面会自动更新。如果打开权限后它仍显示为关闭，请退出 Sayso 并重新打开。"
+    note_other: "权限变化时，此页面会自动更新。加入 input 组后，请注销并重新登录。"

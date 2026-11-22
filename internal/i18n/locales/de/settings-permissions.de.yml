@@ -1,0 +1,15 @@
+_version: 1
+
+settings:
+  permissions:
+    title: "Berechtigungen"
+    subtitle_mac: "Was Sayso auf diesem Mac tun kann, und warum."
+    subtitle_windows: "Was Sayso auf diesem PC tun kann, und warum."
+    subtitle_other: "Was Sayso auf diesem Computer tun kann, und warum."
+    microphone_detail: "Erlaubt Sayso, dich beim Diktieren zu hören. Erforderlich."
+    accessibility_detail: "Erlaubt Sayso, Text in die App einzufügen, die du gerade nutzt. Erforderlich."
+    input_monitoring_detail: "Nötig für „Gedrückt halten zum Sprechen“, für Esc zum Abbrechen und um Tasten in anderen Apps aufzunehmen."
+    request: "Anfordern"
+    note_mac: "Diese Seite aktualisiert sich selbst, wenn du eine Berechtigung in den Systemeinstellungen änderst. Wenn eine Berechtigung nach dem Einschalten aus bleibt, beende Sayso und öffne es erneut."
+    note_windows: "Diese Seite aktualisiert sich selbst, wenn du eine Berechtigung in den Einstellungen änderst. Wenn eine Berechtigung nach dem Einschalten aus bleibt, beende Sayso und öffne es erneut."
+    note_other: "Diese Seite aktualisiert sich selbst, wenn sich eine Berechtigung ändert. Nachdem du der Gruppe input beigetreten bist, melde dich ab und wieder an."

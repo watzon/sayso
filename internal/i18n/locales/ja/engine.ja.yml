@@ -1,0 +1,18 @@
+_version: 1
+
+engine:
+  incomplete_download: "ダウンロードは完了しましたが、モデルのファイルの一部がありません。もう一度ダウンロードしてください。"
+  download_failed: "ダウンロードが完了しませんでした：%{detail}。"
+  load_failed: "Sayso はモデルを読み込めませんでした：%{detail}。"
+  no_gpu: "このモデルには Vulkan ドライバーのある専用 GPU が必要ですが、Sayso は見つけられませんでした。「モデル」で CPU で動くモデルを選択してください。"
+  format_changed: "このバージョンの Sayso では、このモデルに別のファイルを使います。モデルをもう一度ダウンロードしてください。"
+  unsupported_cpu: "このコンピュータのプロセッサでは、このバージョンの Sayso でこのモデルを実行できません。「モデル」で別のモデルを選択するか、Sayso をアップデートしてください。"
+  device_not_eligible: "この Mac は Apple Intelligence に対応していません。"
+  intelligence_off: "Apple Intelligence がオフです。システム設定でオンにしてください。"
+  model_not_ready: "macOS が Apple Intelligence のモデルをまだダウンロードしています。数分後にもう一度お試しください。"
+  needs_macos_26: "Apple Intelligence には macOS 26 以降が必要です。"
+  unavailable: "この Mac では Apple Intelligence を使用できません。"
+  timeout: "言語モデルが時間内に応答しませんでした。"
+  refused: "言語モデルがこのテキストの処理を拒否しました。"
+  failed: "言語モデルでエラーが発生しました：%{detail}。"
+  general: "問題が発生しました：%{detail}。"

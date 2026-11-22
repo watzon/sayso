@@ -1,0 +1,47 @@
+_version: 1
+
+# Arguments: %{weekday}, %{month}, %{day}, %{year}. Put them in the order of
+# the language, with its words between them ("%{day} de %{month}").
+date:
+  pattern:
+    # In a narrow column of lists: keep it to about 6 characters.
+    day_month_short: "%{day}. %{month}"
+    day_month: "%{day}. %{month}"
+    weekday_day_month: "%{weekday}, %{day}. %{month}"
+    day_month_year: "%{day}. %{month} %{year}"
+  today: "Heute"
+  yesterday: "Gestern"
+  month:
+    january: "Januar"
+    february: "Februar"
+    march: "März"
+    april: "April"
+    may: "Mai"
+    june: "Juni"
+    july: "Juli"
+    august: "August"
+    september: "September"
+    october: "Oktober"
+    november: "November"
+    december: "Dezember"
+  month_short:
+    january: "Jan."
+    february: "Feb."
+    march: "März"
+    april: "Apr."
+    may: "Mai"
+    june: "Juni"
+    july: "Juli"
+    august: "Aug."
+    september: "Sept."
+    october: "Okt."
+    november: "Nov."
+    december: "Dez."
+  weekday:
+    monday: "Montag"
+    tuesday: "Dienstag"
+    wednesday: "Mittwoch"
+    thursday: "Donnerstag"
+    friday: "Freitag"
+    saturday: "Samstag"
+    sunday: "Sonntag"

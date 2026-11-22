@@ -1,0 +1,43 @@
+_version: 1
+
+# Text of the app shell. Shown only on a system that has no backend yet.
+app:
+  hotkeys_not_built: "このシステムではショートカットにまだ対応していません。"
+  insertion_not_built: "このシステムではテキストの挿入にまだ対応していません。"
+  sign_in:
+    start_failed: "Sayso はサインインを開始できませんでした：%{error}"
+    not_finished: "サインインが完了しませんでした。もう一度お試しになる場合は、「サインイン」を選択してください。"
+    code_failed: "Sayso はコードを送信できませんでした：%{error}"
+  # The status line at the foot of the Hub sidebar.
+  engine:
+    ready: "準備完了"
+    no_model: "モデルなし"
+    choose_model: "「モデル」を開いて選択してください"
+    download_model: "「モデル」を開いてダウンロードしてください"
+    stopped: "エンジン停止"
+    restarting: "再起動しています…"
+    optimizing: "最適化中"
+    downloading: "ダウンロード中"
+    loading: "読み込み中"
+    model_error: "モデルのエラー"
+    detail_cloud: "%{model} · クラウド"
+    detail_downloading: "%{model} · %{percent}%"
+    detail_not_in_memory: "%{model} · メモリに未読み込み"
+  # The import from Pindrop. %{number} is the count with a thousands separator.
+  pindrop:
+    idle: "Pindrop の音声入力、辞書、プロンプトのプリセットを Sayso にコピーします。Pindrop とそのデータはそのまま残ります。"
+    running: "Pindrop から読み込んでいます…"
+    dictations:
+      other: "%{number}件の音声入力"
+    words:
+      other: "%{number}個の単語"
+    replacements:
+      other: "%{number}件の置換"
+    styles:
+      other: "%{number}件のスタイル"
+    added: "%{items}を追加しました。"
+    list_separator: "、"
+    list_end: "%{first}、%{last}"
+    nothing_new: "Pindrop のデータはすべて Sayso に読み込み済みです。"
+    failed: "読み込みが完了しなかったため、何も追加されていません：%{reason}。もう一度お試しください。"
+    style_description: "Pindrop から読み込みました。"

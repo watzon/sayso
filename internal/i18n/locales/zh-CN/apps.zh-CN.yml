@@ -1,0 +1,68 @@
+_version: 1
+
+# The question that an app asks before it downloads a model.
+apps:
+  download_ask:
+    window_title: "下载模型"
+    title: "%{app} 想要下载一个模型"
+    body: "如果你同意，Sayso 会把 %{model}（%{size}）下载到这台电脑。"
+    reason_label: "来自 %{app} 的理由"
+    download: "下载"
+    cancel: "取消"
+  # The question before Sayso quits while an app records or transcribes.
+  quit_ask:
+    window_title: "退出 Sayso"
+    recording: "%{app} 正在录音。仍要退出吗？"
+    transcribing: "%{app} 正在转写文件。仍要退出吗？"
+    body: "如果退出，此工作会停止，应用将无法完成它。"
+    others_label: "其他正在工作的应用"
+    cancel: "取消"
+    quit: "退出"
+  # The approval question: an app asks to use Sayso.
+  approval:
+    window_title: "允许应用"
+    title: "%{app} 想要使用 Sayso"
+    title_more: "%{app} 请求更多权限"
+    body: "在 Sayso 运行时，它可以使用你的语音模型并通过 Sayso 录音。请只允许你信任的应用。"
+    body_more: "你之前已允许此应用。如果拒绝，它只保留现有权限。"
+    signed_by: "由 %{org} 签名"
+    signed: "已签名"
+    not_signed: "未签名"
+    interpreter: "这是脚本解释器。如果允许，它运行的每个脚本都会获得相同的权限。"
+    claimed: "该应用自称“%{name}”。"
+    asks_to: "它请求"
+    allow: "允许"
+    dont_allow: "不允许"
+  # What an app can do, in plain words.
+  capability:
+    models_read: "查看你的语音模型列表"
+    audio_mic: "通过麦克风录音"
+    audio_system: "录制其他应用和通话的声音"
+    transcribe_file: "转写文件"
+    session_live: "将实时音频转为文字"
+    models_download: "请求下载语音模型"
+    ai_enhance: "使用你的 AI 提供商改进文字"
+    dictation_observe: "查看每次插入后的听写内容"
+  # Settings, Connected apps.
+  settings:
+    title: "已连接的应用"
+    subtitle: "使用 Sayso 语音模型和麦克风的应用。每个应用都先征求过你的同意。"
+    empty: "还没有应用。应用请求使用 Sayso 后会显示在这里。"
+    recording: "正在录音"
+    remove: "移除"
+    not_allowed: "未允许"
+    allow: "允许"
+    forget: "忘记"
+    said_no: "你在 %{date} 拒绝了"
+    said_no_undated: "你已拒绝"
+    no_capabilities: "此应用没有其他请求。它可以查看你的语音模型列表。"
+    broken: "Sayso 无法读取 %{path}，因此应用无法连接。请修复或删除该文件，然后重新连接应用。"
+    save_failed: "Sayso 无法将此更改保存到 %{path}。请检查 Sayso 能否写入该文件夹，然后重试。"
+    show_app: "显示 %{app}"
+  # The menu bar and the popover while an app records.
+  recording:
+    row: "%{app} 正在录音"
+    mic: "麦克风"
+    system: "系统音频"
+    both: "麦克风和系统音频"
+    stop: "停止"

@@ -1,0 +1,64 @@
+_version: 1
+
+home:
+  greeting:
+    morning: "おはようございます。"
+    afternoon: "こんにちは。"
+    evening: "こんばんは。"
+    morning_name: "%{name}さん、おはようございます。"
+    afternoon_name: "%{name}さん、こんにちは。"
+    evening_name: "%{name}さん、こんばんは。"
+  hint:
+    press: "どのアプリでも"
+    anywhere: "を押して音声入力"
+    no_hotkey: "ショートカットが設定されていません。"
+    set_hotkey: "ショートカットを設定"
+  stats:
+    none_yet: "まだありません"
+    this_week: "今週"
+    words_today: "今日の語数"
+    time_saved: "節約した時間"
+    minutes: "%{minutes}分"
+    wpm: "%{wpm}語/分"
+    pace: "話す速さ"
+  history_off:
+    title: "履歴はオフです"
+    turn_on: "履歴をオンにする"
+    open_settings: "履歴の設定を開く"
+    strip_detail: "Sayso は新しい音声入力を保存しないため、統計はありません。下の項目は以前のものです。"
+    block_detail: "Sayso は音声入力を保存しないため、最近の項目も統計もありません。「最後のテキストをペースト」は Sayso を終了するまで使えます。"
+  recent:
+    title: "最近の項目"
+    open_history: "履歴を開く"
+    your_hotkey: "ショートカット"
+    empty_title: "まだ音声入力はありません"
+    empty_body: "任意のアプリで %{hotkey} を押して話してください。音声入力がここに表示されます。"
+    unknown_app: "不明なアプリ"
+  style:
+    default: "デフォルトのスタイル"
+    cycle_hotkey: "スタイルを切り替えるホットキー"
+    change: "スタイルを変更"
+    detail_no_ai: "データは %{computer} の外に送信されません。"
+    detail_needs_provider: "AI がオフのため、Sayso は文字起こしをそのまま挿入します。「設定」でプロバイダを追加してください。"
+    detail_needs_model: "%{provider} のモデルが選択されていないため、Sayso は文字起こしをそのまま挿入します。「設定」で選択してください。"
+    detail_local: "%{computer} 上の %{provider} · %{model} で実行します。"
+    detail_cloud: "%{provider} · %{model} に送信します。"
+  checklist:
+    all_set: "準備完了"
+    needs_attention: "要確認"
+    microphone: "マイク"
+    model: "モデル"
+    dictionary: "辞書"
+    engine: "エンジン"
+    engine_stopped: "停止。再起動しています"
+    allowed: "許可済み"
+    allow: "許可"
+    open_models: "モデルを開く"
+    download: "ダウンロード"
+    add_words: "単語を追加"
+    downloading: "ダウンロード中 %{percent}%"
+    dictionary_summary: "%{words} · %{rules}"
+    words:
+      other: "%{count}語"
+    rules:
+      other: "%{count}件のルール"

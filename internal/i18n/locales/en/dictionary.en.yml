@@ -1,0 +1,47 @@
+_version: 1
+
+dictionary:
+  title: "Dictionary"
+  intro: "Words help Sayso hear names and terms. Replacements change the text after it is transcribed."
+  add: "Add"
+  add_word: "Add word"
+  remove_word: "Remove %{word}"
+  cancel_word: "Cancel new word"
+  add_rule: "Add rule"
+  save_rule: "Save rule"
+  cancel_rule: "Cancel edit"
+  remove_rule: "Remove rule %{from}"
+  edit_rule: "Edit rule: %{from} becomes %{to}"
+  nothing: "nothing"
+  words: "Words"
+  words_note: "%{total} · boosted in recognition"
+  words_empty: "Add names and terms that Sayso spells wrong. Sayso listens for them and spells them as you write them here."
+  replacements: "Replacements"
+  replacements_note:
+    one: "%{count} rule · applied before the style"
+    other: "%{count} rules · applied before the style"
+  rules_empty: "Add a rule below. For example, when you say “git hub”, Sayso writes “GitHub”."
+  placeholder:
+    filter: "Filter"
+    new_word: "New word"
+    from: "When I say"
+    to: "Write"
+    phrase: "Type a phrase to see what your rules do"
+  column:
+    from: "When I say"
+    to: "Write"
+    used: "Used"
+  try:
+    title: "Try a phrase"
+    result_empty: "The result shows here."
+    rules_apply:
+      one: "%{count} rule applies"
+      other: "%{count} rules apply"
+  error:
+    word_exists: "“%{word}” is already in your words."
+    needs_phrase: "Enter what you say in “When I say”."
+    rule_exists: "A rule for “%{from}” already exists. Edit that rule instead."
+    edit_needs_phrase: "A rule needs a “When I say” phrase."
+  line_breaks:
+    one: "a line break"
+    other: "%{count} line breaks"

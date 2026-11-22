@@ -1,0 +1,50 @@
+_version: 1
+
+dictionary:
+  title: "Dictionnaire"
+  intro: "Les mots aident Sayso à reconnaître les noms et les termes. Les remplacements modifient le texte après la transcription."
+  add: "Ajouter"
+  add_word: "Ajouter un mot"
+  remove_word: "Supprimer %{word}"
+  cancel_word: "Annuler le nouveau mot"
+  add_rule: "Ajouter une règle"
+  save_rule: "Enregistrer la règle"
+  cancel_rule: "Annuler la modification"
+  remove_rule: "Supprimer la règle %{from}"
+  edit_rule: "Modifier la règle : %{from} devient %{to}"
+  nothing: "rien"
+  words: "Mots"
+  words_note: "%{total} · favorisés à la reconnaissance"
+  words_empty: "Ajoutez les noms et les termes que Sayso orthographie mal. Sayso les repère et les écrit comme vous les saisissez ici."
+  replacements: "Remplacements"
+  replacements_note:
+    one: "%{count} règle · appliquée avant le style"
+    many: "%{count} de règles · appliquées avant le style"
+    other: "%{count} règles · appliquées avant le style"
+  rules_empty: "Ajoutez une règle ci-dessous. Par exemple, quand vous dites « git hub », Sayso écrit « GitHub »."
+  placeholder:
+    filter: "Filtrer"
+    new_word: "Nouveau mot"
+    from: "Quand je dis"
+    to: "Écrire"
+    phrase: "Saisissez une phrase pour voir l’effet de vos règles"
+  column:
+    from: "Quand je dis"
+    to: "Écrire"
+    used: "Utilisée"
+  try:
+    title: "Essayer une phrase"
+    result_empty: "Le résultat s’affiche ici."
+    rules_apply:
+      one: "%{count} règle s’applique"
+      many: "%{count} de règles s’appliquent"
+      other: "%{count} règles s’appliquent"
+  error:
+    word_exists: "« %{word} » est déjà dans vos mots."
+    needs_phrase: "Saisissez ce que vous dites dans « Quand je dis »."
+    rule_exists: "Une règle pour « %{from} » existe déjà. Modifiez plutôt cette règle."
+    edit_needs_phrase: "Une règle a besoin d’une phrase « Quand je dis »."
+  line_breaks:
+    one: "un saut de ligne"
+    many: "%{count} de sauts de ligne"
+    other: "%{count} sauts de ligne"

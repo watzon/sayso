@@ -1,0 +1,13 @@
+_version: 1
+
+a11y:
+  decrease: "Diminuer"
+  increase: "Augmenter"
+  key:
+    control: "Contrôle"
+    option: "Option"
+    shift: "Maj"
+    command: "Commande"
+    return: "Retour"
+    tab: "Tab"
+    delete: "Supprimer"

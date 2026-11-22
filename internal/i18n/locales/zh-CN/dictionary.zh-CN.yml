@@ -1,0 +1,44 @@
+_version: 1
+
+dictionary:
+  title: "词典"
+  intro: "词语帮助 Sayso 听清名称和术语。替换会在转录后更改文本。"
+  add: "添加"
+  add_word: "添加词语"
+  remove_word: "移除 %{word}"
+  cancel_word: "取消新词"
+  add_rule: "添加规则"
+  save_rule: "保存规则"
+  cancel_rule: "取消编辑"
+  remove_rule: "移除规则 %{from}"
+  edit_rule: "编辑规则：%{from} 变为 %{to}"
+  nothing: "空"
+  words: "词语"
+  words_note: "%{total} · 识别时优先"
+  words_empty: "添加 Sayso 拼写错误的名称和术语。Sayso 会留意这些词语，并按你在这里写的方式拼写。"
+  replacements: "替换"
+  replacements_note:
+    other: "%{count} 条规则 · 在风格之前应用"
+  rules_empty: "在下方添加规则。例如，当你说“git hub”时，Sayso 会写成“GitHub”。"
+  placeholder:
+    filter: "过滤"
+    new_word: "新词语"
+    from: "当我说"
+    to: "写成"
+    phrase: "输入一个短语，查看规则的效果"
+  column:
+    from: "当我说"
+    to: "写成"
+    used: "已使用"
+  try:
+    title: "试用短语"
+    result_empty: "结果显示在这里。"
+    rules_apply:
+      other: "应用了 %{count} 条规则"
+  error:
+    word_exists: "“%{word}”已在你的词语中。"
+    needs_phrase: "请在“当我说”中输入你说的内容。"
+    rule_exists: "“%{from}”的规则已存在。请改为编辑该规则。"
+    edit_needs_phrase: "规则需要填写“当我说”短语。"
+  line_breaks:
+    other: "%{count} 个换行"

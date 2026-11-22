@@ -1,0 +1,15 @@
+_version: 1
+
+settings:
+  permissions:
+    title: "권한"
+    subtitle_mac: "Sayso가 이 Mac에서 할 수 있는 일과 그 이유예요."
+    subtitle_windows: "Sayso가 이 PC에서 할 수 있는 일과 그 이유예요."
+    subtitle_other: "Sayso가 이 컴퓨터에서 할 수 있는 일과 그 이유예요."
+    microphone_detail: "받아쓰기 중에 Sayso가 목소리를 들을 수 있어요. 필수예요."
+    accessibility_detail: "Sayso가 사용 중인 앱에 텍스트를 붙여넣을 수 있어요. 필수예요."
+    input_monitoring_detail: "누르고 말하기, Esc로 취소, 다른 앱에서 키 기록에 필요해요."
+    request: "요청"
+    note_mac: "시스템 설정에서 권한을 바꾸면 이 페이지가 자동으로 업데이트돼요. 권한을 켰는데도 꺼져 있으면 Sayso를 종료한 다음 다시 여세요."
+    note_windows: "설정에서 권한을 바꾸면 이 페이지가 자동으로 업데이트돼요. 권한을 켰는데도 꺼져 있으면 Sayso를 종료한 다음 다시 여세요."
+    note_other: "권한이 바뀌면 이 페이지가 자동으로 업데이트돼요. input 그룹에 가입한 뒤에는 로그아웃했다가 다시 로그인하세요."

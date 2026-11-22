@@ -1,0 +1,31 @@
+_version: 1
+
+settings:
+  advanced:
+    title: "Avanzate"
+    subtitle: "Motore, log, esperimenti e dove Sayso conserva i suoi file."
+    engine: "Motore"
+    engine_path: "Percorso del motore"
+    engine_path_detail: "Un binario SaysoEngine personalizzato. Lascia vuoto per usare quello dell'app. Ha effetto al prossimo avvio di Sayso."
+    engine_missing: "Non c'è alcun file in questo percorso. Controlla il percorso, oppure svuota il campo per usare il motore incluso."
+    engine_saved: "Salvato. Esci da Sayso e riaprilo per usare questo motore."
+    preload: "Carica il modello all'avvio di Sayso"
+    preload_detail: "La prima dettatura non aspetta il modello vocale. Quando è disattivato, la prima dettatura carica il modello e fino ad allora Sayso usa meno memoria."
+    keep: "Mantieni il modello in memoria"
+    keep_always: "Sempre"
+    keep_minutes:
+      one: "%{count} minuto"
+      many: "%{count} di minuti"
+      other: "%{count} minuti"
+    keep_hour: "1 ora"
+    keep_detail: "Con un tempo, Sayso scarica dalla memoria il modello vocale dopo quel tempo senza dettature. La prima dettatura successiva impiega di più a iniziare a scrivere."
+    keep_detail_preview: "Con un tempo, Sayso scarica dalla memoria il modello vocale dopo quel tempo senza dettature. La prima dettatura successiva impiega di più a iniziare a scrivere. Anche l'anteprima in tempo reale di quella dettatura parte più tardi."
+    log_level: "Livello dei log"
+    log_level_detail: "Quanto Sayso scrive nel suo log. Ha effetto al prossimo avvio di Sayso."
+    folders: "Cartelle"
+    folder_config: "Configurazione"
+    folder_data: "Dati (cronologia, audio, modelli)"
+    folder_cache: "Cache"
+    logs: "Log"
+    logs_detail: "Allega sayso.log quando segnali un problema."
+    open_logs: "Apri la cartella dei log"

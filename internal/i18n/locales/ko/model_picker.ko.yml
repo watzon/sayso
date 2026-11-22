@@ -1,0 +1,16 @@
+_version: 1
+
+model_picker:
+  filter: "모델 필터"
+  trigger_label: "모델: %{model}"
+  models_label: "모델"
+  title: "모델 선택"
+  default: "기본값"
+  thinking: "사고"
+  loading: "모델 로드 중…"
+  load_failed: "Sayso에서 모델을 로드하지 못했어요: %{error}. 제공업체를 확인한 다음 새로고침하세요."
+  no_models: "이 제공업체에는 모델이 없어요."
+  no_match: "필터와 일치하는 모델이 없어요."
+  refresh: "새로고침"
+  count:
+    other: "모델 %{count}개"

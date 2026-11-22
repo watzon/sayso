@@ -1,0 +1,16 @@
+_version: 1
+
+# Text in files that the system shows, outside the app: the macOS prompt for
+# the microphone, the Linux desktop entry, and the Linux app store entry.
+# scripts/i18n-system-files.py writes these files from this catalog.
+system:
+  microphone_usage: "Sayso 仅在你听写时使用麦克风。语音会在这台 Mac 上转录。"
+  system_audio_usage: "Sayso 仅在你允许的应用录制期间，为该应用录制其他应用和通话的声音。"
+  generic_name: "语音听写"
+  comment: "说话，Sayso 就会将文字写入你正在使用的应用"
+  # Search words, separated by ";", with a ";" at the end. Keep "whisper"
+  # and "parakeet" (model names) and add words people use in the language.
+  keywords: "听写;语音;语音输入;语音识别;转录;转文字;dictation;whisper;parakeet;"
+  toggle_action: "开始或停止听写"
+  summary: "在任何应用中进行本地语音听写"
+  description: "按下按键并说话，Sayso 就会将文字写入你正在使用的应用。语音识别在你的电脑上运行。除非你选择云端模型或使用云端服务商的 AI 风格，否则任何数据都不会离开你的电脑。"

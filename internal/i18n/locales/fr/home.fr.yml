@@ -1,0 +1,68 @@
+_version: 1
+
+home:
+  greeting:
+    morning: "Bonjour."
+    afternoon: "Bonjour."
+    evening: "Bonsoir."
+    morning_name: "Bonjour, %{name}."
+    afternoon_name: "Bonjour, %{name}."
+    evening_name: "Bonsoir, %{name}."
+  hint:
+    press: "Appuyez sur"
+    anywhere: "n’importe où pour dicter"
+    no_hotkey: "Aucun raccourci n’est défini."
+    set_hotkey: "Définir un raccourci"
+  stats:
+    none_yet: "Aucune pour l’instant"
+    this_week: "Cette semaine"
+    words_today: "Mots aujourd’hui"
+    time_saved: "Temps gagné"
+    minutes: "%{minutes} min"
+    wpm: "%{wpm} mots/min"
+    pace: "Débit de parole"
+  history_off:
+    title: "L’historique est désactivé"
+    turn_on: "Activer l’historique"
+    open_settings: "Ouvrir les réglages de l’historique"
+    strip_detail: "Sayso n’enregistre pas les nouvelles dictées, donc il n’y a pas de statistiques. Les entrées ci-dessous datent d’avant."
+    block_detail: "Sayso ne conserve pas vos dictées, donc il n’y a ni entrées récentes ni statistiques. Coller la dernière fonctionne jusqu’à ce que vous quittiez Sayso."
+  recent:
+    title: "Récentes"
+    open_history: "Ouvrir l’historique"
+    your_hotkey: "votre raccourci"
+    empty_title: "Aucune dictée pour l’instant"
+    empty_body: "Appuyez sur %{hotkey} dans n’importe quelle app et parlez. Vos dictées s’affichent ici."
+    unknown_app: "App inconnue"
+  style:
+    default: "Style par défaut"
+    cycle_hotkey: "Raccourci pour changer de style"
+    change: "Changer de style"
+    detail_no_ai: "Rien ne quitte votre %{computer}."
+    detail_needs_provider: "L’IA est désactivée, donc Sayso insère la transcription. Ajoutez un fournisseur dans Réglages."
+    detail_needs_model: "Aucun modèle n’est choisi pour %{provider}, donc Sayso insère la transcription. Choisissez-en un dans Réglages."
+    detail_local: "S’exécute sur votre %{computer} avec %{provider} · %{model}."
+    detail_cloud: "Envoyé à %{provider} · %{model}."
+  checklist:
+    all_set: "Tout est prêt"
+    needs_attention: "À vérifier"
+    microphone: "Microphone"
+    model: "Modèle"
+    dictionary: "Dictionnaire"
+    engine: "Moteur"
+    engine_stopped: "Arrêté. Redémarrage"
+    allowed: "Autorisé"
+    allow: "Autoriser"
+    open_models: "Ouvrir Modèles"
+    download: "Télécharger"
+    add_words: "Ajouter des mots"
+    downloading: "Téléchargement %{percent} %"
+    dictionary_summary: "%{words} · %{rules}"
+    words:
+      one: "%{count} mot"
+      many: "%{count} de mots"
+      other: "%{count} mots"
+    rules:
+      one: "%{count} règle"
+      many: "%{count} de règles"
+      other: "%{count} règles"

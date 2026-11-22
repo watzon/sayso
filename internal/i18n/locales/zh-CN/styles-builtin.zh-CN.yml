@@ -1,0 +1,27 @@
+_version: 1
+
+# The names and descriptions of the built-in styles. The interface shows them
+# while the user has not changed them.
+styles:
+  builtin:
+    clean:
+      name: "简洁"
+      description: "去除口头禅并修正标点。保留你的措辞。"
+    polished:
+      name: "精修"
+      description: "修正语法，让语句更通顺。保留你的用词。"
+    rambling:
+      name: "随想"
+      description: "适合边想边说。将重复的话和冗长的句子整理成清晰的文本。"
+    message:
+      name: "消息"
+      description: "适合聊天，使用你自己的话。不加问候语，也不加落款。"
+    email:
+      name: "邮件"
+      description: "在你自己的话前后加上问候语、分段和落款。"
+    notes:
+      name: "笔记"
+      description: "用你自己的话整理成简短的要点。每行一个想法。"
+    raw:
+      name: "原文"
+      description: "不使用 AI。只运行你的词典替换。"

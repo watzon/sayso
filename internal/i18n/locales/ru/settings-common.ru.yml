@@ -1,0 +1,19 @@
+_version: 1
+
+# Text that more than one settings page shares.
+settings:
+  common:
+    change: "Изменить"
+    clear: "Очистить"
+    record_key: "Записать клавишу"
+    press_keys: "Нажмите клавиши для записи…"
+    press_keys_here: "Нажмите клавиши в этом окне…"
+    allowed: "Разрешено"
+    blocked: "Заблокировано"
+    waiting: "Ожидание"
+    reveal: "Показать"
+    change_hotkey: "%{name}: %{keys}. Изменить"
+    clear_hotkey: "Очистить: %{name}"
+    record_hotkey: "Записать: %{name}"
+    volume: "Громкость"
+    reveal_named: "Показать: %{name}"

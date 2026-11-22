@@ -1,0 +1,13 @@
+_version: 1
+
+language:
+  en: "Inglês"
+  es: "Espanhol"
+  pt-BR: "Português"
+  zh-CN: "Chinês simplificado"
+  ja: "Japonês"
+  de: "Alemão"
+  fr: "Francês"
+  it: "Italiano"
+  ko: "Coreano"
+  ru: "Russo"

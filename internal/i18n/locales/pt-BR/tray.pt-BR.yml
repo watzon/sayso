@@ -1,0 +1,7 @@
+_version: 1
+
+# The menu of the tray icon (Linux).
+tray:
+  toggle_dictation: "Iniciar ou parar o ditado"
+  open_hub: "Abrir o Sayso"
+  quit: "Sair do Sayso"

@@ -1,0 +1,24 @@
+_version: 1
+
+popover:
+  cloud: "クラウド"
+  title: "Sayso"
+  system_default: "システムのデフォルト"
+  no_model_downloaded: "まだモデルがダウンロードされていません。"
+  no_microphone: "マイクが見つかりません。"
+  last: "最後 · %{app} · %{time}"
+  incognito: "シークレットモード"
+  history_off: "履歴オフ"
+  # %{number} is the count with a thousands separator.
+  words_today:
+    other: "今日 %{number}語"
+  stop_dictation: "音声入力を停止"
+  start_dictation: "音声入力を開始"
+  copy: "コピー"
+  style: "スタイル"
+  model: "モデル"
+  microphone: "マイク"
+  manage_models: "モデルを管理…"
+  not_saved: "履歴に保存されません"
+  open_sayso: "Sayso を開く"
+  quit: "終了"

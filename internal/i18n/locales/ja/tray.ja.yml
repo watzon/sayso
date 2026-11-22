@@ -1,0 +1,7 @@
+_version: 1
+
+# The menu of the tray icon (Linux).
+tray:
+  toggle_dictation: "音声入力の開始/停止"
+  open_hub: "Sayso を開く"
+  quit: "Sayso を終了"

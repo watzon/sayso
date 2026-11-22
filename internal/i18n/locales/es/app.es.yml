@@ -1,0 +1,51 @@
+_version: 1
+
+# Text of the app shell. Shown only on a system that has no backend yet.
+app:
+  hotkeys_not_built: "Los atajos aún no están disponibles en este sistema."
+  insertion_not_built: "La inserción aún no está disponible en este sistema."
+  sign_in:
+    start_failed: "Sayso no pudo iniciar el inicio de sesión: %{error}"
+    not_finished: "El inicio de sesión no se completó. Selecciona Iniciar sesión para intentarlo de nuevo."
+    code_failed: "Sayso no pudo enviar el código: %{error}"
+  # The status line at the foot of the Hub sidebar.
+  engine:
+    ready: "Listo"
+    no_model: "Sin modelo"
+    choose_model: "Abre Modelos para elegir uno"
+    download_model: "Abre Modelos para descargar"
+    stopped: "Motor detenido"
+    restarting: "Reiniciando…"
+    optimizing: "Optimizando"
+    downloading: "Descargando"
+    loading: "Cargando"
+    model_error: "Error del modelo"
+    detail_cloud: "%{model} · Nube"
+    detail_downloading: "%{model} · %{percent}%"
+    detail_not_in_memory: "%{model} · no está en memoria"
+  # The import from Pindrop. %{number} is the count with a thousands separator.
+  pindrop:
+    idle: "Copia tus dictados, tu diccionario y tus ajustes predefinidos de prompts de Pindrop a Sayso. Pindrop y sus datos no cambian."
+    running: "Importando desde Pindrop…"
+    dictations:
+      one: "%{number} dictado"
+      many: "%{number} de dictados"
+      other: "%{number} dictados"
+    words:
+      one: "%{number} palabra"
+      many: "%{number} de palabras"
+      other: "%{number} palabras"
+    replacements:
+      one: "%{number} reemplazo"
+      many: "%{number} de reemplazos"
+      other: "%{number} reemplazos"
+    styles:
+      one: "%{number} estilo"
+      many: "%{number} de estilos"
+      other: "%{number} estilos"
+    added: "Añadido: %{items}."
+    list_separator: ", "
+    list_end: "%{first} y %{last}"
+    nothing_new: "Todo lo de Pindrop ya está en Sayso."
+    failed: "La importación no se completó y no se añadió nada: %{reason}. Inténtalo de nuevo."
+    style_description: "Importado desde Pindrop."

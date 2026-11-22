@@ -1,0 +1,18 @@
+_version: 1
+
+model_picker:
+  filter: "Filtra modelli"
+  trigger_label: "Modello: %{model}"
+  models_label: "Modelli"
+  title: "Scegli un modello"
+  default: "Predefinito"
+  thinking: "Ragionamento"
+  loading: "Caricamento dei modelli…"
+  load_failed: "Sayso non ha potuto caricare i modelli: %{error}. Controlla il provider, poi aggiorna."
+  no_models: "Questo provider non elenca alcun modello."
+  no_match: "Nessun modello corrisponde al filtro."
+  refresh: "Aggiorna"
+  count:
+    one: "%{count} modello"
+    many: "%{count} di modelli"
+    other: "%{count} modelli"

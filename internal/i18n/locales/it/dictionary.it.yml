@@ -1,0 +1,50 @@
+_version: 1
+
+dictionary:
+  title: "Dizionario"
+  intro: "Le parole aiutano Sayso a riconoscere nomi e termini. Le sostituzioni modificano il testo dopo la trascrizione."
+  add: "Aggiungi"
+  add_word: "Aggiungi parola"
+  remove_word: "Rimuovi %{word}"
+  cancel_word: "Annulla nuova parola"
+  add_rule: "Aggiungi regola"
+  save_rule: "Salva regola"
+  cancel_rule: "Annulla modifica"
+  remove_rule: "Rimuovi regola %{from}"
+  edit_rule: "Modifica regola: %{from} diventa %{to}"
+  nothing: "niente"
+  words: "Parole"
+  words_note: "%{total} · potenziate nel riconoscimento"
+  words_empty: "Aggiungi nomi e termini che Sayso scrive male. Sayso li ascolta e li scrive come li hai inseriti qui."
+  replacements: "Sostituzioni"
+  replacements_note:
+    one: "%{count} regola · applicata prima dello stile"
+    many: "%{count} di regole · applicate prima dello stile"
+    other: "%{count} regole · applicate prima dello stile"
+  rules_empty: "Aggiungi una regola qui sotto. Per esempio, quando dici «git hub», Sayso scrive «GitHub»."
+  placeholder:
+    filter: "Filtra"
+    new_word: "Nuova parola"
+    from: "Quando dico"
+    to: "Scrivi"
+    phrase: "Scrivi una frase per vedere cosa fanno le tue regole"
+  column:
+    from: "Quando dico"
+    to: "Scrivi"
+    used: "Usata"
+  try:
+    title: "Prova una frase"
+    result_empty: "Il risultato appare qui."
+    rules_apply:
+      one: "Si applica %{count} regola"
+      many: "Si applicano %{count} di regole"
+      other: "Si applicano %{count} regole"
+  error:
+    word_exists: "«%{word}» è già nelle tue parole."
+    needs_phrase: "Inserisci ciò che dici in «Quando dico»."
+    rule_exists: "Esiste già una regola per «%{from}». Modifica quella."
+    edit_needs_phrase: "Una regola richiede una frase in «Quando dico»."
+  line_breaks:
+    one: "un a capo"
+    many: "%{count} di a capo"
+    other: "%{count} a capo"

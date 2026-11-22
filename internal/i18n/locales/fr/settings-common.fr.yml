@@ -1,0 +1,19 @@
+_version: 1
+
+# Text that more than one settings page shares.
+settings:
+  common:
+    change: "Modifier"
+    clear: "Effacer"
+    record_key: "Enregistrer une touche"
+    press_keys: "Appuyez sur des touches pour les enregistrer…"
+    press_keys_here: "Appuyez sur des touches dans cette fenêtre…"
+    allowed: "Autorisé"
+    blocked: "Bloqué"
+    waiting: "En attente"
+    reveal: "Afficher"
+    change_hotkey: "%{name} : %{keys}. Modifier"
+    clear_hotkey: "Effacer %{name}"
+    record_hotkey: "Enregistrer %{name}"
+    volume: "Volume"
+    reveal_named: "Afficher %{name}"

@@ -1,0 +1,13 @@
+_version: 1
+
+a11y:
+  decrease: "줄이기"
+  increase: "늘리기"
+  key:
+    control: "Control"
+    option: "Option"
+    shift: "Shift"
+    command: "Command"
+    return: "Return"
+    tab: "Tab"
+    delete: "Delete"

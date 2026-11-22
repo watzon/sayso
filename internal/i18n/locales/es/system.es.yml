@@ -1,0 +1,16 @@
+_version: 1
+
+# Text in files that the system shows, outside the app: the macOS prompt for
+# the microphone, the Linux desktop entry, and the Linux app store entry.
+# scripts/i18n-system-files.py writes these files from this catalog.
+system:
+  microphone_usage: "Sayso usa el micrófono solo mientras dictas. La voz se transcribe en este Mac."
+  system_audio_usage: "Sayso graba el sonido de otras apps y llamadas solo para una app que permitiste, mientras esa app graba."
+  generic_name: "Dictado por voz"
+  comment: "Habla y Sayso escribe el texto en la app que usas"
+  # Search words, separated by ";", with a ";" at the end. Keep "whisper"
+  # and "parakeet" (model names) and add words people use in the language.
+  keywords: "dictado;dictar;voz;transcripción;reconocimiento de voz;whisper;parakeet;"
+  toggle_action: "Iniciar o detener el dictado"
+  summary: "Dictado por voz local en cualquier app"
+  description: "Pulsa una tecla, habla y Sayso escribe el texto en la app que usas. El reconocimiento de voz se ejecuta en tu equipo. Nada sale de él, salvo que elijas un modelo en la nube o un estilo de IA con un proveedor en la nube."

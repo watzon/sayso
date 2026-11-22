@@ -1,0 +1,29 @@
+_version: 1
+
+settings:
+  advanced:
+    title: "高级"
+    subtitle: "语音引擎、日志、实验功能，以及 Sayso 存放文件的位置。"
+    engine: "语音引擎"
+    engine_path: "语音引擎路径"
+    engine_path_detail: "自定义 SaysoEngine 二进制文件。留空则使用 App 内置的语音引擎。重新启动 Sayso 后生效。"
+    engine_missing: "此路径下没有文件。请检查路径，或清空此栏以使用内置的语音引擎。"
+    engine_saved: "已保存。请退出 Sayso 并重新打开，以使用此语音引擎。"
+    preload: "Sayso 启动时载入模型"
+    preload_detail: "首次听写无需等待语音模型载入。关闭后，首次听写时才载入模型，在此之前 Sayso 占用的内存更少。"
+    keep: "将模型保留在内存中"
+    keep_always: "始终"
+    keep_minutes:
+      other: "%{count} 分钟"
+    keep_hour: "1 小时"
+    keep_detail: "设定时间后，如果在该时间内没有听写，Sayso 会从内存中卸载语音模型。之后的首次听写需要更长时间才开始输出文字。"
+    keep_detail_preview: "设定时间后，如果在该时间内没有听写，Sayso 会从内存中卸载语音模型。之后的首次听写需要更长时间才开始输出文字，其实时预览也会更晚开始。"
+    log_level: "日志级别"
+    log_level_detail: "Sayso 写入日志的详细程度。重新启动 Sayso 后生效。"
+    folders: "文件夹"
+    folder_config: "配置"
+    folder_data: "数据（历史记录、音频、模型）"
+    folder_cache: "缓存"
+    logs: "日志"
+    logs_detail: "报告问题时，请附上 sayso.log。"
+    open_logs: "打开日志文件夹"

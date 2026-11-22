@@ -1,0 +1,15 @@
+_version: 1
+
+settings:
+  permissions:
+    title: "アクセス許可"
+    subtitle_mac: "この Mac で Sayso ができることと、その理由。"
+    subtitle_windows: "この PC で Sayso ができることと、その理由。"
+    subtitle_other: "このコンピュータで Sayso ができることと、その理由。"
+    microphone_detail: "音声入力中に Sayso が声を聞けるようにします。必須です。"
+    accessibility_detail: "Sayso が使用中のアプリにテキストをペーストできるようにします。必須です。"
+    input_monitoring_detail: "押して話す機能、Esc でのキャンセル、ほかのアプリでのキーの記録に必要です。"
+    request: "要求"
+    note_mac: "システム設定でアクセス許可を変更すると、このページは自動で更新されます。オンにしたのにアクセス許可がオフのままの場合は、Sayso を終了してから、もう一度開いてください。"
+    note_windows: "「設定」でアクセス許可を変更すると、このページは自動で更新されます。オンにしたのにアクセス許可がオフのままの場合は、Sayso を終了してから、もう一度開いてください。"
+    note_other: "アクセス許可が変わると、このページは自動で更新されます。input グループに参加した後は、ログアウトしてもう一度ログインしてください。"

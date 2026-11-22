@@ -1,0 +1,68 @@
+_version: 1
+
+# The question that an app asks before it downloads a model.
+apps:
+  download_ask:
+    window_title: "Download a model"
+    title: "%{app} wants to download a model"
+    body: "If you agree, Sayso downloads %{model} (%{size}) to this computer."
+    reason_label: "Reason from %{app}"
+    download: "Download"
+    cancel: "Cancel"
+  # The question before Sayso quits while an app records or transcribes.
+  quit_ask:
+    window_title: "Quit Sayso"
+    recording: "%{app} is recording. Quit anyway?"
+    transcribing: "%{app} is transcribing a file. Quit anyway?"
+    body: "If you quit, this work stops, and the app cannot finish it."
+    others_label: "Other apps that work now"
+    cancel: "Cancel"
+    quit: "Quit"
+  # The approval question: an app asks to use Sayso.
+  approval:
+    window_title: "Allow an app"
+    title: "%{app} wants to use Sayso"
+    title_more: "%{app} asks for more"
+    body: "It can use your speech models and record through Sayso while Sayso runs. Allow only apps that you trust."
+    body_more: "You allowed this app before. If you say no, it keeps only what it has now."
+    signed_by: "Signed by %{org}"
+    signed: "Signed"
+    not_signed: "Not signed"
+    interpreter: "This is a script interpreter. If you allow it, every script that it runs gets the same access."
+    claimed: "The app calls itself “%{name}”."
+    asks_to: "It asks to"
+    allow: "Allow"
+    dont_allow: "Don't allow"
+  # What an app can do, in plain words.
+  capability:
+    models_read: "See the list of your speech models"
+    audio_mic: "Record from your microphone"
+    audio_system: "Record the sound of other apps and calls"
+    transcribe_file: "Transcribe files"
+    session_live: "Turn live audio into text"
+    models_download: "Ask to download speech models"
+    ai_enhance: "Improve text with your AI provider"
+    dictation_observe: "See each dictation after it is inserted"
+  # Settings, Connected apps.
+  settings:
+    title: "Connected apps"
+    subtitle: "Apps that use the speech models and microphone of Sayso. Each one asked you first."
+    empty: "No apps yet. An app shows here after it asks to use Sayso."
+    recording: "Recording"
+    remove: "Remove"
+    not_allowed: "Not allowed"
+    allow: "Allow"
+    forget: "Forget"
+    said_no: "You said no on %{date}"
+    said_no_undated: "You said no"
+    no_capabilities: "This app asked for nothing more. It can see the list of your speech models."
+    broken: "Sayso cannot read %{path}, so no app can connect. Correct or delete the file, then connect the app again."
+    save_failed: "Sayso could not save this change to %{path}. Check that Sayso can write to the folder, then try again."
+    show_app: "Show %{app}"
+  # The menu bar and the popover while an app records.
+  recording:
+    row: "%{app} is recording"
+    mic: "Mic"
+    system: "System audio"
+    both: "Mic and system audio"
+    stop: "Stop"

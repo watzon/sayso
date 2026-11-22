@@ -1,0 +1,19 @@
+_version: 1
+
+# Text that more than one settings page shares.
+settings:
+  common:
+    change: "Ändern"
+    clear: "Entfernen"
+    record_key: "Taste aufnehmen"
+    press_keys: "Drücke Tasten zum Aufnehmen…"
+    press_keys_here: "Drücke Tasten in diesem Fenster…"
+    allowed: "Erlaubt"
+    blocked: "Blockiert"
+    waiting: "Wartet"
+    reveal: "Anzeigen"
+    change_hotkey: "%{name}: %{keys}. Ändern"
+    clear_hotkey: "%{name} entfernen"
+    record_hotkey: "%{name} aufnehmen"
+    volume: "Lautstärke"
+    reveal_named: "%{name} anzeigen"

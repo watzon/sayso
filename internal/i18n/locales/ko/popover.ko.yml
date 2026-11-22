@@ -1,0 +1,24 @@
+_version: 1
+
+popover:
+  cloud: "클라우드"
+  title: "Sayso"
+  system_default: "시스템 기본값"
+  no_model_downloaded: "다운로드한 모델이 아직 없어요."
+  no_microphone: "마이크를 찾을 수 없어요."
+  last: "마지막 · %{app} · %{time}"
+  incognito: "시크릿 모드"
+  history_off: "기록 꺼짐"
+  # %{number} is the count with a thousands separator.
+  words_today:
+    other: "오늘 %{number}단어"
+  stop_dictation: "받아쓰기 중지"
+  start_dictation: "받아쓰기 시작"
+  copy: "복사"
+  style: "스타일"
+  model: "모델"
+  microphone: "마이크"
+  manage_models: "모델 관리…"
+  not_saved: "기록에 저장되지 않음"
+  open_sayso: "Sayso 열기"
+  quit: "종료"

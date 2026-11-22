@@ -1,0 +1,15 @@
+_version: 1
+
+settings:
+  permissions:
+    title: "Permisos"
+    subtitle_mac: "Qué puede hacer Sayso en este Mac y por qué."
+    subtitle_windows: "Qué puede hacer Sayso en este PC y por qué."
+    subtitle_other: "Qué puede hacer Sayso en este equipo y por qué."
+    microphone_detail: "Permite a Sayso oírte mientras dictas. Obligatorio."
+    accessibility_detail: "Permite a Sayso pegar texto en la app que estás usando. Obligatorio."
+    input_monitoring_detail: "Hace falta para mantener para hablar, para cancelar con Esc y para grabar teclas en otras apps."
+    request: "Solicitar"
+    note_mac: "Esta página se actualiza sola cuando cambias un permiso en Ajustes del Sistema. Si un permiso sigue desactivado después de activarlo, cierra Sayso y ábrelo de nuevo."
+    note_windows: "Esta página se actualiza sola cuando cambias un permiso en Configuración. Si un permiso sigue desactivado después de activarlo, cierra Sayso y ábrelo de nuevo."
+    note_other: "Esta página se actualiza sola cuando cambia un permiso. Después de unirte al grupo input, cierra sesión y vuelve a iniciarla."

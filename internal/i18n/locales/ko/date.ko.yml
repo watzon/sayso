@@ -1,0 +1,47 @@
+_version: 1
+
+# Arguments: %{weekday}, %{month}, %{day}, %{year}. Put them in the order of
+# the language, with its words between them ("%{day} de %{month}").
+date:
+  pattern:
+    # In a narrow column of lists: keep it to about 6 characters.
+    day_month_short: "%{month} %{day}일"
+    day_month: "%{month} %{day}일"
+    weekday_day_month: "%{month} %{day}일 %{weekday}"
+    day_month_year: "%{year}년 %{month} %{day}일"
+  today: "오늘"
+  yesterday: "어제"
+  month:
+    january: "1월"
+    february: "2월"
+    march: "3월"
+    april: "4월"
+    may: "5월"
+    june: "6월"
+    july: "7월"
+    august: "8월"
+    september: "9월"
+    october: "10월"
+    november: "11월"
+    december: "12월"
+  month_short:
+    january: "1월"
+    february: "2월"
+    march: "3월"
+    april: "4월"
+    may: "5월"
+    june: "6월"
+    july: "7월"
+    august: "8월"
+    september: "9월"
+    october: "10월"
+    november: "11월"
+    december: "12월"
+  weekday:
+    monday: "월요일"
+    tuesday: "화요일"
+    wednesday: "수요일"
+    thursday: "목요일"
+    friday: "금요일"
+    saturday: "토요일"
+    sunday: "일요일"

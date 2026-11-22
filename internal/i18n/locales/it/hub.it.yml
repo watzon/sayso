@@ -1,0 +1,53 @@
+_version: 1
+
+hub:
+  nav:
+    home: "Home"
+    history: "Cronologia"
+    dictionary: "Dizionario"
+    styles: "Stili"
+    models: "Modelli"
+    settings: "Impostazioni"
+  settings_nav:
+    general: "Generali"
+    dictation: "Dettatura"
+    providers: "Provider"
+    overlay: "Indicatore"
+    audio: "Audio"
+    appearance: "Aspetto"
+    history_privacy: "Cronologia e privacy"
+    permissions: "Permessi"
+    connected_apps: "App collegate"
+    advanced: "Avanzate"
+  sidebar:
+    expand: "Espandi barra laterale"
+    collapse: "Comprimi barra laterale"
+    # The three theme labels share the bottom of the sidebar with an icon
+    # each. Keep each one to about 6 characters ("Auto", not "Automatic").
+    theme_auto: "Auto"
+    theme_light: "Chiaro"
+    theme_dark: "Scuro"
+    back: "Indietro"
+    main_nav: "Pagine"
+    settings_sections: "Sezioni delle impostazioni"
+    theme: "Tema"
+    open_config_file: "Apri il file di configurazione"
+    open_config_file_path: "Apri il file di configurazione: %{path}"
+    engine_status: "%{status}. %{detail}"
+  provider:
+    cloud_zero_retention: "Cloud · zero data retention attivo"
+    cloud_host: "Cloud · %{host}"
+    local_host: "Locale · %{host}"
+    claude_cli: "Cloud · il tuo accesso a Claude"
+    chatgpt: "Cloud · il tuo piano ChatGPT"
+    apple_intelligence: "Locale · funziona su questo Mac"
+  duration:
+    seconds: "%{seconds} s"
+    minutes_seconds: "%{minutes} min %{seconds} s"
+  window:
+    minimize: "Riduci a icona"
+    maximize: "Ingrandisci"
+    close: "Chiudi"
+  place:
+    cloud: "Cloud"
+    local: "Locale"

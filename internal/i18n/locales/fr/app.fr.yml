@@ -1,0 +1,51 @@
+_version: 1
+
+# Text of the app shell. Shown only on a system that has no backend yet.
+app:
+  hotkeys_not_built: "Les raccourcis ne sont pas encore disponibles sur ce système."
+  insertion_not_built: "L’insertion n’est pas encore disponible sur ce système."
+  sign_in:
+    start_failed: "Sayso n’a pas pu lancer la connexion : %{error}"
+    not_finished: "La connexion n’a pas abouti. Sélectionnez Se connecter pour réessayer."
+    code_failed: "Sayso n’a pas pu envoyer le code : %{error}"
+  # The status line at the foot of the Hub sidebar.
+  engine:
+    ready: "Prêt"
+    no_model: "Aucun modèle"
+    choose_model: "Ouvrez Modèles pour en choisir un"
+    download_model: "Ouvrez Modèles pour télécharger"
+    stopped: "Moteur arrêté"
+    restarting: "Redémarrage…"
+    optimizing: "Optimisation"
+    downloading: "Téléchargement"
+    loading: "Chargement"
+    model_error: "Erreur de modèle"
+    detail_cloud: "%{model} · Cloud"
+    detail_downloading: "%{model} · %{percent} %"
+    detail_not_in_memory: "%{model} · pas en mémoire"
+  # The import from Pindrop. %{number} is the count with a thousands separator.
+  pindrop:
+    idle: "Copie vos dictées, votre dictionnaire et vos préréglages de prompt de Pindrop dans Sayso. Pindrop et ses données restent inchangés."
+    running: "Importation depuis Pindrop…"
+    dictations:
+      one: "%{number} dictée"
+      many: "%{number} de dictées"
+      other: "%{number} dictées"
+    words:
+      one: "%{number} mot"
+      many: "%{number} de mots"
+      other: "%{number} mots"
+    replacements:
+      one: "%{number} remplacement"
+      many: "%{number} de remplacements"
+      other: "%{number} remplacements"
+    styles:
+      one: "%{number} style"
+      many: "%{number} de styles"
+      other: "%{number} styles"
+    added: "Ajouté : %{items}."
+    list_separator: ", "
+    list_end: "%{first} et %{last}"
+    nothing_new: "Tout ce qui vient de Pindrop est déjà dans Sayso."
+    failed: "L’importation n’a pas abouti et rien n’a été ajouté : %{reason}. Réessayez."
+    style_description: "Importé depuis Pindrop."

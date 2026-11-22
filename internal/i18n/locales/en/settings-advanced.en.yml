@@ -1,0 +1,30 @@
+_version: 1
+
+settings:
+  advanced:
+    title: "Advanced"
+    subtitle: "Engine, logs, experiments, and where Sayso keeps its files."
+    engine: "Engine"
+    engine_path: "Engine path"
+    engine_path_detail: "A custom SaysoEngine binary. Leave empty to use the one in the app. Takes effect when Sayso starts again."
+    engine_missing: "No file exists at this path. Check the path, or clear the field to use the bundled engine."
+    engine_saved: "Saved. Quit Sayso and open it again to use this engine."
+    preload: "Load the model when Sayso starts"
+    preload_detail: "The first dictation does not wait for the speech model. When this is off, the first dictation loads the model, and Sayso uses less memory until then."
+    keep: "Keep the model in memory"
+    keep_always: "Always"
+    keep_minutes:
+      one: "%{count} minute"
+      other: "%{count} minutes"
+    keep_hour: "1 hour"
+    keep_detail: "With a time, Sayso unloads the speech model after that time without a dictation. The first dictation after that takes longer to start writing."
+    keep_detail_preview: "With a time, Sayso unloads the speech model after that time without a dictation. The first dictation after that takes longer to start writing. The live preview of that dictation also starts later."
+    log_level: "Log level"
+    log_level_detail: "How much Sayso writes to its log. Takes effect when Sayso starts again."
+    folders: "Folders"
+    folder_config: "Config"
+    folder_data: "Data (history, audio, models)"
+    folder_cache: "Cache"
+    logs: "Logs"
+    logs_detail: "Attach sayso.log when you report a problem."
+    open_logs: "Open logs folder"

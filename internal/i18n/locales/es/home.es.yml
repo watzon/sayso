@@ -1,0 +1,68 @@
+_version: 1
+
+home:
+  greeting:
+    morning: "Buenos días."
+    afternoon: "Buenas tardes."
+    evening: "Buenas noches."
+    morning_name: "Buenos días, %{name}."
+    afternoon_name: "Buenas tardes, %{name}."
+    evening_name: "Buenas noches, %{name}."
+  hint:
+    press: "Pulsa"
+    anywhere: "en cualquier lugar para dictar"
+    no_hotkey: "No hay ningún atajo definido."
+    set_hotkey: "Definir un atajo"
+  stats:
+    none_yet: "Aún nada"
+    this_week: "Esta semana"
+    words_today: "Palabras hoy"
+    time_saved: "Tiempo ahorrado"
+    minutes: "%{minutes} min"
+    wpm: "%{wpm} ppm"
+    pace: "Ritmo al hablar"
+  history_off:
+    title: "El historial está desactivado"
+    turn_on: "Activar el historial"
+    open_settings: "Abrir los ajustes del historial"
+    strip_detail: "Sayso no guarda los dictados nuevos, así que no hay estadísticas. Las entradas de abajo son anteriores."
+    block_detail: "Sayso no guarda tus dictados, así que no hay entradas recientes ni estadísticas. Pegar el último texto sigue funcionando hasta que cierres Sayso."
+  recent:
+    title: "Recientes"
+    open_history: "Abrir el historial"
+    your_hotkey: "tu atajo"
+    empty_title: "Aún no hay dictados"
+    empty_body: "Pulsa %{hotkey} en cualquier app y habla. Tus dictados aparecen aquí."
+    unknown_app: "App desconocida"
+  style:
+    default: "Estilo predeterminado"
+    cycle_hotkey: "Atajo para cambiar de estilo"
+    change: "Cambiar el estilo"
+    detail_no_ai: "Nada sale de tu %{computer}."
+    detail_needs_provider: "La IA está desactivada, así que Sayso inserta la transcripción. Añade un proveedor en Ajustes."
+    detail_needs_model: "No hay ningún modelo elegido para %{provider}, así que Sayso inserta la transcripción. Elige uno en Ajustes."
+    detail_local: "Se ejecuta en tu %{computer} con %{provider} · %{model}."
+    detail_cloud: "Se envía a %{provider} · %{model}."
+  checklist:
+    all_set: "Todo listo"
+    needs_attention: "Requiere atención"
+    microphone: "Micrófono"
+    model: "Modelo"
+    dictionary: "Diccionario"
+    engine: "Motor de voz"
+    engine_stopped: "Detenido. Reiniciando"
+    allowed: "Permitido"
+    allow: "Permitir"
+    open_models: "Abrir Modelos"
+    download: "Descargar"
+    add_words: "Añadir palabras"
+    downloading: "Descargando %{percent}%"
+    dictionary_summary: "%{words} · %{rules}"
+    words:
+      one: "%{count} palabra"
+      many: "%{count} de palabras"
+      other: "%{count} palabras"
+    rules:
+      one: "%{count} regla"
+      many: "%{count} de reglas"
+      other: "%{count} reglas"

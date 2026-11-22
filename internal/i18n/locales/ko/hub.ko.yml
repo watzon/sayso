@@ -1,0 +1,53 @@
+_version: 1
+
+hub:
+  nav:
+    home: "홈"
+    history: "기록"
+    dictionary: "사전"
+    styles: "스타일"
+    models: "모델"
+    settings: "설정"
+  settings_nav:
+    general: "일반"
+    dictation: "받아쓰기"
+    providers: "제공업체"
+    overlay: "오버레이"
+    audio: "오디오"
+    appearance: "모양"
+    history_privacy: "기록 및 개인정보 보호"
+    permissions: "권한"
+    connected_apps: "연결된 앱"
+    advanced: "고급"
+  sidebar:
+    expand: "사이드바 펼치기"
+    collapse: "사이드바 접기"
+    # The three theme labels share the bottom of the sidebar with an icon
+    # each. Keep each one to about 6 characters ("Auto", not "Automatic").
+    theme_auto: "자동"
+    theme_light: "라이트"
+    theme_dark: "다크"
+    back: "뒤로"
+    main_nav: "페이지"
+    settings_sections: "설정 섹션"
+    theme: "테마"
+    open_config_file: "설정 파일 열기"
+    open_config_file_path: "설정 파일 열기: %{path}"
+    engine_status: "%{status}. %{detail}"
+  provider:
+    cloud_zero_retention: "클라우드 · 데이터 보관 안 함 켜짐"
+    cloud_host: "클라우드 · %{host}"
+    local_host: "로컬 · %{host}"
+    claude_cli: "클라우드 · Claude 로그인 사용"
+    chatgpt: "클라우드 · ChatGPT 요금제 사용"
+    apple_intelligence: "로컬 · 이 Mac에서 실행"
+  duration:
+    seconds: "%{seconds}초"
+    minutes_seconds: "%{minutes}분 %{seconds}초"
+  window:
+    minimize: "최소화"
+    maximize: "최대화"
+    close: "닫기"
+  place:
+    cloud: "클라우드"
+    local: "로컬"

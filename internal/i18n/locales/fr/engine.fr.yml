@@ -1,0 +1,18 @@
+_version: 1
+
+engine:
+  incomplete_download: "Le téléchargement est terminé, mais il manque des fichiers du modèle. Relancez le téléchargement."
+  download_failed: "Le téléchargement n’a pas abouti : %{detail}."
+  load_failed: "Sayso n’a pas pu charger le modèle : %{detail}."
+  no_gpu: "Ce modèle a besoin d’une carte graphique dédiée avec un pilote Vulkan, et Sayso n’en a trouvé aucune. Choisissez dans Modèles un modèle qui tourne sur le processeur."
+  format_changed: "Cette version de Sayso utilise d’autres fichiers pour ce modèle. Téléchargez de nouveau le modèle."
+  unsupported_cpu: "Le processeur de cet ordinateur ne peut pas exécuter ce modèle dans cette version de Sayso. Choisissez un autre modèle dans Modèles, ou mettez Sayso à jour."
+  device_not_eligible: "Ce Mac ne prend pas en charge Apple Intelligence."
+  intelligence_off: "Apple Intelligence est désactivé. Activez-le dans Réglages Système."
+  model_not_ready: "macOS télécharge encore le modèle Apple Intelligence. Réessayez dans quelques minutes."
+  needs_macos_26: "Apple Intelligence nécessite macOS 26 ou une version ultérieure."
+  unavailable: "Apple Intelligence n’est pas disponible sur ce Mac."
+  timeout: "Le modèle de langage n’a pas répondu à temps."
+  refused: "Le modèle de langage a refusé ce texte."
+  failed: "Le modèle de langage a échoué : %{detail}."
+  general: "Une erreur s’est produite : %{detail}."

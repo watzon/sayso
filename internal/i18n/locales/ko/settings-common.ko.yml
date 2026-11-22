@@ -1,0 +1,19 @@
+_version: 1
+
+# Text that more than one settings page shares.
+settings:
+  common:
+    change: "변경"
+    clear: "지우기"
+    record_key: "키 기록"
+    press_keys: "키를 눌러 기록…"
+    press_keys_here: "이 창에서 키를 누르세요…"
+    allowed: "허용됨"
+    blocked: "차단됨"
+    waiting: "대기 중"
+    reveal: "보기"
+    change_hotkey: "%{name}: %{keys}. 변경"
+    clear_hotkey: "%{name} 지우기"
+    record_hotkey: "%{name} 기록"
+    volume: "볼륨"
+    reveal_named: "%{name} 보기"

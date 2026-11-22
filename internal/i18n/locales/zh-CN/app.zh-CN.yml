@@ -1,0 +1,43 @@
+_version: 1
+
+# Text of the app shell. Shown only on a system that has no backend yet.
+app:
+  hotkeys_not_built: "此系统尚不支持快捷键。"
+  insertion_not_built: "此系统尚不支持插入文本。"
+  sign_in:
+    start_failed: "Sayso 无法开始登录：%{error}"
+    not_finished: "登录未完成。请选择“登录”重试。"
+    code_failed: "Sayso 无法发送代码：%{error}"
+  # The status line at the foot of the Hub sidebar.
+  engine:
+    ready: "就绪"
+    no_model: "无模型"
+    choose_model: "打开“模型”进行选择"
+    download_model: "打开“模型”进行下载"
+    stopped: "语音引擎已停止"
+    restarting: "正在重新启动…"
+    optimizing: "正在优化"
+    downloading: "正在下载"
+    loading: "正在载入"
+    model_error: "模型错误"
+    detail_cloud: "%{model} · 云端"
+    detail_downloading: "%{model} · %{percent}%"
+    detail_not_in_memory: "%{model} · 未载入内存"
+  # The import from Pindrop. %{number} is the count with a thousands separator.
+  pindrop:
+    idle: "将你在 Pindrop 中的听写、词典和提示词预设复制到 Sayso。Pindrop 及其数据保持不变。"
+    running: "正在从 Pindrop 导入…"
+    dictations:
+      other: "%{number} 条听写"
+    words:
+      other: "%{number} 个词语"
+    replacements:
+      other: "%{number} 条替换"
+    styles:
+      other: "%{number} 个风格"
+    added: "已添加%{items}。"
+    list_separator: "、"
+    list_end: "%{first}和%{last}"
+    nothing_new: "Pindrop 中的所有内容都已在 Sayso 中。"
+    failed: "导入未完成，未添加任何内容：%{reason}。请重试。"
+    style_description: "从 Pindrop 导入。"

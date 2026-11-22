@@ -1,0 +1,68 @@
+_version: 1
+
+home:
+  greeting:
+    morning: "Buongiorno."
+    afternoon: "Buon pomeriggio."
+    evening: "Buonasera."
+    morning_name: "Buongiorno, %{name}."
+    afternoon_name: "Buon pomeriggio, %{name}."
+    evening_name: "Buonasera, %{name}."
+  hint:
+    press: "Premi"
+    anywhere: "ovunque per dettare"
+    no_hotkey: "Nessuna scorciatoia impostata."
+    set_hotkey: "Imposta una scorciatoia"
+  stats:
+    none_yet: "Ancora nessuna"
+    this_week: "Questa settimana"
+    words_today: "Parole oggi"
+    time_saved: "Tempo risparmiato"
+    minutes: "%{minutes} min"
+    wpm: "%{wpm} ppm"
+    pace: "Ritmo di parlato"
+  history_off:
+    title: "La cronologia è disattivata"
+    turn_on: "Attiva la cronologia"
+    open_settings: "Apri le impostazioni della cronologia"
+    strip_detail: "Sayso non salva le nuove dettature, quindi non ci sono statistiche. Le voci qui sotto sono di prima."
+    block_detail: "Sayso non conserva le tue dettature, quindi non ci sono voci recenti né statistiche. Incolla l'ultima funziona ancora finché non esci da Sayso."
+  recent:
+    title: "Recenti"
+    open_history: "Apri la cronologia"
+    your_hotkey: "la tua scorciatoia"
+    empty_title: "Ancora nessuna dettatura"
+    empty_body: "Premi %{hotkey} in qualsiasi app e parla. Le tue dettature appaiono qui."
+    unknown_app: "App sconosciuta"
+  style:
+    default: "Stile predefinito"
+    cycle_hotkey: "Scorciatoia per cambiare stile"
+    change: "Cambia stile"
+    detail_no_ai: "Nulla lascia il tuo %{computer}."
+    detail_needs_provider: "L'IA è disattivata, quindi Sayso inserisce la trascrizione. Aggiungi un provider in Impostazioni."
+    detail_needs_model: "Non è stato scelto alcun modello per %{provider}, quindi Sayso inserisce la trascrizione. Sceglilo in Impostazioni."
+    detail_local: "Funziona sul tuo %{computer} con %{provider} · %{model}."
+    detail_cloud: "Inviato a %{provider} · %{model}."
+  checklist:
+    all_set: "Tutto pronto"
+    needs_attention: "Richiede attenzione"
+    microphone: "Microfono"
+    model: "Modello"
+    dictionary: "Dizionario"
+    engine: "Motore"
+    engine_stopped: "Fermo. Riavvio"
+    allowed: "Consentito"
+    allow: "Consenti"
+    open_models: "Apri Modelli"
+    download: "Scarica"
+    add_words: "Aggiungi parole"
+    downloading: "Download %{percent}%"
+    dictionary_summary: "%{words} · %{rules}"
+    words:
+      one: "%{count} parola"
+      many: "%{count} di parole"
+      other: "%{count} parole"
+    rules:
+      one: "%{count} regola"
+      many: "%{count} di regole"
+      other: "%{count} regole"

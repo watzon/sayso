@@ -1,0 +1,27 @@
+_version: 1
+
+popover:
+  cloud: "Облако"
+  title: "Sayso"
+  system_default: "Как в системе"
+  no_model_downloaded: "Ни одна модель ещё не скачана."
+  no_microphone: "Микрофон не найден."
+  last: "Последняя · %{app} · %{time}"
+  incognito: "Инкогнито"
+  history_off: "История выключена"
+  # %{number} is the count with a thousands separator.
+  words_today:
+    one: "%{number} слово сегодня"
+    few: "%{number} слова сегодня"
+    many: "%{number} слов сегодня"
+    other: "%{number} слова сегодня"
+  stop_dictation: "Остановить диктовку"
+  start_dictation: "Начать диктовку"
+  copy: "Скопировать"
+  style: "Стиль"
+  model: "Модель"
+  microphone: "Микрофон"
+  manage_models: "Управление моделями…"
+  not_saved: "Не сохранено в историю"
+  open_sayso: "Открыть Sayso"
+  quit: "Выйти"

@@ -1,0 +1,27 @@
+_version: 1
+
+# The names and descriptions of the built-in styles. The interface shows them
+# while the user has not changed them.
+styles:
+  builtin:
+    clean:
+      name: "すっきり"
+      description: "フィラーを取り除き、句読点を直します。言い回しはそのままです。"
+    polished:
+      name: "推敲"
+      description: "文法と文の流れを直します。言葉の選び方はそのままです。"
+    rambling:
+      name: "考えごと"
+      description: "考えながら話すときに。繰り返しや長く続く文を、わかりやすい文章にまとめます。"
+    message:
+      name: "メッセージ"
+      description: "チャット向け。自分の言葉のままで、あいさつや結びの言葉は付けません。"
+    email:
+      name: "メール"
+      description: "自分の言葉を段落に分け、前後にあいさつと結びの言葉を加えます。"
+    notes:
+      name: "メモ"
+      description: "自分の言葉で短い箇条書きにします。1行に1つの内容です。"
+    raw:
+      name: "そのまま"
+      description: "AI を使いません。辞書の置換だけを実行します。"

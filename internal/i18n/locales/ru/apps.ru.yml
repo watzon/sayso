@@ -1,0 +1,68 @@
+_version: 1
+
+# The question that an app asks before it downloads a model.
+apps:
+  download_ask:
+    window_title: "Скачать модель"
+    title: "%{app} хочет скачать модель"
+    body: "Если вы согласны, Sayso скачает %{model} (%{size}) на этот компьютер."
+    reason_label: "Причина от %{app}"
+    download: "Скачать"
+    cancel: "Отмена"
+  # The question before Sayso quits while an app records or transcribes.
+  quit_ask:
+    window_title: "Выйти из Sayso"
+    recording: "%{app} ведёт запись. Всё равно выйти?"
+    transcribing: "%{app} расшифровывает файл. Всё равно выйти?"
+    body: "Если выйти, эта работа остановится, и приложение не сможет её завершить."
+    others_label: "Другие приложения, которые сейчас работают"
+    cancel: "Отмена"
+    quit: "Выйти"
+  # The approval question: an app asks to use Sayso.
+  approval:
+    window_title: "Разрешить приложение"
+    title: "%{app} хочет использовать Sayso"
+    title_more: "%{app} просит больше"
+    body: "Приложение сможет использовать ваши речевые модели и записывать через Sayso, пока Sayso работает. Разрешайте только приложения, которым доверяете."
+    body_more: "Вы уже разрешили это приложение. Если отказать, у него останется только то, что есть сейчас."
+    signed_by: "Подпись: %{org}"
+    signed: "Подписано"
+    not_signed: "Без подписи"
+    interpreter: "Это интерпретатор скриптов. Если разрешить его, такой же доступ получит каждый скрипт, который он запускает."
+    claimed: "Приложение называет себя «%{name}»."
+    asks_to: "Приложение просит"
+    allow: "Разрешить"
+    dont_allow: "Не разрешать"
+  # What an app can do, in plain words.
+  capability:
+    models_read: "Видеть список ваших речевых моделей"
+    audio_mic: "Записывать с микрофона"
+    audio_system: "Записывать звук других приложений и звонков"
+    transcribe_file: "Расшифровывать файлы"
+    session_live: "Превращать звук в реальном времени в текст"
+    models_download: "Запрашивать загрузку речевых моделей"
+    ai_enhance: "Улучшать текст через вашего поставщика ИИ"
+    dictation_observe: "Видеть каждую диктовку после вставки"
+  # Settings, Connected apps.
+  settings:
+    title: "Подключённые приложения"
+    subtitle: "Приложения, которые используют речевые модели и микрофон Sayso. Каждое сначала спросило вас."
+    empty: "Приложений пока нет. Приложение появится здесь, когда попросит использовать Sayso."
+    recording: "Идёт запись"
+    remove: "Удалить"
+    not_allowed: "Не разрешены"
+    allow: "Разрешить"
+    forget: "Забыть"
+    said_no: "Вы отказали %{date}"
+    said_no_undated: "Вы отказали"
+    no_capabilities: "Это приложение больше ничего не просило. Оно может видеть список ваших речевых моделей."
+    broken: "Sayso не может прочитать %{path}, поэтому приложения не могут подключиться. Исправьте или удалите файл, затем подключите приложение снова."
+    save_failed: "Sayso не удалось сохранить это изменение в %{path}. Убедитесь, что Sayso может писать в папку, и повторите попытку."
+    show_app: "Показать %{app}"
+  # The menu bar and the popover while an app records.
+  recording:
+    row: "%{app} ведёт запись"
+    mic: "Микрофон"
+    system: "Системный звук"
+    both: "Микрофон и системный звук"
+    stop: "Остановить"

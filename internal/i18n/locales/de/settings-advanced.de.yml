@@ -1,0 +1,30 @@
+_version: 1
+
+settings:
+  advanced:
+    title: "Erweitert"
+    subtitle: "Engine, Protokolle, Experimente und der Speicherort der Sayso-Dateien."
+    engine: "Engine"
+    engine_path: "Engine-Pfad"
+    engine_path_detail: "Eine eigene SaysoEngine-Datei. Lass das Feld leer, um die Engine der App zu nutzen. Gilt beim nächsten Start von Sayso."
+    engine_missing: "An diesem Pfad gibt es keine Datei. Prüfe den Pfad oder leere das Feld, um die mitgelieferte Engine zu nutzen."
+    engine_saved: "Gespeichert. Beende Sayso und öffne es erneut, um diese Engine zu nutzen."
+    preload: "Modell beim Start von Sayso laden"
+    preload_detail: "Das erste Diktat wartet nicht auf das Sprachmodell. Wenn dies aus ist, lädt das erste Diktat das Modell, und Sayso braucht bis dahin weniger Speicher."
+    keep: "Modell im Speicher behalten"
+    keep_always: "Immer"
+    keep_minutes:
+      one: "%{count} Minute"
+      other: "%{count} Minuten"
+    keep_hour: "1 Stunde"
+    keep_detail: "Mit einer Zeitangabe entlädt Sayso das Sprachmodell, wenn so lange kein Diktat lief. Das erste Diktat danach braucht länger, bis es zu schreiben beginnt."
+    keep_detail_preview: "Mit einer Zeitangabe entlädt Sayso das Sprachmodell, wenn so lange kein Diktat lief. Das erste Diktat danach braucht länger, bis es zu schreiben beginnt. Auch die Live-Vorschau dieses Diktats startet später."
+    log_level: "Protokollstufe"
+    log_level_detail: "Wie viel Sayso in sein Protokoll schreibt. Gilt beim nächsten Start von Sayso."
+    folders: "Ordner"
+    folder_config: "Konfiguration"
+    folder_data: "Daten (Verlauf, Audio, Modelle)"
+    folder_cache: "Cache"
+    logs: "Protokolle"
+    logs_detail: "Hänge sayso.log an, wenn du ein Problem meldest."
+    open_logs: "Protokollordner öffnen"

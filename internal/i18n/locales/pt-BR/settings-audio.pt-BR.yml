@@ -1,0 +1,28 @@
+_version: 1
+
+settings:
+  audio:
+    title: "Áudio"
+    subtitle: "Seu microfone e por quanto tempo o Sayso grava."
+    input: "Entrada"
+    system_default: "Padrão do sistema"
+    follows_mac: "Segue a entrada em Ajustes do Sistema › Som."
+    follows_other: "Segue a entrada padrão do sistema."
+    follows_now_mac: "Agora: %{name}. Segue a entrada em Ajustes do Sistema › Som."
+    follows_now_other: "Agora: %{name}. Segue a entrada padrão do sistema."
+    no_microphone: "O Sayso não encontrou nenhum microfone. Conecte um ou confira %{settings}."
+    allow_to_test: "Permita o acesso ao microfone para testá-lo aqui."
+    allow_microphone: "Permitir microfone"
+    meter_failed: "O microfone não iniciou: %{error}. Escolha outra entrada ou confira %{settings}."
+    test_paused: "O teste pausa enquanto você dita."
+    say_something: "Diga alguma coisa. A tinta se mexe com a sua voz."
+    recording: "Gravação"
+    live_preview: "Prévia ao vivo"
+    live_preview_detail: "Mostra suas palavras no indicador enquanto você fala. Usa um pouco mais de energia."
+    live_preview_unavailable: "Seu modelo não tem prévia ao vivo neste idioma. Baixe em Modelos um modelo que tenha, por exemplo Parakeet EOU para inglês."
+    pause_media: "Pausar mídia"
+    pause_media_detail: "Pausa músicas e vídeos enquanto você dita e os retoma quando você para."
+    max_length: "Duração máxima"
+    max_length_detail: "A gravação para sozinha depois deste tempo."
+    length_seconds: "%{seconds} s"
+    length_minutes: "%{minutes} min"

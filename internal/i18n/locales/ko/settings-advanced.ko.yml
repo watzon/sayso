@@ -1,0 +1,29 @@
+_version: 1
+
+settings:
+  advanced:
+    title: "고급"
+    subtitle: "엔진, 로그, 실험 기능, Sayso 파일 위치예요."
+    engine: "엔진"
+    engine_path: "엔진 경로"
+    engine_path_detail: "사용자 지정 SaysoEngine 바이너리예요. 비워 두면 앱에 포함된 엔진을 써요. Sayso를 다시 시작하면 적용돼요."
+    engine_missing: "이 경로에 파일이 없어요. 경로를 확인하거나 필드를 비워 포함된 엔진을 사용하세요."
+    engine_saved: "저장했어요. 이 엔진을 쓰려면 Sayso를 종료한 다음 다시 여세요."
+    preload: "Sayso 시작 시 모델 로드"
+    preload_detail: "첫 받아쓰기가 음성 모델을 기다리지 않아요. 끄면 첫 받아쓰기에서 모델을 로드하고, 그때까지 Sayso가 메모리를 덜 써요."
+    keep: "모델을 메모리에 유지"
+    keep_always: "항상"
+    keep_minutes:
+      other: "%{count}분"
+    keep_hour: "1시간"
+    keep_detail: "시간을 지정하면 받아쓰기 없이 그 시간이 지난 뒤 Sayso가 음성 모델을 내려요. 그 뒤 첫 받아쓰기는 텍스트가 나오기까지 더 오래 걸려요."
+    keep_detail_preview: "시간을 지정하면 받아쓰기 없이 그 시간이 지난 뒤 Sayso가 음성 모델을 내려요. 그 뒤 첫 받아쓰기는 텍스트가 나오기까지 더 오래 걸려요. 그 받아쓰기의 실시간 미리보기도 늦게 시작돼요."
+    log_level: "로그 수준"
+    log_level_detail: "Sayso가 로그에 기록하는 양이에요. Sayso를 다시 시작하면 적용돼요."
+    folders: "폴더"
+    folder_config: "설정"
+    folder_data: "데이터(기록, 오디오, 모델)"
+    folder_cache: "캐시"
+    logs: "로그"
+    logs_detail: "문제를 신고할 때 sayso.log를 첨부하세요."
+    open_logs: "로그 폴더 열기"

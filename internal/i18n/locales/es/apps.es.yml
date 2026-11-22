@@ -1,0 +1,68 @@
+_version: 1
+
+# The question that an app asks before it downloads a model.
+apps:
+  download_ask:
+    window_title: "Descargar un modelo"
+    title: "%{app} quiere descargar un modelo"
+    body: "Si aceptas, Sayso descarga %{model} (%{size}) en este ordenador."
+    reason_label: "Motivo de %{app}"
+    download: "Descargar"
+    cancel: "Cancelar"
+  # The question before Sayso quits while an app records or transcribes.
+  quit_ask:
+    window_title: "Salir de Sayso"
+    recording: "%{app} está grabando. ¿Salir de todos modos?"
+    transcribing: "%{app} está transcribiendo un archivo. ¿Salir de todos modos?"
+    body: "Si sales, este trabajo se detiene y la app no podrá terminarlo."
+    others_label: "Otras apps que trabajan ahora"
+    cancel: "Cancelar"
+    quit: "Salir"
+  # The approval question: an app asks to use Sayso.
+  approval:
+    window_title: "Permitir una app"
+    title: "%{app} quiere usar Sayso"
+    title_more: "%{app} pide más"
+    body: "Puede usar tus modelos de voz y grabar a través de Sayso mientras Sayso funciona. Permite solo las apps en las que confías."
+    body_more: "Ya permitiste esta app. Si dices que no, conserva solo lo que tiene ahora."
+    signed_by: "Firmada por %{org}"
+    signed: "Firmada"
+    not_signed: "Sin firmar"
+    interpreter: "Es un intérprete de scripts. Si lo permites, cada script que ejecute tendrá el mismo acceso."
+    claimed: "La app se llama a sí misma «%{name}»."
+    asks_to: "Pide"
+    allow: "Permitir"
+    dont_allow: "No permitir"
+  # What an app can do, in plain words.
+  capability:
+    models_read: "Ver la lista de tus modelos de voz"
+    audio_mic: "Grabar con tu micrófono"
+    audio_system: "Grabar el sonido de otras apps y llamadas"
+    transcribe_file: "Transcribir archivos"
+    session_live: "Convertir audio en directo en texto"
+    models_download: "Pedir la descarga de modelos de voz"
+    ai_enhance: "Mejorar texto con tu proveedor de IA"
+    dictation_observe: "Ver cada dictado después de insertarlo"
+  # Settings, Connected apps.
+  settings:
+    title: "Apps conectadas"
+    subtitle: "Apps que usan los modelos de voz y el micrófono de Sayso. Cada una te preguntó primero."
+    empty: "Aún no hay apps. Una app aparece aquí después de pedir usar Sayso."
+    recording: "Grabando"
+    remove: "Quitar"
+    not_allowed: "No permitidas"
+    allow: "Permitir"
+    forget: "Olvidar"
+    said_no: "Dijiste que no el %{date}"
+    said_no_undated: "Dijiste que no"
+    no_capabilities: "Esta app no pidió nada más. Puede ver la lista de tus modelos de voz."
+    broken: "Sayso no puede leer %{path}, así que ninguna app puede conectarse. Corrige o elimina el archivo y vuelve a conectar la app."
+    save_failed: "Sayso no pudo guardar este cambio en %{path}. Comprueba que Sayso puede escribir en la carpeta e inténtalo de nuevo."
+    show_app: "Mostrar %{app}"
+  # The menu bar and the popover while an app records.
+  recording:
+    row: "%{app} está grabando"
+    mic: "Micrófono"
+    system: "Audio del sistema"
+    both: "Micrófono y audio del sistema"
+    stop: "Detener"

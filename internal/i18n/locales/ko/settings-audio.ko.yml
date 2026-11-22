@@ -1,0 +1,28 @@
+_version: 1
+
+settings:
+  audio:
+    title: "오디오"
+    subtitle: "마이크와 Sayso의 녹음 시간을 설정해요."
+    input: "입력"
+    system_default: "시스템 기본값"
+    follows_mac: "시스템 설정 › 사운드의 입력을 따라요."
+    follows_other: "시스템의 기본 입력을 따라요."
+    follows_now_mac: "현재 %{name}. 시스템 설정 › 사운드의 입력을 따라요."
+    follows_now_other: "현재 %{name}. 시스템의 기본 입력을 따라요."
+    no_microphone: "Sayso에서 마이크를 찾지 못했어요. 마이크를 연결하거나 다음을 확인하세요: %{settings}."
+    allow_to_test: "여기에서 마이크를 테스트하려면 마이크 접근을 허용하세요."
+    allow_microphone: "마이크 허용"
+    meter_failed: "마이크가 시작되지 않았어요: %{error}. 다른 입력을 선택하거나 다음을 확인하세요: %{settings}."
+    test_paused: "받아쓰기 중에는 테스트가 일시 중지돼요."
+    say_something: "아무 말이나 해 보세요. 잉크가 목소리에 따라 움직여요."
+    recording: "녹음"
+    live_preview: "실시간 미리보기"
+    live_preview_detail: "말하는 동안 오버레이에 단어를 실시간으로 보여 줘요. 전력을 조금 더 써요."
+    live_preview_unavailable: "선택한 모델은 이 언어에서 실시간 미리보기를 지원하지 않아요. 모델에서 미리보기를 지원하는 모델을 다운로드하세요. 예: 영어용 Parakeet EOU."
+    pause_media: "미디어 일시 정지"
+    pause_media_detail: "받아쓰기 중에 음악과 동영상을 일시 정지하고, 끝나면 다시 재생해요."
+    max_length: "최대 길이"
+    max_length_detail: "이 시간이 지나면 녹음이 자동으로 멈춰요."
+    length_seconds: "%{seconds}초"
+    length_minutes: "%{minutes}분"

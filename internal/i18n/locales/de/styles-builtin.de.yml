@@ -1,0 +1,27 @@
+_version: 1
+
+# The names and descriptions of the built-in styles. The interface shows them
+# while the user has not changed them.
+styles:
+  builtin:
+    clean:
+      name: "Sauber"
+      description: "Entfernt Füllwörter und korrigiert Satzzeichen. Deine Formulierungen bleiben."
+    polished:
+      name: "Geschliffen"
+      description: "Korrigiert Grammatik und Textfluss. Deine Wortwahl bleibt."
+    rambling:
+      name: "Gedankenfluss"
+      description: "Zum Laut-Denken. Fasst Wiederholungen und Schachtelsätze zu klarem Text zusammen."
+    message:
+      name: "Nachricht"
+      description: "Für Chats, in deinen eigenen Worten. Keine Anrede, kein Gruß."
+    email:
+      name: "E-Mail"
+      description: "Ergänzt Anrede, Absätze und Gruß um deine eigenen Worte."
+    notes:
+      name: "Notizen"
+      description: "Macht daraus kurze Stichpunkte in deinen eigenen Worten. Ein Gedanke pro Zeile."
+    raw:
+      name: "Roh"
+      description: "Keine KI. Es laufen nur die Ersetzungen aus deinem Wörterbuch."

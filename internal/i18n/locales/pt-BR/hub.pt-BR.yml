@@ -1,0 +1,53 @@
+_version: 1
+
+hub:
+  nav:
+    home: "Início"
+    history: "Histórico"
+    dictionary: "Dicionário"
+    styles: "Estilos"
+    models: "Modelos"
+    settings: "Ajustes"
+  settings_nav:
+    general: "Geral"
+    dictation: "Ditado"
+    providers: "Provedores"
+    overlay: "Indicador"
+    audio: "Áudio"
+    appearance: "Aparência"
+    history_privacy: "Histórico e privacidade"
+    permissions: "Permissões"
+    connected_apps: "Apps conectados"
+    advanced: "Avançado"
+  sidebar:
+    expand: "Expandir a barra lateral"
+    collapse: "Recolher a barra lateral"
+    # The three theme labels share the bottom of the sidebar with an icon
+    # each. Keep each one to about 6 characters ("Auto", not "Automatic").
+    theme_auto: "Auto"
+    theme_light: "Claro"
+    theme_dark: "Escuro"
+    back: "Voltar"
+    main_nav: "Páginas"
+    settings_sections: "Seções das configurações"
+    theme: "Tema"
+    open_config_file: "Abrir o arquivo de configuração"
+    open_config_file_path: "Abrir o arquivo de configuração: %{path}"
+    engine_status: "%{status}. %{detail}"
+  provider:
+    cloud_zero_retention: "Nuvem · retenção zero de dados ativa"
+    cloud_host: "Nuvem · %{host}"
+    local_host: "Local · %{host}"
+    claude_cli: "Nuvem · seu login do Claude"
+    chatgpt: "Nuvem · seu plano do ChatGPT"
+    apple_intelligence: "Local · roda neste Mac"
+  duration:
+    seconds: "%{seconds} s"
+    minutes_seconds: "%{minutes} min %{seconds} s"
+  window:
+    minimize: "Minimizar"
+    maximize: "Maximizar"
+    close: "Fechar"
+  place:
+    cloud: "Nuvem"
+    local: "Local"

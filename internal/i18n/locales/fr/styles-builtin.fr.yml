@@ -1,0 +1,27 @@
+_version: 1
+
+# The names and descriptions of the built-in styles. The interface shows them
+# while the user has not changed them.
+styles:
+  builtin:
+    clean:
+      name: "Net"
+      description: "Supprime les mots de remplissage et corrige la ponctuation. Garde vos mots."
+    polished:
+      name: "Soigné"
+      description: "Corrige la grammaire et la fluidité. Garde vos choix de mots."
+    rambling:
+      name: "Digressif"
+      description: "Pour penser à voix haute. Fusionne les répétitions et les phrases à rallonge en un texte clair."
+    message:
+      name: "Message"
+      description: "Pour la messagerie, avec vos propres mots. Sans salutation ni formule de politesse."
+    email:
+      name: "E-mail"
+      description: "Ajoute une salutation, des paragraphes et une formule de politesse autour de vos propres mots."
+    notes:
+      name: "Notes"
+      description: "Le transforme en courtes puces avec vos propres mots. Une idée par ligne."
+    raw:
+      name: "Brut"
+      description: "Sans IA. Seuls les remplacements de votre dictionnaire s’appliquent."

@@ -1,0 +1,55 @@
+_version: 1
+
+# Text of the app shell. Shown only on a system that has no backend yet.
+app:
+  hotkeys_not_built: "Сочетания клавиш для этой системы пока не реализованы."
+  insertion_not_built: "Вставка текста для этой системы пока не реализована."
+  sign_in:
+    start_failed: "Sayso не удалось начать вход: %{error}"
+    not_finished: "Вход не завершён. Нажмите «Войти», чтобы повторить."
+    code_failed: "Sayso не удалось отправить код: %{error}"
+  # The status line at the foot of the Hub sidebar.
+  engine:
+    ready: "Готово"
+    no_model: "Нет модели"
+    choose_model: "Откройте «Модели», чтобы выбрать"
+    download_model: "Откройте «Модели», чтобы скачать"
+    stopped: "Движок остановлен"
+    restarting: "Перезапуск…"
+    optimizing: "Оптимизация"
+    downloading: "Загрузка"
+    loading: "Загрузка в память"
+    model_error: "Ошибка модели"
+    detail_cloud: "%{model} · облако"
+    detail_downloading: "%{model} · %{percent}%"
+    detail_not_in_memory: "%{model} · не в памяти"
+  # The import from Pindrop. %{number} is the count with a thousands separator.
+  pindrop:
+    idle: "Копирует ваши диктовки, словарь и шаблоны запросов из Pindrop в Sayso. Pindrop и его данные не изменятся."
+    running: "Импорт из Pindrop…"
+    dictations:
+      one: "%{number} диктовка"
+      few: "%{number} диктовки"
+      many: "%{number} диктовок"
+      other: "%{number} диктовки"
+    words:
+      one: "%{number} слово"
+      few: "%{number} слова"
+      many: "%{number} слов"
+      other: "%{number} слова"
+    replacements:
+      one: "%{number} замена"
+      few: "%{number} замены"
+      many: "%{number} замен"
+      other: "%{number} замены"
+    styles:
+      one: "%{number} стиль"
+      few: "%{number} стиля"
+      many: "%{number} стилей"
+      other: "%{number} стиля"
+    added: "Добавлено: %{items}."
+    list_separator: ", "
+    list_end: "%{first} и %{last}"
+    nothing_new: "Всё из Pindrop уже есть в Sayso."
+    failed: "Импорт не завершён, ничего не добавлено: %{reason}. Повторите попытку."
+    style_description: "Импортировано из Pindrop."

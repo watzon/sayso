@@ -1,0 +1,66 @@
+_version: 1
+
+home:
+  greeting:
+    morning: "Guten Morgen."
+    afternoon: "Guten Tag."
+    evening: "Guten Abend."
+    morning_name: "Guten Morgen, %{name}."
+    afternoon_name: "Guten Tag, %{name}."
+    evening_name: "Guten Abend, %{name}."
+  hint:
+    press: "Drücke"
+    anywhere: "irgendwo zum Diktieren"
+    no_hotkey: "Es ist kein Tastenkürzel festgelegt."
+    set_hotkey: "Tastenkürzel festlegen"
+  stats:
+    none_yet: "Noch keine"
+    this_week: "Diese Woche"
+    words_today: "Wörter heute"
+    time_saved: "Gesparte Zeit"
+    minutes: "%{minutes} Min."
+    wpm: "%{wpm} Wörter/Min."
+    pace: "Sprechtempo"
+  history_off:
+    title: "Der Verlauf ist aus"
+    turn_on: "Verlauf einschalten"
+    open_settings: "Verlaufseinstellungen öffnen"
+    strip_detail: "Sayso speichert neue Diktate nicht, daher gibt es keine Statistik. Die Einträge unten sind von früher."
+    block_detail: "Sayso speichert deine Diktate nicht, daher gibt es keine letzten Einträge und keine Statistik. „Letzten Text einfügen“ funktioniert weiter, bis du Sayso beendest."
+  recent:
+    title: "Zuletzt"
+    open_history: "Verlauf öffnen"
+    your_hotkey: "dein Tastenkürzel"
+    empty_title: "Noch keine Diktate"
+    empty_body: "Drücke %{hotkey} in einer beliebigen App und sprich. Deine Diktate erscheinen hier."
+    unknown_app: "Unbekannte App"
+  style:
+    default: "Standardstil"
+    cycle_hotkey: "Tastenkürzel zum Wechseln des Stils"
+    change: "Stil ändern"
+    detail_no_ai: "Nichts verlässt deinen %{computer}."
+    detail_needs_provider: "KI ist aus, daher fügt Sayso das Transkript ein. Füge in den Einstellungen einen Anbieter hinzu."
+    detail_needs_model: "Für %{provider} ist kein Modell gewählt, daher fügt Sayso das Transkript ein. Wähle in den Einstellungen eines aus."
+    detail_local: "Läuft auf deinem %{computer} mit %{provider} · %{model}."
+    detail_cloud: "An %{provider} gesendet · %{model}."
+  checklist:
+    all_set: "Alles bereit"
+    needs_attention: "Braucht Aufmerksamkeit"
+    microphone: "Mikrofon"
+    model: "Modell"
+    dictionary: "Wörterbuch"
+    engine: "Engine"
+    engine_stopped: "Gestoppt. Neustart"
+    allowed: "Erlaubt"
+    allow: "Erlauben"
+    open_models: "Modelle öffnen"
+    download: "Laden"
+    add_words: "Wörter hinzufügen"
+    downloading: "Lädt herunter %{percent} %"
+    dictionary_summary: "%{words} · %{rules}"
+    words:
+      one: "%{count} Wort"
+      other: "%{count} Wörter"
+    rules:
+      one: "%{count} Regel"
+      other: "%{count} Regeln"

@@ -1,0 +1,16 @@
+_version: 1
+
+model_picker:
+  filter: "过滤模型"
+  trigger_label: "模型：%{model}"
+  models_label: "模型"
+  title: "选择模型"
+  default: "默认"
+  thinking: "思考程度"
+  loading: "正在载入模型…"
+  load_failed: "Sayso 无法载入模型：%{error}。请检查服务商，然后刷新。"
+  no_models: "此服务商未列出任何模型。"
+  no_match: "没有符合过滤条件的模型。"
+  refresh: "刷新"
+  count:
+    other: "%{count} 个模型"

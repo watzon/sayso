@@ -1,0 +1,27 @@
+_version: 1
+
+# The names and descriptions of the built-in styles. The interface shows them
+# while the user has not changed them.
+styles:
+  builtin:
+    clean:
+      name: "Pulito"
+      description: "Toglie le parole di riempimento e corregge la punteggiatura. Mantiene le tue parole."
+    polished:
+      name: "Curato"
+      description: "Corregge grammatica e fluidità. Mantiene le tue scelte di parole."
+    rambling:
+      name: "Divagazione"
+      description: "Per pensare ad alta voce. Unisce ripetizioni e frasi lunghe in un testo chiaro."
+    message:
+      name: "Messaggio"
+      description: "Per la chat, con parole tue. Senza saluto né congedo."
+    email:
+      name: "Email"
+      description: "Aggiunge un saluto, paragrafi e un congedo alle tue parole."
+    notes:
+      name: "Appunti"
+      description: "Lo trasforma in brevi elenchi puntati con parole tue. Un'idea per riga."
+    raw:
+      name: "Grezzo"
+      description: "Nessuna IA. Si applicano solo le sostituzioni del tuo dizionario."

@@ -1,0 +1,27 @@
+_version: 1
+
+# The names and descriptions of the built-in styles. The interface shows them
+# while the user has not changed them.
+styles:
+  builtin:
+    clean:
+      name: "Чистый"
+      description: "Убирает слова-паразиты и исправляет пунктуацию. Сохраняет ваши формулировки."
+    polished:
+      name: "Отшлифованный"
+      description: "Исправляет грамматику и связность. Сохраняет ваш выбор слов."
+    rambling:
+      name: "Поток мыслей"
+      description: "Для размышлений вслух. Объединяет повторы и длинные фразы в понятный текст."
+    message:
+      name: "Сообщение"
+      description: "Для чата, вашими словами. Без приветствия и подписи."
+    email:
+      name: "Письмо"
+      description: "Добавляет приветствие, абзацы и подпись к вашим словам."
+    notes:
+      name: "Заметки"
+      description: "Превращает речь в короткие пункты вашими словами. Одна мысль на строку."
+    raw:
+      name: "Исходный"
+      description: "Без ИИ. Применяются только замены из словаря."

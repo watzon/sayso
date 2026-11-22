@@ -1,0 +1,44 @@
+_version: 1
+
+dictionary:
+  title: "사전"
+  intro: "단어는 Sayso가 이름과 용어를 알아듣도록 도와줘요. 치환은 전사된 텍스트를 바꿔요."
+  add: "추가"
+  add_word: "단어 추가"
+  remove_word: "%{word} 삭제"
+  cancel_word: "새 단어 취소"
+  add_rule: "규칙 추가"
+  save_rule: "규칙 저장"
+  cancel_rule: "편집 취소"
+  remove_rule: "규칙 %{from} 삭제"
+  edit_rule: "규칙 편집: %{from} → %{to}"
+  nothing: "없음"
+  words: "단어"
+  words_note: "%{total} · 인식 강화"
+  words_empty: "Sayso가 잘못 쓰는 이름과 용어를 추가하세요. Sayso가 이 단어를 귀 기울여 듣고 여기에 적은 대로 표기해요."
+  replacements: "치환"
+  replacements_note:
+    other: "규칙 %{count}개 · 스타일 전에 적용"
+  rules_empty: "아래에서 규칙을 추가하세요. 예를 들어 “git hub”이라고 말하면 Sayso가 “GitHub”로 써요."
+  placeholder:
+    filter: "필터"
+    new_word: "새 단어"
+    from: "이렇게 말하면"
+    to: "이렇게 쓰기"
+    phrase: "문구를 입력해 규칙이 어떻게 적용되는지 확인하세요"
+  column:
+    from: "이렇게 말하면"
+    to: "이렇게 쓰기"
+    used: "사용"
+  try:
+    title: "문구 시험"
+    result_empty: "결과가 여기에 표시돼요."
+    rules_apply:
+      other: "규칙 %{count}개 적용"
+  error:
+    word_exists: "“%{word}” 단어는 이미 목록에 있어요."
+    needs_phrase: "“이렇게 말하면”에 말할 내용을 입력하세요."
+    rule_exists: "“%{from}” 규칙이 이미 있어요. 그 규칙을 편집하세요."
+    edit_needs_phrase: "규칙에는 “이렇게 말하면” 문구가 필요해요."
+  line_breaks:
+    other: "줄 바꿈 %{count}개"

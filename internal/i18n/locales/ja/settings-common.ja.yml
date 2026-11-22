@@ -1,0 +1,19 @@
+_version: 1
+
+# Text that more than one settings page shares.
+settings:
+  common:
+    change: "変更"
+    clear: "クリア"
+    record_key: "キーを記録"
+    press_keys: "記録するキーを押してください…"
+    press_keys_here: "このウインドウでキーを押してください…"
+    allowed: "許可済み"
+    blocked: "拒否"
+    waiting: "待機中"
+    reveal: "表示"
+    change_hotkey: "%{name}: %{keys}。変更"
+    clear_hotkey: "%{name}を消去"
+    record_hotkey: "%{name}を記録"
+    volume: "音量"
+    reveal_named: "%{name}を表示"

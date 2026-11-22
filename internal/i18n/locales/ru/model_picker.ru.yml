@@ -1,0 +1,19 @@
+_version: 1
+
+model_picker:
+  filter: "Фильтр моделей"
+  trigger_label: "Модель: %{model}"
+  models_label: "Модели"
+  title: "Выберите модель"
+  default: "По умолчанию"
+  thinking: "Рассуждение"
+  loading: "Загрузка моделей…"
+  load_failed: "Sayso не удалось загрузить модели: %{error}. Проверьте провайдера и обновите список."
+  no_models: "У этого провайдера нет моделей."
+  no_match: "Нет моделей, подходящих под фильтр."
+  refresh: "Обновить"
+  count:
+    one: "%{count} модель"
+    few: "%{count} модели"
+    many: "%{count} моделей"
+    other: "%{count} модели"

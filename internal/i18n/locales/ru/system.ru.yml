@@ -1,0 +1,16 @@
+_version: 1
+
+# Text in files that the system shows, outside the app: the macOS prompt for
+# the microphone, the Linux desktop entry, and the Linux app store entry.
+# scripts/i18n-system-files.py writes these files from this catalog.
+system:
+  microphone_usage: "Sayso слушает микрофон только во время диктовки. Речь расшифровывается на этом Mac."
+  system_audio_usage: "Sayso записывает звук других приложений и звонков только для разрешённого вами приложения и только пока оно ведёт запись."
+  generic_name: "Голосовая диктовка"
+  comment: "Говорите, а Sayso напишет текст в приложении, которым вы пользуетесь"
+  # Search words, separated by ";", with a ";" at the end. Keep "whisper"
+  # and "parakeet" (model names) and add words people use in the language.
+  keywords: "диктовка;диктофон;речь;голос;голосовой ввод;расшифровка;распознавание речи;транскрибация;whisper;parakeet;"
+  toggle_action: "Начать или остановить диктовку"
+  summary: "Локальная голосовая диктовка в любое приложение"
+  description: "Нажмите клавишу, говорите, и Sayso напишет текст в приложении, которым вы пользуетесь. Распознавание речи работает на вашем компьютере. Ничто не покидает его, если вы не выберете облачную модель или стиль с ИИ у облачного провайдера."

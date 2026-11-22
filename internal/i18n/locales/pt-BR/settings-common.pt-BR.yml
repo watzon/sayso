@@ -1,0 +1,19 @@
+_version: 1
+
+# Text that more than one settings page shares.
+settings:
+  common:
+    change: "Mudar"
+    clear: "Limpar"
+    record_key: "Gravar uma tecla"
+    press_keys: "Pressione as teclas para gravar…"
+    press_keys_here: "Pressione as teclas nesta janela…"
+    allowed: "Permitido"
+    blocked: "Bloqueado"
+    waiting: "Aguardando"
+    reveal: "Mostrar"
+    change_hotkey: "%{name}: %{keys}. Alterar"
+    clear_hotkey: "Limpar %{name}"
+    record_hotkey: "Gravar %{name}"
+    volume: "Volume"
+    reveal_named: "Mostrar %{name}"

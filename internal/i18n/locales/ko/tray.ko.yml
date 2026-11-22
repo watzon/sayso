@@ -1,0 +1,7 @@
+_version: 1
+
+# The menu of the tray icon (Linux).
+tray:
+  toggle_dictation: "받아쓰기 시작 또는 중지"
+  open_hub: "Sayso 열기"
+  quit: "Sayso 종료"

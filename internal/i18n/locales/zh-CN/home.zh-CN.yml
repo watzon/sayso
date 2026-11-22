@@ -1,0 +1,64 @@
+_version: 1
+
+home:
+  greeting:
+    morning: "早上好。"
+    afternoon: "下午好。"
+    evening: "晚上好。"
+    morning_name: "%{name}，早上好。"
+    afternoon_name: "%{name}，下午好。"
+    evening_name: "%{name}，晚上好。"
+  hint:
+    press: "在任意位置按下"
+    anywhere: "即可听写"
+    no_hotkey: "未设置快捷键。"
+    set_hotkey: "设置快捷键"
+  stats:
+    none_yet: "暂无"
+    this_week: "本周"
+    words_today: "今日词数"
+    time_saved: "节省时间"
+    minutes: "%{minutes} 分钟"
+    wpm: "%{wpm} 词/分"
+    pace: "语速"
+  history_off:
+    title: "历史记录已关闭"
+    turn_on: "打开历史记录"
+    open_settings: "打开历史记录设置"
+    strip_detail: "Sayso 不会保存新的听写，因此没有统计数据。下方条目是之前保存的。"
+    block_detail: "Sayso 不会保留你的听写，因此没有最近条目，也没有统计数据。在退出 Sayso 之前，“粘贴上次文本”仍然可用。"
+  recent:
+    title: "最近"
+    open_history: "打开历史记录"
+    your_hotkey: "你的快捷键"
+    empty_title: "还没有听写"
+    empty_body: "在任意 App 中按下 %{hotkey} 并说话。你的听写会显示在这里。"
+    unknown_app: "未知 App"
+  style:
+    default: "默认风格"
+    cycle_hotkey: "切换样式的快捷键"
+    change: "更改风格"
+    detail_no_ai: "任何数据都不会离开你的%{computer}。"
+    detail_needs_provider: "AI 已关闭，因此 Sayso 会插入转录文本。请在“设置”中添加服务商。"
+    detail_needs_model: "尚未为 %{provider} 选择模型，因此 Sayso 会插入转录文本。请在“设置”中选择一个。"
+    detail_local: "通过 %{provider} · %{model} 在你的%{computer}上运行。"
+    detail_cloud: "发送至 %{provider} · %{model}。"
+  checklist:
+    all_set: "一切就绪"
+    needs_attention: "需要处理"
+    microphone: "麦克风"
+    model: "模型"
+    dictionary: "词典"
+    engine: "语音引擎"
+    engine_stopped: "已停止，正在重新启动"
+    allowed: "已允许"
+    allow: "允许"
+    open_models: "打开“模型”"
+    download: "下载"
+    add_words: "添加词语"
+    downloading: "正在下载 %{percent}%"
+    dictionary_summary: "%{words} · %{rules}"
+    words:
+      other: "%{count} 个词语"
+    rules:
+      other: "%{count} 条规则"

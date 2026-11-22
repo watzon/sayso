@@ -1,0 +1,47 @@
+_version: 1
+
+dictionary:
+  title: "Wörterbuch"
+  intro: "Wörter helfen Sayso, Namen und Begriffe zu verstehen. Ersetzungen ändern den Text nach der Transkription."
+  add: "Hinzufügen"
+  add_word: "Wort hinzufügen"
+  remove_word: "%{word} entfernen"
+  cancel_word: "Neues Wort abbrechen"
+  add_rule: "Regel hinzufügen"
+  save_rule: "Regel speichern"
+  cancel_rule: "Bearbeitung abbrechen"
+  remove_rule: "Regel %{from} entfernen"
+  edit_rule: "Regel bearbeiten: %{from} wird zu %{to}"
+  nothing: "nichts"
+  words: "Wörter"
+  words_note: "%{total} · in der Erkennung verstärkt"
+  words_empty: "Füge Namen und Begriffe hinzu, die Sayso falsch schreibt. Sayso hört gezielt darauf und schreibt sie so, wie du sie hier eingibst."
+  replacements: "Ersetzungen"
+  replacements_note:
+    one: "%{count} Regel · vor dem Stil angewendet"
+    other: "%{count} Regeln · vor dem Stil angewendet"
+  rules_empty: "Füge unten eine Regel hinzu. Zum Beispiel schreibt Sayso „GitHub“, wenn du „git hub“ sagst."
+  placeholder:
+    filter: "Filtern"
+    new_word: "Neues Wort"
+    from: "Wenn ich sage"
+    to: "Schreibe"
+    phrase: "Gib einen Satz ein, um die Wirkung deiner Regeln zu sehen"
+  column:
+    from: "Wenn ich sage"
+    to: "Schreibe"
+    used: "Genutzt"
+  try:
+    title: "Satz ausprobieren"
+    result_empty: "Das Ergebnis erscheint hier."
+    rules_apply:
+      one: "%{count} Regel greift"
+      other: "%{count} Regeln greifen"
+  error:
+    word_exists: "„%{word}“ ist schon in deinen Wörtern."
+    needs_phrase: "Gib bei „Wenn ich sage“ ein, was du sagst."
+    rule_exists: "Eine Regel für „%{from}“ gibt es schon. Bearbeite stattdessen diese Regel."
+    edit_needs_phrase: "Eine Regel braucht einen Satz bei „Wenn ich sage“."
+  line_breaks:
+    one: "ein Zeilenumbruch"
+    other: "%{count} Zeilenumbrüche"

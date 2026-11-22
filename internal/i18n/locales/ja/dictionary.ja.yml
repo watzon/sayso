@@ -1,0 +1,44 @@
+_version: 1
+
+dictionary:
+  title: "辞書"
+  intro: "単語は、Sayso が名前や用語を聞き取るのに役立ちます。置換は、文字起こしの後にテキストを変更します。"
+  add: "追加"
+  add_word: "単語を追加"
+  remove_word: "%{word} を削除"
+  cancel_word: "新しい単語をキャンセル"
+  add_rule: "ルールを追加"
+  save_rule: "ルールを保存"
+  cancel_rule: "編集をキャンセル"
+  remove_rule: "ルール %{from} を削除"
+  edit_rule: "ルールを編集：%{from} を %{to} に"
+  nothing: "なし"
+  words: "単語"
+  words_note: "%{total}語 · 認識で優先"
+  words_empty: "Sayso が間違えて書く名前や用語を追加してください。Sayso はそれらを聞き取り、ここに書いたとおりに書きます。"
+  replacements: "置換"
+  replacements_note:
+    other: "%{count}件のルール · スタイルの前に適用"
+  rules_empty: "下にルールを追加してください。たとえば、「ギットハブ」と話すと、Sayso は「GitHub」と書きます。"
+  placeholder:
+    filter: "絞り込み"
+    new_word: "新しい単語"
+    from: "話す言葉"
+    to: "書く言葉"
+    phrase: "フレーズを入力して、ルールの結果を確認"
+  column:
+    from: "話す言葉"
+    to: "書く言葉"
+    used: "使用回数"
+  try:
+    title: "フレーズを試す"
+    result_empty: "ここに結果が表示されます。"
+    rules_apply:
+      other: "%{count}件のルールを適用"
+  error:
+    word_exists: "「%{word}」はすでに単語に登録されています。"
+    needs_phrase: "「話す言葉」に、話す内容を入力してください。"
+    rule_exists: "「%{from}」のルールはすでにあります。そのルールを編集してください。"
+    edit_needs_phrase: "ルールには「話す言葉」が必要です。"
+  line_breaks:
+    other: "改行 %{count} 個"

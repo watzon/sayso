@@ -1,0 +1,66 @@
+_version: 1
+
+home:
+  greeting:
+    morning: "Good morning."
+    afternoon: "Good afternoon."
+    evening: "Good evening."
+    morning_name: "Good morning, %{name}."
+    afternoon_name: "Good afternoon, %{name}."
+    evening_name: "Good evening, %{name}."
+  hint:
+    press: "Press"
+    anywhere: "anywhere to dictate"
+    no_hotkey: "No hotkey is set."
+    set_hotkey: "Set a hotkey"
+  stats:
+    none_yet: "None yet"
+    this_week: "This week"
+    words_today: "Words today"
+    time_saved: "Time saved"
+    minutes: "%{minutes} min"
+    wpm: "%{wpm} wpm"
+    pace: "Speaking pace"
+  history_off:
+    title: "History is off"
+    turn_on: "Turn on history"
+    open_settings: "Open History settings"
+    strip_detail: "Sayso does not save new dictations, so there are no stats. The entries below are from before."
+    block_detail: "Sayso does not keep your dictations, so there are no recent entries and no stats. Paste last still works until you quit Sayso."
+  recent:
+    title: "Recent"
+    open_history: "Open History"
+    your_hotkey: "your hotkey"
+    empty_title: "No dictations yet"
+    empty_body: "Press %{hotkey} in any app and speak. Your dictations show here."
+    unknown_app: "Unknown app"
+  style:
+    default: "Default style"
+    cycle_hotkey: "Hotkey to cycle styles"
+    change: "Change style"
+    detail_no_ai: "Nothing leaves your %{computer}."
+    detail_needs_provider: "AI is off, so Sayso inserts the transcript. Add a provider in Settings."
+    detail_needs_model: "No model is chosen for %{provider}, so Sayso inserts the transcript. Choose one in Settings."
+    detail_local: "Runs on your %{computer} with %{provider} · %{model}."
+    detail_cloud: "Sent to %{provider} · %{model}."
+  checklist:
+    all_set: "All set"
+    needs_attention: "Needs attention"
+    microphone: "Microphone"
+    model: "Model"
+    dictionary: "Dictionary"
+    engine: "Engine"
+    engine_stopped: "Stopped. Restarting"
+    allowed: "Allowed"
+    allow: "Allow"
+    open_models: "Open Models"
+    download: "Download"
+    add_words: "Add words"
+    downloading: "Downloading %{percent}%"
+    dictionary_summary: "%{words} · %{rules}"
+    words:
+      one: "%{count} word"
+      other: "%{count} words"
+    rules:
+      one: "%{count} rule"
+      other: "%{count} rules"

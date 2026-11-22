@@ -1,0 +1,62 @@
+_version: 1
+
+settings:
+  history:
+    title: "履歴とプライバシー"
+    subtitle_mac: "Sayso が保存するもの、保存期間、この Mac の外に送信されるもの。"
+    subtitle_windows: "Sayso が保存するもの、保存期間、この PC の外に送信されるもの。"
+    subtitle_other: "Sayso が保存するもの、保存期間、このコンピュータの外に送信されるもの。"
+    history: "履歴"
+    save: "履歴を保存"
+    save_detail: "Sayso は各音声入力を保存するため、後で探すことができます。"
+    save_detail_off: "履歴はオフです。Sayso は新しい音声入力のテキストも音声も保存しません。"
+    keep_text: "テキストの保存期間"
+    keep_text_detail: "テキストの保存期間が過ぎると、Sayso は項目全体を削除します。"
+    save_audio: "音声を保存"
+    save_audio_detail: "音声入力をもう一度再生したり、もう一度文字起こししたりできます。"
+    keep_audio: "音声の保存期間"
+    keep_audio_detail: "音声の保存期間が過ぎると、音声ファイルだけが削除されます。テキストは残ります。"
+    forever: "無期限"
+    days:
+      other: "%{count}日"
+    site_icons: "サイトのアイコンを表示"
+    site_icons_detail: "Web ページへの音声入力が対象です。Sayso はサイトからアイコンを取得します。サイトにアイコンがない場合は DuckDuckGo に問い合わせるため、DuckDuckGo にサイト名が伝わります。"
+    leaves: "この %{computer} の外に送信されるもの"
+    leaves_cloud: "使用中のモデルはクラウドモデルです。Sayso は各音声入力の音声と辞書の単語を %{name} に送信します。スタイルで AI を使う場合、Sayso は文字起こし、スタイルのプロンプト、辞書の単語を、そのスタイルのプロバイダに送信します。それ以外は何も送信しません。"
+    leaves_cloud_icons: "使用中のモデルはクラウドモデルです。Sayso は各音声入力の音声と辞書の単語を %{name} に送信します。スタイルで AI を使う場合、Sayso は文字起こし、スタイルのプロンプト、辞書の単語を、そのスタイルのプロバイダに送信します。Web ページへの音声入力では、Sayso はサイトにアイコンを要求し、サイトにアイコンがない場合は DuckDuckGo に要求します。それ以外は何も送信しません。"
+    leaves_local: "音声認識はこの %{computer} 上で実行されます。音声が外部に送信されることはありません。スタイルで AI を使う場合、Sayso は文字起こし、スタイルのプロンプト、辞書の単語を、そのスタイルのプロバイダに送信します。それ以外は何も送信しません。"
+    leaves_local_icons: "音声認識はこの %{computer} 上で実行されます。音声が外部に送信されることはありません。スタイルで AI を使う場合、Sayso は文字起こし、スタイルのプロンプト、辞書の単語を、そのスタイルのプロバイダに送信します。Web ページへの音声入力では、Sayso はサイトにアイコンを要求し、サイトにアイコンがない場合は DuckDuckGo に要求します。それ以外は何も送信しません。"
+    ai_off: "AI はオフです。テキストがこの %{computer} の外に送信されることはありません。"
+    cloud: "クラウド"
+    this_computer: "この %{computer}"
+    data: "この %{computer} 上のデータ"
+    in_total: "合計"
+    data_history: "履歴"
+    data_audio: "音声"
+    data_models: "モデル"
+    cancel: "キャンセル"
+    clear_history: "履歴を消去"
+    delete_all: "すべて削除"
+    delete_audio: "音声を削除"
+    entries_confirm:
+      other: "%{number}件の項目とその音声をすべて削除しますか？この操作は取り消せません。"
+    entries_none: "履歴は空です。"
+    entries:
+      other: "%{number}件の項目。"
+    entries_kept:
+      other: "%{number}件の項目。消去するまで残ります。"
+    recordings_confirm:
+      other: "%{number}件の録音を削除しますか？各項目のテキストは残ります。この操作は取り消せません。"
+    recordings_none: "音声は保存されていません。"
+    recordings:
+      other: "%{number}件の録音。「音声を削除」では各項目のテキストは残ります。"
+    models_none: "ローカルモデルはダウンロードされていません。"
+    models:
+      other: "%{count}個のローカルモデル。モデルは「モデル」ページで削除できます。"
+    open_models: "モデルを開く"
+    show_mac: "Finder に表示"
+    show_windows: "エクスプローラーで表示"
+    show_other: "フォルダを開く"
+    import_group: "読み込み"
+    import_pindrop: "Pindrop から読み込む"
+    import: "読み込む"

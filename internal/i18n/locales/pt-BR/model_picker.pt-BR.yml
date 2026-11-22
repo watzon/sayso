@@ -1,0 +1,18 @@
+_version: 1
+
+model_picker:
+  filter: "Filtrar modelos"
+  trigger_label: "Modelo: %{model}"
+  models_label: "Modelos"
+  title: "Escolher um modelo"
+  default: "Padrão"
+  thinking: "Raciocínio"
+  loading: "Carregando modelos…"
+  load_failed: "O Sayso não conseguiu carregar os modelos: %{error}. Verifique o provedor e atualize."
+  no_models: "Este provedor não lista nenhum modelo."
+  no_match: "Nenhum modelo corresponde ao filtro."
+  refresh: "Atualizar"
+  count:
+    one: "%{count} modelo"
+    many: "%{count} de modelos"
+    other: "%{count} modelos"

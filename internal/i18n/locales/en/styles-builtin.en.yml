@@ -1,0 +1,27 @@
+_version: 1
+
+# The names and descriptions of the built-in styles. The interface shows them
+# while the user has not changed them.
+styles:
+  builtin:
+    clean:
+      name: "Clean"
+      description: "Remove filler words and fix punctuation. Keep your wording."
+    polished:
+      name: "Polished"
+      description: "Fix grammar and flow. Keep your word choices."
+    rambling:
+      name: "Rambling"
+      description: "For thinking out loud. Joins repeats and run-on sentences into clear text."
+    message:
+      name: "Message"
+      description: "For chat, in your own words. No greeting, no sign-off."
+    email:
+      name: "Email"
+      description: "Add a greeting, paragraphs, and a sign-off around your own words."
+    notes:
+      name: "Notes"
+      description: "Turn it into short bullets in your own words. One idea per line."
+    raw:
+      name: "Raw"
+      description: "No AI. Only your dictionary replacements run."

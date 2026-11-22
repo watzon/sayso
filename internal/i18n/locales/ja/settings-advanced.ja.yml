@@ -1,0 +1,29 @@
+_version: 1
+
+settings:
+  advanced:
+    title: "詳細"
+    subtitle: "エンジン、ログ、試験的な機能、Sayso のファイルの保存場所。"
+    engine: "エンジン"
+    engine_path: "エンジンのパス"
+    engine_path_detail: "カスタムの SaysoEngine バイナリです。アプリ内のものを使う場合は空のままにします。Sayso を次に起動したときに有効になります。"
+    engine_missing: "このパスにファイルがありません。パスを確認するか、フィールドを空にして付属のエンジンを使用してください。"
+    engine_saved: "保存しました。このエンジンを使うには、Sayso を終了してから、もう一度開いてください。"
+    preload: "Sayso の起動時にモデルを読み込む"
+    preload_detail: "最初の音声入力で音声モデルの読み込みを待つ必要がなくなります。オフにすると、最初の音声入力でモデルを読み込み、それまで Sayso のメモリ使用量が少なくなります。"
+    keep: "モデルをメモリに保持"
+    keep_always: "常に"
+    keep_minutes:
+      other: "%{count}分"
+    keep_hour: "1時間"
+    keep_detail: "時間を設定すると、その時間音声入力がない場合に Sayso は音声モデルをメモリから解放します。その後の最初の音声入力は、書き込みが始まるまでに時間がかかります。"
+    keep_detail_preview: "時間を設定すると、その時間音声入力がない場合に Sayso は音声モデルをメモリから解放します。その後の最初の音声入力は、書き込みが始まるまでに時間がかかります。その音声入力のライブプレビューも遅れて始まります。"
+    log_level: "ログレベル"
+    log_level_detail: "Sayso がログに書き込む情報の量です。Sayso を次に起動したときに有効になります。"
+    folders: "フォルダ"
+    folder_config: "設定"
+    folder_data: "データ（履歴、音声、モデル）"
+    folder_cache: "キャッシュ"
+    logs: "ログ"
+    logs_detail: "問題を報告するときは sayso.log を添付してください。"
+    open_logs: "ログフォルダを開く"

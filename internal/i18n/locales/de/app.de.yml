@@ -1,0 +1,47 @@
+_version: 1
+
+# Text of the app shell. Shown only on a system that has no backend yet.
+app:
+  hotkeys_not_built: "Tastenkürzel sind für dieses System noch nicht verfügbar."
+  insertion_not_built: "Das Einfügen ist für dieses System noch nicht verfügbar."
+  sign_in:
+    start_failed: "Sayso konnte die Anmeldung nicht starten: %{error}"
+    not_finished: "Die Anmeldung wurde nicht abgeschlossen. Wähle „Anmelden“, um es erneut zu versuchen."
+    code_failed: "Sayso konnte den Code nicht senden: %{error}"
+  # The status line at the foot of the Hub sidebar.
+  engine:
+    ready: "Bereit"
+    no_model: "Kein Modell"
+    choose_model: "Öffne „Modelle“, um eines zu wählen"
+    download_model: "Öffne „Modelle“ zum Laden"
+    stopped: "Engine gestoppt"
+    restarting: "Neustart…"
+    optimizing: "Optimiere"
+    downloading: "Lädt herunter"
+    loading: "Lädt"
+    model_error: "Modellfehler"
+    detail_cloud: "%{model} · Cloud"
+    detail_downloading: "%{model} · %{percent} %"
+    detail_not_in_memory: "%{model} · nicht im Speicher"
+  # The import from Pindrop. %{number} is the count with a thousands separator.
+  pindrop:
+    idle: "Kopiert deine Pindrop-Diktate, dein Wörterbuch und deine Prompt-Vorlagen nach Sayso. Pindrop und seine Daten bleiben unverändert."
+    running: "Importiere aus Pindrop…"
+    dictations:
+      one: "%{number} Diktat"
+      other: "%{number} Diktate"
+    words:
+      one: "%{number} Wort"
+      other: "%{number} Wörter"
+    replacements:
+      one: "%{number} Ersetzung"
+      other: "%{number} Ersetzungen"
+    styles:
+      one: "%{number} Stil"
+      other: "%{number} Stile"
+    added: "%{items} hinzugefügt."
+    list_separator: ", "
+    list_end: "%{first} und %{last}"
+    nothing_new: "Alles aus Pindrop ist schon in Sayso."
+    failed: "Der Import wurde nicht abgeschlossen, und es wurde nichts hinzugefügt: %{reason}. Versuche es erneut."
+    style_description: "Aus Pindrop importiert."

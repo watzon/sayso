@@ -1,0 +1,27 @@
+_version: 1
+
+# The names and descriptions of the built-in styles. The interface shows them
+# while the user has not changed them.
+styles:
+  builtin:
+    clean:
+      name: "정돈"
+      description: "군더더기 말을 없애고 문장 부호를 고쳐요. 표현은 그대로 둬요."
+    polished:
+      name: "다듬기"
+      description: "문법과 흐름을 고쳐요. 단어 선택은 그대로 둬요."
+    rambling:
+      name: "생각 정리"
+      description: "생각나는 대로 말할 때 써요. 반복과 늘어지는 문장을 명확한 글로 합쳐요."
+    message:
+      name: "메시지"
+      description: "채팅용이에요. 내 말투 그대로 쓰고 인사와 맺음말은 넣지 않아요."
+    email:
+      name: "이메일"
+      description: "내 말을 인사, 문단, 맺음말로 감싸요."
+    notes:
+      name: "메모"
+      description: "내 말투로 짧은 글머리 기호로 바꿔요. 한 줄에 한 가지 생각만 담아요."
+    raw:
+      name: "Raw"
+      description: "AI를 쓰지 않아요. 사전 치환만 실행돼요."

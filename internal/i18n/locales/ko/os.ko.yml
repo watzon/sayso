@@ -1,0 +1,26 @@
+_version: 1
+
+# Words for this computer and its settings. A key that ends in _mac,
+# _windows, or _other is the version for that system.
+os:
+  computer_mac: "Mac"
+  computer_windows: "PC"
+  computer_other: "컴퓨터"
+  secret_store_mac: "키체인"
+  secret_store_windows: "Windows 자격 증명 관리자"
+  secret_store_other: "시스템 키링"
+  sound_settings_mac: "시스템 설정 › 사운드"
+  sound_settings_windows: "설정 › 시스템 › 소리"
+  sound_settings_other: "소리 설정"
+  optimizing_mac: "Mac에 맞게 최적화 중"
+  optimizing_windows: "모델 로드 중"
+  optimizing_other: "모델 준비 중"
+  permission:
+    microphone: "마이크"
+    accessibility_mac: "손쉬운 사용"
+    accessibility_other: "붙여넣기 접근"
+    input_monitoring_mac: "입력 모니터링"
+    input_monitoring_other: "키보드 접근"
+  open_permission_settings_mac: "시스템 설정 열기"
+  open_permission_settings_windows: "설정 열기"
+  open_permission_settings_other: "설정 안내 열기"

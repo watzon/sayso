@@ -1,0 +1,15 @@
+_version: 1
+
+settings:
+  permissions:
+    title: "Permissions"
+    subtitle_mac: "What Sayso can do on this Mac, and why."
+    subtitle_windows: "What Sayso can do on this PC, and why."
+    subtitle_other: "What Sayso can do on this computer, and why."
+    microphone_detail: "Lets Sayso hear you while you dictate. Required."
+    accessibility_detail: "Lets Sayso paste text into the app you are using. Required."
+    input_monitoring_detail: "Needed for push to talk, for Esc to cancel, and to record keys in other apps."
+    request: "Request"
+    note_mac: "This page updates by itself when you change a permission in System Settings. If a permission stays off after you turn it on, quit Sayso and open it again."
+    note_windows: "This page updates by itself when you change a permission in Settings. If a permission stays off after you turn it on, quit Sayso and open it again."
+    note_other: "This page updates by itself when a permission changes. After you join the input group, log out and log in again."

@@ -1,0 +1,31 @@
+_version: 1
+
+settings:
+  advanced:
+    title: "Avancé"
+    subtitle: "Moteur, journaux, expériences et emplacement des fichiers de Sayso."
+    engine: "Moteur"
+    engine_path: "Chemin du moteur"
+    engine_path_detail: "Un binaire SaysoEngine personnalisé. Laissez vide pour utiliser celui de l’app. Pris en compte au prochain démarrage de Sayso."
+    engine_missing: "Aucun fichier n’existe à ce chemin. Vérifiez le chemin, ou videz le champ pour utiliser le moteur fourni."
+    engine_saved: "Enregistré. Quittez Sayso et rouvrez-le pour utiliser ce moteur."
+    preload: "Charger le modèle au démarrage de Sayso"
+    preload_detail: "La première dictée n’attend pas le modèle vocal. Si cette option est désactivée, la première dictée charge le modèle, et Sayso utilise moins de mémoire jusque-là."
+    keep: "Garder le modèle en mémoire"
+    keep_always: "Toujours"
+    keep_minutes:
+      one: "%{count} minute"
+      many: "%{count} de minutes"
+      other: "%{count} minutes"
+    keep_hour: "1 heure"
+    keep_detail: "Avec une durée, Sayso décharge le modèle vocal après ce temps sans dictée. La première dictée suivante met plus de temps à commencer à écrire."
+    keep_detail_preview: "Avec une durée, Sayso décharge le modèle vocal après ce temps sans dictée. La première dictée suivante met plus de temps à commencer à écrire. L’aperçu en direct de cette dictée démarre aussi plus tard."
+    log_level: "Niveau de journalisation"
+    log_level_detail: "La quantité de détails que Sayso écrit dans son journal. Pris en compte au prochain démarrage de Sayso."
+    folders: "Dossiers"
+    folder_config: "Configuration"
+    folder_data: "Données (historique, audio, modèles)"
+    folder_cache: "Cache"
+    logs: "Journaux"
+    logs_detail: "Joignez sayso.log quand vous signalez un problème."
+    open_logs: "Ouvrir le dossier des journaux"
