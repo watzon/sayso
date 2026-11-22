@@ -58,6 +58,9 @@ var ErrCleanupTimeout = errors.New("cleanup runtime: the request timed out")
 // ErrCleanupDisabled is a request while AI is off or the model is blocked.
 var ErrCleanupDisabled = errors.New("cleanup runtime: disabled")
 
+// ErrCleanupNotInstalled is a runtime binary that cannot start.
+var ErrCleanupNotInstalled = errors.New("the cleanup runtime is not installed")
+
 // CleanupHello is the runtime's answer to hello.
 type CleanupHello struct {
 	Version  uint32 `json:"version"`
@@ -192,7 +195,7 @@ func (c *CleanupClient) start() (*cleanupProcess, error) {
 	}
 	cmd.Stderr = nil
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("cannot start the cleanup runtime %s: %w", c.path, err)
+		return nil, fmt.Errorf("%w: %s: %v", ErrCleanupNotInstalled, c.path, err)
 	}
 	p := &cleanupProcess{cmd: cmd, stdin: stdin, lines: make(chan []byte, 4)}
 	go func() {

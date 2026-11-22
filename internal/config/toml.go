@@ -687,3 +687,13 @@ func stringsToAny(s []string) []any {
 	}
 	return out
 }
+
+// NewTable is an empty TOML table that writes as toml-rs's to_string_pretty
+// does. Other packages use it for files that must match the Rust app.
+func NewTable() *Table { return newTable() }
+
+// F32 marks a float that the Rust app holds as f32, so it prints in its shortest f32 form.
+type F32 = f32
+
+// ParseTOML reads TOML text into plain values.
+func ParseTOML(text string) (map[string]any, error) { return parseDocument(text) }

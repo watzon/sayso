@@ -1,0 +1,13 @@
+id = "email"
+name = "Email"
+ink = "#7A4A2B"
+description = "Add a greeting, paragraphs, and a sign-off around your own words."
+prompt = """Format this as an email body. The first line is a short greeting, when a recipient is named. Then come the speaker's own words in paragraphs, with an empty line between them. When the speaker says no sign-off, the last line is a short one ("Thanks," or "Best,") with no name after it. Add no subject line and no name that the speaker did not say."""
+provider = "openai"
+model = "gpt-x"
+temperature = 0.3
+timeout_ms = 9000
+standalone = true
+
+[cleanup]
+format = "email"

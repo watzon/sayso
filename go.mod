@@ -3,6 +3,7 @@ module github.com/watzon/sayso
 go 1.27.4
 
 require (
+	github.com/abadojack/whatlanggo v1.0.1
 	github.com/ebitengine/purego v0.11.3
 	github.com/mewkiz/flac v1.0.14
 	github.com/pelletier/go-toml/v2 v2.4.3
