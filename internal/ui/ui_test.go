@@ -418,6 +418,8 @@ func TestModelsSearchSortAndDownload(t *testing.T) {
 			t.Errorf("search kept %s", m.ID)
 		}
 	}
+	// The orders are in the menu of the Sort button (Rust models.rs).
+	press(t, tt, i18n.T("models.sort.button", "key", i18n.T("models.sort.recommended")))
 	press(t, tt, i18n.T("models.group.size"))
 	list := e.a.modelList(0)
 	for i := 1; i < len(list); i++ {
@@ -507,8 +509,19 @@ func TestOverlayPillStates(t *testing.T) {
 	a.cfg.Overlay.IdlePill = true
 	a.cfg.Hotkeys.Toggle = ptr(config.MustHotkey("opt+space"))
 	tt := mu.NewTester(a.OverlayView, PillWindowW, PillWindowH)
+	// At rest the idle pill is a small dash (Rust overlay idle_pill); it
+	// says how to dictate only while the pointer is over it.
+	if tt.HasText(i18n.T("overlay.to_dictate")) {
+		t.Errorf("the idle pill at rest shows its hint: %q", tt.Texts())
+	}
+	r, ok := controlBounds(tt, i18n.T("overlay.a11y.start"))
+	if !ok {
+		t.Fatalf("no idle pill: %q", tt.Texts())
+	}
+	tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	tt.Frame()
 	if !tt.HasText(i18n.T("overlay.to_dictate")) {
-		t.Errorf("idle pill: %q", tt.Texts())
+		t.Errorf("hovered idle pill: %q", tt.Texts())
 	}
 	press(t, tt, i18n.T("overlay.a11y.start"))
 	if e.dict.count("toggle") != 1 {
@@ -726,7 +739,7 @@ func TestDarkAndLightRenderEverySurface(t *testing.T) {
 	if err := Smoke(e.a, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "80 renders ok") {
+	if !strings.Contains(out.String(), "82 renders ok") {
 		t.Errorf("smoke: %s", out.String())
 	}
 }

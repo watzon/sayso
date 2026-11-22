@@ -16,5 +16,6 @@ func New() (*Services, error) {
 		Media:       newMacMedia(),
 		LoginItem:   macLoginItem{},
 		Dock:        macDock{},
+		AppIcons:    macAppIcons{},
 	}, nil
 }

@@ -211,6 +211,16 @@ func pressLast(t *testing.T, tt *mu.Tester, name string) {
 	tt.ClickAt(hit.Bounds.X+hit.Bounds.W/2, hit.Bounds.Y+hit.Bounds.H/2)
 }
 
+// controlBounds is the box of the first control with an accessible name.
+func controlBounds(tt *mu.Tester, name string) (mu.Rect, bool) {
+	for _, a := range tt.AccessAll() {
+		if a.Name == name && a.Role != mu.RoleText && a.Role != mu.RoleNone {
+			return a.Bounds, true
+		}
+	}
+	return mu.Rect{}, false
+}
+
 func hasControl(tt *mu.Tester, name string) bool {
 	for _, a := range tt.AccessAll() {
 		if a.Name == name && a.Role != mu.RoleText {

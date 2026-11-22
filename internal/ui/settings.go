@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +16,7 @@ import (
 	"github.com/watzon/sayso/internal/platform"
 	"github.com/watzon/sayso/internal/store"
 	"github.com/watzon/sayso/internal/theme"
+	"github.com/watzon/sayso/internal/update"
 )
 
 type settingsState struct {
@@ -34,6 +36,9 @@ type settingsState struct {
 	provModel    string
 	provErr      string
 	keyEdit      map[string]string
+	provSel      string // the provider Settings › Providers shows
+	customOpen   bool   // Appearance shows the custom ink field
+	customField  mu.Handle
 }
 
 func (a *App) settingsPage(c *mu.Context, p theme.Colors) {
@@ -44,7 +49,12 @@ func (a *App) settingsPage(c *mu.Context, p theme.Colors) {
 		SecOverlay: i18n.T("settings.overlay.subtitle"), SecAppearance: i18n.T("settings.appearance.subtitle"),
 		SecHistory: i18n.TOS("settings.history.subtitle", nil), SecApps: i18n.T("apps.settings.subtitle"),
 		SecUpdates: i18n.T("settings.general.check_updates_detail"), SecAdvanced: i18n.T("settings.advanced.subtitle"),
+		SecPermissions: i18n.TOS("settings.permissions.subtitle", nil),
 	}[s]
+	if s == SecProviders {
+		a.providersSection(c, p, sub) // its header has the AI switch
+		return
+	}
 	pageHeader(c, p, s.title(), sub)
 	switch s {
 	case SecGeneral:
@@ -53,14 +63,14 @@ func (a *App) settingsPage(c *mu.Context, p theme.Colors) {
 		a.dictationSection(c, p)
 	case SecAudio:
 		a.audioSection(c, p)
-	case SecProviders:
-		a.providersSection(c, p)
 	case SecOverlay:
 		a.overlaySection(c, p)
 	case SecAppearance:
 		a.appearanceSection(c, p)
 	case SecHistory:
 		a.historySection(c, p)
+	case SecPermissions:
+		a.permissionsSection(c, p)
 	case SecApps:
 		a.appsSection(c, p)
 	case SecUpdates:
@@ -74,23 +84,25 @@ func (a *App) settingsPage(c *mu.Context, p theme.Colors) {
 
 func (a *App) generalSection(c *mu.Context, p theme.Colors) {
 	if n := len(a.d.Issues); n > 0 {
-		mu.Text(c, i18n.TP("settings.general.config_problems", n, nil)).FontSize(13).TextColor(p.Danger).
+		uiText(c, i18n.TP("settings.general.config_problems", n, nil), 13, 500, p.Danger).
 			Padding(10, 14).Radius(10).Background(p.DangerWash)
 	}
-	a.group(c, p, i18n.T("settings.general.you"), func() {
-		a.row(c, p, i18n.T("settings.general.name"), i18n.TOS("settings.general.name_detail", nil), func() {
-			a.field(c, p, "general.name", i18n.T("settings.general.name"), i18n.T("settings.general.name_placeholder"), &a.set.name).
-				Width(220).OnChange(func() {
-				if v := strings.TrimSpace(a.set.name); v == "" {
-					a.cfg.General.Name = nil
-				} else {
-					a.cfg.General.Name = ptr(v)
-				}
-				a.saveConfig()
-			})
-		})
+	a.group(c, p, i18n.T("settings.general.language"), func() {
 		a.row(c, p, i18n.T("settings.general.interface_language"), i18n.T("settings.general.interface_language_detail"), func() {
 			a.languageSelect(c, "general.language")
+		})
+	})
+	a.group(c, p, i18n.T("settings.general.you"), func() {
+		a.row(c, p, i18n.T("settings.general.name"), i18n.TOS("settings.general.name_detail", nil), func() {
+			a.fieldW(c, p, "general.name", i18n.T("settings.general.name"), i18n.T("settings.general.name_placeholder"), &a.set.name, 220).
+				OnChange(func() {
+					if v := strings.TrimSpace(a.set.name); v == "" {
+						a.cfg.General.Name = nil
+					} else {
+						a.cfg.General.Name = ptr(v)
+					}
+					a.saveConfig()
+				})
 		})
 	})
 	a.group(c, p, i18n.T("settings.general.startup"), func() {
@@ -113,8 +125,22 @@ func (a *App) generalSection(c *mu.Context, p theme.Colors) {
 				})
 		}
 	})
+	a.group(c, p, i18n.T("settings.general.updates"), func() {
+		if !update.IsOfficialBuild() {
+			a.row(c, p, i18n.T("settings.general.no_self_update"), i18n.T("settings.general.no_self_update_detail", "version", a.d.Version), nil)
+			return
+		}
+		a.row(c, p, a.updateHeadline(), a.updateDetail(), func() {
+			if a.btn(c, p, "general.check_now", i18n.T("update.action.check"), btnSecondary) {
+				a.CheckForUpdates()
+			}
+		})
+	})
 	a.group(c, p, i18n.T("settings.general.about"), func() {
-		a.row(c, p, i18n.T("settings.general.version", "version", a.d.Version), i18n.TOS("settings.general.tagline", map[string]any{"os": osName()}), func() {
+		a.row(c, p, "Sayso", i18n.T("settings.general.version", "version", a.d.Version), func() {
+			uiText(c, i18n.TOS("settings.general.tagline", map[string]any{"os": osName()}), 13, 400, p.Graphite)
+		})
+		a.row(c, p, i18n.T("settings.general.whats_new"), "", func() {
 			if a.btn(c, p, "general.whats_new", i18n.T("settings.general.whats_new"), btnSecondary) {
 				a.OpenWhatsNew()
 			}
@@ -124,7 +150,7 @@ func (a *App) generalSection(c *mu.Context, p theme.Colors) {
 				a.importPindrop()
 			}
 		})
-		a.row(c, p, i18n.T("settings.general.config_file"), a.d.ConfigPath, func() {
+		a.row(c, p, i18n.T("settings.general.config_file"), tildePath(a.d.ConfigPath), func() {
 			if a.btn(c, p, "general.open_config", i18n.T("settings.general.open_config_file"), btnGhost) {
 				a.openPath(a.d.ConfigPath)
 			}
@@ -157,7 +183,7 @@ func (a *App) languageSelect(c *mu.Context, key string) {
 			sel = options[i]
 		}
 	}
-	mu.Select(a.k(c, key), &sel, options).Label(i18n.T("settings.general.interface_language")).Width(220).OnChange(func() {
+	a.selectBtn(c, a.colors(c), key, i18n.T("settings.general.interface_language"), &sel, options, 0).OnChange(func() {
 		for i, o := range options {
 			if o == sel {
 				a.SetLanguage(codes[i])
@@ -244,7 +270,7 @@ func (a *App) dictationSection(c *mu.Context, p theme.Colors) {
 			if a.cfg.Dictation.Language == "" {
 				sel = labels[0]
 			}
-			mu.Select(a.k(c, "dictation.language"), &sel, labels).Label(i18n.T("settings.dictation.dictation_language")).Width(200).OnChange(func() {
+			a.selectBtn(c, p, "dictation.language", i18n.T("settings.dictation.dictation_language"), &sel, labels, 0).OnChange(func() {
 				for i, l := range labels {
 					if l == sel {
 						a.cfg.Dictation.Language = langs[i]
@@ -253,6 +279,7 @@ func (a *App) dictationSection(c *mu.Context, p theme.Colors) {
 				a.saveConfig()
 			})
 		})
+		a.toggleRow(c, p, "dictation.spoken_punctuation", i18n.T("settings.dictation.spoken_punctuation"), i18n.T("settings.dictation.spoken_punctuation_detail"), &a.cfg.Dictation.SpokenPunctuation, a.saveConfig)
 	})
 	a.group(c, p, i18n.T("settings.dictation.hotkeys"), func() {
 		a.row(c, p, i18n.T("settings.dictation.toggle"), i18n.T("settings.dictation.toggle_detail"), func() {
@@ -260,15 +287,6 @@ func (a *App) dictationSection(c *mu.Context, p theme.Colors) {
 		})
 		a.row(c, p, i18n.T("settings.dictation.push_to_talk"), i18n.T("settings.dictation.push_to_talk_detail"), func() {
 			a.recorder(c, p, "dictation.hotkey.push_to_talk", i18n.T("settings.dictation.push_to_talk"), h.PushToTalk, setHK(&h.PushToTalk))
-		})
-		a.row(c, p, i18n.T("settings.dictation.paste_last"), i18n.T("settings.dictation.paste_last_detail"), func() {
-			a.recorder(c, p, "dictation.hotkey.paste_last", i18n.T("settings.dictation.paste_last"), h.PasteLast, setHK(&h.PasteLast))
-		})
-		a.row(c, p, i18n.T("settings.dictation.next_style"), i18n.T("settings.dictation.next_style_detail"), func() {
-			a.recorder(c, p, "dictation.hotkey.cycle_style", i18n.T("settings.dictation.next_style"), h.CycleStyle, setHK(&h.CycleStyle))
-		})
-		a.row(c, p, i18n.T("settings.dictation.incognito"), i18n.T("settings.dictation.incognito_detail"), func() {
-			a.recorder(c, p, "dictation.hotkey.incognito", i18n.T("settings.dictation.incognito"), h.Incognito, setHK(&h.Incognito))
 		})
 		a.row(c, p, i18n.T("settings.dictation.cancel"), i18n.T("settings.dictation.cancel_detail"), func() {
 			modes := []config.CancelMode{config.CancelDoubleEscape, config.CancelSingleEscape}
@@ -283,12 +301,20 @@ func (a *App) dictationSection(c *mu.Context, p theme.Colors) {
 				a.applyHotkeys()
 			}
 		})
-		a.toggleRow(c, p, "dictation.enter_sends", i18n.T("settings.dictation.enter_sends"), i18n.T("settings.dictation.enter_sends_detail"), &h.EnterSends, a.hotkeysChanged)
 		a.toggleRow(c, p, "dictation.take_escape", i18n.T("settings.dictation.take_escape"), i18n.T("settings.dictation.take_escape_detail"), &h.TakeEscape, a.hotkeysChanged)
+		a.toggleRow(c, p, "dictation.enter_sends", i18n.T("settings.dictation.enter_sends"), i18n.T("settings.dictation.enter_sends_detail"), &h.EnterSends, a.hotkeysChanged)
+		a.row(c, p, i18n.T("settings.dictation.paste_last"), i18n.T("settings.dictation.paste_last_detail"), func() {
+			a.recorder(c, p, "dictation.hotkey.paste_last", i18n.T("settings.dictation.paste_last"), h.PasteLast, setHK(&h.PasteLast))
+		})
+		a.row(c, p, i18n.T("settings.dictation.next_style"), i18n.T("settings.dictation.next_style_detail"), func() {
+			a.recorder(c, p, "dictation.hotkey.cycle_style", i18n.T("settings.dictation.next_style"), h.CycleStyle, setHK(&h.CycleStyle))
+		})
+		a.row(c, p, i18n.T("settings.dictation.incognito"), i18n.T("settings.dictation.incognito_detail"), func() {
+			a.recorder(c, p, "dictation.hotkey.incognito", i18n.T("settings.dictation.incognito"), h.Incognito, setHK(&h.Incognito))
+		})
 	})
 	a.group(c, p, i18n.T("settings.dictation.inserting"), func() {
 		a.toggleRow(c, p, "dictation.live_preview", i18n.T("settings.audio.live_preview"), i18n.T("settings.audio.live_preview_detail"), &a.cfg.Dictation.LivePreview, a.saveConfig)
-		a.toggleRow(c, p, "dictation.spoken_punctuation", i18n.T("settings.dictation.spoken_punctuation"), i18n.T("settings.dictation.spoken_punctuation_detail"), &a.cfg.Dictation.SpokenPunctuation, a.saveConfig)
 		a.toggleRow(c, p, "dictation.restore_clipboard", i18n.T("settings.dictation.restore_clipboard"), i18n.T("settings.dictation.restore_clipboard_detail"), &a.cfg.Insertion.RestoreClipboard, a.saveConfig)
 		a.toggleRow(c, p, "dictation.trailing_space", i18n.T("settings.dictation.trailing_space"), i18n.T("settings.dictation.trailing_space_detail"), &a.cfg.Insertion.TrailingSpace, a.saveConfig)
 		a.row(c, p, i18n.T("settings.audio.max_length"), i18n.T("settings.audio.max_length_detail"), func() {
@@ -328,7 +354,7 @@ func (a *App) uintSelect(c *mu.Context, key, label string, v *uint64, values []u
 		values = append(values, *v)
 		sel = labels[len(labels)-1]
 	}
-	mu.Select(a.k(c, key), &sel, labels).Label(label).Width(160).OnChange(func() {
+	a.selectBtn(c, a.colors(c), key, label, &sel, labels, 0).OnChange(func() {
 		for i, l := range labels {
 			if l == sel {
 				*v = values[i]
@@ -354,7 +380,7 @@ func (a *App) keepModelSelect(c *mu.Context) {
 			sel = labels[i]
 		}
 	}
-	mu.Select(a.k(c, "dictation.keep_model"), &sel, labels).Label(i18n.T("settings.advanced.keep")).Width(160).OnChange(func() {
+	a.selectBtn(c, a.colors(c), "dictation.keep_model", i18n.T("settings.advanced.keep"), &sel, labels, 0).OnChange(func() {
 		for i, l := range labels {
 			if l == sel {
 				a.cfg.Dictation.KeepModelMinutes = values[i]
@@ -366,7 +392,8 @@ func (a *App) keepModelSelect(c *mu.Context) {
 
 // ---- Audio ----
 
-func (a *App) audioSection(c *mu.Context, p theme.Colors) {
+// audioDevices are the microphones, listed once.
+func (a *App) audioDevices() []platform.AudioDevice {
 	if !a.set.devicesRead && a.d.Platform != nil && a.d.Platform.Audio != nil {
 		a.set.devicesRead = true
 		if devs, err := a.d.Platform.Audio.ListDevices(); err == nil {
@@ -375,6 +402,11 @@ func (a *App) audioSection(c *mu.Context, p theme.Colors) {
 			log.Printf("audio devices: %v", err)
 		}
 	}
+	return a.set.devices
+}
+
+func (a *App) audioSection(c *mu.Context, p theme.Colors) {
+	a.audioDevices()
 	a.group(c, p, i18n.T("settings.audio.input"), func() {
 		a.row(c, p, i18n.T("settings.audio.input"), i18n.T("settings.audio.follows_other"), func() {
 			labels := []string{i18n.T("settings.audio.system_default")}
@@ -388,7 +420,7 @@ func (a *App) audioSection(c *mu.Context, p theme.Colors) {
 					sel = labels[i]
 				}
 			}
-			mu.Select(a.k(c, "audio.input_device"), &sel, labels).Label(i18n.T("settings.audio.input")).Width(240).OnChange(func() {
+			a.selectBtn(c, p, "audio.input_device", i18n.T("settings.audio.input"), &sel, labels, 0).Value(sel).OnChange(func() {
 				for i, l := range labels {
 					if l == sel {
 						if ids[i] == "" {
@@ -402,7 +434,7 @@ func (a *App) audioSection(c *mu.Context, p theme.Colors) {
 			})
 		})
 		if len(a.set.devices) == 0 {
-			mu.Text(c, i18n.T("settings.audio.no_microphone", "settings", i18n.TOS("os.sound_settings", nil))).FontSize(12.5).TextColor(p.Graphite).Padding(0, 0, 10, 0)
+			uiText(c, i18n.T("settings.audio.no_microphone", "settings", i18n.TOS("os.sound_settings", nil)), 13, 400, p.Graphite).PaddingY(10).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
 		}
 		a.toggleRow(c, p, "audio.pause_media", i18n.T("settings.audio.pause_media"), i18n.T("settings.audio.pause_media_detail"), &a.cfg.Audio.PauseMedia, a.saveConfig)
 	})
@@ -427,7 +459,10 @@ func (a *App) audioSection(c *mu.Context, p theme.Colors) {
 					{"audio.sound.cancel", i18n.T("settings.dictation.sound_cancel"), &snd.Cancel},
 					{"audio.sound.insert", i18n.T("settings.dictation.sound_insert"), &snd.Insert},
 				} {
-					mu.Checkbox(a.k(c, ev.key), ev.v, ev.label).Disabled(!snd.Enabled).OnChange(a.saveConfig)
+					if a.chip(c, p, ev.key, ev.label, *ev.v) && snd.Enabled {
+						*ev.v = !*ev.v
+						a.saveConfig()
+					}
 				}
 			})
 		})
@@ -440,18 +475,17 @@ func (a *App) overlaySection(c *mu.Context, p theme.Colors) {
 	o := &a.cfg.Overlay
 	notch := o.Style == config.OverlayNotch
 	a.group(c, p, i18n.T("settings.overlay.style"), func() {
-		a.row(c, p, i18n.T("settings.overlay.style"), i18n.T("settings.overlay.style_detail"), func() {
-			chosen := 0
-			if notch {
-				chosen = 1
-			}
-			if i := a.choice(c, p, []string{"overlay.pill", "overlay.notch"},
-				[]string{i18n.T("settings.overlay.pill"), i18n.T("settings.overlay.style_notch")}, chosen, false); i >= 0 {
-				o.Style = []config.OverlayStyle{config.OverlayPill, config.OverlayNotch}[i]
-				a.saveConfig()
-				a.syncOverlay()
-			}
+		uiText(c, i18n.T("settings.overlay.style_detail"), 15, 400, p.Graphite).LineHeight(22.0 / 15).MaxWidth(560).PaddingY(6)
+		mu.Row(c).Gap(20).Padding(10, 0, 14, 0).Role(mu.RoleRadioGroup).Label(i18n.T("settings.overlay.style")).Children(func() {
+			a.overlayOption(c, p, "overlay.pill", i18n.T("settings.overlay.pill"), i18n.T("settings.overlay.style_pill_detail"), !notch, false, config.OverlayPill)
+			a.overlayOption(c, p, "overlay.notch", i18n.T("settings.overlay.style_notch"), i18n.TOS("settings.overlay.style_notch_detail", nil), notch, true, config.OverlayNotch)
 		})
+	})
+	title := i18n.T("settings.overlay.pill")
+	if notch {
+		title = i18n.T("settings.overlay.style_notch")
+	}
+	a.group(c, p, title, func() {
 		if notch {
 			a.toggleRow(c, p, "overlay.notch_other_displays", i18n.T("settings.overlay.notch_other_displays"), i18n.T("settings.overlay.notch_other_displays_detail"), &o.NotchOnOtherDisplays, a.overlayChanged)
 		}
@@ -472,8 +506,6 @@ func (a *App) overlaySection(c *mu.Context, p theme.Colors) {
 				}
 			}
 		})
-	})
-	a.group(c, p, i18n.T("settings.overlay.while_dictating"), func() {
 		if !notch {
 			a.toggleRow(c, p, "overlay.idle_pill", i18n.T("settings.overlay.idle_pill"), i18n.T("settings.overlay.idle_pill_detail"), &o.IdlePill, a.overlayChanged)
 		}
@@ -487,6 +519,54 @@ func (a *App) overlaySection(c *mu.Context, p theme.Colors) {
 	})
 }
 
+// overlayOption is a style card: a drawn preview of the pill or the notch,
+// its name and what it does. Chosen, it has an ink ring.
+func (a *App) overlayOption(c *mu.Context, p theme.Colors, key, title, detail string, on, notch bool, style config.OverlayStyle) {
+	b := mu.ButtonBase(a.k(c, key)).Label(title).Role(mu.RoleRadio).Checked(on).Width(264).Gap(10).AlignItems(mu.Stretch).Cursor(mu.CursorPointer)
+	b.Children(func() {
+		prev := mu.Box(c).Height(132).Radius(14).Background(p.Deboss)
+		if on {
+			prev.Border(2, p.Ink)
+		}
+		prev.Draw(func(pt *mu.Painter, r mu.Rect) {
+			// The menu bar of a screen, then the overlay on it.
+			pt.Fill(mu.Rect{X: r.X, Y: r.Y, W: r.W, H: 20}, p.Sheet, 0)
+			if notch {
+				pt.Fill(mu.Rect{X: r.X, Y: r.Y, W: r.W, H: 4}, black, 0)
+				n := mu.Rect{X: r.X + r.W/2 - 76, Y: r.Y, W: 152, H: 18}
+				pt.FillRadii(n, [4]float32{0, 0, 9, 9}, black)
+				pt.Fill(mu.Rect{X: n.X + 10, Y: n.Y + 7, W: 5, H: 5}, p.Accent, 3)
+				pt.Fill(mu.Rect{X: n.X + n.W - 34, Y: n.Y + 8, W: 22, H: 2}, white.Alpha(0.85), 1)
+				s := mu.Rect{X: r.X + r.W/2 - 70, Y: r.Y + 20, W: 140, H: 26}
+				pt.Shadow(s, 6, 0, 2, 6, 0, p.ShadowA(0.14))
+				pt.Fill(s, p.SheetRaised, 6)
+				pt.Fill(mu.Rect{X: s.X + 10, Y: s.Y + 8, W: 110, H: 2}, p.Ink.Alpha(0.7), 1)
+				pt.Fill(mu.Rect{X: s.X + 10, Y: s.Y + 14, W: 58, H: 2}, p.Ink.Alpha(0.7), 1)
+				pt.Fill(mu.Rect{X: s.X + 72, Y: s.Y + 14, W: 26, H: 2}, p.Pencil.Alpha(0.6), 1)
+				return
+			}
+			pl := mu.Rect{X: r.X + r.W/2 - 52, Y: r.Y + r.H - 42, W: 104, H: 26}
+			pt.Shadow(pl, 13, 0, 2, 8, 0, p.ShadowA(0.16))
+			pt.Fill(pl, p.SheetRaised, 13)
+			pt.Fill(mu.Rect{X: pl.X + 6, Y: pl.Y + 6, W: 14, H: 14}, p.Deboss, 7)
+			pt.Fill(mu.Rect{X: pl.X + 10, Y: pl.Y + 10, W: 6, H: 6}, p.Accent, 3)
+			for i := range 24 {
+				h := float32(2 + 5*math.Abs(math.Sin(float64(i)*0.55)))
+				pt.Fill(mu.Rect{X: pl.X + 30 + float32(i)*2.6, Y: pl.Y + 13 - h/2, W: 1.6, H: h}, p.Ink, 1)
+			}
+		})
+		mu.Column(c).Gap(4).Children(func() {
+			uiText(c, title, 15, 600, p.Ink)
+			uiText(c, detail, 13, 400, p.Graphite).LineHeight(18.0 / 13)
+		})
+	})
+	if clicked(c, b) && !on {
+		a.cfg.Overlay.Style = style
+		a.saveConfig()
+		a.syncOverlay()
+	}
+}
+
 func (a *App) overlayChanged() {
 	a.saveConfig()
 	a.syncOverlay()
@@ -496,6 +576,44 @@ func (a *App) overlayChanged() {
 
 func (a *App) appearanceSection(c *mu.Context, p theme.Colors) {
 	ap := &a.cfg.Appearance
+	a.group(c, p, i18n.T("settings.appearance.ink"), func() {
+		uiText(c, i18n.T("settings.appearance.ink_detail"), 15, 400, p.Graphite).LineHeight(22.0 / 15).MaxWidth(560).PaddingY(6)
+		mu.Row(c).Gap(36).Padding(14, 0, 8, 6).Wrap().Role(mu.RoleRadioGroup).Label(i18n.T("settings.appearance.ink")).Children(func() {
+			for _, ink := range inkPresets {
+				named := config.NamedInk(ink)
+				on := !ap.Ink.IsCustom && ap.Ink.Named == named
+				if a.inkSwatch(c, p, "appearance.ink."+string(ink), i18n.T("core.ink."+string(ink)), i18n.T("core.ink."+string(ink)), ink.Color().Hex(), on) {
+					a.SetInk(named)
+				}
+			}
+			custom := ""
+			if ap.Ink.IsCustom {
+				custom = ap.Ink.String()
+			}
+			if a.inkSwatch(c, p, "appearance.ink.custom_open", i18n.T("settings.appearance.custom_ink"), i18n.T("settings.appearance.custom"), custom, ap.Ink.IsCustom) {
+				a.set.customOpen = true
+				if a.set.customInk == "" && ap.Ink.IsCustom {
+					a.set.customInk = ap.Ink.String()
+				}
+				a.set.customField.Focus(c)
+			}
+		})
+		if a.set.customOpen || ap.Ink.IsCustom {
+			a.row(c, p, i18n.T("settings.appearance.custom_ink"), i18n.T("settings.appearance.hex_hint"), func() {
+				mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
+					in := a.fieldW(c, p, "appearance.ink.custom", i18n.T("settings.appearance.custom_ink"), "#2D3C8C", &a.set.customInk, 120).Font(theme.Mono).Bind(&a.set.customField)
+					in.OnSubmit(a.applyCustomInk)
+					if a.btn(c, p, "appearance.ink.custom_apply", i18n.T("settings.appearance.custom"), btnSecondary) {
+						a.applyCustomInk()
+					}
+				})
+			})
+		}
+		if a.set.inkErr != "" {
+			uiText(c, a.set.inkErr, 13, 500, p.Danger).PaddingY(8)
+		}
+		a.inkSpecimens(c)
+	})
 	a.group(c, p, i18n.T("settings.appearance.paper"), func() {
 		a.row(c, p, i18n.T("settings.appearance.theme"), i18n.TOS("settings.appearance.theme_detail", nil), func() {
 			modes := []config.ThemeMode{config.ThemeSystem, config.ThemeLight, config.ThemeDark}
@@ -526,38 +644,37 @@ func (a *App) appearanceSection(c *mu.Context, p theme.Colors) {
 			a.toggleRow(c, p, "appearance.system_title_bar", i18n.T("settings.appearance.system_title_bar"), i18n.T("settings.appearance.system_title_bar_detail"), &ap.SystemTitleBar, a.saveConfig)
 		}
 	})
-	a.group(c, p, i18n.T("settings.appearance.ink"), func() {
-		mu.Text(c, i18n.T("settings.appearance.ink_detail")).FontSize(12.5).TextColor(p.Graphite).Padding(10, 0, 0, 0)
-		mu.Row(c).Gap(10).Padding(10, 0).Wrap().Children(func() {
-			for _, ink := range inkPresets {
-				named := config.NamedInk(ink)
-				on := !ap.Ink.IsCustom && ap.Ink.Named == named
-				b := mu.ButtonBase(a.k(c, "appearance.ink."+string(ink))).Role(mu.RoleRadio).Checked(on).Label(ink.Name()).
-					Padding(6, 10).Gap(6).Radius(99).AlignItems(mu.Center).Border(1, p.Rule).Cursor(mu.CursorPointer)
-				if on {
-					b.Border(2, p.Accent)
-				}
-				b.Children(func() {
-					mu.Box(c).Size(14, 14).Radius(99).Background(theme.UIColor(ink.Color()))
-					mu.Text(c, i18n.T("core.ink."+string(ink))).FontSize(13).TextColor(p.Ink)
-				})
-				if clicked(c, b) {
-					a.SetInk(named)
-				}
-			}
-		})
-		a.row(c, p, i18n.T("settings.appearance.custom_ink"), i18n.T("settings.appearance.hex_hint"), func() {
-			in := a.field(c, p, "appearance.ink.custom", i18n.T("settings.appearance.custom_ink"), "#2D3C8C", &a.set.customInk).Width(120)
-			in.OnSubmit(a.applyCustomInk)
-			if a.btn(c, p, "appearance.ink.custom_apply", i18n.T("settings.appearance.custom"), btnSecondary) {
-				a.applyCustomInk()
-			}
-		})
-		if a.set.inkErr != "" {
-			mu.Text(c, a.set.inkErr).FontSize(12.5).TextColor(p.Danger).Padding(0, 0, 10, 0)
+}
+
+// inkSwatch is a 60 px well holding a domed ink disc, with its name below;
+// an empty hex is the dashed Custom circle.
+func (a *App) inkSwatch(c *mu.Context, p theme.Colors, key, label, shown, hex string, on bool) bool {
+	b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleRadio).Checked(on).Gap(10).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+	b.Children(func() {
+		w := mu.Box(c).Size(60, 60).Radius(99).Justify(mu.Center).AlignItems(mu.Center)
+		switch {
+		case hex == "":
+			w.Border(1, p.Pencil).BorderStyle(mu.BorderDashed)
+		default:
+			shallowWell(w, p)
 		}
-		a.inkSpecimen(c, p)
+		if on {
+			w.Border(2, p.Ink).BorderStyle(mu.BorderSolid)
+		}
+		w.Children(func() {
+			if hex == "" {
+				mu.Icon(c, icon("plus")).FontSize(16).TextColor(p.Graphite)
+				return
+			}
+			sealDot(c, p, hex, 40)
+		})
+		fg, weight := p.Graphite, 500
+		if on {
+			fg, weight = p.Ink, 600
+		}
+		uiText(c, shown, 13, weight, fg).SingleLine()
 	})
+	return clicked(c, b)
 }
 
 func (a *App) applyCustomInk() {
@@ -568,21 +685,37 @@ func (a *App) applyCustomInk() {
 	}
 }
 
-// inkSpecimen shows the ink on paper with its contrast.
-func (a *App) inkSpecimen(c *mu.Context, p theme.Colors) {
+// inkSpecimens show the ink on light and on dark paper, with the contrast.
+func (a *App) inkSpecimens(c *mu.Context) {
 	ti, err := theme.ParseInk(a.cfg.Appearance.Ink.String())
 	if err != nil {
 		return
 	}
 	rep := theme.NewContrastReport(ti)
-	mu.Column(c).Gap(6).Padding(14, 16).Margin(0, 0, 12, 0).Radius(10).Background(p.Sheet).Children(func() {
-		mu.Text(c, i18n.T("settings.appearance.specimen_title")).Font(theme.Display).FontSize(22).TextColor(p.Ink)
-		mu.Text(c, i18n.T("settings.appearance.specimen_body")).FontSize(13).TextColor(p.Graphite)
-		ratio := i18n.Decimal(min(rep.LightRatio, rep.DarkRatio), 1)
-		if rep.Passes() {
-			mu.Text(c, i18n.T("settings.appearance.specimen_pass", "ratio", ratio)).FontSize(12).TextColor(p.Success)
-		} else {
-			mu.Text(c, i18n.T("settings.appearance.specimen_fail", "ratio", ratio)).FontSize(12).TextColor(p.Danger)
+	mu.Row(c).Gap(16).Padding(18, 0, 6, 0).Children(func() {
+		for _, dark := range []bool{false, true} {
+			q := a.themes.get(a.cfg.Appearance.Ink, dark).Colors
+			ratio, pass := rep.LightRatio, rep.LightRatio >= 4.5
+			fill := q.SheetRaised
+			if dark {
+				ratio, pass, fill = rep.DarkRatio, rep.DarkRatio >= 4.5, q.Sheet
+			}
+			raised(mu.Column(c).Grow(1).Basis(0).Padding(22, 22, 20, 22).Gap(14).Radius(14), q).Background(fill).Children(func() {
+				heading(c, q, i18n.T("settings.appearance.specimen_title"), 22)
+				uiText(c, i18n.T("settings.appearance.specimen_body"), 13, 400, q.Graphite)
+				mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
+					inkButton(mu.Box(c).Height(28).PaddingX(12).Radius(8).Justify(mu.Center).AlignItems(mu.Center), q, false).Children(func() {
+						uiText(c, i18n.T("settings.appearance.specimen_primary"), 13, 600, q.OnInk)
+					})
+					mu.Box(c).Size(10, 10).Radius(99).Background(q.Accent).Shadow(0, 0, 0, 2, q.Accent.Alpha(0.25))
+					uiText(c, i18n.T("settings.appearance.specimen_recording"), 13, 600, q.Accent).Grow(1)
+					key, col := "settings.appearance.specimen_pass", q.Success
+					if !pass {
+						key, col = "settings.appearance.specimen_fail", q.Danger
+					}
+					mono(c, i18n.T(key, "ratio", i18n.Decimal(ratio, 1)), 11, col)
+				})
+			})
 		}
 	})
 }
@@ -610,7 +743,7 @@ func (a *App) historySection(c *mu.Context, p theme.Colors) {
 		if sel == "" {
 			sel = labels[0]
 		}
-		mu.Select(a.k(c, key), &sel, labels).Label(label).Width(160).OnChange(func() {
+		a.selectBtn(c, p, key, label, &sel, labels, 0).OnChange(func() {
 			for i, l := range labels {
 				if l == sel {
 					*dst = days[i]
@@ -656,7 +789,7 @@ func (a *App) historySection(c *mu.Context, p theme.Colors) {
 		})
 	})
 	a.group(c, p, i18n.T("settings.history.leaves", "computer", computer()), func() {
-		mu.Text(c, i18n.T("settings.history.leaves_local", "computer", computer())).FontSize(13).TextColor(p.Graphite).Padding(12, 0)
+		uiText(c, i18n.T("settings.history.leaves_local", "computer", computer()), 13, 400, p.Graphite).PaddingY(14).LineHeight(1.4).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
 	})
 }
 
@@ -675,14 +808,14 @@ func (a *App) confirmClearDialog(c *mu.Context, p theme.Colors) {
 	if a.d.Store != nil {
 		n, _ = a.d.Store.Count(store.HistoryQuery{})
 	}
-	mu.Box(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Background(p.Shadow.Alpha(0.25)).ZIndex(50).
+	mu.Box(c).Absolute().Top(0).Left(0).Right(0).Bottom(0).Background(p.Ground.Alpha(0.55)).ZIndex(50).
 		Justify(mu.Center).AlignItems(mu.Center).Children(func() {
-		mu.Column(c).Width(420).Padding(24).Gap(14).Radius(14).Background(p.SheetRaised).Border(1, p.Rule).Role(mu.RoleAlertDialog).
-			Label(i18n.T("settings.history.clear_history")).Shadow(0, 16, 40, 0, p.Shadow.Alpha(0.25)).Children(func() {
+		floating(mu.Column(c).Width(420).Padding(24).Gap(14).Radius(14), p).Role(mu.RoleAlertDialog).
+			Label(i18n.T("settings.history.clear_history")).Children(func() {
 			heading(c, p, i18n.T("settings.history.clear_history"), 22)
-			mu.Text(c, i18n.TP("settings.history.entries_confirm", n, map[string]any{"number": n})).FontSize(13.5).TextColor(p.Graphite)
+			uiText(c, i18n.TP("settings.history.entries_confirm", n, map[string]any{"number": n}), 14, 400, p.Graphite).LineHeight(1.4)
 			mu.Row(c).Gap(8).Justify(mu.End).Children(func() {
-				if a.btn(c, p, "history_settings.clear_cancel", i18n.T("settings.history.cancel"), btnSecondary) {
+				if a.btn(c, p, "history_settings.clear_cancel", i18n.T("settings.history.cancel"), btnGhost) {
 					a.set.confirmClear = false
 				}
 				if a.btn(c, p, "history_settings.clear_confirm", i18n.T("settings.history.delete_all"), btnDanger) {
@@ -712,7 +845,7 @@ func (a *App) ClearHistory() {
 func (a *App) advancedSection(c *mu.Context, p theme.Colors) {
 	a.group(c, p, i18n.T("settings.advanced.engine"), func() {
 		a.row(c, p, i18n.T("settings.advanced.engine_path"), i18n.T("settings.advanced.engine_path_detail"), func() {
-			a.field(c, p, "advanced.engine_path", i18n.T("settings.advanced.engine_path"), "SaysoEngine", &a.set.enginePath).Width(280).OnChange(func() {
+			a.fieldW(c, p, "advanced.engine_path", i18n.T("settings.advanced.engine_path"), "SaysoEngine", &a.set.enginePath, 280).Font(theme.Mono).FontSize(12).OnChange(func() {
 				if v := strings.TrimSpace(a.set.enginePath); v == "" {
 					a.cfg.Advanced.EnginePath = nil
 				} else {
@@ -724,9 +857,9 @@ func (a *App) advancedSection(c *mu.Context, p theme.Colors) {
 		})
 		if v := strings.TrimSpace(a.set.enginePath); v != "" {
 			if _, err := os.Stat(v); err != nil {
-				mu.Text(c, i18n.T("settings.advanced.engine_missing")).FontSize(12.5).TextColor(p.Danger).Padding(0, 0, 10, 0)
+				uiText(c, i18n.T("settings.advanced.engine_missing"), 13, 400, p.Danger).PaddingY(10)
 			} else if a.set.engineEdited {
-				mu.Text(c, i18n.T("settings.advanced.engine_saved")).FontSize(12.5).TextColor(p.Graphite).Padding(0, 0, 10, 0)
+				uiText(c, i18n.T("settings.advanced.engine_saved"), 13, 400, p.Graphite).PaddingY(10)
 			}
 		}
 	})
@@ -734,7 +867,7 @@ func (a *App) advancedSection(c *mu.Context, p theme.Colors) {
 		a.row(c, p, i18n.T("settings.advanced.log_level"), i18n.T("settings.advanced.log_level_detail"), func() {
 			levels := []string{"error", "warn", "info", "debug", "trace"}
 			sel := derefOr(a.cfg.Advanced.LogLevel, "info")
-			mu.Select(a.k(c, "advanced.log_level"), &sel, levels).Label(i18n.T("settings.advanced.log_level")).Width(140).OnChange(func() {
+			a.selectBtn(c, p, "advanced.log_level", i18n.T("settings.advanced.log_level"), &sel, levels, 0).OnChange(func() {
 				a.cfg.Advanced.LogLevel = ptr(sel)
 				a.saveConfig()
 			})
@@ -756,5 +889,73 @@ func (a *App) advancedSection(c *mu.Context, p theme.Colors) {
 		folder("advanced.open_config", i18n.T("settings.advanced.folder_config"), a.d.Paths.ConfigDir)
 		folder("advanced.open_data", i18n.T("settings.advanced.folder_data"), a.d.Paths.DataDir)
 		folder("advanced.open_cache", i18n.T("settings.advanced.folder_cache"), a.d.Paths.CacheDir)
+	})
+}
+
+// ---- Permissions ----
+
+// permissionsSection is each permission with its state and a way to the
+// system settings, then a note (Rust hub/settings/permissions.rs).
+func (a *App) permissionsSection(c *mu.Context, p theme.Colors) {
+	var st platform.PermissionStatus
+	pm := a.platformPermissions()
+	if pm != nil {
+		st = pm.Status()
+	}
+	type perm struct {
+		key, name, detail, kind string
+		ok                      bool
+	}
+	list := []perm{
+		{"permissions.mic", i18n.T("os.permission.microphone"), i18n.T("settings.permissions.microphone_detail"), "microphone", st.Microphone},
+		{"permissions.ax", i18n.TOS("os.permission.accessibility", nil), i18n.T("settings.permissions.accessibility_detail"), "accessibility", st.Accessibility},
+	}
+	if st.NeedsInputPerms || runtime.GOOS == "darwin" {
+		list = append(list, perm{"permissions.im", i18n.TOS("os.permission.input_monitoring", nil), i18n.T("settings.permissions.input_monitoring_detail"), "input_monitoring", st.InputMonitoring})
+	}
+	a.group(c, p, i18n.T("settings.permissions.title"), func() {
+		for _, it := range list {
+			a.row(c, p, it.name, it.detail, func() {
+				mu.Row(c).Gap(16).AlignItems(mu.Center).Children(func() {
+					if it.ok {
+						mu.Row(c).Gap(6).AlignItems(mu.Center).Children(func() {
+							mu.Box(c).Size(16, 16).Radius(99).Background(p.InkFill).Justify(mu.Center).AlignItems(mu.Center).Children(func() {
+								mu.Icon(c, icon("check")).FontSize(10).TextColor(p.OnInk)
+							})
+							uiText(c, i18n.T("settings.common.allowed"), 14, 600, p.Ink)
+						})
+					} else if a.btn(c, p, it.key+".request", i18n.T("settings.permissions.request"), btnPrimary) && pm != nil {
+						kind := it.kind
+						go func() {
+							var err error
+							switch kind {
+							case "microphone":
+								err = pm.RequestMicrophone()
+							case "accessibility":
+								err = pm.RequestAccessibility()
+							default:
+								err = pm.RequestInputMonitoring()
+							}
+							if err != nil {
+								log.Printf("permission %s: %v", kind, err)
+							}
+							a.post(a.invalidate)
+						}()
+					}
+					if a.btn(c, p, it.key+".settings", i18n.TOS("os.open_permission_settings", nil), btnSecondary) && pm != nil {
+						kind := it.kind
+						go func() {
+							if err := pm.OpenSettings(kind); err != nil {
+								log.Printf("permission settings %s: %v", kind, err)
+							}
+						}()
+					}
+				})
+			})
+		}
+	})
+	mu.Row(c).Gap(12).Padding(14, 16).Radius(12).Border(1, p.Rule).AlignItems(mu.Start).Margin(-16, 0, 0, 0).Children(func() {
+		mu.Icon(c, icon("info")).FontSize(15).TextColor(p.Graphite)
+		uiText(c, i18n.TOS("settings.permissions.note", nil), 13, 400, p.Graphite).LineHeight(1.45).Grow(1).Basis(0)
 	})
 }

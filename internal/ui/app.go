@@ -2,6 +2,7 @@ package ui
 
 import (
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -61,24 +62,27 @@ const (
 	SecApps
 	SecUpdates
 	SecAdvanced
+	SecPermissions
 )
 
-// Sections are the Settings sections, in sidebar order.
-var Sections = []Section{SecGeneral, SecDictation, SecAudio, SecProviders, SecOverlay, SecAppearance, SecHistory, SecApps, SecUpdates, SecAdvanced}
+// Sections are the Settings sections, in sidebar order: the Rust app's
+// (hub/settings), with Updates, which the Go port keeps as a page, before
+// Advanced.
+var Sections = []Section{SecGeneral, SecDictation, SecProviders, SecOverlay, SecAudio, SecAppearance, SecHistory, SecPermissions, SecApps, SecUpdates, SecAdvanced}
 
 func (s Section) key() string {
-	return "settings.nav." + [...]string{"general", "dictation", "audio", "providers", "overlay", "appearance", "history", "apps", "updates", "advanced"}[s]
+	return "settings.nav." + [...]string{"general", "dictation", "audio", "providers", "overlay", "appearance", "history", "apps", "updates", "advanced", "permissions"}[s]
 }
 
 func (s Section) title() string {
 	if s == SecUpdates {
 		return i18n.T("settings.general.updates")
 	}
-	return i18n.T("hub.settings_nav." + [...]string{"general", "dictation", "audio", "providers", "overlay", "appearance", "history_privacy", "connected_apps", "", "advanced"}[s])
+	return i18n.T("hub.settings_nav." + [...]string{"general", "dictation", "audio", "providers", "overlay", "appearance", "history_privacy", "connected_apps", "", "advanced", "permissions"}[s])
 }
 
 func (s Section) icon() string {
-	return [...]string{"general", "keyboard", "audio", "sparkle", "overlay", "drop", "shield", "apps", "download", "terminal"}[s]
+	return [...]string{"general", "mic", "audio", "sparkle", "overlay", "drop", "shield", "apps", "download", "code", "lock"}[s]
 }
 
 // Engine is what the interface needs of the speech engine. EngineAdapter
@@ -168,6 +172,7 @@ type App struct {
 	cfg    config.Config
 	styles *enhance.StyleLibrary
 	themes themeCache
+	icons  appIcons
 
 	// TrackKeys records the key of every element App.k builds (tests).
 	TrackKeys bool
@@ -626,6 +631,15 @@ func derefOr[T any](p *T, def T) T {
 }
 
 func ptr[T any](v T) *T { return &v }
+
+// tildePath shows a path under the home folder as ~/….
+func tildePath(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" || !strings.HasPrefix(path, home+string(os.PathSeparator)) {
+		return path
+	}
+	return "~" + path[len(home):]
+}
 
 // computer is the word for this machine in texts ("Mac", "PC", "computer").
 func computer() string { return i18n.TOS("os.computer", nil) }

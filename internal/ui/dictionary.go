@@ -25,6 +25,8 @@ type dictState struct {
 	editTo  string
 	try     string
 	err     string
+	// wordField is the add-word input, which the header's Add focuses.
+	wordField mu.Handle
 }
 
 func (a *App) loadDictionary() {
@@ -97,50 +99,68 @@ func (a *App) AddReplacement(from, to string) {
 func (a *App) dictionaryPage(c *mu.Context, p theme.Colors) {
 	a.loadDictionary()
 	d := &a.dict
-	mu.Row(c).AlignItems(mu.End).Gap(16).Children(func() {
-		mu.Column(c).Grow(1).Children(func() { pageHeader(c, p, i18n.T("dictionary.title"), i18n.T("dictionary.intro")) })
-		mu.SearchField(a.k(c, "dict.filter"), &d.filter).Label(i18n.T("dictionary.placeholder.filter")).
-			Placeholder(i18n.T("dictionary.placeholder.filter")).Width(220)
+	pageHead(c, p, i18n.T("dictionary.title"), i18n.T("dictionary.intro"), 520, func() {
+		a.searchWell(c, p, "dict.filter", i18n.T("dictionary.placeholder.filter"), &d.filter, 36, 220, "")
+		if a.button(c, p, "dict.add", i18n.T("dictionary.add"), bopt{kind: btnPrimary, icon: "plus"}) {
+			if strings.TrimSpace(d.newWord) != "" {
+				a.AddWord(d.newWord)
+			} else {
+				d.wordField.Focus(c)
+			}
+		}
 	})
 	if d.err != "" {
-		mu.Text(c, d.err).FontSize(13).TextColor(p.Danger).Role(mu.RoleAlert)
+		uiText(c, d.err, 13, 500, p.Danger).Role(mu.RoleAlert)
 	}
 	f := strings.ToLower(strings.TrimSpace(d.filter))
-	// Words: slips that wrap, with an inline field to add one.
-	mu.Column(c).Gap(10).Children(func() {
-		mu.Row(c).Gap(8).AlignItems(mu.Baseline).Children(func() {
-			heading(c, p, i18n.T("dictionary.words"), 20)
-			mu.Text(c, i18n.T("dictionary.words_note", "total", i18n.TP("home.checklist.words", len(d.words), nil))).FontSize(12.5).TextColor(p.Graphite)
-		})
-		if len(d.words) == 0 {
-			mu.Text(c, i18n.T("dictionary.words_empty")).FontSize(13).TextColor(p.Graphite)
+	w, _ := c.Size()
+	cols := mu.Row(c).Gap(44).AlignItems(mu.Start)
+	if w-sidebarWidth < 820 {
+		cols.Column().Gap(32).AlignItems(mu.Stretch)
+	}
+	cols.Children(func() {
+		left := mu.Column(c).Gap(32)
+		if w-sidebarWidth >= 820 {
+			left.Width(380).Shrink(0)
 		}
-		mu.Row(c).Gap(6).Wrap().AlignItems(mu.Center).Children(func() {
+		left.Children(func() {
+			a.wordsSection(c, p, f)
+			a.tryPhrase(c, p)
+		})
+		mu.Column(c).Grow(1).Basis(0).MinWidth(0).Children(func() { a.replacementsLedger(c, p, f) })
+	})
+}
+
+// wordsSection is the words as slips that wrap, and a dashed slip to add one.
+func (a *App) wordsSection(c *mu.Context, p theme.Colors, f string) {
+	d := &a.dict
+	mu.Column(c).Gap(16).Children(func() {
+		sectionHead(c, p, i18n.T("dictionary.words"), i18n.T("dictionary.words_note", "total", i18n.Integer(uint64(len(d.words)))))
+		if len(d.words) == 0 {
+			uiText(c, i18n.T("dictionary.words_empty"), 13, 400, p.Graphite).LineHeight(1.4)
+		}
+		mu.Row(c).Gap(8).Wrap().AlignItems(mu.Center).Children(func() {
 			for _, w := range d.words {
 				if f != "" && !strings.Contains(strings.ToLower(w.Text), f) {
 					continue
 				}
 				a.wordSlip(c, p, w)
 			}
-			in := a.field(c, p, "dict.new_word", i18n.T("dictionary.placeholder.new_word"), i18n.T("dictionary.placeholder.new_word"), &d.newWord).Width(160)
-			in.OnSubmit(func() { a.AddWord(d.newWord) })
-			if a.btn(c, p, "dict.add_word", i18n.T("dictionary.add_word"), btnSecondary) {
-				a.AddWord(d.newWord)
-			}
+			a.addWordSlip(c, p)
 		})
 	})
-	rule(c, p)
-	a.replacementsLedger(c, p, f)
-	rule(c, p)
-	a.tryPhrase(c, p)
 }
 
 func (a *App) wordSlip(c *mu.Context, p theme.Colors, w store.Word) {
-	mu.Row(c).Gap(4).Padding(3, 4, 3, 10).Radius(99).Background(p.SheetRaised).Border(1, p.Rule).AlignItems(mu.Center).Children(func() {
-		mu.Text(c, w.Text).FontSize(13).TextColor(p.Ink)
+	s := mu.Row(c).Height(32).PaddingX(12).Gap(6).Radius(6).AlignItems(mu.Center).Background(p.SheetRaised).
+		InsetShadow(0, 1, 0, 0, p.Highlight(1)).Shadow(0, 1, 2, 0, p.ShadowA(0.16)).Shadow(0, 3, 8, 0, p.ShadowA(0.06))
+	s.Children(func() {
+		serif(c, w.Text, 15, p.Ink).SingleLine()
 		b := mu.ButtonBase(a.k(c, fmt.Sprintf("dict.remove_word.%d", w.ID))).Label(i18n.T("dictionary.remove_word", "word", w.Text)).
-			Size(18, 18).Radius(99).Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer)
-		if b.Hovered() {
+			Size(16, 16).Radius(99).Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+		if !s.Hovered() && !b.Focused() {
+			b.Opacity(0).Width(0).MarginStart(-6)
+		} else if b.Hovered() {
 			b.Background(p.Deboss)
 		}
 		b.Children(func() { mu.Icon(c, icon("close")).FontSize(10).TextColor(p.Graphite) })
@@ -151,17 +171,47 @@ func (a *App) wordSlip(c *mu.Context, p theme.Colors, w store.Word) {
 	})
 }
 
+// addWordSlip is the dashed "+ Add word" slip; it is a well while you type.
+// Its + adds the word.
+func (a *App) addWordSlip(c *mu.Context, p theme.Colors) {
+	d := &a.dict
+	typing := d.newWord != "" || d.wordField.Focused(c)
+	s := mu.Row(c).Height(32).PaddingX(10).Gap(6).Radius(6).AlignItems(mu.Center)
+	if typing {
+		debossed(s, p).Width(170)
+	} else {
+		s.Border(1.5, p.Rule).BorderStyle(mu.BorderDashed).Width(106)
+	}
+	s.Children(func() {
+		add := mu.ButtonBase(a.k(c, "dict.add_word")).Label(i18n.T("dictionary.add_word")).Size(16, 16).Radius(4).
+			Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+		add.Children(func() { mu.Icon(c, icon("plus")).FontSize(13).TextColor(p.Graphite) })
+		if clicked(c, add) {
+			if strings.TrimSpace(d.newWord) != "" {
+				a.AddWord(d.newWord)
+			} else {
+				d.wordField.Focus(c)
+			}
+		}
+		in := mu.TextInputBase(a.k(c, "dict.new_word"), &d.newWord).Bind(&d.wordField).Label(i18n.T("dictionary.placeholder.new_word")).
+			Placeholder(i18n.T("dictionary.add_word")).PlaceholderColor(p.Graphite).FontSize(14).TextColor(p.Ink).Grow(1).Basis(0)
+		in.OnSubmit(func() { a.AddWord(d.newWord) })
+	})
+}
+
 func (a *App) replacementsLedger(c *mu.Context, p theme.Colors, f string) {
 	d := &a.dict
-	mu.Column(c).Gap(10).Children(func() {
-		mu.Row(c).Gap(8).AlignItems(mu.Baseline).Children(func() {
-			heading(c, p, i18n.T("dictionary.replacements"), 20)
-			mu.Text(c, i18n.TP("dictionary.replacements_note", len(d.reps), nil)).FontSize(12.5).TextColor(p.Graphite)
-		})
-		mu.Column(c).Radius(12).Background(p.SheetRaised).Border(1, p.Rule).Dividers(1, p.Rule).Clip().Role(mu.RoleTable).Children(func() {
-			ledgerRow(c, p, true, i18n.T("dictionary.column.from"), i18n.T("dictionary.column.to"), i18n.T("dictionary.column.used"), nil)
+	mu.Column(c).Gap(0).Children(func() {
+		sectionHead(c, p, i18n.T("dictionary.replacements"), i18n.TP("dictionary.replacements_note", len(d.reps), nil))
+		mu.Column(c).Role(mu.RoleTable).Children(func() {
+			mu.Row(c).Height(36).Gap(12).AlignItems(mu.Center).Role(mu.RoleRow).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+				caps(c, p, i18n.T("dictionary.column.from")).Width(150).Shrink(0)
+				mu.Box(c).Width(18).Shrink(0)
+				caps(c, p, i18n.T("dictionary.column.to")).Grow(1).Basis(0)
+				caps(c, p, i18n.T("dictionary.column.used")).Width(56).Shrink(0).TextAlign(mu.End)
+			})
 			if len(d.reps) == 0 {
-				mu.Text(c, i18n.T("dictionary.rules_empty")).FontSize(13).TextColor(p.Graphite).Padding(12, 16)
+				uiText(c, i18n.T("dictionary.rules_empty"), 13, 400, p.Graphite).PaddingY(14).LineHeight(1.4)
 			}
 			for _, r := range d.reps {
 				if f != "" && !strings.Contains(strings.ToLower(r.From+" "+r.To), f) {
@@ -171,26 +221,9 @@ func (a *App) replacementsLedger(c *mu.Context, p theme.Colors, f string) {
 					a.editRuleRow(c, p, r)
 					continue
 				}
-				ledgerRow(c, p, false, r.From, showTo(r.To), i18n.Integer(r.Uses), func() {
-					if a.iconBtn(c, p, fmt.Sprintf("dict.edit_rule.%d", r.ID), "settings", i18n.T("dictionary.edit_rule", "from", r.From, "to", r.To)) {
-						d.editing, d.editFr, d.editTo = r.ID, r.From, r.To
-					}
-					if a.iconBtn(c, p, fmt.Sprintf("dict.remove_rule.%d", r.ID), "trash", i18n.T("dictionary.remove_rule", "from", r.From)) && a.d.Store != nil {
-						a.d.Store.RemoveReplacement(r.ID)
-						a.dataChanged()
-					}
-				})
+				a.ledgerRow(c, p, r)
 			}
-			// The add row.
-			mu.Row(c).Gap(10).Padding(8, 12).AlignItems(mu.Center).Children(func() {
-				a.field(c, p, "dict.new_from", i18n.T("dictionary.placeholder.from"), i18n.T("dictionary.placeholder.from"), &d.from).Grow(1).Basis(0)
-				mu.Icon(c, icon("arrow-right")).FontSize(14).TextColor(p.Pencil)
-				to := a.field(c, p, "dict.new_to", i18n.T("dictionary.placeholder.to"), i18n.T("dictionary.placeholder.to"), &d.to).Grow(1).Basis(0)
-				to.OnSubmit(func() { a.AddReplacement(d.from, d.to) })
-				if a.btn(c, p, "dict.add_replacement", i18n.T("dictionary.add_rule"), btnSecondary) {
-					a.AddReplacement(d.from, d.to)
-				}
-			})
+			a.addRuleRow(c, p)
 		})
 	})
 }
@@ -206,33 +239,61 @@ func showTo(to string) string {
 	return strings.ReplaceAll(to, "\n", "↵")
 }
 
-func ledgerRow(c *mu.Context, p theme.Colors, head bool, from, to, used string, actions func()) {
-	r := mu.Row(c).Gap(10).Padding(9, 16).AlignItems(mu.Center).Role(mu.RoleRow)
-	if head {
-		r.Background(p.Sheet)
-	}
-	r.Children(func() {
-		size, fg, font := float32(13.5), p.Ink, theme.Body
-		if head {
-			size, fg, font = 11.5, p.Graphite, theme.UI
-		}
-		mu.Text(c, from).Font(font).FontSize(size).TextColor(fg).Grow(1).Basis(0).SingleLine().Ellipsis("…")
-		mu.Text(c, to).Font(font).FontSize(size).TextColor(fg).Grow(1).Basis(0).SingleLine().Ellipsis("…")
-		mu.Text(c, used).FontSize(size).TextColor(p.Graphite).Width(48).TextAlign(mu.End)
-		mu.Row(c).Width(68).Gap(2).Justify(mu.End).Children(func() {
-			if actions != nil {
-				actions()
+func (a *App) ledgerRow(c *mu.Context, p theme.Colors, r store.Replacement) {
+	d := &a.dict
+	row := mu.Row(c).Height(48).Gap(12).AlignItems(mu.Center).Role(mu.RoleRow).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
+	row.Children(func() {
+		serif(c, r.From, 15, p.Graphite).Italic().Width(150).Shrink(0).SingleLine().Ellipsis("…")
+		mu.Icon(c, icon("arrow-right")).FontSize(16).TextColor(p.Ink).Width(18)
+		serif(c, showTo(r.To), 15, p.Ink).Grow(1).Basis(0).SingleLine().Ellipsis("…")
+		mu.Row(c).Width(56).Shrink(0).Gap(2).Justify(mu.End).AlignItems(mu.Center).Children(func() {
+			if row.Hovered() || row.FocusWithin() {
+				if a.iconBtnSized(c, p, fmt.Sprintf("dict.edit_rule.%d", r.ID), "settings", i18n.T("dictionary.edit_rule", "from", r.From, "to", r.To), 26, 14) {
+					d.editing, d.editFr, d.editTo = r.ID, r.From, r.To
+				}
+				if a.iconBtnSized(c, p, fmt.Sprintf("dict.remove_rule.%d", r.ID), "trash", i18n.T("dictionary.remove_rule", "from", r.From), 26, 14) && a.d.Store != nil {
+					a.d.Store.RemoveReplacement(r.ID)
+					a.dataChanged()
+				}
+				return
 			}
+			mono(c, i18n.Integer(r.Uses), 12, p.Graphite)
 		})
+	})
+}
+
+// ruleInput is a small debossed well of a ledger row.
+func (a *App) ruleInput(c *mu.Context, p theme.Colors, key, label, placeholder string, v *string, from bool) mu.Element {
+	in := mu.TextInputBase(a.k(c, key), v).Label(label).Placeholder(placeholder).PlaceholderColor(p.Pencil).
+		Height(32).PaddingX(10).Radius(7).FontSize(15).TextColor(p.Ink)
+	if from {
+		in.Font(theme.Display).Italic().Width(150).Shrink(0)
+	} else {
+		in.Font(theme.Display).Grow(1).Basis(0)
+	}
+	return debossed(in, p)
+}
+
+func (a *App) addRuleRow(c *mu.Context, p theme.Colors) {
+	d := &a.dict
+	mu.Row(c).Height(52).Gap(12).AlignItems(mu.Center).Children(func() {
+		a.ruleInput(c, p, "dict.new_from", i18n.T("dictionary.placeholder.from"), i18n.T("dictionary.placeholder.from"), &d.from, true)
+		mu.Icon(c, icon("arrow-right")).FontSize(16).TextColor(p.Pencil).Width(18)
+		to := a.ruleInput(c, p, "dict.new_to", i18n.T("dictionary.placeholder.to"), i18n.T("dictionary.placeholder.to"), &d.to, false)
+		to.OnSubmit(func() { a.AddReplacement(d.from, d.to) })
+		if a.button(c, p, "dict.add_replacement", i18n.T("dictionary.add_rule"), bopt{size: sizeSmall}) {
+			a.AddReplacement(d.from, d.to)
+		}
 	})
 }
 
 func (a *App) editRuleRow(c *mu.Context, p theme.Colors, r store.Replacement) {
 	d := &a.dict
-	mu.Row(c).Gap(10).Padding(8, 12).AlignItems(mu.Center).Background(p.AccentWash.Alpha(0.4)).Children(func() {
-		a.field(c, p, "dict.edit_from", i18n.T("dictionary.placeholder.from"), "", &d.editFr).Grow(1).Basis(0)
-		a.field(c, p, "dict.edit_to", i18n.T("dictionary.placeholder.to"), "", &d.editTo).Grow(1).Basis(0)
-		if a.btn(c, p, "dict.save_rule", i18n.T("dictionary.save_rule"), btnPrimary) {
+	mu.Row(c).Height(52).Gap(12).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+		a.ruleInput(c, p, "dict.edit_from", i18n.T("dictionary.placeholder.from"), "", &d.editFr, true)
+		mu.Icon(c, icon("arrow-right")).FontSize(16).TextColor(p.Pencil).Width(18)
+		a.ruleInput(c, p, "dict.edit_to", i18n.T("dictionary.placeholder.to"), "", &d.editTo, false)
+		if a.button(c, p, "dict.save_rule", i18n.T("dictionary.save_rule"), bopt{kind: btnPrimary, size: sizeSmall}) {
 			if strings.TrimSpace(d.editFr) == "" {
 				d.err = i18n.T("dictionary.error.edit_needs_phrase")
 				return
@@ -246,30 +307,39 @@ func (a *App) editRuleRow(c *mu.Context, p theme.Colors, r store.Replacement) {
 			d.editing = 0
 			a.dataChanged()
 		}
-		if a.btn(c, p, "dict.cancel_rule", i18n.T("dictionary.cancel_rule"), btnGhost) {
+		if a.button(c, p, "dict.cancel_rule", i18n.T("dictionary.cancel_rule"), bopt{kind: btnGhost, size: sizeSmall}) {
 			d.editing = 0
 		}
 	})
 }
 
+// tryPhrase runs the rules on a phrase as you type it.
 func (a *App) tryPhrase(c *mu.Context, p theme.Colors) {
 	d := &a.dict
-	mu.Column(c).Gap(10).Children(func() {
-		heading(c, p, i18n.T("dictionary.try.title"), 20)
-		mu.TextArea(a.k(c, "dict.try_input"), &d.try).Label(i18n.T("dictionary.try.title")).
-			Placeholder(i18n.T("dictionary.placeholder.phrase")).Height(64)
-		out, applied := enhance.NewReplacer(d.reps).Apply(d.try)
-		mu.Column(c).Gap(4).Padding(12, 14).Radius(10).Background(p.Deboss).Role(mu.RoleStatus).Children(func() {
+	out, applied := enhance.NewReplacer(d.reps).Apply(d.try)
+	n := len(d.reps)
+	if strings.TrimSpace(d.try) != "" {
+		n = 0
+		for _, r := range applied {
+			n += r.Count
+		}
+	}
+	mu.Column(c).Padding(18).Gap(12).Radius(14).Background(p.Deboss).
+		InsetShadow(0, 2, 4, 0, p.ShadowA(0.16)).InsetShadow(0, -1, 0, 0, p.Highlight(0.75)).Children(func() {
+		mu.Row(c).AlignItems(mu.Center).Children(func() {
+			caps(c, p, i18n.T("dictionary.try.title")).Grow(1)
+			uiText(c, i18n.TP("dictionary.try.rules_apply", n, nil), 13, 500, p.Graphite)
+		})
+		mu.TextInputBase(a.k(c, "dict.try_input"), &d.try).Label(i18n.T("dictionary.try.title")).
+			Placeholder(i18n.T("dictionary.placeholder.phrase")).PlaceholderColor(p.Graphite).
+			Font(theme.Display).Italic().FontSize(15).TextColor(p.Ink)
+		mu.Box(c).Height(1).Background(p.DebossShade)
+		mu.Column(c).Role(mu.RoleStatus).Children(func() {
 			if strings.TrimSpace(d.try) == "" {
-				mu.Text(c, i18n.T("dictionary.try.result_empty")).FontSize(13).TextColor(p.Pencil)
+				serif(c, i18n.T("dictionary.try.result_empty"), 15, p.Pencil).LineHeight(21.0 / 15)
 				return
 			}
-			mu.Text(c, out).Font(theme.Body).FontSize(15).TextColor(p.Ink)
-			n := 0
-			for _, r := range applied {
-				n += r.Count
-			}
-			mu.Text(c, i18n.TP("dictionary.try.rules_apply", n, nil)).FontSize(12).TextColor(p.Graphite)
+			serif(c, out, 15, p.Ink).LineHeight(21.0 / 15)
 		})
 	})
 }

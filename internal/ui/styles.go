@@ -43,6 +43,9 @@ type stylesState struct {
 	baseOpen bool
 	base     string
 	err      string
+	names    map[string]string // bundle id → app name, for the rows
+	// customInk shows the #hex field of the editor's ink.
+	customInk bool
 }
 
 func (s *stylesState) close() { s.editing, s.baseOpen, s.err = false, false, "" }
@@ -58,111 +61,221 @@ func (a *App) stylesDir() string {
 }
 
 func (a *App) stylesPage(c *mu.Context, p theme.Colors) {
-	mu.Row(c).AlignItems(mu.End).Gap(12).Children(func() {
-		mu.Column(c).Grow(1).Children(func() {
-			pageHeader(c, p, i18n.T("styles.title"), i18n.T("styles.intro", "dir", a.stylesDir()))
-		})
-		if a.btn(c, p, "styles.base_prompt", i18n.T("styles.base.button"), btnSecondary) {
+	pageHead(c, p, i18n.T("styles.title"), i18n.T("styles.intro", "dir", tildePath(a.stylesDir())), 560, func() {
+		if a.button(c, p, "styles.base_prompt", i18n.T("styles.base.button"), bopt{icon: "file"}) {
 			a.sty.baseOpen, a.sty.editing = true, false
 			a.sty.base = a.styles.BasePrompt()
 		}
-		if a.btn(c, p, "styles.new", i18n.T("styles.new_style"), btnPrimary) {
+		if a.button(c, p, "styles.new", i18n.T("styles.new_style"), bopt{kind: btnPrimary, icon: "plus"}) {
 			a.editStyle(nil)
 		}
 	})
 	for _, e := range a.styles.Errors {
-		mu.Text(c, i18n.T("styles.file_error", "error", e)).FontSize(12.5).TextColor(p.Danger)
+		uiText(c, i18n.T("styles.file_error", "error", e), 13, 400, p.Danger)
 	}
-	a.providerLine(c, p)
-	a.featuredStyle(c, p)
 	active := a.ActiveStyle()
-	mu.Column(c).Radius(12).Background(p.SheetRaised).Border(1, p.Rule).Dividers(1, p.Rule).Clip().
-		Role(mu.RoleRadioGroup).Label(i18n.T("styles.a11y.default_style")).Children(func() {
+	a.featuredStyle(c, p, active)
+	mu.Column(c).Role(mu.RoleRadioGroup).Label(i18n.T("styles.a11y.default_style")).Children(func() {
 		for i := range a.styles.Entries {
-			a.styleRow(c, p, &a.styles.Entries[i], active)
+			a.styleRow(c, p, &a.styles.Entries[i], active, i == len(a.styles.Entries)-1)
 		}
 	})
+	a.providerLine(c, p)
 }
 
+// providerLine is the footer: where styles run, and Manage providers.
 func (a *App) providerLine(c *mu.Context, p theme.Colors) {
 	mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
 		prov, ok := a.defaultProvider()
 		var line string
+		dot := p.Success
 		switch {
 		case !a.cfg.AI.Enabled:
-			line = i18n.T("styles.provider_line.ai_off")
+			line, dot = i18n.T("styles.provider_line.ai_off"), p.Pencil
 		case !ok:
-			line = i18n.T("styles.provider_line.no_provider")
+			line, dot = i18n.T("styles.provider_line.no_provider"), p.Pencil
 		case prov.ModelName() == "":
 			line = i18n.T("styles.provider_line.no_model", "provider", prov.Name)
 		default:
 			line = i18n.T("styles.provider_line.with_model", "provider", prov.Name, "model", prov.ModelName())
 		}
-		mu.Text(c, line).FontSize(13).TextColor(p.Graphite).Grow(1)
+		mu.Box(c).Size(8, 8).Radius(99).Background(dot)
+		uiText(c, line, 13, 400, p.Graphite).Grow(1).Basis(0)
 		label := i18n.T("styles.provider_line.manage")
 		if !ok {
 			label = i18n.T("styles.provider_line.set_up")
 		}
-		if a.btn(c, p, "styles.providers", label, btnGhost) {
+		if a.link(c, p, "styles.providers", label, 13, 600, "chevron-right") {
 			a.OpenSettings(SecProviders)
 		}
 	})
 }
 
-// featuredStyle shows what the default style does, before and after.
-func (a *App) featuredStyle(c *mu.Context, p theme.Colors) {
-	card(c, p).Children(func() {
-		mu.Row(c).Gap(20).Children(func() {
-			mu.Column(c).Gap(6).Grow(1).Basis(0).Children(func() {
-				eyebrow(c, p, i18n.T("styles.featured.you_say"))
-				mu.Text(c, i18n.T("styles.featured.said")).Font(theme.Body).FontSize(14).TextColor(p.Graphite).LineHeight(1.45)
+// featuredID is the style the page shows with an example (styles.rs).
+const featuredID = "rambling"
+
+// featuredStyle is the recommended style with what it does, before and after.
+func (a *App) featuredStyle(c *mu.Context, p theme.Colors, active string) {
+	e := a.styleEntry(featuredID)
+	if e == nil {
+		e = a.styleEntry(active)
+	}
+	mu.Row(c).Padding(20, 22).Gap(24).Radius(14).Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).
+		Shadow(0, 1, 2, 0, p.ShadowA(0.14)).Shadow(0, 8, 22, 0, p.ShadowA(0.08)).Children(func() {
+		mu.Column(c).Gap(8).Grow(1).Basis(0).MinWidth(220).Justify(mu.Center).Children(func() {
+			if e == nil {
+				return
+			}
+			st := &e.Style
+			mu.Row(c).Height(20).Gap(8).AlignItems(mu.Center).Children(func() {
+				sealDot(c, p, st.Ink, 14)
+				caps(c, p, i18n.T("styles.recommended"))
 			})
-			mu.Column(c).Gap(6).Grow(1).Basis(0).Children(func() {
-				eyebrow(c, p, i18n.T("styles.featured.sayso_writes"))
-				mu.Text(c, i18n.T("styles.featured.written")).Font(theme.Body).FontSize(14).TextColor(p.Ink).LineHeight(1.45)
+			heading(c, p, styleName(st), 26).LineHeight(32.0 / 26)
+			uiText(c, styleDescription(st), 14, 400, p.Graphite).LineHeight(20.0 / 14)
+			mu.Row(c).Gap(8).Padding(4, 0, 0, 0).AlignItems(mu.Center).Children(func() {
+				if st.ID == active {
+					badge(c, p, i18n.T("styles.default"), toneInk, "")
+				} else if a.button(c, p, "styles.featured.make_default", i18n.T("styles.make_default"), bopt{size: sizeSmall}) {
+					a.SetActiveStyle(st.ID)
+				}
+				if a.button(c, p, "styles.featured.edit", i18n.T("styles.edit"), bopt{kind: btnGhost, size: sizeSmall}) {
+					a.editStyle(e)
+				}
+			})
+		})
+		debossed(mu.Row(c).Grow(1.5).Basis(0).Radius(10).AlignItems(mu.Stretch), p).Children(func() {
+			half := func(label string, body func()) {
+				mu.Column(c).Grow(1).Basis(0).Padding(14, 16).Gap(6).Children(func() {
+					uiText(c, strings.ToUpper(label), 11, 500, p.Graphite).SingleLine()
+					body()
+				})
+			}
+			half(i18n.T("styles.featured.you_say"), func() {
+				mu.Text(c, i18n.T("styles.featured.said")).Font(theme.Mono).FontSize(12).LineHeight(1.5).TextColor(p.Graphite)
+			})
+			mu.Box(c).Width(1).Background(p.DebossShade)
+			half(i18n.T("styles.featured.sayso_writes"), func() {
+				uiText(c, i18n.T("styles.featured.written"), 14, 500, p.Ink).LineHeight(20.0 / 14)
 			})
 		})
 	})
 }
 
-func (a *App) styleRow(c *mu.Context, p theme.Colors, e *enhance.StyleEntry, active string) {
+func (a *App) styleEntry(id string) *enhance.StyleEntry {
+	for i := range a.styles.Entries {
+		if a.styles.Entries[i].Style.ID == id {
+			return &a.styles.Entries[i]
+		}
+	}
+	return nil
+}
+
+// appNames maps bundle ids to the names History knows.
+func (a *App) appNames() map[string]string {
+	if a.sty.names == nil {
+		a.sty.names = map[string]string{}
+		if a.d.Store != nil {
+			if apps, err := a.d.Store.AppList(); err == nil {
+				for _, ac := range apps {
+					a.sty.names[ac.BundleID] = ac.Name
+				}
+			}
+		}
+	}
+	return a.sty.names
+}
+
+// targetLine names the apps and sites a style is used in, or "".
+func (a *App) targetLine(id string) string {
+	r, ok := a.cfg.AI.StyleRules.Rule(id)
+	if !ok {
+		return ""
+	}
+	names := a.appNames()
+	var all []string
+	for _, b := range r.Apps {
+		if n := names[b]; n != "" {
+			b = n
+		}
+		all = append(all, b)
+	}
+	all = append(all, r.Sites...)
+	switch len(all) {
+	case 0:
+		return ""
+	case 1:
+		return all[0]
+	case 2:
+		return i18n.T("styles.targets.names_two", "one", all[0], "two", all[1])
+	}
+	return i18n.T("styles.targets.names_many", "one", all[0], "two", all[1], "more", len(all)-2)
+}
+
+// styleRowDetail is the detail column of a style row and its color.
+func (a *App) styleRowDetail(st *enhance.Style, p theme.Colors) (string, mu.Color, bool) {
+	if line := a.targetLine(st.ID); line != "" {
+		return line, p.Ink, true
+	}
+	if !st.UsesAI() {
+		return i18n.T("styles.route.no_ai", "computer", computer()), p.Graphite, false
+	}
+	if st.Provider == nil && st.Model == nil {
+		return "", p.Graphite, false // the footer names the default provider
+	}
+	line := a.styleRoute(st)
+	col := p.Pencil
+	if pr, ok := a.cfg.AI.Provider(derefOr(st.Provider, "")); ok {
+		col = p.Success
+		if pr.IsCloud() {
+			col = p.Accent
+		}
+	}
+	return line, col, false
+}
+
+func (a *App) styleRow(c *mu.Context, p theme.Colors, e *enhance.StyleEntry, active string, last bool) {
 	st := &e.Style
 	name := styleName(st)
-	mu.Row(c).Gap(14).Padding(12, 16).AlignItems(mu.Center).Children(func() {
+	row := mu.Row(c).Height(48).PaddingX(4).Gap(8).AlignItems(mu.Center)
+	if !last {
+		row.BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
+	}
+	if row.Hovered() {
+		row.Background(p.Deboss.Alpha(0.55))
+	}
+	row.Children(func() {
 		r := mu.ButtonBase(a.k(c, "styles.default."+st.ID)).Role(mu.RoleRadio).Checked(st.ID == active).
-			Label(i18n.T("styles.a11y.make_default", "name", name)).Size(20, 20).Radius(99).Border(1.5, p.Pencil).
-			Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+			Label(i18n.T("styles.a11y.make_default", "name", name)).FillHeight().Gap(14).Grow(1).Basis(0).MinWidth(0).
+			AlignItems(mu.Center).Cursor(mu.CursorPointer)
 		r.Children(func() {
-			if st.ID == active {
-				mu.Box(c).Size(10, 10).Radius(99).Background(p.InkFill)
-			}
+			sealDot(c, p, st.Ink, 14)
+			heading(c, p, name, 18).LineHeight(24.0 / 18).Width(112).Shrink(0).SingleLine().Ellipsis("…")
+			uiText(c, styleDescription(st), 14, 400, p.Graphite).SingleLine().Ellipsis("…").Grow(1).Basis(0).MinWidth(0)
+			mu.Row(c).Width(236).Shrink(0).Gap(6).AlignItems(mu.Center).Children(func() {
+				line, col, target := a.styleRowDetail(st, p)
+				if line == "" {
+					return
+				}
+				if target {
+					mu.Icon(c, icon("arrow-right")).FontSize(11).TextColor(col)
+				}
+				uiText(c, line, 12, 500, col).SingleLine().Ellipsis("…")
+			})
 		})
 		if clicked(c, r) {
 			a.SetActiveStyle(st.ID)
 		}
-		seal(c, st.Ink, p)
-		mu.Column(c).Gap(2).Grow(1).Basis(0).Children(func() {
-			mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-				mu.Text(c, name).FontSize(14.5).FontWeight(600).TextColor(p.Ink)
-				if st.ID == active {
-					slip(c, p, i18n.T("styles.default"), p.Accent)
-				}
-				if st.ID == "clean" {
-					slip(c, p, i18n.T("styles.recommended"), p.Success)
-				}
-			})
-			mu.Text(c, styleDescription(st)).FontSize(12.5).TextColor(p.Graphite).SingleLine().Ellipsis("…")
-			mu.Text(c, a.styleRoute(st)).FontSize(11.5).TextColor(p.Pencil)
-		})
 		if hk, ok := a.cfg.StyleHotkeys.Get(st.ID); ok {
-			mu.Row(c).Gap(3).Children(func() {
-				for _, k := range hk.Keycaps() {
-					keycap(c, p, k)
-				}
-			})
+			miniKey(c, p, hk.CompactLabel(), p.Ink)
 		}
-		if a.btn(c, p, "styles.edit."+st.ID, i18n.T("styles.edit"), btnGhost) {
-			a.editStyle(e)
+		if row.Hovered() || row.FocusWithin() {
+			if a.button(c, p, "styles.edit."+st.ID, i18n.T("styles.edit"), bopt{kind: btnGhost, size: sizeSmall}) {
+				a.editStyle(e)
+			}
+		}
+		if st.ID == active {
+			badge(c, p, i18n.T("styles.default"), toneInk, "")
 		}
 	})
 }
@@ -267,15 +380,19 @@ func (a *App) styleDrawers(c *mu.Context, p theme.Colors) {
 	}
 }
 
-// drawer is a 500px panel over the right side of the sheet.
-// footer stays under the scrolling body, so Save is always in reach.
+// drawer is a 500 px floating panel inside the sheet, over a scrim that
+// closes it. footer stays under the scrolling body, so Save is always in
+// reach.
 func (a *App) drawer(c *mu.Context, p theme.Colors, body, footer func()) {
-	mu.Column(c).Absolute().Top(0).Right(0).Bottom(0).Width(500).ZIndex(5).Role(mu.RoleDialog).
-		Background(p.SheetRaised).BorderStartWidth(1).BorderColor(p.Rule).Radius(0, 12, 12, 0).
-		Shadow(-8, 0, 28, 0, p.Shadow.Alpha(0.16)).Children(func() {
-		mu.Scroll(c.Key("drawer")).Grow(1).Padding(28, 28).Gap(16).Children(body)
-		rule(c, p)
-		mu.Row(c).Gap(8).Padding(14, 28).AlignItems(mu.Center).Children(footer)
+	scrim := mu.ButtonBase(c.Key("drawer.scrim")).Label(i18n.T("styles.a11y.close")).Absolute().Top(0).Left(0).Right(0).Bottom(0).
+		ZIndex(4).Background(p.Ground.Alpha(0.45)).Focusable()
+	if clicked(c, scrim) {
+		a.sty.close()
+	}
+	floating(mu.Column(c).Absolute().Top(12).Right(12).Bottom(12).Width(500).ZIndex(5).Radius(sheetRadius).Clip(), p).
+		Role(mu.RoleDialog).Children(func() {
+		mu.Scroll(c.Key("drawer")).Grow(1).Padding(28).Gap(18).Children(body)
+		mu.Row(c).Gap(8).Padding(14, 28).AlignItems(mu.Center).BorderWidth(1, 0, 0, 0).BorderColor(p.Rule).Children(footer)
 	})
 }
 
@@ -285,56 +402,74 @@ func (a *App) styleEditor(c *mu.Context, p theme.Colors) {
 	if !d.isNew {
 		title = i18n.T("styles.editor.edit_title", "name", d.name)
 	}
-	mu.Row(c).AlignItems(mu.Center).Children(func() {
-		heading(c, p, title, 24).Grow(1)
-		if a.iconBtn(c, p, "styles.editor.close", "close", i18n.T("styles.a11y.close")) {
-			a.sty.close()
+	mu.Column(c).Gap(6).Children(func() {
+		mu.Row(c).AlignItems(mu.Start).Children(func() {
+			heading(c, p, title, 28).Grow(1).Role(mu.RoleHeading)
+			if a.iconBtnSized(c, p, "styles.editor.close", "close", i18n.T("styles.a11y.close"), 30, 16) {
+				a.sty.close()
+			}
+		})
+		switch d.origin {
+		case enhance.OriginBuiltIn:
+			if !d.isNew {
+				uiText(c, i18n.T("styles.editor.built_in_note"), 14, 400, p.Graphite)
+			}
+		case enhance.OriginOverridden:
+			uiText(c, i18n.T("styles.editor.overridden_note"), 14, 400, p.Graphite)
 		}
 	})
-	switch d.origin {
-	case enhance.OriginBuiltIn:
-		if !d.isNew {
-			mu.Text(c, i18n.T("styles.editor.built_in_note")).FontSize(12.5).TextColor(p.Graphite)
-		}
-	case enhance.OriginOverridden:
-		mu.Text(c, i18n.T("styles.editor.overridden_note")).FontSize(12.5).TextColor(p.Graphite)
-	}
 	if a.sty.err != "" {
-		mu.Text(c, a.sty.err).FontSize(13).TextColor(p.Danger).Role(mu.RoleAlert)
+		uiText(c, a.sty.err, 13, 500, p.Danger).Role(mu.RoleAlert)
 	}
-	labelled := func(label string, fn func()) {
-		mu.Column(c).Gap(6).Children(func() {
-			mu.Text(c, label).FontSize(12.5).FontWeight(500).TextColor(p.Graphite)
-			fn()
-		})
-	}
-	labelled(i18n.T("styles.editor.name"), func() {
+	a.labelled(c, p, i18n.T("styles.editor.name"), func() {
 		a.field(c, p, "styles.editor.name", i18n.T("styles.editor.name"), i18n.T("styles.editor.name_placeholder"), &d.name)
 	})
-	labelled(i18n.T("styles.editor.description"), func() {
+	a.labelled(c, p, i18n.T("styles.editor.description"), func() {
 		a.field(c, p, "styles.editor.description", i18n.T("styles.editor.description"), i18n.T("styles.editor.description_placeholder"), &d.desc)
 	})
-	labelled(i18n.T("styles.editor.ink"), func() { a.inkPicker(c, p, "styles.editor.ink", &d.ink) })
-	labelled(i18n.T("styles.editor.prompt"), func() {
-		mu.TextArea(a.k(c, "styles.editor.prompt"), &d.prompt).Label(i18n.T("styles.editor.prompt")).
-			Placeholder(i18n.T("styles.editor.prompt_placeholder")).Height(140)
-		mu.Text(c, i18n.T("styles.editor.prompt_hint")).FontSize(12).TextColor(p.Pencil)
+	a.labelled(c, p, i18n.T("styles.editor.ink"), func() { a.inkPicker(c, p, "styles.editor.ink", &d.ink) })
+	a.labelled(c, p, i18n.T("styles.editor.provider"), func() { a.providerPicker(c, p, d) })
+	a.labelled(c, p, i18n.T("styles.editor.prompt"), func() {
+		a.textArea(c, p, "styles.editor.prompt", i18n.T("styles.editor.prompt"), i18n.T("styles.editor.prompt_placeholder"), &d.prompt, 150)
+		uiText(c, i18n.T("styles.editor.prompt_hint"), 12, 400, p.Graphite)
 	})
-	a.toggleRow(c, p, "styles.editor.use_base", i18n.T("styles.editor.use_base"), i18n.T("styles.editor.use_base_detail"), &d.useBase, nil)
-	labelled(i18n.T("styles.editor.shortcut"), func() {
+	mu.Row(c).Gap(16).AlignItems(mu.Center).Children(func() {
+		mu.Column(c).Gap(2).Grow(1).Basis(0).Children(func() {
+			uiText(c, i18n.T("styles.editor.use_base"), 13, 600, p.Ink)
+			uiText(c, i18n.T("styles.editor.use_base_detail"), 12, 400, p.Graphite).LineHeight(1.35)
+		})
+		a.toggle(c, "styles.editor.use_base", i18n.T("styles.editor.use_base"), &d.useBase, nil)
+	})
+	mu.Row(c).Gap(12).AlignItems(mu.Start).Children(func() {
+		mu.Column(c).Grow(1).Basis(0).Children(func() {
+			a.labelled(c, p, i18n.T("styles.editor.model"), func() {
+				a.field(c, p, "styles.editor.model", i18n.T("styles.editor.model"), i18n.T("styles.editor.provider_model"), &d.model)
+			})
+		})
+		mu.Column(c).Width(150).Shrink(0).Children(func() {
+			a.labelled(c, p, i18n.T("styles.editor.timeout"), func() {
+				secs := a.cfg.AI.HTTPTimeoutMs / 1000
+				a.field(c, p, "styles.editor.timeout", i18n.T("styles.editor.timeout"), i18n.T("styles.editor.timeout_placeholder", "seconds", secs), &d.timeout)
+			})
+		})
+	})
+	a.labelled(c, p, i18n.T("styles.editor.shortcut"), func() {
 		a.recorder(c, p, "styles.editor.hotkey", i18n.T("styles.editor.shortcut"), d.hotkey, func(h *config.Hotkey) {
 			d.hotkey, d.hotkeyDirt = h, true
 		})
-		mu.Text(c, i18n.T("styles.editor.shortcut_hint", "style", d.name)).FontSize(12).TextColor(p.Pencil)
-	})
-	labelled(i18n.T("styles.editor.provider"), func() { a.providerPicker(c, p, d) })
-	labelled(i18n.T("styles.editor.timeout"), func() {
-		secs := a.cfg.AI.HTTPTimeoutMs / 1000
-		a.field(c, p, "styles.editor.timeout", i18n.T("styles.editor.timeout"), i18n.T("styles.editor.timeout_placeholder", "seconds", secs), &d.timeout).Width(140)
+		uiText(c, i18n.T("styles.editor.shortcut_hint", "style", d.name), 12, 400, p.Graphite)
 	})
 	a.cleanupControls(c, p, d)
 	a.targetsEditor(c, p, d)
-	mu.Text(c, i18n.T("styles.editor.saved_in", "dir", a.stylesDir())).FontSize(12).TextColor(p.Pencil)
+	uiText(c, i18n.T("styles.editor.saved_in", "dir", tildePath(a.stylesDir())), 12, 400, p.Graphite)
+}
+
+// labelled is an editor field: its label over the control.
+func (a *App) labelled(c *mu.Context, p theme.Colors, label string, fn func()) {
+	mu.Column(c).Gap(6).Children(func() {
+		uiText(c, label, 13, 600, p.Ink)
+		fn()
+	})
 }
 
 func (a *App) styleEditorActions(c *mu.Context, p theme.Colors) {
@@ -347,7 +482,7 @@ func (a *App) styleEditorActions(c *mu.Context, p theme.Colors) {
 				a.sty.close()
 			}
 		}
-		if a.btn(c, p, "styles.editor.cancel", i18n.T("styles.cancel"), btnSecondary) {
+		if a.btn(c, p, "styles.editor.cancel", i18n.T("styles.cancel"), btnGhost) {
 			a.sty.close()
 		}
 		mu.Spacer(c)
@@ -375,22 +510,34 @@ func (a *App) resetStyle(id string) {
 	a.invalidate()
 }
 
-// inkPicker is the six inks and a custom #hex.
+// inkPicker is the six inks as seals, and a custom #hex.
 func (a *App) inkPicker(c *mu.Context, p theme.Colors, key string, hex *string) {
-	mu.Row(c).Gap(8).AlignItems(mu.Center).Wrap().Children(func() {
+	custom := true
+	mu.Row(c).Gap(10).AlignItems(mu.Center).Wrap().Children(func() {
 		for _, ink := range inkPresets {
 			col := ink.Color()
 			on := strings.EqualFold(*hex, col.Hex())
+			custom = custom && !on
 			b := mu.ButtonBase(a.k(c, key+"."+string(ink))).Label(i18n.T("core.ink."+string(ink))).Role(mu.RoleRadio).Checked(on).
-				Size(26, 26).Radius(99).Background(theme.UIColor(col)).Cursor(mu.CursorPointer)
+				Size(26, 26).Radius(99).Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer)
 			if on {
-				b.Border(2, p.Accent)
+				b.Border(2, p.Ink)
 			}
+			b.Children(func() { sealDot(c, p, col.Hex(), 22) })
 			if clicked(c, b) {
 				*hex = col.Hex()
+				a.sty.customInk = false
 			}
 		}
-		a.field(c, p, key+".custom", i18n.T("settings.appearance.custom_ink"), "#2D3C8C", hex).Width(110)
+		if custom && *hex != "" && !a.sty.customInk {
+			if a.link(c, p, key+".custom_show", i18n.T("styles.editor.ink_custom", "ink", strings.ToUpper(*hex)), 13, 500, "") {
+				a.sty.customInk = true
+			}
+		} else if a.sty.customInk {
+			a.fieldW(c, p, key+".custom", i18n.T("settings.appearance.custom_ink"), "#2D3C8C", hex, 110)
+		} else if a.link(c, p, key+".custom_show", i18n.T("settings.appearance.custom"), 13, 500, "") {
+			a.sty.customInk = true
+		}
 	})
 }
 
@@ -405,7 +552,7 @@ func (a *App) providerPicker(c *mu.Context, p theme.Colors, d *styleDraft) {
 		options, ids = append(options, pr.Name), append(ids, pr.ID)
 	}
 	if len(a.cfg.AI.Providers) == 0 {
-		mu.Text(c, i18n.T("styles.editor.no_providers")).FontSize(12.5).TextColor(p.Pencil)
+		uiText(c, i18n.T("styles.editor.no_providers"), 13, 400, p.Graphite)
 	}
 	sel := options[0]
 	for i, id := range ids {
@@ -413,14 +560,13 @@ func (a *App) providerPicker(c *mu.Context, p theme.Colors, d *styleDraft) {
 			sel = options[i]
 		}
 	}
-	mu.Select(a.k(c, "styles.editor.provider"), &sel, options).Label(i18n.T("styles.editor.provider")).OnChange(func() {
+	a.selectBtn(c, p, "styles.editor.provider", i18n.T("styles.editor.provider"), &sel, options, 0).AlignSelf(mu.Stretch).OnChange(func() {
 		for i, o := range options {
 			if o == sel {
 				d.provider = ids[i]
 			}
 		}
 	})
-	a.field(c, p, "styles.editor.model", i18n.T("styles.editor.model"), i18n.T("styles.editor.provider_model"), &d.model)
 }
 
 func (a *App) cleanupControls(c *mu.Context, p theme.Colors, d *styleDraft) {
@@ -429,14 +575,14 @@ func (a *App) cleanupControls(c *mu.Context, p theme.Colors, d *styleDraft) {
 		return
 	}
 	mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
-		mu.Text(c, i18n.T("styles.editor.tone")).FontSize(12.5).TextColor(p.Graphite).Width(70)
+		uiText(c, i18n.T("styles.editor.tone"), 13, 600, p.Ink).Width(70)
 		if i := a.choice(c, p, []string{"styles.editor.tone.formal", "styles.editor.tone.casual", "styles.editor.tone.very_casual"},
 			[]string{i18n.T("styles.editor.tone_formal"), i18n.T("styles.editor.tone_casual"), i18n.T("styles.editor.tone_very_casual")}, d.tone, false); i >= 0 {
 			d.tone = i
 		}
 	})
 	mu.Row(c).Gap(10).AlignItems(mu.Center).Children(func() {
-		mu.Text(c, i18n.T("styles.editor.layout")).FontSize(12.5).TextColor(p.Graphite).Width(70)
+		uiText(c, i18n.T("styles.editor.layout"), 13, 600, p.Ink).Width(70)
 		if i := a.choice(c, p, []string{"styles.editor.layout.paragraphs", "styles.editor.layout.lists"},
 			[]string{i18n.T("styles.editor.layout_paragraphs"), i18n.T("styles.editor.layout_lists")}, d.layout, false); i >= 0 {
 			d.layout = i
@@ -448,26 +594,26 @@ func (a *App) cleanupControls(c *mu.Context, p theme.Colors, d *styleDraft) {
 // targetsEditor is "Use automatically": apps and sites for this style.
 func (a *App) targetsEditor(c *mu.Context, p theme.Colors, d *styleDraft) {
 	mu.Column(c).Gap(8).Role(mu.RoleGroup).Label(i18n.T("styles.a11y.choices")).Children(func() {
-		mu.Text(c, i18n.T("styles.targets.title")).FontSize(12.5).FontWeight(500).TextColor(p.Graphite)
-		mu.Text(c, i18n.T("styles.targets.intro_sites", "style", d.name)).FontSize(12).TextColor(p.Pencil)
+		uiText(c, i18n.T("styles.targets.title"), 13, 600, p.Ink)
+		uiText(c, i18n.T("styles.targets.intro_sites", "style", d.name), 12, 400, p.Graphite)
 		if !a.cfg.AI.StyleRules.Enabled {
-			mu.Text(c, i18n.T("styles.targets.off")).FontSize(12).TextColor(p.Pencil)
+			uiText(c, i18n.T("styles.targets.off"), 12, 400, p.Graphite)
 		}
 		mu.Row(c).Gap(6).Wrap().Children(func() {
 			if len(d.apps)+len(d.sites) == 0 {
-				mu.Text(c, i18n.T("styles.targets.summary_none")).FontSize(12.5).TextColor(p.Pencil)
+				uiText(c, i18n.T("styles.targets.summary_none"), 13, 400, p.Graphite)
 			}
 			for i, t := range append(append([]string(nil), d.apps...), d.sites...) {
-				mu.Row(c).Gap(4).Padding(2, 4, 2, 10).Radius(99).Background(p.Deboss).AlignItems(mu.Center).Children(func() {
-					mu.Text(c, t).FontSize(12.5).TextColor(p.Ink)
-					if a.iconBtn(c, p, fmt.Sprintf("styles.target.remove.%d", i), "close", i18n.T("styles.a11y.remove_app", "name", t)) {
+				debossed(mu.Row(c).Height(28).Gap(2).Padding(0, 2, 0, 11).Radius(99).AlignItems(mu.Center), p).Children(func() {
+					uiText(c, t, 13, 500, p.Ink)
+					if a.iconBtnSized(c, p, fmt.Sprintf("styles.target.remove.%d", i), "close", i18n.T("styles.a11y.remove_app", "name", t), 22, 10) {
 						d.apps, d.sites = removeString(d.apps, t), removeString(d.sites, t)
 					}
 				})
 			}
 		})
 		mu.Row(c).Gap(6).Children(func() {
-			in := a.field(c, p, "styles.target.new", i18n.T("styles.targets.add_site"), i18n.T("styles.targets.placeholder_site_bundle"), &d.newTarget).Grow(1)
+			in := a.fieldW(c, p, "styles.target.new", i18n.T("styles.targets.add_site"), i18n.T("styles.targets.placeholder_site_bundle"), &d.newTarget, -1)
 			add := func() {
 				t := strings.TrimSpace(d.newTarget)
 				if t == "" {
@@ -481,11 +627,11 @@ func (a *App) targetsEditor(c *mu.Context, p theme.Colors, d *styleDraft) {
 				d.newTarget = ""
 			}
 			in.OnSubmit(add)
-			if a.btn(c, p, "styles.target.add", i18n.T("dictionary.add"), btnSecondary) {
+			if a.button(c, p, "styles.target.add", i18n.T("dictionary.add"), bopt{icon: "plus"}) {
 				add()
 			}
 		})
-		mu.Text(c, i18n.T("styles.targets.site_hint")).FontSize(12).TextColor(p.Pencil)
+		uiText(c, i18n.T("styles.targets.site_hint"), 12, 400, p.Graphite)
 	})
 }
 
@@ -500,9 +646,9 @@ func removeString(list []string, s string) []string {
 }
 
 func (a *App) baseEditor(c *mu.Context, p theme.Colors) {
-	mu.Row(c).AlignItems(mu.Center).Children(func() {
-		heading(c, p, i18n.T("styles.base.title"), 24).Grow(1)
-		if a.iconBtn(c, p, "styles.base.close", "close", i18n.T("styles.a11y.close")) {
+	mu.Row(c).AlignItems(mu.Start).Children(func() {
+		heading(c, p, i18n.T("styles.base.title"), 28).Grow(1).Role(mu.RoleHeading)
+		if a.iconBtnSized(c, p, "styles.base.close", "close", i18n.T("styles.a11y.close"), 30, 16) {
 			a.sty.close()
 		}
 	})
@@ -510,13 +656,13 @@ func (a *App) baseEditor(c *mu.Context, p theme.Colors) {
 	if a.styles.UserBasePrompt != nil {
 		note = i18n.T("styles.base.changed_note", "file", enhance.BasePromptFile)
 	}
-	mu.Text(c, note).FontSize(12.5).TextColor(p.Graphite)
-	mu.Text(c, i18n.T("styles.base.rules")).FontSize(12.5).FontWeight(500).TextColor(p.Graphite)
-	mu.TextArea(a.k(c, "styles.base.text"), &a.sty.base).Label(i18n.T("styles.base.rules")).
-		Placeholder(i18n.T("styles.base.placeholder")).Height(320)
-	mu.Text(c, i18n.T("styles.base.rules_hint")).FontSize(12).TextColor(p.Pencil)
+	uiText(c, note, 14, 400, p.Graphite).LineHeight(1.4)
+	a.labelled(c, p, i18n.T("styles.base.rules"), func() {
+		a.textArea(c, p, "styles.base.text", i18n.T("styles.base.rules"), i18n.T("styles.base.placeholder"), &a.sty.base, 380)
+		uiText(c, i18n.T("styles.base.rules_hint"), 12, 400, p.Graphite).LineHeight(1.4)
+	})
 	if a.sty.err != "" {
-		mu.Text(c, a.sty.err).FontSize(13).TextColor(p.Danger)
+		uiText(c, a.sty.err, 13, 500, p.Danger)
 	}
 }
 
@@ -532,7 +678,7 @@ func (a *App) baseEditorActions(c *mu.Context, p theme.Colors) {
 			a.reloadStyles()
 			a.sty.close()
 		}
-		if a.btn(c, p, "styles.base.cancel", i18n.T("styles.cancel"), btnSecondary) {
+		if a.btn(c, p, "styles.base.cancel", i18n.T("styles.cancel"), btnGhost) {
 			a.sty.close()
 		}
 		mu.Spacer(c)

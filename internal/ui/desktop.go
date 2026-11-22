@@ -57,6 +57,9 @@ func (d *Desktop) Start(showHub bool) {
 	d.hub = mygo.NewWindow(mygo.WindowOptions{
 		Title: "Sayso", Width: HubWidth, Height: HubHeight, MinWidth: HubMinWidth, MinHeight: HubMinHeight,
 		TitleBarStyle: style, StateKey: "hub", Hidden: !showHub, Content: mu.View(d.a.HubView),
+		// As the Rust app (app.rs): the sidebar's 52 px top padding leaves
+		// room for the controls here.
+		TrafficLightPosition: &mygo.Point{X: 18, Y: 18},
 	})
 	d.hub.OnClose(func(e *mygo.CloseEvent) {
 		if !d.quitting { // closing the hub keeps the tray item
