@@ -234,19 +234,26 @@ func accuracyLabel(wer float32) string {
 	return i18n.T("models.accuracy_percent", "value", i18n.Decimal(float64(100-wer), 1))
 }
 
+// previewModel is the model of the live preview: the one chosen, else the
+// final model when it can preview, else the fallback. same is true when it
+// is the final model.
+func (a *App) previewModel() (id models.ModelID, same bool) {
+	if id = a.cfg.Dictation.PreviewModel.Model; id != "" {
+		return id, false
+	}
+	final := a.FinalModel()
+	if m, ok := models.Find(final); ok && m.LivePreview {
+		return final, true
+	}
+	return models.PreviewFallback(), false
+}
+
 // modelSlots is one card: Final text and Live preview, split by a rule.
 func (a *App) modelSlots(c *mu.Context, p theme.Colors) {
 	final := a.FinalModel()
 	preview, previewSame, previewOn := models.ModelID(""), false, a.cfg.Dictation.LivePreview
 	if previewOn {
-		preview = a.cfg.Dictation.PreviewModel.Model
-		if preview == "" {
-			if m, ok := models.Find(final); ok && m.LivePreview {
-				preview, previewSame = final, true
-			} else {
-				preview = models.PreviewFallback()
-			}
-		}
+		preview, previewSame = a.previewModel()
 	}
 	stat := func(figure, note string) {
 		mu.Column(c).Gap(0).Children(func() {

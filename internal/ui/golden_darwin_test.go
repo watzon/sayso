@@ -54,3 +54,34 @@ func TestGoldenPaperKit(t *testing.T) {
 		golden.Match(t, tt, name, golden.Tolerance{Channel: 8, PerMille: 5})
 	}
 }
+
+// The recording overlay as the Paper page "Overlay" draws it: the ink
+// waveform in its pill, and the live preview on its slip, short at Large
+// and long at Small (the latest words at the bottom, the oldest fading out
+// of the top), light and dark. Reduce motion stills the ink and the pen.
+func TestGoldenOverlayRecording(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		for _, size := range []config.OverlaySize{config.OverlayLarge, config.OverlaySmall} {
+			a := recordingWithPreview(t, size, config.OverlayPill)
+			if size == config.OverlayLarge {
+				a.Preview("Let's move the standup to Thursday and invite the design", "team to jo")
+			}
+			if dark {
+				a.cfg.Appearance.Theme = config.ThemeDark
+			}
+			for i := range a.levels {
+				a.levels[i] = 0.3 + 0.5*float32(i%7)/7
+			}
+			w, h := OverlayWindowSize(a.cfg.Overlay)
+			tt := mu.NewTesterWith(a.OverlayView, w, h, mu.TesterOptions{Preferences: mu.Preferences{ReduceMotion: true}})
+			tt.SetDark(dark)
+			tt.Frame()
+			tt.Frame()
+			mode := "light"
+			if dark {
+				mode = "dark"
+			}
+			golden.Match(t, tt, "testdata/golden-overlay-recording-"+string(size)+"-"+mode+".png", golden.Tolerance{Channel: 8, PerMille: 5})
+		}
+	}
+}

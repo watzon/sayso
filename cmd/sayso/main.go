@@ -267,6 +267,7 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 		show := o.command.Kind == ui.CmdNone || o.command.Kind == ui.CmdOpen
 		desk.Start(show && !a.NeedsOnboarding())
 		desk.Tick()
+		startDevPreview(a)
 		if o.command.Kind != ui.CmdNone {
 			a.RunCommand(o.command)
 		}
