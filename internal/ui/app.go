@@ -533,6 +533,13 @@ func (a *App) StateChanged(s dictation.State) {
 	})
 }
 
+// HistoryChanged implements dictation.Observer: the controller saved a
+// dictation, after StateChanged already had Home and History read the
+// store without it. They read it again, and every window redraws.
+func (a *App) HistoryChanged() {
+	a.post(a.dataChanged)
+}
+
 // Notice implements dictation.Observer.
 func (a *App) Notice(m dictation.Message) {
 	a.post(func() {

@@ -141,6 +141,11 @@ type Observer interface {
 	Notice(Message)
 	Level(rms float32)
 	Preview(committed, tentative string)
+	// HistoryChanged: a dictation's history entry and its replacement
+	// counts were written. The write runs on its own goroutine and ends
+	// after the dictation's last state change, so a view that read the
+	// history for that change reads it again now. Called on that goroutine.
+	HistoryChanged()
 }
 
 // Deps is what the controller uses. Config and Styles are read at each use.
@@ -1265,7 +1270,7 @@ func (c *Controller) saveHistory(id SessionID) {
 	diag := s.diagnostics
 	diag.AppVersion = c.d.AppVersion
 	entry.Diagnostics = &diag
-	history, system := c.d.History, c.d.System
+	history, system, observer := c.d.History, c.d.System, c.d.Observer
 	go func() {
 		if system != nil {
 			entry.Diagnostics.System = system()
@@ -1282,6 +1287,9 @@ func (c *Controller) saveHistory(id SessionID) {
 		}
 		if err := history.RecordReplacementUses(entry.Replacements); err != nil {
 			slog.Warn("dictation: could not count replacements", "err", err)
+		}
+		if observer != nil {
+			observer.HistoryChanged()
 		}
 	}()
 }
