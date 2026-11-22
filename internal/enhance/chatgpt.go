@@ -553,8 +553,14 @@ func chatgptHTTPError(status int, body string) error {
 
 // ChatGPTListModels lists the models the account offers.
 func ChatGPTListModels(secrets providers.SecretStore, providerID string, timeout time.Duration) ([]ModelChoice, error) {
-	return chatgptAccount{secrets, ChatGPTAccountName(providerID), chatgptBaseURL, chatgptIssuer + "/oauth/token"}.listModels(timeout)
+	return chatgptAccount{secrets, ChatGPTAccountName(providerID), chatgptListBase, chatgptListTokenURL}.listModels(timeout)
 }
+
+// The endpoints of ChatGPTListModels; tests point them at a fake server.
+var (
+	chatgptListBase     = chatgptBaseURL
+	chatgptListTokenURL = chatgptIssuer + "/oauth/token"
+)
 
 func (a chatgptAccount) listModels(timeout time.Duration) ([]ModelChoice, error) {
 	timeoutMs := uint64(timeout.Milliseconds())
