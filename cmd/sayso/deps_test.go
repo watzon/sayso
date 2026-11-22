@@ -19,17 +19,21 @@ func TestAppDoesNotLinkLlama(t *testing.T) {
 		gobin = "go"
 	}
 	forbidden := []string{"github.com/hybridgroup/yzma", "github.com/jupiterrider/ffi", "github.com/watzon/sayso/internal/cleanupd/llama"}
-	for _, goos := range []string{"darwin", "linux", "windows"} {
-		cmd := exec.Command(gobin, "list", "-deps", "github.com/watzon/sayso/cmd/sayso")
-		cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH=amd64", "CGO_ENABLED=0")
-		out, err := cmd.Output()
-		if err != nil {
-			t.Fatalf("go list for %s: %v", goos, err)
-		}
-		for _, dep := range strings.Fields(string(out)) {
-			for _, f := range forbidden {
-				if dep == f || strings.HasPrefix(dep, f+"/") {
-					t.Errorf("%s: cmd/sayso depends on %s", goos, dep)
+	// Every platform that Sayso ships, with both tag sets of the bundles.
+	for _, p := range []string{"darwin/arm64", "darwin/amd64", "linux/amd64", "linux/arm64", "windows/amd64"} {
+		goos, goarch, _ := strings.Cut(p, "/")
+		for _, tags := range []string{"", "mygo_noinspector"} {
+			cmd := exec.Command(gobin, "list", "-deps", "-tags="+tags, "github.com/watzon/sayso/cmd/sayso")
+			cmd.Env = append(os.Environ(), "GOOS="+goos, "GOARCH="+goarch, "CGO_ENABLED=0")
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatalf("go list for %s %q: %v", p, tags, err)
+			}
+			for _, dep := range strings.Fields(string(out)) {
+				for _, f := range forbidden {
+					if dep == f || strings.HasPrefix(dep, f+"/") {
+						t.Errorf("%s %q: cmd/sayso depends on %s", p, tags, dep)
+					}
 				}
 			}
 		}
