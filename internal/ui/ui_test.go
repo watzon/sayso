@@ -1200,3 +1200,20 @@ func TestPopoverEscape(t *testing.T) {
 		t.Error("second Escape left the popover open")
 	}
 }
+
+// Escape gives the keyboard back to the app the user came from; Open Sayso
+// keeps it in Sayso for the hub (Rust popover.rs hide and hide_popover).
+func TestPopoverClosesSayWhereTheKeyboardGoes(t *testing.T) {
+	e := newEnv(t)
+	tt := mu.NewTester(e.a.PopoverView, PopoverW, PopoverH)
+	e.shell.shown[WinPopover] = true
+	tt.Frame()
+	tt.Key(0, mu.KeyEscape)
+	tt.Frame()
+	e.shell.shown[WinPopover] = true
+	press(t, tt, i18n.T("popover.open_sayso"))
+	tt.Frame()
+	if len(e.shell.popoverCloses) != 2 || e.shell.popoverCloses[0] || !e.shell.popoverCloses[1] || e.shell.hub != 1 {
+		t.Fatalf("closes (keep) %v, hub shown %d times; want [false true] and 1", e.shell.popoverCloses, e.shell.hub)
+	}
+}

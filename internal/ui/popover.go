@@ -37,7 +37,7 @@ func (a *App) PopoverView(c *mu.Context) {
 		if a.pop.open != "" {
 			a.pop.open = ""
 		} else {
-			a.d.Shell.ShowWindow(WinPopover, false)
+			a.d.Shell.ClosePopover(false)
 		}
 	}
 	mu.Column(c).Fill().Padding(8).Gap(6).Draw(a.grain(p, "sheet", 16)).Children(func() {
@@ -81,7 +81,7 @@ func (a *App) PopoverView(c *mu.Context) {
 		mu.Row(c).Gap(8).Padding(4, 4, 4, 4).AlignItems(mu.Center).Children(func() {
 			if a.button(c, p, "popover.open", i18n.T("popover.open_sayso"), bopt{grow: true}) {
 				if a.d.Shell != nil {
-					a.d.Shell.ShowWindow(WinPopover, false)
+					a.d.Shell.ClosePopover(true)
 					a.d.Shell.ShowHub()
 				}
 			}
@@ -237,7 +237,7 @@ func (a *App) popoverModels(c *mu.Context, p theme.Colors) {
 		a.popoverChoice(c, p, "popover.manage_models", i18n.T("popover.manage_models"), false, func() {
 			a.SetPage(PageModels)
 			if a.d.Shell != nil {
-				a.d.Shell.ShowWindow(WinPopover, false)
+				a.d.Shell.ClosePopover(true)
 				a.d.Shell.ShowHub()
 			}
 		})
@@ -290,12 +290,40 @@ const (
 	popoverHide
 )
 
+// popoverExit is why the popover closes, which decides where the keyboard
+// goes (Rust popover.rs hide and hide_popover).
+type popoverExit int
+
+const (
+	// exitGiveBack: Esc, the tray icon or a row's action closed it.
+	exitGiveBack popoverExit = iota
+	// exitKeep: Open Sayso or Manage models closed it to show the hub.
+	exitKeep
+	// exitDismissed: a press outside it or the loss of the keyboard
+	// closed it (the flyout's own close).
+	exitDismissed
+)
+
 // popoverReopen is how soon after the popover closed a click on the icon
 // is taken as the click that closed it.
 const popoverReopen = 300 * time.Millisecond
 
 // closed notes that the popover closed or hid at now.
 func (p *popoverToggle) closed(now time.Time) { p.closedAt = now }
+
+// popoverGivesBack reports whether closing the popover for exit gives the
+// keyboard back to the app the user came from. A dismissal keeps Sayso
+// active only when its press landed in a window of Sayso the user works
+// in: AppKit makes the hub or the overlay key whatever the user did.
+func popoverGivesBack(exit popoverExit, pressInSayso bool) bool {
+	switch exit {
+	case exitKeep:
+		return false
+	case exitDismissed:
+		return !pressInSayso
+	}
+	return true
+}
 
 // click is what a click on the icon at now does, with the popover visible
 // or not.

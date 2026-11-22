@@ -147,6 +147,9 @@ type Shell interface {
 	ShowHub()
 	ShowOverlay(show bool)
 	ShowWindow(w Window, show bool)
+	// ClosePopover closes the tray popover; keep leaves the keyboard in
+	// Sayso, for the hub that shows next.
+	ClosePopover(keep bool)
 	SetThemeMode(m config.ThemeMode)
 	SetOverlaySize(s config.OverlaySize)
 	OpenPath(path string)

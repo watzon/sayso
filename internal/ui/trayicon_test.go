@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo"
 )
 
 func decodeIcon(t *testing.T, b []byte) image.Image {
@@ -106,5 +108,49 @@ func TestPopoverToggle(t *testing.T) {
 	}
 	if got := p.click(at.Add(3*time.Second), false); got != popoverShow {
 		t.Errorf("a later click: %v", got)
+	}
+}
+
+// Closing the popover gives the keyboard back to the app the user came
+// from, unless the hub takes it (Open Sayso) or the press that dismissed
+// the popover landed in a window of Sayso the user works in. Which window
+// AppKit makes key afterwards plays no part (Rust popover.rs hide).
+func TestPopoverGivesKeyboardBack(t *testing.T) {
+	for _, c := range []struct {
+		exit         popoverExit
+		pressInSayso bool
+		want         bool
+	}{
+		{exitGiveBack, false, true},
+		{exitGiveBack, true, true}, // Esc or the icon, even with the pointer over the hub
+		{exitKeep, false, false},
+		{exitDismissed, false, true}, // a press in another app or on the desktop
+		{exitDismissed, true, false}, // a press in the hub
+	} {
+		if got := popoverGivesBack(c.exit, c.pressInSayso); got != c.want {
+			t.Errorf("popoverGivesBack(%v, %v) = %v, want %v", c.exit, c.pressInSayso, got, c.want)
+		}
+	}
+}
+
+// A press over the hub or a secondary window counts as inside Sayso; the
+// popover and the overlay are not in the list Desktop passes.
+func TestPointInWindows(t *testing.T) {
+	boxes := []mygo.Rectangle{{X: 100, Y: 100, Width: 800, Height: 600}}
+	for _, c := range []struct {
+		p    mygo.Point
+		want bool
+	}{
+		{mygo.Point{X: 100, Y: 100}, true},
+		{mygo.Point{X: 899, Y: 699}, true},
+		{mygo.Point{X: 900, Y: 300}, false},
+		{mygo.Point{X: 50, Y: 300}, false},
+	} {
+		if got := pointInWindows(c.p, boxes); got != c.want {
+			t.Errorf("pointInWindows(%v) = %v, want %v", c.p, got, c.want)
+		}
+	}
+	if pointInWindows(mygo.Point{X: 1, Y: 1}, nil) {
+		t.Error("no windows: inside")
 	}
 }

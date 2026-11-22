@@ -24,10 +24,11 @@ type Desktop struct {
 	wins    map[Window]*mygo.Window
 	tray    *mygo.Tray
 	popover popoverToggle
-	// popoverFrom is whether Sayso was the active app when the popover
-	// opened: if not, closing it gives the keyboard back.
-	popoverFrom bool
-	quitting    bool
+	// popoverClosing is set once the popover's close was handled: Sayso
+	// closing it, or the flyout's dismissal, of which OnHide and OnClosed
+	// hear again.
+	popoverClosing bool
+	quitting       bool
 	// region is the overlay's card, the part of its window that takes the mouse.
 	region mu.Rect
 }
@@ -221,8 +222,27 @@ func (d *Desktop) ShowWindow(which Window, show bool) {
 		}
 		d.wins[which] = w
 	}
+	if which == WinPopover {
+		d.popoverClosing = false
+	}
 	w.Show()
 	w.Focus()
+}
+
+// ClosePopover closes the tray popover on purpose: keep leaves the keyboard
+// in Sayso, for the hub that shows next; otherwise it goes back to the app
+// the user came from.
+func (d *Desktop) ClosePopover(keep bool) {
+	w := d.wins[WinPopover]
+	if w == nil || w.IsDestroyed() || !w.IsVisible() {
+		return
+	}
+	exit := exitGiveBack
+	if keep {
+		exit = exitKeep
+	}
+	d.popoverClosed(exit, false)
+	w.Hide()
 }
 
 func (d *Desktop) newWindow(which Window) *mygo.Window {
@@ -272,34 +292,63 @@ func (d *Desktop) newPopover() *mygo.Window {
 		Tray: d.tray, Placement: mygo.PlacementBottom, Gap: 6, Width: PopoverW, Height: PopoverH,
 		Shadow: true, Popover: true, Focusable: true, CornerRadius: 12, Content: mu.View(d.a.PopoverView),
 	})
-	w.OnHide(func() { d.popoverClosed(w) })
-	w.OnClosed(func() { d.popoverClosed(w) })
+	// The flyout's own close, at its start: a press outside it or the loss
+	// of the keyboard. OnHide and OnClosed come after its fade, and only
+	// matter for a close OnClose did not hear.
+	w.OnClose(func(*mygo.CloseEvent) { d.popoverClosed(exitDismissed, d.pressInSayso(w)) })
+	w.OnHide(func() { d.popoverClosed(exitDismissed, d.pressInSayso(w)) })
+	w.OnClosed(func() { d.popoverClosed(exitDismissed, d.pressInSayso(w)) })
 	return w
 }
 
-// popoverClosed notes the close, for the tray click, and gives the keyboard
-// back to the app the user came from: unless Sayso was active already, or
-// the click that closed the popover went to another window of Sayso (Rust
-// popover.rs hide and hide_popover).
-func (d *Desktop) popoverClosed(pop *mygo.Window) {
-	d.popover.closed(time.Now())
-	if d.popoverFrom {
+// popoverClosed handles the start of the popover's close, once: it guards
+// the tray click after a dismissal, and gives the keyboard back to the app
+// the user came from when exit says so (Rust popover.rs hide and
+// hide_popover).
+func (d *Desktop) popoverClosed(exit popoverExit, pressInSayso bool) {
+	if d.popoverClosing {
 		return
 	}
-	// After the closing click has reached the window under it.
-	time.AfterFunc(120*time.Millisecond, func() {
+	d.popoverClosing = true
+	d.popover.closed(time.Now())
+	if !popoverGivesBack(exit, pressInSayso) {
+		return
+	}
+	// After the press that dismissed it has reached the window under it.
+	delay := time.Duration(0)
+	if exit == exitDismissed {
+		delay = 120 * time.Millisecond
+	}
+	time.AfterFunc(delay, func() {
 		mygo.RunOnMain(func() {
-			if !mygo.App.IsActive() || (pop.IsVisible() && !pop.IsDestroyed()) {
-				return
+			if mygo.App.IsActive() {
+				platform.DeactivateApp()
 			}
-			for _, w := range append([]*mygo.Window{d.hub}, d.windows()...) {
-				if w != nil && w != pop && !w.IsDestroyed() && w.IsVisible() && w.IsFocused() {
-					return
-				}
-			}
-			platform.DeactivateApp()
 		})
 	})
+}
+
+// pressInSayso reports whether the pointer is over the hub or a secondary
+// window: a press there keeps Sayso active. The popover does not count,
+// nor the overlay, which the user never types in.
+func (d *Desktop) pressInSayso(pop *mygo.Window) bool {
+	var boxes []mygo.Rectangle
+	for _, w := range append([]*mygo.Window{d.hub}, d.windows()...) {
+		if w != nil && w != pop && !w.IsDestroyed() && w.IsVisible() {
+			boxes = append(boxes, w.Bounds())
+		}
+	}
+	return pointInWindows(mygo.Screen.CursorScreenPoint(), boxes)
+}
+
+// pointInWindows reports whether p is in one of boxes.
+func pointInWindows(p mygo.Point, boxes []mygo.Rectangle) bool {
+	for _, b := range boxes {
+		if p.X >= b.X && p.X < b.X+b.Width && p.Y >= b.Y && p.Y < b.Y+b.Height {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Desktop) newTray() {
@@ -325,9 +374,8 @@ func (d *Desktop) newTray() {
 		visible := w != nil && !w.IsDestroyed() && w.IsVisible()
 		switch d.popover.click(time.Now(), visible) {
 		case popoverHide:
-			w.Hide()
+			d.ClosePopover(false)
 		case popoverShow:
-			d.popoverFrom = mygo.App.IsActive()
 			d.ShowWindow(WinPopover, true)
 		}
 	})
