@@ -623,23 +623,28 @@ func (c *RuntimeCleaner) fetchLibraries() {
 
 // Preload loads model while the microphone records. Errors are logged.
 func (c *RuntimeCleaner) Preload(model string) {
+	go func() { _ = c.Warm(model) }()
+}
+
+// Warm loads model ahead and waits for the load. A model that is not
+// downloaded, and a failed load, are errors (logged).
+func (c *RuntimeCleaner) Warm(model string) error {
 	info, ok := FindCleanupModel(model)
 	if !ok {
-		return
+		return fmt.Errorf("no cleanup model %s", model)
 	}
 	path, ok := CleanupModelPath(c.ModelsDir, info)
 	if !ok {
-		return
+		return fmt.Errorf("%s is not downloaded", info.Name)
 	}
-	go func() {
-		err := c.Runtime.EnsureLoaded(info.ID, path, NCtx)
-		if errors.Is(err, engine.ErrCleanupNoLibraries) {
-			c.fetchLibraries()
-		}
-		if err != nil {
-			slog.Warn("could not load the cleanup model ahead", "model", info.ID, "error", err)
-		}
-	}()
+	err := c.Runtime.EnsureLoaded(info.ID, path, NCtx)
+	if errors.Is(err, engine.ErrCleanupNoLibraries) {
+		c.fetchLibraries()
+	}
+	if err != nil {
+		slog.Warn("could not load the cleanup model ahead", "model", info.ID, "error", err)
+	}
+	return err
 }
 
 // Clean splits the text, cleans each part, checks each answer, and joins them.
