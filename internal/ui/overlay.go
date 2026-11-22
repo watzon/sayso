@@ -497,12 +497,13 @@ func (a *App) notchView(c *mu.Context, p theme.Colors) {
 	mu.Column(c).Fill().AlignItems(mu.Center).Children(func() {
 		mu.Column(a.k(c, "overlay.card")).Bind(&a.ov.card).AlignItems(mu.Center).Shrink(0).Children(func() {
 			open := a.Busy() || a.state.Kind == dictation.StateShowing || a.noticeShowing()
+			n := mu.ButtonBase(a.k(c, "overlay.notch")).Label(i18n.T("overlay.a11y.name")).Height(notchHeight).AlignItems(mu.Center).Draw(paintNotch)
 			if !open {
-				return
+				// Closed, the notch is the camera housing; its window hides.
+				n.Width(notchCamera + 2*notchShoulder)
+			} else {
+				n.Width(notchWidth).Padding(0, notchShoulder+notchWingPad).Children(func() { a.notchWings(c, night, n.Hovered()) })
 			}
-			n := mu.ButtonBase(a.k(c, "overlay.notch")).Label(i18n.T("overlay.a11y.name")).Width(notchWidth).Height(notchHeight).
-				Padding(0, notchShoulder+notchWingPad).AlignItems(mu.Center).Draw(paintNotch)
-			n.Children(func() { a.notchWings(c, night, n.Hovered()) })
 			if clicked(c, n) {
 				a.Toggle()
 			}
