@@ -100,8 +100,27 @@ func HasLibraries(dir, goos string) bool {
 }
 
 // Verify checks every file of a in dir against its SHA-256, and every link
-// against its target.
+// against its target. Any other entry fails it too: llama.cpp loads every ggml
+// backend in the folder, so a folder holds only pinned files.
 func Verify(dir string, a *Asset) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	pinned := map[string]bool{}
+	for _, f := range a.Files {
+		pinned[f.Name] = true
+	}
+	if runtime.GOOS != "windows" {
+		for _, l := range a.Links {
+			pinned[l.Name] = true
+		}
+	}
+	for _, e := range entries {
+		if !pinned[e.Name()] {
+			return fmt.Errorf("%s is not a pinned file", e.Name())
+		}
+	}
 	for _, f := range a.Files {
 		got, err := fileSHA256(filepath.Join(dir, f.Name))
 		if err != nil {

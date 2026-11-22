@@ -92,6 +92,30 @@ func TestFetchChecksAndKeepsOnlyThePinnedFiles(t *testing.T) {
 	}
 }
 
+// llama.cpp loads every ggml backend in the folder, so a file that is not
+// pinned fails the check, and a fetch makes the folder again without it.
+func TestAnUnpinnedFileFailsTheCheck(t *testing.T) {
+	body, a := testArchive(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(body) }))
+	defer srv.Close()
+	a.URL = srv.URL + "/llama.tar.gz"
+	dest := filepath.Join(t.TempDir(), a.Name())
+	if err := Fetch(context.Background(), srv.Client(), a, dest, ""); err != nil {
+		t.Fatal(err)
+	}
+	extra := filepath.Join(dest, "libggml-evil.so")
+	os.WriteFile(extra, []byte("not pinned"), 0o755)
+	if err := Verify(dest, a); err == nil || !strings.Contains(err.Error(), "libggml-evil.so") {
+		t.Fatal(err)
+	}
+	if err := Fetch(context.Background(), srv.Client(), a, dest, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(extra); err == nil || Verify(dest, a) != nil {
+		t.Fatal("the fetch kept the unpinned file")
+	}
+}
+
 func TestFetchRefusesAWrongArchive(t *testing.T) {
 	body, a := testArchive(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
