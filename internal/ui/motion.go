@@ -287,3 +287,36 @@ func (n *notchMotion) gone() bool { return n.o.target == 0 && !n.o.moving() && n
 
 func (n *notchMotion) width() float32   { return max(0, n.wing.value) }
 func (n *notchMotion) opacity() float32 { return max(0, min(n.o.value, 1)) }
+
+// tween is a value from 0 to 1 that follows a switch with the overlay's
+// spring, for the small motions of the hub: a control that fades in on
+// hover, a slip that opens into a well.
+type tween struct {
+	s     spring
+	clock motionClock
+	ready bool
+}
+
+// update moves the tween toward on (1) or off (0) and returns its value,
+// which can pass 1 or 0 a little as the spring settles. It asks for frames
+// while it moves. The first update starts at rest, with no motion.
+func (t *tween) update(c *mu.Context, on bool) float32 {
+	target := float32(0)
+	if on {
+		target = 1
+	}
+	if !t.ready {
+		t.ready = true
+		t.s = opacitySpring()
+		t.s.value, t.s.target = target, target
+	}
+	t.s.target = target
+	t.s.move(t.clock.tick(c.Now()), stillMotion(c))
+	if t.s.moving() {
+		c.AnimationFrame()
+	}
+	return t.s.value
+}
+
+// unit is v within 0 and 1, for an opacity.
+func unit(v float32) float32 { return max(0, min(v, 1)) }

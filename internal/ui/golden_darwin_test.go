@@ -3,11 +3,13 @@ package ui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	mu "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/golden"
 
 	"github.com/watzon/sayso/internal/config"
+	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/store"
 )
 
@@ -102,4 +104,27 @@ func TestGoldenHistoryTrail(t *testing.T) {
 	}
 	tt := mu.NewTester(view, 560, 360)
 	golden.Match(t, tt, "testdata/golden-history-trail-light.png", golden.Tolerance{Channel: 8, PerMille: 5})
+}
+
+// The dashed "+ Add word" slip at rest, and open as a well, with its whole
+// label, in English and in Portuguese, the longest translation.
+func TestGoldenDictionaryAddSlip(t *testing.T) {
+	for _, locale := range []string{"en", "pt-BR"} {
+		e := newEnv(t)
+		a := e.a
+		i18n.SetLocale(locale)
+		view := func(c *mu.Context) {
+			p := a.look(c)
+			mu.Row(c).Padding(20).Gap(8).Background(p.Sheet).Grow(1).AlignItems(mu.Center).Children(func() {
+				a.wordSlip(c, p, store.Word{ID: 1, Text: "Watzon"})
+				a.addWordSlip(c, p)
+			})
+		}
+		tt := mu.NewTester(view, 420, 72)
+		golden.Match(t, tt, "testdata/golden-dictionary-add-"+locale+".png", golden.Tolerance{Channel: 8, PerMille: 5})
+		a.dict.newWord = "Kubernetes"
+		tt.Frame()
+		tt.Advance(time.Second)
+		golden.Match(t, tt, "testdata/golden-dictionary-add-"+locale+"-open.png", golden.Tolerance{Channel: 8, PerMille: 5})
+	}
 }
