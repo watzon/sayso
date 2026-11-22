@@ -42,6 +42,8 @@ onboarding:
     no_key: "Keine Taste festgelegt"
     press_new_keys: "Drücke die neuen Tasten. Drücke Esc zum Beenden."
     no_conflict: "Keine andere App nutzt diese Tasten."
+    no_clash: "Keine andere Sayso-Aktion nutzt diese Tasten."
+    pressed_now: "Funktioniert. %{keys} ist gerade gedrückt."
     conflict: "Eine andere App nutzt diese Tasten. Siehe unten."
     set_a_key: "Lege eine Taste zum Starten und Stoppen des Diktats fest."
     change: "Ändern"

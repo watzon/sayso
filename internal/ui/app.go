@@ -209,8 +209,9 @@ type App struct {
 	asks  []*approvalAsk
 	flash string // a one-line notice under the page title
 
-	onbPracticeText string
-	snap            snapshot
+	snap snapshot
+	// detectAI finds the AI tools of onboarding; nil looks on this computer.
+	detectAI func(enhance.LanguageModel) detected
 	// onConfig hears each published config (on the main goroutine).
 	onConfig func(*config.Config)
 }
@@ -228,7 +229,7 @@ func New(d Deps) *App {
 	a.applyLocale()
 	a.set.name = derefOr(a.cfg.General.Name, "")
 	a.set.enginePath = derefOr(a.cfg.Advanced.EnginePath, "")
-	a.onb.step = int(a.cfg.Onboarding.Step)
+	a.onb.step = clampStep(int(a.cfg.Onboarding.Step))
 	a.news.load(a.d.ReleaseNotes, a.d.Version)
 	a.publish()
 	return a

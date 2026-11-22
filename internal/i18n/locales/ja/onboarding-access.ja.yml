@@ -42,6 +42,8 @@ onboarding:
     no_key: "キー未設定"
     press_new_keys: "新しいキーを押してください。中止するには Esc を押します。"
     no_conflict: "ほかのアプリはこのキーを使っていません。"
+    no_clash: "ほかの Sayso の操作はこのキーを使っていません。"
+    pressed_now: "動作しています。いま %{keys} が押されています。"
     conflict: "ほかのアプリがこのキーを使っています。下をご覧ください。"
     set_a_key: "音声入力を開始/停止するキーを設定してください。"
     change: "変更"

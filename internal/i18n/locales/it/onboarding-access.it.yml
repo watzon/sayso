@@ -42,6 +42,8 @@ onboarding:
     no_key: "Nessun tasto impostato"
     press_new_keys: "Premi i nuovi tasti. Premi Esc per fermarti."
     no_conflict: "Nessun'altra app usa questi tasti."
+    no_clash: "Nessun'altra azione di Sayso usa questi tasti."
+    pressed_now: "Funziona. %{keys} è premuto ora."
     conflict: "Un'altra app usa questi tasti. Vedi sotto."
     set_a_key: "Imposta un tasto per avviare e fermare la dettatura."
     change: "Cambia"

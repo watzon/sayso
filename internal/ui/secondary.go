@@ -8,7 +8,6 @@ import (
 	mu "github.com/egoist/mygo/ui"
 
 	"github.com/watzon/sayso/internal/bridge"
-	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/models"
 	"github.com/watzon/sayso/internal/theme"
@@ -21,12 +20,11 @@ import (
 
 // Secondary window sizes, in DIPs.
 const (
-	OnboardingW, OnboardingH = 720, 620
-	WhatsNewW, WhatsNewH     = 520, 600
-	UpdateW, UpdateH         = 460, 300
-	ApprovalW, ApprovalH     = 460, 420
-	PermissionsW             = 520
-	PermissionsH             = 440
+	WhatsNewW, WhatsNewH = 520, 600
+	UpdateW, UpdateH     = 460, 300
+	ApprovalW, ApprovalH = 460, 420
+	PermissionsW         = 520
+	PermissionsH         = 440
 )
 
 func (a *App) showWindow(w Window, show bool) {
@@ -43,33 +41,9 @@ func (a *App) secondaryFrame(c *mu.Context, fn func(p theme.Colors)) {
 	mu.Column(c).Fill().Padding(max(bar.Bottom, 0)+24, 28, 24, 28).Gap(14).Children(func() { fn(p) })
 }
 
-// ---- Onboarding ----
-
-// OnboardingSteps is the number of onboarding steps.
-const OnboardingSteps = 7
-
-type onboardingState struct {
-	step int
-}
-
-// NeedsOnboarding is true until the user finished onboarding.
-func (a *App) NeedsOnboarding() bool { return !a.cfg.Onboarding.Completed }
-
-// OnboardingStep is the step shown, from 0.
-func (a *App) OnboardingStep() int { return a.onb.step }
-
-func (a *App) setOnboardingStep(s int) {
-	a.onb.step = min(max(s, 0), OnboardingSteps-1)
-	a.cfg.Onboarding.Step = uint8(a.onb.step)
-	a.saveConfig()
-	a.invalidate()
-}
-
-// FinishOnboarding closes onboarding for good.
-func (a *App) FinishOnboarding() {
-	a.cfg.Onboarding.Completed = true
-	a.saveConfig()
-	// A new user has nothing to compare with: What's New waits for the next version.
+// finishSecondary ends onboarding: What's New waits for the next version (a
+// new user has nothing to compare with), the window closes and the hub opens.
+func (a *App) finishSecondary() {
 	if a.d.Paths.DataDir != "" {
 		if err := update.MarkWhatsNewSeen(a.d.Paths.StateFile()); err != nil {
 			log.Printf("whats new: %v", err)
@@ -80,162 +54,6 @@ func (a *App) FinishOnboarding() {
 		a.d.Shell.ShowHub()
 	}
 	a.invalidate()
-}
-
-// OnboardingView is the view of the onboarding window.
-func (a *App) OnboardingView(c *mu.Context) {
-	a.secondaryFrame(c, func(p theme.Colors) {
-		eyebrow(c, p, i18n.T("onboarding.step", "step", a.onb.step+1, "total", OnboardingSteps))
-		mu.Column(c).Grow(1).Gap(14).Children(func() {
-			switch a.onb.step {
-			case 0:
-				a.onbWelcome(c, p)
-			case 1:
-				a.permissionsBody(c, p, true)
-			case 2:
-				a.onbModel(c, p)
-			case 3:
-				a.onbHotkeys(c, p)
-			case 4:
-				a.onbAI(c, p)
-			case 5:
-				a.onbPractice(c, p)
-			default:
-				a.onbDone(c, p)
-			}
-		})
-		mu.Text(c, i18n.T("onboarding.footer.hint")).FontSize(12).TextColor(p.Pencil)
-		mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-			if a.onb.step > 0 && a.btn(c, p, "onboarding.back", i18n.T("onboarding.footer.back"), btnGhost) {
-				a.setOnboardingStep(a.onb.step - 1)
-			}
-			mu.Spacer(c)
-			last := a.onb.step == OnboardingSteps-1
-			if !last && a.btn(c, p, "onboarding.skip", i18n.T("onboarding.footer.skip"), btnGhost) {
-				a.setOnboardingStep(a.onb.step + 1)
-			}
-			next := i18n.T("onboarding.footer.continue")
-			switch {
-			case a.onb.step == 0:
-				next = i18n.T("onboarding.footer.get_started")
-			case last:
-				next = i18n.T("onboarding.footer.open_sayso")
-			}
-			if a.btn(c, p, "onboarding.next", next, btnPrimary) {
-				if last {
-					a.FinishOnboarding()
-				} else {
-					a.setOnboardingStep(a.onb.step + 1)
-				}
-			}
-		})
-	})
-}
-
-func (a *App) onbWelcome(c *mu.Context, p theme.Colors) {
-	heading(c, p, i18n.T("onboarding.welcome.title"), 34)
-	mu.Text(c, i18n.TOS("onboarding.welcome.lead", nil)).FontSize(14.5).TextColor(p.Graphite).LineHeight(1.45)
-	for _, f := range []string{i18n.TOS("onboarding.welcome.fact_engine", nil), i18n.T("onboarding.welcome.fact_every_app"), i18n.T("onboarding.welcome.fact_setup_time")} {
-		mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-			mu.Icon(c, icon("check")).FontSize(14).TextColor(p.Success)
-			mu.Text(c, f).FontSize(13.5).TextColor(p.Ink)
-		})
-	}
-	a.row(c, p, i18n.T("onboarding.welcome.interface_language"), "", func() { a.languageSelect(c, "onboarding.language") })
-}
-
-func (a *App) onbModel(c *mu.Context, p theme.Colors) {
-	heading(c, p, i18n.T("onboarding.model.title"), 30)
-	mu.Text(c, i18n.T("onboarding.model.lead")).FontSize(14).TextColor(p.Graphite)
-	if a.d.Engine == nil {
-		mu.Text(c, i18n.T("onboarding.model.no_engine")).FontSize(13).TextColor(p.Danger)
-	}
-	id := a.FinalModel()
-	m, _ := models.Find(id)
-	card(c, p).Children(func() {
-		mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-			mu.Text(c, m.Name).Font(theme.Display).FontSize(20).FontWeight(600).TextColor(p.Ink).Grow(1)
-			slip(c, p, i18n.T("onboarding.model.recommended"), p.Success)
-		})
-		if m.DescriptionKey != "" {
-			mu.Text(c, i18n.T(m.DescriptionKey)).FontSize(13).TextColor(p.Graphite)
-		}
-		st := a.modelStatus(id)
-		mu.Text(c, a.statusText(id)).FontSize(12.5).TextColor(p.Pencil)
-		if st.State == "downloading" {
-			mu.Progress(c, float64(st.Fraction)).Height(4)
-		}
-		if !st.IsOnDisk() && st.State != "downloading" && a.btn(c, p, "onboarding.download", i18n.T("onboarding.model.download_size", "size", models.FormatSize(m.SizeBytes)), btnPrimary) {
-			a.downloadModel(id)
-		}
-	})
-	if a.btn(c, p, "onboarding.all_models", i18n.T("onboarding.model.different_model"), btnGhost) {
-		a.SetPage(PageModels)
-		if a.d.Shell != nil {
-			a.d.Shell.ShowHub()
-		}
-	}
-}
-
-func (a *App) onbHotkeys(c *mu.Context, p theme.Colors) {
-	heading(c, p, i18n.T("onboarding.hotkeys.title"), 30)
-	mu.Text(c, i18n.T("onboarding.hotkeys.lead")).FontSize(14).TextColor(p.Graphite)
-	h := &a.cfg.Hotkeys
-	a.row(c, p, i18n.T("onboarding.hotkeys.start_stop"), i18n.T("settings.dictation.toggle_detail"), func() {
-		a.recorder(c, p, "onboarding.hotkey.toggle", i18n.T("onboarding.hotkeys.start_stop"), h.Toggle, func(n *config.Hotkey) {
-			h.Toggle = n
-			a.hotkeysChanged()
-		})
-	})
-	a.row(c, p, i18n.T("onboarding.hotkeys.push_to_talk"), i18n.T("onboarding.hotkeys.works_everywhere"), func() {
-		a.recorder(c, p, "onboarding.hotkey.push_to_talk", i18n.T("onboarding.hotkeys.push_to_talk"), h.PushToTalk, func(n *config.Hotkey) {
-			h.PushToTalk = n
-			a.hotkeysChanged()
-		})
-	})
-}
-
-func (a *App) onbAI(c *mu.Context, p theme.Colors) {
-	heading(c, p, i18n.T("onboarding.ai.title"), 30)
-	mu.Text(c, i18n.T("onboarding.ai.lead")).FontSize(14).TextColor(p.Graphite)
-	a.addProviderForm(c, p)
-}
-
-func (a *App) onbPractice(c *mu.Context, p theme.Colors) {
-	heading(c, p, i18n.T("onboarding.practice.title"), 30)
-	lead := i18n.T("onboarding.practice.lead_push")
-	if h := a.cfg.Hotkeys.Toggle; h != nil {
-		lead = i18n.T("onboarding.practice.lead_toggle", "keys", h.CompactLabel())
-	}
-	mu.Text(c, lead).FontSize(14).TextColor(p.Graphite)
-	card(c, p).Children(func() {
-		eyebrow(c, p, i18n.T("onboarding.practice.read_this"))
-		mu.Text(c, i18n.T("styles.featured.written")).Font(theme.Body).FontSize(15).TextColor(p.Ink)
-	})
-	mu.TextArea(a.k(c, "onboarding.practice"), &a.onbPracticeText).Label(i18n.T("onboarding.practice.field_label")).
-		Placeholder(i18n.T("onboarding.practice.placeholder")).Height(90)
-	if !a.engineRunning() {
-		mu.Text(c, i18n.T("onboarding.practice.not_ready_engine")).FontSize(12.5).TextColor(p.Danger)
-	}
-}
-
-func (a *App) onbDone(c *mu.Context, p theme.Colors) {
-	heading(c, p, i18n.T("onboarding.done.title"), 32)
-	lead := i18n.T("onboarding.done.lead_none")
-	if h := a.cfg.Hotkeys.Toggle; h != nil {
-		lead = i18n.T("onboarding.done.lead_toggle", "keys", h.CompactLabel())
-	}
-	mu.Text(c, lead).FontSize(14).TextColor(p.Graphite)
-	for _, t := range [][2]string{
-		{i18n.T("onboarding.done.pill_title"), i18n.T("onboarding.done.pill_body")},
-		{i18n.TOS("onboarding.done.menu_title", nil), i18n.T("onboarding.done.menu_body")},
-		{i18n.T("onboarding.done.paste_title"), i18n.T("onboarding.done.paste_body")},
-	} {
-		mu.Column(c).Gap(2).Children(func() {
-			mu.Text(c, t[0]).FontSize(14).FontWeight(600).TextColor(p.Ink)
-			mu.Text(c, t[1]).FontSize(13).TextColor(p.Graphite)
-		})
-	}
 }
 
 // ---- Permissions guide ----

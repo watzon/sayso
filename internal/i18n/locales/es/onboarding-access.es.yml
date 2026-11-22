@@ -42,6 +42,8 @@ onboarding:
     no_key: "Sin tecla definida"
     press_new_keys: "Pulsa las teclas nuevas. Pulsa Esc para parar."
     no_conflict: "Ninguna otra app usa estas teclas."
+    no_clash: "Ninguna otra acción de Sayso usa estas teclas."
+    pressed_now: "Funciona. %{keys} está pulsado ahora."
     conflict: "Otra app usa estas teclas. Mira abajo."
     set_a_key: "Define una tecla para iniciar y detener el dictado."
     change: "Cambiar"

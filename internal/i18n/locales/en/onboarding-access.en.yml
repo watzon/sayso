@@ -42,6 +42,8 @@ onboarding:
     no_key: "No key set"
     press_new_keys: "Press the new keys. Press Esc to stop."
     no_conflict: "No other app uses these keys."
+    no_clash: "No other Sayso action uses these keys."
+    pressed_now: "Works. %{keys} is pressed now."
     conflict: "Another app uses these keys. See below."
     set_a_key: "Set a key to start and stop dictation."
     change: "Change"

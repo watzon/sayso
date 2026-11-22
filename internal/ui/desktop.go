@@ -213,6 +213,9 @@ func (d *Desktop) ShowWindow(which Window, show bool) {
 	}
 	w.Show()
 	w.Focus()
+	if which == WinOnboarding {
+		d.a.enteredStep(d.a.onb.step)
+	}
 }
 
 func (d *Desktop) newWindow(which Window) *mygo.Window {
@@ -220,6 +223,10 @@ func (d *Desktop) newWindow(which Window) *mygo.Window {
 	switch which {
 	case WinOnboarding:
 		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("onboarding.welcome.title"), OnboardingW, OnboardingH, mu.View(d.a.OnboardingView)
+		// A fixed size, as the Rust window; the traffic lights sit in the
+		// sheet's 52 px top bar, as the Paper artboards place them.
+		opts.DisableResize, opts.DisableMinimize = true, false
+		opts.TrafficLightPosition = &mygo.Point{X: 28, Y: 30}
 	case WinPermissions:
 		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("settings.permissions.title"), PermissionsW, PermissionsH, mu.View(d.a.PermissionsView)
 	case WinWhatsNew:
@@ -236,6 +243,12 @@ func (d *Desktop) newWindow(which Window) *mygo.Window {
 	}
 	w := mygo.NewWindow(opts)
 	w.OnClose(func(e *mygo.CloseEvent) {
+		if which == WinOnboarding {
+			// The step stays saved; the microphone test and a key
+			// recording end with the window.
+			d.a.stopMeter()
+			d.a.cancelRecording()
+		}
 		if !d.quitting {
 			e.PreventDefault()
 			w.Hide()
