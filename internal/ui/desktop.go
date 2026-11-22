@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image/png"
 	"log"
+	"math"
 	"runtime"
 	"time"
 
@@ -24,9 +25,14 @@ type Desktop struct {
 	wins     map[Window]*mygo.Window
 	tray     *mygo.Tray
 	quitting bool
+	// region is the overlay's card, the part of its window that takes the mouse.
+	region mu.Rect
 }
 
-var _ Shell = (*Desktop)(nil)
+var (
+	_ Shell        = (*Desktop)(nil)
+	_ overlayInput = (*Desktop)(nil)
+)
 
 // NewDesktop makes the shell of a and makes it a's shell. Call Start from
 // mygo.App.WhenReady.
@@ -77,14 +83,7 @@ func (d *Desktop) Start(showHub bool) {
 	}
 }
 
-func (d *Desktop) overlaySize() (int, int) {
-	s := d.a.cfg.Overlay.Size.Scale()
-	w, h := PillWindowW, PillWindowH
-	if d.a.cfg.Overlay.Style == config.OverlayNotch {
-		w, h = NotchWindowW, NotchWindowH
-	}
-	return int(float32(w) * s), int(float32(h) * s)
-}
+func (d *Desktop) overlaySize() (int, int) { return OverlayWindowSize(d.a.cfg.Overlay) }
 
 func (d *Desktop) newOverlay() *mygo.Window {
 	w, h := d.overlaySize()
@@ -117,8 +116,11 @@ func (d *Desktop) placeOverlay() {
 		b := disp.Bounds
 		d.overlay.SetPosition(b.X+(b.Width-w)/2, b.Y)
 	} else {
+		// The card's bottom edge is overlayMargin inside the window, and
+		// sits that far above the bottom of the work area (Rust placement
+		// DEFAULT_BOTTOM).
 		wa := disp.WorkArea
-		d.overlay.SetPosition(wa.X+(wa.Width-w)/2, wa.Y+wa.Height-h-16)
+		d.overlay.SetPosition(wa.X+(wa.Width-w)/2, wa.Y+wa.Height-h)
 	}
 	d.notePillHalf()
 }
@@ -168,7 +170,29 @@ func (d *Desktop) ShowOverlay(show bool) {
 		d.placeOverlay()
 	}
 	d.overlay.SetIgnoreMouseEvents(d.a.OverlayClickThrough())
+	d.applyInputRegion()
 	d.overlay.ShowInactive()
+}
+
+// SetOverlayInputRegion makes only r, the visible card, take the mouse:
+// the rest of the overlay window lets it through to what is under it.
+func (d *Desktop) SetOverlayInputRegion(r mu.Rect) {
+	d.region = r
+	d.applyInputRegion()
+}
+
+func (d *Desktop) applyInputRegion() {
+	if d.overlay == nil {
+		return
+	}
+	r := d.region
+	if r.W <= 0 || r.H <= 0 {
+		d.overlay.SetInputRegion([]mygo.Rectangle{})
+		return
+	}
+	x0, y0 := int(math.Floor(float64(r.X))), int(math.Floor(float64(r.Y)))
+	x1, y1 := int(math.Ceil(float64(r.X+r.W))), int(math.Ceil(float64(r.Y+r.H)))
+	d.overlay.SetInputRegion([]mygo.Rectangle{{X: x0, Y: y0, Width: x1 - x0, Height: y1 - y0}})
 }
 
 // ShowWindow shows or hides a secondary window, making it on first use.
