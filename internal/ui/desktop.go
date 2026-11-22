@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"bytes"
-	"image/png"
 	"log"
 	"math"
 	"runtime"
@@ -277,7 +275,7 @@ func (d *Desktop) newTray() {
 		{Label: i18n.T("tray.quit"), Accelerator: "CmdOrCtrl+Q", Click: click(d.Quit)},
 	})
 	var err error
-	d.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "sayso", Icon: trayIcon(), IconIsTemplate: runtime.GOOS == "darwin", ToolTip: "Sayso"})
+	d.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "sayso", Icon: trayIcon(d.a.incognito), IconIsTemplate: trayTemplate, ToolTip: "Sayso"})
 	if err != nil {
 		log.Printf("tray: %v", err)
 		return
@@ -297,18 +295,14 @@ func (d *Desktop) newTray() {
 	})
 }
 
-// trayIcon draws the wordmark icon as a PNG.
-func trayIcon() []byte {
-	img := mu.Render(func(c *mu.Context) {
-		mu.Box(c).Fill().Justify(mu.Center).AlignItems(mu.Center).Children(func() {
-			mu.Icon(c, icon("wordmark")).FontSize(16).TextColor(mu.RGB(0, 0, 0))
-		})
-	}, 18, 18, 2)
-	var b bytes.Buffer
-	if err := png.Encode(&b, img); err != nil {
-		return nil
+// SetTrayIncognito dims the tray icon while incognito is on.
+func (d *Desktop) SetTrayIncognito(on bool) {
+	if d.tray == nil {
+		return
 	}
-	return b.Bytes()
+	if err := d.tray.SetIcon(trayIcon(on), trayTemplate); err != nil {
+		log.Printf("tray: %v", err)
+	}
 }
 
 // SetThemeMode sets the appearance of the native chrome.

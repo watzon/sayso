@@ -285,6 +285,9 @@ func (a *App) invalidate() {
 	}
 }
 
+// trayIncognito is a shell whose tray icon dims while incognito is on.
+type trayIncognito interface{ SetTrayIncognito(on bool) }
+
 // overlayInvalidator is a shell that can redraw the overlay alone.
 type overlayInvalidator interface{ InvalidateOverlay() }
 
@@ -444,6 +447,9 @@ func (a *App) Incognito() bool { return a.incognito }
 func (a *App) SetIncognito(on bool) {
 	a.incognito = on
 	a.publish()
+	if t, ok := a.d.Shell.(trayIncognito); ok {
+		t.SetTrayIncognito(on)
+	}
 	if on {
 		a.showNotice(i18n.T("overlay.notice.incognito_on"))
 	} else {
