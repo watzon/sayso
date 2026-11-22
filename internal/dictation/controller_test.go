@@ -398,7 +398,7 @@ type preparing struct {
 	got chan config.Provider
 }
 
-func (p preparing) Prepare(provider config.Provider) { p.got <- provider }
+func (p preparing) Prepare(_ *enhance.Style, provider config.Provider) { p.got <- provider }
 
 // A provider that runs a program starts it while the user speaks, and gets
 // the CLI timeout.
@@ -428,6 +428,31 @@ func TestAClaudeProviderIsPreparedWhenTheMicrophoneOpens(t *testing.T) {
 		t.Fatal(got)
 	}
 	var _ Preparer = &DefaultStyler{}
+}
+
+type preloadCleaner struct{ got chan string }
+
+func (preloadCleaner) Clean(enhance.CleanupRequest) (enhance.CleanupResponse, error) {
+	return enhance.CleanupResponse{}, nil
+}
+func (p preloadCleaner) Preload(model string) { p.got <- model }
+
+// A cleanup model loads while the microphone records, unless the style runs nothing on it.
+func TestDefaultStylerPreloadsTheCleanupModel(t *testing.T) {
+	lib := enhance.LoadStyles(t.TempDir())
+	clean, _ := lib.Get("clean")
+	raw, _ := lib.Get("raw")
+	model := "s1-mini"
+	p := config.Provider{ID: "c", Kind: config.KindCleanupModel, Model: &model}
+	c := preloadCleaner{got: make(chan string, 2)}
+	d := &DefaultStyler{Cleaner: c}
+	d.Prepare(raw, p)
+	d.Prepare(clean, p)
+	d.Prepare(clean, config.Provider{ID: "o", Kind: config.KindOpenAICompatible})
+	if len(c.got) != 1 || <-c.got != "s1-mini" {
+		t.Fatal("preload")
+	}
+	(&DefaultStyler{}).Prepare(clean, p) // no cleaner: nothing
 }
 
 func TestWhatADictationNeeds(t *testing.T) {

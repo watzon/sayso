@@ -125,10 +125,10 @@ type Styler interface {
 	Run(job StyleJob) enhance.PipelineOutput
 }
 
-// Preparer is a Styler that can start a provider's program while the user
-// speaks (a spare claude process). Prepare returns at once.
+// Preparer is a Styler that can get a provider ready while the user speaks:
+// a spare claude process, or the cleanup model loaded. Prepare returns at once.
 type Preparer interface {
-	Prepare(provider config.Provider)
+	Prepare(style *enhance.Style, provider config.Provider)
 }
 
 // Observer hears what the overlay shows. Calls come from the controller
@@ -631,8 +631,9 @@ func (c *Controller) startCapture(id SessionID) {
 	if recording {
 		c.startPreview(id, true)
 		if p, ok := c.d.Styler.(Preparer); ok {
-			if provider, ok := c.providerFor(c.sessionStyle(id)); ok {
-				go p.Prepare(provider)
+			style := c.sessionStyle(id)
+			if provider, ok := c.providerFor(style); ok {
+				go p.Prepare(style, provider)
 			}
 		}
 	}
@@ -1220,8 +1221,25 @@ func StyleTimeout(ai config.AI, p config.Provider) time.Duration {
 	return time.Duration(ai.CLITimeoutMs) * time.Millisecond
 }
 
-// Prepare starts a spare process for a provider that runs a program.
-func (d *DefaultStyler) Prepare(provider config.Provider) { enhance.Prepare(provider) }
+// Preloader is a Cleaner that can load a cleanup model ahead.
+type Preloader interface {
+	Preload(model string)
+}
+
+// Prepare starts a spare process for a provider that runs a program, and
+// loads the cleanup model of a cleanup provider while the microphone records
+// (a hint: the style can still change, and the style step then loads the
+// right model).
+func (d *DefaultStyler) Prepare(style *enhance.Style, provider config.Provider) {
+	switch provider.Kind {
+	case config.KindClaudeCLI:
+		enhance.Prepare(provider)
+	case config.KindCleanupModel:
+		if pl, ok := d.Cleaner.(Preloader); ok && provider.Model != nil && style != nil && style.RunPlanOn(provider).Kind != enhance.PlanNothing {
+			pl.Preload(*provider.Model)
+		}
+	}
+}
 
 // Run runs one style step.
 func (d *DefaultStyler) Run(job StyleJob) enhance.PipelineOutput {

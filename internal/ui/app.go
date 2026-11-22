@@ -211,6 +211,8 @@ type App struct {
 
 	onbPracticeText string
 	snap            snapshot
+	// onConfig hears each published config (on the main goroutine).
+	onConfig func(*config.Config)
 }
 
 // New builds the model.
@@ -244,6 +246,10 @@ func (a *App) SetHost(h *bridge.Host) { a.d.Host = h }
 
 // SetStyler sets what History's Enhance runs.
 func (a *App) SetStyler(s dictation.Styler) { a.d.Styler = s }
+
+// OnConfig sets what hears each config the app publishes (on the main
+// goroutine, after every change). It must not block.
+func (a *App) OnConfig(fn func(*config.Config)) { a.onConfig = fn }
 
 // SetUpdater sets the updater.
 func (a *App) SetUpdater(u Updater) { a.d.Updater = u }

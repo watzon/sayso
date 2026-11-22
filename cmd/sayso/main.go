@@ -199,6 +199,16 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 		}
 	}
 
+	// The style step: the engine's language model and the cleanup runtime,
+	// which starts at its first use.
+	var lm enhance.LanguageModel
+	if speech != nil {
+		lm = speech.LanguageModel()
+	}
+	cleanupRuntime := engine.NewCleanupClient("")
+	a.OnConfig(cleanupSwitch(cleanupRuntime, a.ControllerConfig()))
+	styler := newStyler(secrets, a.ControllerConfig, lm, cleanupRuntime, p.ModelsDir())
+
 	// The dictation controller.
 	deps := dictation.Deps{
 		Secrets: secrets, Config: a.ControllerConfig, Styles: a.ControllerStyles, Replacer: a.ControllerReplacer,
@@ -206,6 +216,7 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 		SoundData: func(cue platform.SoundCue) []byte { return theme.SoundWAV(string(cue)) },
 		System:    systemInfo,
 		StyleName: func(s *enhance.Style) string { return s.Name },
+		Styler:    styler,
 	}
 	if plat != nil {
 		deps.Platform = *plat
@@ -221,7 +232,7 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 	}
 	ctl = dictation.New(deps)
 	a.SetDictation(ctl)
-	a.SetStyler(&dictation.DefaultStyler{Secrets: secrets, Config: a.ControllerConfig})
+	a.SetStyler(styler)
 
 	// Global hotkeys.
 	if plat != nil && plat.Hotkeys != nil {
@@ -266,6 +277,7 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		ctl.Close()
 		enhance.StopSpares()
+		cleanupRuntime.Stop()
 		if plat != nil && plat.Hotkeys != nil {
 			plat.Hotkeys.Stop()
 		}

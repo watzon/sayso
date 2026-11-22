@@ -143,6 +143,9 @@ func (a *App) publish() {
 	a.snap.mu.Lock()
 	a.snap.cfg, a.snap.styles, a.snap.replacer, a.snap.vocab, a.snap.incognito = &cfg, a.styles, r, vocab, a.incognito
 	a.snap.mu.Unlock()
+	if a.onConfig != nil {
+		a.onConfig(&cfg)
+	}
 }
 
 // ControllerConfig is the config for the controller (any goroutine).
