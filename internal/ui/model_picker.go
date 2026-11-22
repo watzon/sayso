@@ -97,6 +97,8 @@ type pickReq struct {
 	small bool
 	// a11y names the trigger; "" is "Model: <label>".
 	a11y string
+	// load fetches the list as the sheet opens; nil fetches provider's.
+	load func()
 	// pick gets the chosen id, or "" for the extra row.
 	pick func(id string)
 }
@@ -109,11 +111,14 @@ func (a *App) list(key string) *modelList {
 // loadModels fetches the models of pr into key. Without force a list that
 // is loading or loaded stays as it is (model.rs load_models).
 func (a *App) loadModels(key string, pr config.Provider, secrets providers.SecretStore, force bool) {
-	if pr.Kind == config.KindCleanupModel {
-		return // the catalog fixes its model: no list
-	}
 	if a.pick.lists == nil {
 		a.pick.lists = map[string]*modelList{}
+	}
+	if pr.Kind == config.KindCleanupModel {
+		// The catalog fixes its model: an empty list, never a fetch that
+		// shows Loading forever.
+		a.pick.lists[key] = &modelList{phase: listReady, models: []enhance.ModelChoice{}}
+		return
 	}
 	if l := a.pick.lists[key]; l != nil && (l.phase == listLoading || (l.phase == listReady && !force)) {
 		return
@@ -280,13 +285,16 @@ func (a *App) pickerRows(r pickReq) (rows []pickerRow, count int) {
 		rows = append(rows, pickerRow{key: "model_picker.extra", name: r.extra, on: r.extraOn})
 	}
 	l := a.list(r.listKey)
-	if l == nil || l.phase != listReady {
+	if l == nil || l.phase == listLoading {
 		return rows, count
 	}
-	count = len(l.models)
+	var models []enhance.ModelChoice
+	if l.phase == listReady {
+		models, count = l.models, len(l.models)
+	}
 	query := strings.ToLower(strings.TrimSpace(a.pick.filter))
 	exact := false
-	for _, m := range l.models {
+	for _, m := range models {
 		if query != "" && !strings.Contains(strings.ToLower(m.Name), query) && !strings.Contains(strings.ToLower(m.ID), query) {
 			continue
 		}
@@ -302,7 +310,8 @@ func (a *App) pickerRows(r pickReq) (rows []pickerRow, count int) {
 		rows = append(rows, row)
 	}
 	// A server that does not list a model can still run it: the typed text
-	// is a choice of its own when no listed id matches it exactly.
+	// is a choice of its own when no listed id matches it exactly, also when
+	// the list failed or is empty.
 	if typed := strings.TrimSpace(a.pick.filter); typed != "" && !exact && r.provider.Kind == config.KindOpenAICompatible {
 		rows = append(rows, pickerRow{key: "model_picker.custom", id: typed, name: i18n.T("model_picker.use_typed", "model", typed)})
 	}
@@ -316,7 +325,11 @@ func (a *App) openPicker(r pickReq) {
 		return
 	}
 	a.pick.open, a.pick.filter, a.pick.reveal = r.key, "", true
-	a.loadModels(r.listKey, r.provider, r.secrets, false)
+	if r.load != nil {
+		r.load()
+	} else {
+		a.loadModels(r.listKey, r.provider, r.secrets, false)
+	}
 	a.pick.hl = 0
 	rows, _ := a.pickerRows(r)
 	for i, row := range rows {

@@ -694,6 +694,8 @@ func (a *App) cloudModel(c *mu.Context, p theme.Colors) {
 		a.modelPicker(c, p, pickReq{
 			key: "onboarding.ai.model", listKey: onbCloudList, provider: draft, secrets: secrets,
 			label: label, chosen: f.model != "", selected: f.model, field: true, small: true,
+			// The form's URL and key decide the list: one fetch for them.
+			load: func() { a.loadCloudModels(false) },
 			a11y: i18n.T("onboarding.ai.model_button", "name", i18n.T("onboarding.ai.model"), "value", label),
 			pick: func(id string) {
 				if id != "" {

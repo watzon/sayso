@@ -541,3 +541,92 @@ func TestModelPickerShots(t *testing.T) {
 		save(tt, "styles-"+mode+".png")
 	}
 }
+
+// A server whose model list fails, or lists nothing, still takes a typed
+// model: the Use row shows under the error, and Enter saves it.
+func TestModelPickerTypedModelWhenTheListFails(t *testing.T) {
+	for _, fail := range []bool{true, false} {
+		e, f := serverEnv(t)
+		if fail {
+			f.errs = map[string]error{"my-server": errors.New("HTTP 404: no /models")}
+		} else {
+			f.lists["my-server"] = []enhance.ModelChoice{}
+		}
+		tt := e.hub(t)
+		tt.Frame()
+		press(t, tt, trigger(i18n.T("settings.providers.choose_model")))
+		tt.Frame()
+		state := i18n.T("model_picker.no_models")
+		if fail {
+			state = i18n.T("model_picker.load_failed", "error", "HTTP 404: no /models")
+		}
+		if !tt.HasText(state) {
+			t.Fatalf("fail %v: no state: %q", fail, tt.Texts())
+		}
+		tt.Type("my-model")
+		tt.Frame()
+		if !hasOption(tt, i18n.T("model_picker.use_typed", "model", "my-model")) || !tt.HasText(state) {
+			t.Fatalf("fail %v: no Use row: %q", fail, tt.Texts())
+		}
+		tt.Key(0, mu.KeyEnter)
+		tt.Frame()
+		if pr := provider(e, "my-server"); pr.ModelName() != "my-model" || e.a.pick.open != "" {
+			t.Fatalf("fail %v: model %q open %q", fail, pr.ModelName(), e.a.pick.open)
+		}
+	}
+}
+
+// A cleanup model has no list: its list is empty at once, never Loading,
+// and the style editor has no Model field for it (styles.rs).
+func TestCleanupProviderHasNoModelPicker(t *testing.T) {
+	e := newEnv(t)
+	f := withLister(e, &fakeLister{})
+	cleanup := config.Provider{ID: "cleanup", Name: "Cleanup 1", Kind: config.KindCleanupModel, Model: ptr("sayso-cleanup-1")}
+	e.a.cfg.AI.Providers = []config.Provider{cleanup}
+	e.a.cfg.AI.DefaultProvider = ptr("cleanup")
+	e.a.loadModels("cleanup", cleanup, nil, false)
+	if l := e.a.list("cleanup"); l == nil || l.phase != listReady || len(l.models) != 0 || f.count() != 0 {
+		t.Fatalf("list %+v, fetches %d", l, f.count())
+	}
+	e.a.SetPage(PageStyles)
+	tt := mu.NewTester(e.a.HubView, HubWidth, 1800)
+	press(t, tt, i18n.T("styles.new_style"))
+	tt.Frame()
+	if e.a.keys["styles.editor.model"] || tt.HasText(i18n.T("model_picker.loading")) {
+		t.Fatalf("a cleanup model has a Model field: %q", tt.Texts())
+	}
+	// Another provider brings it back.
+	e.a.cfg.AI.Providers = append(e.a.cfg.AI.Providers, config.Provider{ID: "claude-code", Name: "Claude Code", Kind: config.KindClaudeCLI, Model: ptr("sonnet")})
+	e.a.sty.draft.provider = "claude-code"
+	tt.Frame()
+	if !e.a.keys["styles.editor.model"] {
+		t.Fatal("no Model field for the Claude CLI")
+	}
+}
+
+// The onboarding cloud form's picker fetches its list once as it opens.
+func TestOnboardingCloudPickerFetchesOnce(t *testing.T) {
+	e := newEnv(t)
+	f := withLister(e, &fakeLister{lists: map[string][]enhance.ModelChoice{onbCloudList: {{ID: "openai/gpt-5-mini", Name: "GPT-5 Mini"}}}})
+	e.a.goToStep(stepAI)
+	tt := onboardingTester(e)
+	tt.Frame()
+	press(t, tt, i18n.T("onboarding.ai.cloud_api"))
+	tt.Frame()
+	e.a.onb.ai.key = "sk-test"
+	tt.Frame()
+	pressPrefix(t, tt, i18n.T("onboarding.ai.model_button", "name", i18n.T("onboarding.ai.model"), "value", i18n.T("onboarding.ai.choose_model")))
+	for range 3 {
+		tt.Frame()
+	}
+	if f.count() != 1 || !hasOption(tt, "GPT-5 Mini") {
+		t.Fatalf("fetched %d times: %q", f.count(), tt.Texts())
+	}
+	// A new key is another list: one more fetch.
+	e.a.onb.ai.key = "sk-other"
+	tt.Frame()
+	tt.Frame()
+	if f.count() != 2 {
+		t.Fatalf("fetched %d times after a new key", f.count())
+	}
+}

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/watzon/sayso/internal/config"
+	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/providers"
 )
 
@@ -66,7 +67,7 @@ func ListProviderModels(p config.Provider, secrets providers.SecretStore, engine
 		if err != nil {
 			return nil, err
 		}
-		return []ModelChoice{choice(name, "", "")}, nil
+		return []ModelChoice{choice(name, "", i18n.T("enhance.runs_on_this_mac"))}, nil
 	case config.KindCleanupModel:
 		return []ModelChoice{}, nil
 	case config.KindACP:

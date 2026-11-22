@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/watzon/sayso/internal/config"
+	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/providers"
 )
 
@@ -236,7 +237,8 @@ func (f fakeLanguageModel) Generate(string, string, *float32, time.Duration) (Ge
 func TestListProviderModelsOtherKinds(t *testing.T) {
 	apple := config.Provider{ID: "apple", Kind: config.KindAppleIntelligence}
 	models, err := ListProviderModels(apple, nil, fakeLanguageModel{name: "AFM 3 Core"}, time.Second)
-	if err != nil || len(models) != 1 || models[0].ID != "AFM 3 Core" || models[0].Name != "AFM 3 Core" {
+	if err != nil || len(models) != 1 || models[0].ID != "AFM 3 Core" || models[0].Name != "AFM 3 Core" ||
+		models[0].Description == nil || *models[0].Description != i18n.T("enhance.runs_on_this_mac") {
 		t.Fatal(models, err)
 	}
 	if _, err := ListProviderModels(apple, nil, nil, time.Second); !IsKind(err, ErrNotConfigured) {

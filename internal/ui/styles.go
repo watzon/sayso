@@ -463,7 +463,10 @@ func (a *App) styleEditor(c *mu.Context, p theme.Colors) {
 	})
 	mu.Row(c).Gap(12).AlignItems(mu.Start).Children(func() {
 		mu.Column(c).Grow(1).Basis(0).Children(func() {
-			a.labelled(c, p, i18n.T("styles.editor.model"), func() { a.styleModelPicker(c, p, d) })
+			// A cleanup model has one fixed model: no Model field (styles.rs).
+			if target, ok := a.styleTarget(d); !ok || target.Kind != config.KindCleanupModel {
+				a.labelled(c, p, i18n.T("styles.editor.model"), func() { a.styleModelPicker(c, p, d) })
+			}
 		})
 		mu.Column(c).Width(150).Shrink(0).Children(func() {
 			a.labelled(c, p, i18n.T("styles.editor.timeout"), func() {
