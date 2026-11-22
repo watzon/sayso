@@ -1250,8 +1250,10 @@ func (e *Engine) serveLine(line string, streams chan<- *Request) bool {
 	case "shutdown":
 		e.out.OK(r.ID, nil)
 		return true
-	case "unload":
-		// In arrival order: a load that follows must not find the model.
+	case "hello", "unload":
+		// hello replies immediately so piped one-shot checks don't exit on EOF
+		// before the reply writes; unload runs in arrival order so a load that
+		// follows does not find the model.
 		e.handle(r)
 	default:
 		go e.handle(r)

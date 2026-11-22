@@ -1,6 +1,7 @@
 package localengine
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -720,5 +721,21 @@ func TestAFailedDownloadReportsFailedOnceAndLeavesNothingComplete(t *testing.T) 
 	}
 	if r := h.call(obj{"v": 1, "type": "load", "id": "o1", "model": "m", "engine": engine}); r[0]["message"] != "model m is not downloaded" {
 		t.Fatalf("%v", r)
+	}
+}
+
+func TestHelloRepliesBeforeImmediateEOF(t *testing.T) {
+	var buf bytes.Buffer
+	c, err := configFromEnv(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := newEngine(c, NewOutput(&buf), &fakeLoader{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.serve(strings.NewReader(`{"v":1,"id":"1","type":"hello"}` + "\n"))
+	if !strings.Contains(buf.String(), `"type":"hello"`) {
+		t.Fatalf("expected hello reply before EOF, got %q", buf.String())
 	}
 }
