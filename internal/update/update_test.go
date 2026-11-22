@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -263,8 +264,11 @@ func TestInstallLock(t *testing.T) {
 	}
 	rel()
 	b, _, _ := SharedLock(path)
-	if _, ok := a.TryExclusive(); ok && os.PathSeparator == '/' {
-		t.Fatal("another holder")
+	if rel, ok := a.TryExclusive(); ok {
+		if os.PathSeparator == '/' {
+			t.Fatal("another holder")
+		}
+		rel()
 	}
 	b.Close()
 	if rel, ok := a.TryExclusive(); !ok {
@@ -447,6 +451,9 @@ func TestUpdaterCheckDownloadStage(t *testing.T) {
 }
 
 func TestPackageOf(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("package detection is for Linux")
+	}
 	cases := []struct {
 		exe     string
 		flatpak bool

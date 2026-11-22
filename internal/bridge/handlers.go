@@ -587,9 +587,18 @@ func noSpeechEngine() Reply {
 	return ReplyError(CodeUnsupported, "the speech engine of Sayso does not run")
 }
 
+// noLive is the reply when the engine runs and this build has no live
+// sessions.
+func noLive(s *shared) Reply {
+	if s.engine == nil {
+		return noSpeechEngine()
+	}
+	return ReplyError(CodeUnsupported, "this version of Sayso cannot run live sessions yet")
+}
+
 func sessionStart(s *shared, connection uint64, appID string, pid *uint32, req *SessionStart, r *responder) {
 	if s.engine == nil || s.live == nil {
-		r.reply(noSpeechEngine())
+		r.reply(noLive(s))
 		return
 	}
 	spec, refusal := ResolveSession(req, choicesOf(s.services.Config()), viewOf(s.engine))
@@ -617,7 +626,7 @@ func sessionStart(s *shared, connection uint64, appID string, pid *uint32, req *
 
 func sessionAudio(s *shared, connection uint64, req *SessionAudio, r *responder) {
 	if s.live == nil {
-		r.reply(noSpeechEngine())
+		r.reply(noLive(s))
 		return
 	}
 	if err := s.live.Audio(connection, req.Session, req.PCM); err != nil {
@@ -633,7 +642,7 @@ func sessionAudio(s *shared, connection uint64, req *SessionAudio, r *responder)
 
 func sessionStop(s *shared, connection uint64, req *SessionStop, r *responder) {
 	if s.live == nil {
-		r.reply(noSpeechEngine())
+		r.reply(noLive(s))
 		return
 	}
 	text, err := s.live.Stop(connection, req.Session)
