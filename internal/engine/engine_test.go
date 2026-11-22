@@ -143,6 +143,9 @@ func fakeCleanup() {
 			}
 			reply(out, &mu, hello)
 		case "load":
+			if req["model_id"] == "hang" {
+				time.Sleep(time.Hour)
+			}
 			loaded = req["model_id"].(string)
 			reply(out, &mu, map[string]any{"id": id, "type": "loaded", "model_id": loaded, "load_ms": 3})
 		case "count":

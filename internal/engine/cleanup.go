@@ -316,7 +316,9 @@ func (c *CleanupClient) Unblock(model string) {
 	delete(c.blocked, model)
 }
 
-func (c *CleanupClient) start() (*cleanupProcess, error) {
+// start starts the process and waits for its hello; it kills the process when
+// ctx ends first.
+func (c *CleanupClient) start(ctx context.Context) (*cleanupProcess, error) {
 	cmd := exec.Command(c.path)
 	// Not the folder of the app: llama.cpp looks for ggml backends in the
 	// working folder too.
@@ -354,7 +356,7 @@ func (c *CleanupClient) start() (*cleanupProcess, error) {
 		}
 	}()
 	c.proc = p
-	reply, err := c.requestLocked(context.Background(), "hello", nil, cleanupShortLimit)
+	reply, err := c.requestLocked(ctx, "hello", nil, cleanupShortLimit)
 	if err != nil {
 		c.killLocked()
 		return nil, err
@@ -439,15 +441,17 @@ func (c *CleanupClient) armIdle() {
 func (c *CleanupClient) EnsureLoaded(model, path string, nCtx uint32) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.ensureLoadedLocked(model, path, nCtx)
+	return c.ensureLoadedLocked(context.Background(), model, path, nCtx)
 }
 
-func (c *CleanupClient) ensureLoadedLocked(model, path string, nCtx uint32) error {
+// ensureLoadedLocked starts the process and loads the model; when ctx ends
+// first, it kills the process (a cold load can take seconds).
+func (c *CleanupClient) ensureLoadedLocked(ctx context.Context, model, path string, nCtx uint32) error {
 	if !c.enabled || c.blocked[model] {
 		return ErrCleanupDisabled
 	}
 	if c.proc == nil {
-		p, err := c.start()
+		p, err := c.start(ctx)
 		if err != nil {
 			return err
 		}
@@ -460,7 +464,7 @@ func (c *CleanupClient) ensureLoadedLocked(model, path string, nCtx uint32) erro
 	if c.proc.model == model {
 		return nil
 	}
-	if _, err := c.requestLocked(context.Background(), "load", map[string]any{"model_id": model, "path": path, "n_ctx": nCtx}, CleanupLoadLimit); err != nil {
+	if _, err := c.requestLocked(ctx, "load", map[string]any{"model_id": model, "path": path, "n_ctx": nCtx}, CleanupLoadLimit); err != nil {
 		return err
 	}
 	c.proc.model = model
@@ -491,7 +495,7 @@ func (c *CleanupClient) WithContext(ctx context.Context, model, path string, nCt
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("%w: %v", ErrCleanupCancelled, err)
 	}
-	if err := c.ensureLoadedLocked(model, path, nCtx); err != nil {
+	if err := c.ensureLoadedLocked(ctx, model, path, nCtx); err != nil {
 		return err
 	}
 	defer c.armIdle()
@@ -507,7 +511,7 @@ func (s *CleanupSession) retry(typ string, fields map[string]any, limit time.Dur
 		if s.c.proc != nil {
 			s.c.proc.model = ""
 		}
-		if err := s.c.ensureLoadedLocked(s.model, s.path, s.nCtx); err != nil {
+		if err := s.c.ensureLoadedLocked(s.ctx, s.model, s.path, s.nCtx); err != nil {
 			return nil, err
 		}
 		return s.c.requestLocked(s.ctx, typ, fields, limit)

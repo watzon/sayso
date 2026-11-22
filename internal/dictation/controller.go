@@ -118,6 +118,9 @@ type StyleJob struct {
 	SpeechModel  models.ModelID
 	Vocabulary   []string
 	BasePrompt   string
+	// Context ends when the dictation is cancelled; a local cleanup model
+	// stops then. nil means none.
+	Context context.Context
 }
 
 // Styler runs a style step. It blocks.
@@ -189,6 +192,7 @@ type session struct {
 	insert       *store.InsertOutcome
 	incognito    bool
 	diagnostics  store.Diagnostics
+	cancelStyle  context.CancelFunc // ends the context of a running style step
 }
 
 // Controller runs dictations.
@@ -516,6 +520,9 @@ func (c *Controller) run(fx Effect) {
 	case FxDiscard:
 		if s, ok := c.sessions[fx.Session]; ok {
 			delete(c.sessions, fx.Session)
+			if s.cancelStyle != nil {
+				s.cancelStyle()
+			}
 			c.stopMic(s)
 			if s.streaming.Load() && c.d.Engine != nil {
 				c.d.Engine.EndStream(fx.Session)
@@ -956,9 +963,12 @@ func (c *Controller) applyStyle(id SessionID, text string) {
 	if lib := c.styles(); lib != nil {
 		job.BasePrompt = lib.BasePrompt()
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	job.Context, s.cancelStyle = ctx, cancel
 	styler := c.d.Styler
 	go func() {
 		out := styler.Run(job)
+		cancel()
 		c.do(func() {
 			s := c.session(id)
 			e := out.Enhance
@@ -1257,7 +1267,7 @@ func (d *DefaultStyler) Run(job StyleJob) enhance.PipelineOutput {
 			if m, ok := models.FindWith(cfg.Speech.Catalog(), job.SpeechModel); ok {
 				langs = m.Languages
 			}
-			p.Cleaner = &enhance.CleanerRun{Cleaner: d.Cleaner, ProviderID: job.Provider.ID, Model: info, Plan: job.Style.RunPlanOn(job.Provider), LanguageSetting: job.Language, FinalModelLanguages: langs, App: job.App, Site: job.Site}
+			p.Cleaner = &enhance.CleanerRun{Cleaner: d.Cleaner, ProviderID: job.Provider.ID, Model: info, Plan: job.Style.RunPlanOn(job.Provider), LanguageSetting: job.Language, FinalModelLanguages: langs, App: job.App, Site: job.Site, Context: job.Context}
 		}
 	}
 	if p.Cleaner == nil {

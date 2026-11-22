@@ -98,6 +98,22 @@ func TestCleanupContextCancelKillsTheRequest(t *testing.T) {
 	}
 }
 
+// A cold load (Metal compiles its shaders for seconds) ends with the context
+// too: the process is killed, as on a timeout.
+func TestCleanupContextCancelKillsALoad(t *testing.T) {
+	c, marker := fakeCleanupClient(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(100*time.Millisecond, cancel)
+	started := time.Now()
+	err := c.WithContext(ctx, "hang", "/m.gguf", 2048, func(*CleanupSession) error { return nil })
+	if !errors.Is(err, ErrCleanupCancelled) || time.Since(started) > 3*time.Second {
+		t.Fatal(err, time.Since(started))
+	}
+	if c.IsRunning() || gracefulExits(marker) != 0 {
+		t.Fatal("a cancelled load must kill the process")
+	}
+}
+
 func TestCleanupCrashSaysWhy(t *testing.T) {
 	c, _ := fakeCleanupClient(t)
 	err := c.With("s1", "/m.gguf", 2048, func(s *CleanupSession) error {
