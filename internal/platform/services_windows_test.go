@@ -167,8 +167,19 @@ func TestThePipelineTurns48kStereoInto20msMonoChunks(t *testing.T) {
 			t.Fatalf("a chunk of %d samples", len(c))
 		}
 	}
-	if c := chunkOf(chunks[25]); c.RMS < 0.3 || c.RMS > 0.4 || c.Time.IsZero() {
-		t.Fatalf("rms %v", c.RMS)
+	if r := frameRMS(chunks[25]); r < 0.3 || r > 0.4 {
+		t.Fatalf("rms %v", r)
+	}
+	// The chunk carries the display level, as on macOS and Linux: loud
+	// audio is 1, normal speech about 0.67, silence 0.
+	if c := chunkOf(chunks[25]); c.RMS != 1 || c.Time.IsZero() {
+		t.Fatalf("level %v", c.RMS)
+	}
+	if l := displayLevel(0.05); math.Abs(float64(l)-0.67) > 0.02 {
+		t.Fatalf("speech level %v", l)
+	}
+	if displayLevel(0) != 0 || displayLevel(0.001) != 0 {
+		t.Fatal("silence is not 0")
 	}
 	if downmixed := downmix([]float32{1, 0, -1, -1}, 2, nil); !reflect.DeepEqual(downmixed, []float32{0.5, -1}) {
 		t.Fatalf("%v", downmixed)

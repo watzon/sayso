@@ -184,7 +184,23 @@ func (p *pipeline) push(raw []byte, emit func([]float32)) {
 }
 
 func chunkOf(samples []float32) AudioChunk {
-	return AudioChunk{Samples: samples, RMS: min(frameRMS(samples), 1), Time: time.Now()}
+	return AudioChunk{Samples: samples, RMS: displayLevel(frameRMS(samples)), Time: time.Now()}
+}
+
+// levelFloorDB maps to 0, and levelFloorDB+levelRangeDB to 1, as on macOS
+// and Linux. Normal speech (about -26 dBFS RMS) gives about 0.67.
+const (
+	levelFloorDB = -50.0
+	levelRangeDB = 36.0
+)
+
+// displayLevel maps an RMS value to the 0 to 1 range of the waveform.
+func displayLevel(rms float32) float32 {
+	if rms <= 0 {
+		return 0
+	}
+	l := (20*math.Log10(float64(rms)) - levelFloorDB) / levelRangeDB
+	return float32(math.Max(0, math.Min(1, l)))
 }
 
 func pwstr(p uintptr) string {
