@@ -1016,3 +1016,28 @@ func TestHomeGreetingStaysOnOneLine(t *testing.T) {
 		}
 	}
 }
+
+// Settings › Advanced said "Saved. Quit Sayso and open it again…" at
+// launch, before anything changed.
+func TestAdvancedEngineSavedNoteShowsOnlyAfterAnEdit(t *testing.T) {
+	e := newEnv(t)
+	engine := filepath.Join(t.TempDir(), "SaysoEngine")
+	if err := os.WriteFile(engine, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e.a.set.enginePath = engine
+	e.a.cfg.Advanced.EnginePath = ptr(engine)
+	e.a.OpenSettings(SecAdvanced)
+	tt := e.hub(t)
+	saved := i18n.T("settings.advanced.engine_saved")
+	if tt.HasText(saved) {
+		t.Fatal("the saved note shows before an edit")
+	}
+	press(t, tt, i18n.T("settings.advanced.engine_path"))
+	tt.Key(0, mu.KeyEnd)
+	tt.Type(" ")
+	tt.Frame()
+	if !tt.HasText(saved) {
+		t.Errorf("no saved note after an edit: %q", tt.Texts())
+	}
+}

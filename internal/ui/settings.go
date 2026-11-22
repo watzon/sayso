@@ -20,6 +20,7 @@ import (
 type settingsState struct {
 	name         string
 	enginePath   string
+	engineEdited bool   // the engine path changed since launch
 	recording    string // the key of the recorder that listens
 	confirmClear bool
 	customInk    string
@@ -717,13 +718,14 @@ func (a *App) advancedSection(c *mu.Context, p theme.Colors) {
 				} else {
 					a.cfg.Advanced.EnginePath = ptr(v)
 				}
+				a.set.engineEdited = true
 				a.saveConfig()
 			})
 		})
 		if v := strings.TrimSpace(a.set.enginePath); v != "" {
 			if _, err := os.Stat(v); err != nil {
 				mu.Text(c, i18n.T("settings.advanced.engine_missing")).FontSize(12.5).TextColor(p.Danger).Padding(0, 0, 10, 0)
-			} else {
+			} else if a.set.engineEdited {
 				mu.Text(c, i18n.T("settings.advanced.engine_saved")).FontSize(12.5).TextColor(p.Graphite).Padding(0, 0, 10, 0)
 			}
 		}

@@ -298,7 +298,7 @@ func (a *App) AddProvider() {
 		a.cfg.AI.DefaultProvider = ptr(id)
 	}
 	a.cfg.AI.Enabled = true
-	*s = settingsState{name: s.name, enginePath: s.enginePath, keyEdit: s.keyEdit, devices: s.devices, devicesRead: s.devicesRead}
+	*s = settingsState{name: s.name, enginePath: s.enginePath, engineEdited: s.engineEdited, keyEdit: s.keyEdit, devices: s.devices, devicesRead: s.devicesRead}
 	a.saveConfig()
 	a.refreshSecrets()
 	a.invalidate()
