@@ -931,3 +931,63 @@ func TestFinishOnboardingMarksWhatsNewSeen(t *testing.T) {
 		t.Error("What's New is due right after onboarding")
 	}
 }
+
+// A search that hides the selected entry selected nothing, and the detail
+// said "No dictations yet" beside a list of results.
+func TestHistorySearchThatHidesTheSelectionSelectsAResult(t *testing.T) {
+	e := newEnv(t)
+	apple := e.addEntry(t, "first apple note", "Notes", false)
+	banana := e.addEntry(t, "second banana mail", "Mail", false)
+	e.a.SetPage(PageHistory)
+	tt := e.hub(t)
+	e.a.selectEntry(apple)
+	tt.Frame()
+	e.a.hist.query = "banana"
+	tt.Frame()
+	if e.a.hist.selected != banana {
+		t.Errorf("selected %d, want the result %d", e.a.hist.selected, banana)
+	}
+	if tt.HasText(i18n.T("history.empty.title")) {
+		t.Errorf("the detail says there are no dictations: %q", tt.Texts())
+	}
+}
+
+func TestHistoryEmptyStateShowsOnce(t *testing.T) {
+	e := newEnv(t)
+	e.a.SetPage(PageHistory)
+	tt := e.hub(t)
+	n := 0
+	for _, s := range tt.Texts() {
+		if s == i18n.T("history.empty.title") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("the empty state shows %d times: %q", n, tt.Texts())
+	}
+}
+
+// A one-line entry was centered in its row; multi-line entries start at the
+// left edge.
+func TestHistoryRowsAlignOneLineEntriesLeft(t *testing.T) {
+	e := newEnv(t)
+	long := strings.Repeat("a long dictation that wraps onto a second line ", 3)
+	e.addEntry(t, "short", "Notes", false)
+	e.addEntry(t, long, "Notes", false)
+	e.a.SetPage(PageHistory)
+	tt := e.hub(t)
+	x := map[string]float32{}
+	for _, a := range tt.AccessAll() {
+		if a.Role == mu.RoleText && (a.Name == "short" || a.Name == long) {
+			if _, seen := x[a.Name]; !seen {
+				x[a.Name] = a.Bounds.X
+			}
+		}
+	}
+	if len(x) != 2 {
+		t.Fatalf("entry texts not found: %v; texts %q", x, tt.Texts())
+	}
+	if d := x["short"] - x[long]; d > 1 || d < -1 {
+		t.Errorf("one-line entry starts at x=%v, multi-line at x=%v", x["short"], x[long])
+	}
+}

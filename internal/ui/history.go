@@ -72,8 +72,17 @@ func (a *App) loadHistory() {
 	}
 	h.total, _ = a.d.Store.Count(store.HistoryQuery{})
 	h.apps, _ = a.d.Store.AppList()
-	if h.selected == 0 && len(h.entries) > 0 {
-		h.selected = h.entries[0].ID
+	// The selection follows the list: a filter that hides the selected entry
+	// selects the first one that shows.
+	if _, ok := a.selectedEntry(); !ok {
+		var first int64
+		if len(h.entries) > 0 {
+			first = h.entries[0].ID
+		}
+		if first != h.selected {
+			h.selected, h.menuOpen, h.confirm, h.showRaw = first, false, false, false
+			a.stopPlayer()
+		}
 	}
 }
 
@@ -115,10 +124,9 @@ func (a *App) historyPage(c *mu.Context, p theme.Colors) {
 				Label(i18n.T("history.a11y.list")).Children(func() { a.historyList(c, p) })
 		})
 		mu.Scroll(c.Key("history.detail")).Grow(1).Basis(0).Padding(32, 36).Gap(20).Children(func() {
+			// With no entry the list says why; the detail stays blank.
 			if e, ok := a.selectedEntry(); ok {
 				a.historyDetail(c, p, e)
-			} else {
-				a.historyEmpty(c, p)
 			}
 		})
 	})
@@ -253,7 +261,7 @@ func (a *App) historyRow(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 	sel := e.ID == a.hist.selected
 	tm := e.CreatedAt.In(a.now().Location()).Format("15:04")
 	r := mu.ButtonBase(a.k(c, fmt.Sprintf("history.row.%d", e.ID))).Role(mu.RoleListItem).Selected(sel).
-		Label(i18n.T("history.a11y.entry", "app", entryApp(e), "time", tm)).Padding(10, 10).Gap(4).Radius(8).Column().Cursor(mu.CursorPointer)
+		Label(i18n.T("history.a11y.entry", "app", entryApp(e), "time", tm)).Padding(10, 10).Gap(4).Radius(8).Column().AlignItems(mu.Stretch).Justify(mu.Start).Cursor(mu.CursorPointer)
 	if sel {
 		r.Background(p.SheetRaised).Border(1, p.Rule)
 	} else if r.Hovered() {
@@ -282,13 +290,6 @@ func (a *App) selectEntry(id int64) {
 	h.selected, h.menuOpen, h.confirm, h.showRaw = id, false, false, false
 	a.stopPlayer()
 	a.invalidate()
-}
-
-func (a *App) historyEmpty(c *mu.Context, p theme.Colors) {
-	mu.Column(c).Gap(8).Padding(40, 0).Children(func() {
-		mu.Text(c, i18n.T("history.empty.title")).Font(theme.Display).FontSize(24).TextColor(p.Ink)
-		mu.Text(c, i18n.T("history.empty.body", "hotkey", a.hotkeyLabel())).FontSize(14).TextColor(p.Graphite)
-	})
 }
 
 func (a *App) hotkeyLabel() string {
