@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"io"
+	"time"
 
 	mu "github.com/egoist/mygo/ui"
 
@@ -18,6 +19,9 @@ type Surface struct {
 	Prep   func(a *App)
 	View   func(a *App) func(c *mu.Context)
 	Expect string // a text the surface must show
+	// Empty is true for a surface that draws nothing: the notch at rest,
+	// whose window hides.
+	Empty bool
 }
 
 // Surfaces are every page, section, overlay state, popover and window.
@@ -49,6 +53,7 @@ func Surfaces() []Surface {
 		for _, st := range states {
 			style, st := style, st
 			out = append(out, Surface{Name: fmt.Sprintf("overlay/%s/%s", style, st.name), W: PillWindowW, H: PillWindowH,
+				Empty: style == config.OverlayNotch && st.s.Kind == dictation.StateIdle,
 				Prep: func(a *App) {
 					a.cfg.Overlay.Style, a.cfg.Overlay.IdlePill = style, true
 					a.state = st.s
@@ -107,7 +112,9 @@ func render(s Surface, a *App, dark bool) (err error) {
 	}()
 	tt := mu.NewTesterWith(s.View(a), s.W, s.H, mu.TesterOptions{Dark: dark})
 	tt.Frame()
-	if len(tt.Texts()) == 0 {
+	// The overlay eases to its state; let it settle.
+	tt.Advance(time.Second)
+	if len(tt.Texts()) == 0 && !s.Empty {
 		return fmt.Errorf("nothing drawn")
 	}
 	return nil

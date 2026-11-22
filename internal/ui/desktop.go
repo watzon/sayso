@@ -6,7 +6,6 @@ import (
 	"log"
 	"math"
 	"runtime"
-	"time"
 
 	"github.com/egoist/mygo"
 	maudio "github.com/egoist/mygo/audio"
@@ -137,6 +136,13 @@ func (d *Desktop) Invalidate() {
 		if w != nil && !w.IsDestroyed() {
 			w.Invalidate()
 		}
+	}
+}
+
+// InvalidateOverlay redraws the overlay alone.
+func (d *Desktop) InvalidateOverlay() {
+	if d.overlay != nil && !d.overlay.IsDestroyed() {
+		d.overlay.Invalidate()
 	}
 }
 
@@ -346,19 +352,4 @@ func (d *Desktop) OpenURL(url string) {
 func (d *Desktop) Quit() {
 	d.quitting = true
 	mygo.App.Quit()
-}
-
-// Tick redraws the windows that animate a dictation, at 30 frames per
-// second while recording (the levels and the timer), else not at all.
-func (d *Desktop) Tick() {
-	t := time.NewTicker(time.Second / 30)
-	go func() {
-		for range t.C {
-			mygo.RunOnMain(func() {
-				if d.a.Busy() && d.overlay != nil {
-					d.overlay.Invalidate()
-				}
-			})
-		}
-	}()
 }

@@ -69,8 +69,8 @@ func TestGoldenOverlayRecording(t *testing.T) {
 			if dark {
 				a.cfg.Appearance.Theme = config.ThemeDark
 			}
-			for i := range a.levels {
-				a.levels[i] = 0.3 + 0.5*float32(i%7)/7
+			for i := range 48 {
+				a.Level(0.3 + 0.5*float32(i%7)/7)
 			}
 			w, h := OverlayWindowSize(a.cfg.Overlay)
 			tt := mu.NewTesterWith(a.OverlayView, w, h, mu.TesterOptions{Preferences: mu.Preferences{ReduceMotion: true}})

@@ -187,8 +187,7 @@ type App struct {
 	// Dictation, as the controller last reported it.
 	state      dictation.State
 	stateAt    time.Time
-	levels     [48]float32
-	levelNext  int
+	wave       liveWave
 	committed  string
 	tentative  string
 	lastNotice string
@@ -284,6 +283,19 @@ func (a *App) invalidate() {
 	if a.d.Shell != nil {
 		a.d.Shell.Invalidate()
 	}
+}
+
+// overlayInvalidator is a shell that can redraw the overlay alone.
+type overlayInvalidator interface{ InvalidateOverlay() }
+
+// invalidateOverlay redraws the overlay, or every window when the shell
+// cannot redraw it alone.
+func (a *App) invalidateOverlay() {
+	if s, ok := a.d.Shell.(overlayInvalidator); ok {
+		s.InvalidateOverlay()
+		return
+	}
+	a.invalidate()
 }
 
 // k gives the next element its stable key, for automation and identity.
@@ -493,14 +505,14 @@ func (a *App) PasteLast() {
 func (a *App) StateChanged(s dictation.State) {
 	a.post(func() {
 		if s.Kind == dictation.StateRecording && a.state.Kind != dictation.StateRecording {
-			a.levels, a.committed, a.tentative = [48]float32{}, "", ""
+			a.wave.reset()
+			a.committed, a.tentative = "", ""
 		}
 		if a.state.Kind == dictation.StateProcessing && s.Kind != dictation.StateProcessing {
 			a.dataChanged() // a new history entry
 		}
-		if a.d.Platform != nil && a.d.Platform.Hotkeys != nil {
-			a.d.Platform.Hotkeys.SetRecording(s.Kind == dictation.StateRecording)
-		}
+		// The controller tells the hotkeys about the recording, off the
+		// main thread.
 		a.state, a.stateAt = s, a.now()
 		a.syncOverlay()
 		a.invalidate()
@@ -515,20 +527,19 @@ func (a *App) Notice(m dictation.Message) {
 	})
 }
 
-// Level implements dictation.Observer.
+// Level implements dictation.Observer. It redraws nothing: only the
+// overlay shows levels, and it draws a frame each refresh while recording.
+// (A redraw of every window for each 20 ms level kept the main thread busy
+// building the hub.)
 func (a *App) Level(rms float32) {
-	a.post(func() {
-		a.levels[a.levelNext%len(a.levels)] = rms
-		a.levelNext++
-		a.invalidate()
-	})
+	a.post(func() { a.wave.push(rms) })
 }
 
-// Preview implements dictation.Observer.
+// Preview implements dictation.Observer. Only the overlay shows it.
 func (a *App) Preview(committed, tentative string) {
 	a.post(func() {
 		a.committed, a.tentative = committed, tentative
-		a.invalidate()
+		a.invalidateOverlay()
 	})
 }
 
@@ -557,16 +568,6 @@ func (a *App) showNotice(text string) {
 // noticeShowing is true while a notice from showNotice shows.
 func (a *App) noticeShowing() bool {
 	return a.lastNotice != "" && a.now().Sub(a.noticeAt) < noticeFor
-}
-
-// levelsInOrder are the recent levels, oldest first.
-func (a *App) levelsInOrder() []float32 {
-	n := len(a.levels)
-	out := make([]float32, n)
-	for i := range n {
-		out[i] = a.levels[(a.levelNext+i)%n]
-	}
-	return out
 }
 
 // ---- Models ----
