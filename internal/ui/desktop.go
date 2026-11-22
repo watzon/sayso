@@ -1,0 +1,337 @@
+package ui
+
+import (
+	"bytes"
+	"image/png"
+	"log"
+	"runtime"
+	"time"
+
+	"github.com/egoist/mygo"
+	maudio "github.com/egoist/mygo/audio"
+	mu "github.com/egoist/mygo/ui"
+
+	"github.com/watzon/sayso/internal/config"
+	"github.com/watzon/sayso/internal/i18n"
+)
+
+// Desktop is the Shell of the running app: MyGo windows, the tray item
+// and its popover. Every method runs on the main thread.
+type Desktop struct {
+	a        *App
+	hub      *mygo.Window
+	overlay  *mygo.Window
+	wins     map[Window]*mygo.Window
+	tray     *mygo.Tray
+	quitting bool
+}
+
+var _ Shell = (*Desktop)(nil)
+
+// NewDesktop makes the shell of a and makes it a's shell. Call Start from
+// mygo.App.WhenReady.
+func NewDesktop(a *App) *Desktop {
+	d := &Desktop{a: a, wins: map[Window]*mygo.Window{}}
+	a.d.Shell = d
+	if a.d.Post == nil {
+		a.d.Post = mygo.RunOnMain
+	}
+	if a.d.NewPlayer == nil {
+		a.d.NewPlayer = func(samples []float32) Player {
+			return maudio.NewSound(16000, 1, samples).NewPlayer()
+		}
+	}
+	return d
+}
+
+// Start makes the windows and the tray item. showHub opens the hub now.
+func (d *Desktop) Start(showHub bool) {
+	RegisterFonts()
+	d.SetThemeMode(d.a.cfg.Appearance.Theme)
+	// The system title bar is a Linux choice (crates/sayso-app/src/chrome.rs);
+	// macOS and Windows always draw the paper up to the top edge.
+	style := mygo.TitleBarHidden
+	if runtime.GOOS == "linux" && d.a.cfg.Appearance.SystemTitleBar {
+		style = mygo.TitleBarDefault
+	}
+	d.hub = mygo.NewWindow(mygo.WindowOptions{
+		Title: "Sayso", Width: HubWidth, Height: HubHeight, MinWidth: HubMinWidth, MinHeight: HubMinHeight,
+		TitleBarStyle: style, StateKey: "hub", Hidden: !showHub, Content: mu.View(d.a.HubView),
+	})
+	d.hub.OnClose(func(e *mygo.CloseEvent) {
+		if !d.quitting { // closing the hub keeps the tray item
+			e.PreventDefault()
+			d.hub.Hide()
+		}
+	})
+	d.overlay = d.newOverlay()
+	d.newTray()
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { d.quitting = true })
+	mygo.App.OnWindowAllClosed(func() {})
+	d.a.syncOverlay()
+	if d.a.NeedsOnboarding() {
+		d.ShowWindow(WinOnboarding, true)
+	}
+}
+
+func (d *Desktop) overlaySize() (int, int) {
+	s := d.a.cfg.Overlay.Size.Scale()
+	w, h := PillWindowW, PillWindowH
+	if d.a.cfg.Overlay.Style == config.OverlayNotch {
+		w, h = NotchWindowW, NotchWindowH
+	}
+	return int(float32(w) * s), int(float32(h) * s)
+}
+
+func (d *Desktop) newOverlay() *mygo.Window {
+	w, h := d.overlaySize()
+	win := mygo.NewWindow(mygo.WindowOptions{
+		Title: "Sayso Overlay", Width: w, Height: h, Hidden: true, Frameless: true, Transparent: true,
+		AlwaysOnTop: true, SkipTaskbar: true, DisableResize: true, DisableMinimize: true, DisableMaximize: true,
+		DisableFullScreen: true, DisableShadow: true, Content: mu.View(d.a.OverlayView),
+	})
+	win.SetVisibleOnAllWorkspaces(true)
+	win.OnClose(func(e *mygo.CloseEvent) {
+		if !d.quitting {
+			e.PreventDefault()
+			win.Hide()
+		}
+	})
+	win.OnMove(func() { d.notePillHalf() })
+	return win
+}
+
+// placeOverlay puts the pill at the bottom center (or the notch at the
+// top center) of the display with the pointer.
+func (d *Desktop) placeOverlay() {
+	w, h := d.overlaySize()
+	d.overlay.SetSize(w, h)
+	disp := mygo.Screen.PrimaryDisplay()
+	if d.a.cfg.Overlay.FollowDisplay {
+		disp = mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
+	}
+	if d.a.cfg.Overlay.Style == config.OverlayNotch {
+		b := disp.Bounds
+		d.overlay.SetPosition(b.X+(b.Width-w)/2, b.Y)
+	} else {
+		wa := disp.WorkArea
+		d.overlay.SetPosition(wa.X+(wa.Width-w)/2, wa.Y+wa.Height-h-16)
+	}
+	d.notePillHalf()
+}
+
+func (d *Desktop) notePillHalf() {
+	x, y := d.overlay.Position()
+	disp := mygo.Screen.DisplayNearestPoint(mygo.Point{X: x, Y: y})
+	d.a.SetPreviewBelow(y < disp.Bounds.Y+disp.Bounds.Height/2)
+}
+
+// Invalidate redraws every window.
+func (d *Desktop) Invalidate() {
+	for _, w := range append([]*mygo.Window{d.hub, d.overlay}, d.windows()...) {
+		if w != nil && !w.IsDestroyed() {
+			w.Invalidate()
+		}
+	}
+}
+
+func (d *Desktop) windows() []*mygo.Window {
+	out := make([]*mygo.Window, 0, len(d.wins))
+	for _, w := range d.wins {
+		out = append(out, w)
+	}
+	return out
+}
+
+// ShowHub shows and focuses the hub.
+func (d *Desktop) ShowHub() {
+	if d.a.cfg.General.DockIconWithHub && runtime.GOOS == "darwin" {
+		mygo.App.SetActivationPolicy(mygo.ActivationPolicyRegular)
+	}
+	d.hub.Show()
+	d.hub.Focus()
+}
+
+// ShowOverlay shows the overlay without taking the keyboard, or hides it.
+func (d *Desktop) ShowOverlay(show bool) {
+	if d.overlay == nil {
+		return
+	}
+	if !show {
+		d.overlay.Hide()
+		return
+	}
+	if !d.overlay.IsVisible() {
+		d.placeOverlay()
+	}
+	d.overlay.SetIgnoreMouseEvents(d.a.OverlayClickThrough())
+	d.overlay.ShowInactive()
+}
+
+// ShowWindow shows or hides a secondary window, making it on first use.
+func (d *Desktop) ShowWindow(which Window, show bool) {
+	w := d.wins[which]
+	if !show {
+		if w != nil {
+			w.Hide()
+		}
+		return
+	}
+	if w == nil || w.IsDestroyed() {
+		w = d.newWindow(which)
+		if w == nil {
+			return
+		}
+		d.wins[which] = w
+	}
+	w.Show()
+	w.Focus()
+}
+
+func (d *Desktop) newWindow(which Window) *mygo.Window {
+	opts := mygo.WindowOptions{TitleBarStyle: mygo.TitleBarHidden, DisableMaximize: true, DisableFullScreen: true}
+	switch which {
+	case WinOnboarding:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("onboarding.welcome.title"), OnboardingW, OnboardingH, mu.View(d.a.OnboardingView)
+	case WinPermissions:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("settings.permissions.title"), PermissionsW, PermissionsH, mu.View(d.a.PermissionsView)
+	case WinWhatsNew:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("whats_new.window_title"), WhatsNewW, WhatsNewH, mu.View(d.a.WhatsNewView)
+	case WinUpdate:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("update.slip_title"), UpdateW, UpdateH, mu.View(d.a.UpdateView)
+	case WinApproval:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("apps.approval.window_title"), ApprovalW, ApprovalH, mu.View(d.a.ApprovalView)
+		opts.AlwaysOnTop = true
+	case WinPopover:
+		return d.newPopover()
+	default:
+		return nil
+	}
+	w := mygo.NewWindow(opts)
+	w.OnClose(func(e *mygo.CloseEvent) {
+		if !d.quitting {
+			e.PreventDefault()
+			w.Hide()
+			if which == WinApproval {
+				for _, ask := range append([]*approvalAsk(nil), d.a.asks...) {
+					d.a.answer(ask, false)
+				}
+			}
+		}
+	})
+	return w
+}
+
+// newPopover is the themed panel under the tray item.
+func (d *Desktop) newPopover() *mygo.Window {
+	if d.tray == nil {
+		return nil
+	}
+	return mygo.NewFlyout(mygo.FlyoutOptions{
+		Tray: d.tray, Placement: mygo.PlacementBottom, Gap: 6, Width: PopoverW, Height: PopoverH,
+		Shadow: true, Popover: true, CornerRadius: 12, Content: mu.View(d.a.PopoverView),
+	})
+}
+
+func (d *Desktop) newTray() {
+	click := func(fn func()) func(*mygo.MenuItem, *mygo.Window) {
+		return func(*mygo.MenuItem, *mygo.Window) { fn() }
+	}
+	menu := mygo.NewMenu([]*mygo.MenuItem{
+		{Label: i18n.T("tray.toggle_dictation"), Click: click(d.a.Toggle)},
+		{Label: i18n.T("tray.open_hub"), Click: click(d.ShowHub)},
+		mygo.Separator(),
+		{Label: i18n.T("tray.quit"), Accelerator: "CmdOrCtrl+Q", Click: click(d.Quit)},
+	})
+	var err error
+	d.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "sayso", Icon: trayIcon(), IconIsTemplate: runtime.GOOS == "darwin", ToolTip: "Sayso"})
+	if err != nil {
+		log.Printf("tray: %v", err)
+		return
+	}
+	// The primary click opens the themed popover; the secondary click the
+	// plain menu, for screen readers and keyboard users.
+	d.tray.OnClick(func() {
+		if w := d.wins[WinPopover]; w != nil && w.IsVisible() {
+			w.Hide()
+			return
+		}
+		d.ShowWindow(WinPopover, true)
+	})
+	d.tray.OnRightClick(func() {
+		d.tray.SetMenu(menu)
+		d.tray.PopUpMenu()
+	})
+}
+
+// trayIcon draws the wordmark icon as a PNG.
+func trayIcon() []byte {
+	img := mu.Render(func(c *mu.Context) {
+		mu.Box(c).Fill().Justify(mu.Center).AlignItems(mu.Center).Children(func() {
+			mu.Icon(c, icon("wordmark")).FontSize(16).TextColor(mu.RGB(0, 0, 0))
+		})
+	}, 18, 18, 2)
+	var b bytes.Buffer
+	if err := png.Encode(&b, img); err != nil {
+		return nil
+	}
+	return b.Bytes()
+}
+
+// SetThemeMode sets the appearance of the native chrome.
+func (d *Desktop) SetThemeMode(m config.ThemeMode) {
+	src := mygo.ThemeSystem
+	switch m {
+	case config.ThemeLight:
+		src = mygo.ThemeLight
+	case config.ThemeDark:
+		src = mygo.ThemeDark
+	}
+	mygo.Theme.SetSource(src)
+}
+
+// SetOverlaySize resizes the overlay window for a size.
+func (d *Desktop) SetOverlaySize(config.OverlaySize) {
+	if d.overlay != nil && d.overlay.IsVisible() {
+		d.placeOverlay()
+	}
+}
+
+// OpenPath opens a file or folder with the system.
+func (d *Desktop) OpenPath(path string) {
+	go func() {
+		if err := mygo.Shell.OpenPath(path); err != nil {
+			log.Printf("open %s: %v", path, err)
+		}
+	}()
+}
+
+// OpenURL opens a web address.
+func (d *Desktop) OpenURL(url string) {
+	go func() {
+		if err := mygo.Shell.OpenExternal(url); err != nil {
+			log.Printf("open %s: %v", url, err)
+		}
+	}()
+}
+
+// Quit quits the app.
+func (d *Desktop) Quit() {
+	d.quitting = true
+	mygo.App.Quit()
+}
+
+// Tick redraws the windows that animate a dictation, at 30 frames per
+// second while recording (the levels and the timer), else not at all.
+func (d *Desktop) Tick() {
+	t := time.NewTicker(time.Second / 30)
+	go func() {
+		for range t.C {
+			mygo.RunOnMain(func() {
+				if d.a.Busy() && d.overlay != nil {
+					d.overlay.Invalidate()
+				}
+			})
+		}
+	}()
+}
