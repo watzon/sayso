@@ -544,6 +544,28 @@ func TestSlowMediaDoesNotHoldTheStates(t *testing.T) {
 	r.media.waitCounts(t, 1, 1)
 }
 
+// Quitting while the player still pauses leaves the user's music playing:
+// the resume queued behind the pause plays before Close returns.
+func TestCloseResumesTheMediaItPaused(t *testing.T) {
+	for i := range 20 {
+		r := newRig(t, nil)
+		hold := make(chan struct{})
+		r.media.hold = hold
+		r.c.Toggle()
+		r.obs.waitFor(t, "recording")
+		r.c.Cancel()
+		r.obs.waitFor(t, "cancelled")
+		time.AfterFunc(20*time.Millisecond, func() { close(hold) })
+		r.c.Close()
+		r.media.mu.Lock()
+		p, res := r.media.pauses, r.media.resumes
+		r.media.mu.Unlock()
+		if p != 1 || res != 1 {
+			t.Fatalf("run %d: paused %d and resumed %d times by Close, want 1 and 1", i, p, res)
+		}
+	}
+}
+
 // The recording state comes before the focused app is known: the overlay
 // does not wait for Accessibility. The dictation still learns the app.
 func TestRecordingShowsBeforeTheFocusedApp(t *testing.T) {

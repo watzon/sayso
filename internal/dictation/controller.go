@@ -201,8 +201,10 @@ type Controller struct {
 	done     chan struct{}
 	epoch    time.Time
 	// media pauses and resumes the media player in order, off this
-	// goroutine; nil without a media service.
-	media chan bool
+	// goroutine; nil without a media service. mediaDone closes once
+	// mediaLoop ended, after Close.
+	media     chan bool
+	mediaDone chan struct{}
 	// trackedRecording is the recording state the hotkeys and the media
 	// were last told.
 	trackedRecording bool
@@ -234,8 +236,11 @@ func New(d Deps) *Controller {
 	}
 	c := &Controller{d: d, machine: NewMachine(t), sessions: map[SessionID]*session{}, work: make(chan func(), 256), quit: make(chan struct{}), done: make(chan struct{}), epoch: d.Now()}
 	if d.Platform.Media != nil {
-		c.media = make(chan bool, 16)
-		go mediaLoop(d.Platform.Media, c.media, c.quit)
+		c.media, c.mediaDone = make(chan bool, 16), make(chan struct{})
+		go func() {
+			defer close(c.mediaDone)
+			mediaLoop(d.Platform.Media, c.media, c.quit)
+		}()
 	}
 	go c.loop()
 	return c
@@ -284,8 +289,19 @@ func (c *Controller) Close() {
 		}
 		close(c.quit)
 		<-c.done
+		// The resume of the music a dictation paused runs before the app
+		// exits, within reason: the macOS player takes a second or two.
+		if c.mediaDone != nil {
+			select {
+			case <-c.mediaDone:
+			case <-time.After(mediaQuitWait):
+			}
+		}
 	})
 }
+
+// mediaQuitWait bounds how long Close waits for the media player.
+const mediaQuitWait = 3 * time.Second
 
 // Dispatch sends an event to the machine.
 func (c *Controller) Dispatch(e Event) { c.do(func() { c.dispatch(e) }) }
@@ -435,12 +451,18 @@ func (c *Controller) publish(st State) {
 // mediaLoop pauses the media player for true and resumes it for false, in
 // order. The macOS adapter runs a program for each, which can take a
 // second or more, so it never runs on the controller goroutine: the
-// overlay would wait for it.
+// overlay would wait for it. On quit it resumes what it paused, whether or
+// not the resume queued behind the pause was taken first.
 func mediaLoop(media platform.MediaController, ops <-chan bool, quit <-chan struct{}) {
 	was := false
 	for {
 		select {
 		case <-quit:
+			if was {
+				if err := media.Resume(); err != nil {
+					slog.Warn("dictation: media resume failed", "err", err)
+				}
+			}
 			return
 		case pause := <-ops:
 			switch {
