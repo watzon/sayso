@@ -216,10 +216,6 @@ type modifiers struct {
 	command, option, control, shift, function bool
 }
 
-func (m modifiers) isEmpty() bool {
-	return !(m.command || m.option || m.control || m.shift || m.function)
-}
-
 // plain is true when no Command, Control, or Option is down. Only a plain Esc cancels.
 func (m modifiers) plain() bool { return !(m.command || m.control || m.option) }
 

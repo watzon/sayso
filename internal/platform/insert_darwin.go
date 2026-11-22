@@ -37,7 +37,7 @@ const (
 	transientType = "org.nspasteboard.TransientType"
 )
 
-var errNotTrusted = errors.New("Accessibility is not granted, so Sayso cannot type into other apps")
+var errNotTrusted = errors.New("cannot type into other apps: Accessibility is not granted")
 
 type macInserter struct {
 	// mu runs one insert at a time, including its clipboard restore.

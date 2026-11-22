@@ -270,8 +270,11 @@ func sel(name string) objc.SEL {
 func class(name string) objc.ID { return objc.ID(objc.GetClass(name)) }
 
 // withPool runs fn inside an autorelease pool. Code off the main thread has
-// no pool, so autoreleased objects would leak without one.
+// no pool, so autoreleased objects would leak without one. Pools belong to a
+// thread, so the goroutine stays on its thread until the pop (the lock nests).
 func withPool(fn func()) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	pool := autoreleasePoolPush()
 	defer autoreleasePoolPop(pool)
 	fn()
