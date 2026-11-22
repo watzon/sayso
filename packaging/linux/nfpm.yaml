@@ -2,8 +2,9 @@
 # release folder (sayso-<version>-linux-<arch>/), so the src paths are relative
 # to that folder. The script also copies postinstall.sh there.
 #
-# The app finds the engine and the cleanup runtime next to itself, so the
-# binaries live in /usr/lib/sayso and /usr/bin/sayso is a link.
+# The app finds the engine next to itself and the cleanup runtime in llama/
+# next to itself (with the llama.cpp libraries), so the binaries live in
+# /usr/lib/sayso and /usr/bin/sayso is a link.
 #
 # The glibc version below is the version of the build system
 # (.github/workflows/release.yml). package-linux.sh stops when a binary needs
@@ -31,11 +32,11 @@ contents:
   - src: bin/sayso-engine
     dst: /usr/lib/sayso/sayso-engine
     file_info: { mode: 0755 }
-  # sayso-cleanup, and on x86_64 also sayso-cleanup-avx and
-  # sayso-cleanup-baseline (scripts/build-cleanup.sh).
-  - src: bin/sayso-cleanup*
-    dst: /usr/lib/sayso/
-    file_info: { mode: 0755 }
+  # The cleanup runtime, the llama.cpp libraries with their soname links, and
+  # libgomp (scripts/bundle-linux.sh).
+  - src: bin/llama
+    dst: /usr/lib/sayso/llama
+    type: tree
   - src: /usr/lib/sayso/sayso
     dst: /usr/bin/sayso
     type: symlink
@@ -76,6 +77,8 @@ overrides:
       # The app loads these at run time (Wayland, and Vulkan with a GL fallback).
       - libwayland-client0
       - libvulkan1
+      # The cleanup runtime (yzma loads llama.cpp through libffi).
+      - libffi8
     recommends:
       - libegl1
       - libwayland-egl1
@@ -96,6 +99,7 @@ overrides:
       - libfreetype.so.6()(64bit)
       - libwayland-client.so.0()(64bit)
       - libvulkan.so.1()(64bit)
+      - libffi.so.8()(64bit)
     recommends:
       - xdg-utils
 

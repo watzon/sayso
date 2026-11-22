@@ -46,7 +46,11 @@ func fakeCleanup() {
 		id := req["id"]
 		switch req["type"] {
 		case "hello":
-			send(map[string]any{"id": id, "type": "hello", "version": 1, "llama_cpp": "b1", "backend": "cpu"})
+			hello := map[string]any{"id": id, "type": "hello", "version": 1, "llama_cpp": "b1", "backend": "cpu"}
+			if libs := os.Getenv("SAYSO_FAKE_CLEANUP_LIBS"); libs != "" {
+				hello["libraries"] = libs
+			}
+			send(hello)
 		case "load":
 			send(map[string]any{"id": id, "type": "loaded", "model_id": req["model_id"], "load_ms": 3})
 		case "count":

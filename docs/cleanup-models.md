@@ -2,6 +2,8 @@
 
 Status: built on 2026-10-21 on the branch feature/cleanup-models, not committed. The plan was reviewed by Codex (GPT-6-Astra) and corrected (see Review record). "Changes during the build" lists where the code differs from the first text of this plan. Issue #28. The design is on the page "Cleanup models · S1-mini" in the Paper file "Sayso — v0.1 Design".
 
+Since 2026-11-22 the app runs the models in a Go runtime with prebuilt llama.cpp libraries, not in the Rust runtime of `native/cleanup`. See "Runtime" at the end. The rest of the plan stays as it was built.
+
 This file says how Sayso runs two small local models that clean up a transcript but cannot follow a prompt: S1-mini by Superwhisper and Cleanup 1 by Spokenly.
 
 ## Goal
@@ -80,7 +82,7 @@ The process `sayso-cleanup` that runs a cleanup model on this computer with llam
 
 Chris confirmed the recommendations on 2026-10-21.
 
-1. **Runtime: one Rust process, `sayso-cleanup`, on all three systems.** It links llama.cpp through `llama-cpp-2` (Metal on macOS, CPU on Windows and Linux). Reasons:
+1. **Runtime: one Rust process, `sayso-cleanup`, on all three systems.** (Replaced in the app on 2026-11-22 by a Go process with the same protocol; see "Runtime". The reasons for a separate process still hold.) It links llama.cpp through `llama-cpp-2` (Metal on macOS, CPU on Windows and Linux). Reasons:
    - One implementation, not one in Swift and two in Rust.
    - The Linux engine links a pinned, patched ggml into parakeet.cpp (`crates/sayso-engine/build.rs`), and the Windows engine links whisper.cpp. A second ggml in the same binary can clash, and a link that works today does not prove that the backends agree or that later updates will.
    - A crash or a hang in llama.cpp does not stop dictation. Sayso kills the process and inserts the text after replacements.
@@ -381,3 +383,26 @@ Codex on GPT-6-Astra reviewed the code in three rounds on 2026-10-21.
   - Live cleanup uses the speech model of the final pass.
   - A failed delete shows on the provider row.
 - **Round 3:** every fix is complete and there are no new defects. Verdict: ready to commit.
+
+## Runtime
+
+Changed on 2026-11-22. The app's cleanup runtime is `cmd/sayso-cleanup`: Go, `CGO_ENABLED=0`, with [yzma](https://github.com/hybridgroup/yzma) v1.33.0, which calls llama.cpp through purego and libffi. It loads prebuilt shared libraries of one pinned llama.cpp release. So no app build compiles llama.cpp, and none runs Cargo. The Rust runtime of `native/cleanup` stays for the SDKs (`sayso-sdk`, `@justsayso/cleanup`, the `sayso-cleanup` release files).
+
+**Why a separate process still.** yzma's libffi binding loads libffi in a package `init` and panics when that fails. A signed macOS app with the hardened runtime refuses a libffi that the binding writes to the user cache (library validation: another team ID), so an app that imports yzma crashes at every start. A separate process keeps that, and any crash or hang of llama.cpp, away from dictation. A test in `cmd/sayso` fails when the app depends on yzma or the binding. The other reasons of decision 1 hold: a kill stops a decode, and the memory is free when the process ends.
+
+**Protocol.** The same protocol 1 as `native/cleanup` (`internal/cleanupd`). One addition: `hello` has `"libraries": "found"` or `"missing"`. The Rust runtime omits it. The protocol tests and the model tests of `native/cleanup` pass unchanged against the Go runtime.
+
+**Decoding.** The same as the Rust runtime, line for line: the prompt with the BOS rule of the model, one batch of `n_ctx` tokens (2,048), greedy sampling, the end-of-generation token or the first `end` string, `max_tokens`, and the context limit. On Apple silicon (Metal) the answers are the bytes of the Rust runtime (`internal/engine/cleanup_real_test.go`, set `SAYSO_CLEANUP_REAL_MODEL_DIR`). On the CPU the order of float sums depends on the thread count, so an answer can differ in small ways; the runtime uses the cores, at most 8, as before.
+
+**Libraries.** `internal/llamalib/pins.go` pins llama.cpp `v1.0.0` (nightly build `b12359`): one archive for each platform with its SHA-256, and the files that Sayso keeps from it, each with its own SHA-256. `docs/releasing.md`, "What ships where", lists the archives and the folders. The runtime finds the libraries in this order: `SAYSO_LLAMA_LIB_DIR` (development; not checked), the folder of the package (`Contents/Frameworks/llama` on macOS, else the `llama/` folder that holds the runtime), and a download in the user cache (each file checked against its SHA-256 before every load). The bundle scripts take the libraries from `build/llama-libs` (`go run ./scripts/llama-libs fetch`), which downloads each archive one time and checks it. The ggml backends load only from the libraries folder, before `llama_backend_init`, which would look in the folder of the program and the working folder too.
+
+**Start, load, stop.**
+
+- The client (`internal/engine/cleanup.go`) starts the runtime at the first use, in the runtime's folder.
+- When a cleanup model can run, the app loads it ahead in the background: at the start and when the config changes (the default provider when it is a cleanup model, else the first cleanup model), and while the microphone records. On a Mac the first load compiles the Metal shaders (about 5 s); later loads take about 0.3 s.
+- Every stop is graceful: the client closes stdin, and the runtime frees the context, then the model, then the llama.cpp backend, and exits. ggml-metal asserts at the exit of a process whose backend still holds resources, so the runtime always frees them first. A graceful stop that takes more than 5 s becomes a kill. Graceful stops: 10 minutes with no request, AI off, the delete of a loaded model, and the quit of the app.
+- A request past its deadline, or whose context ends (`CleanupRequest.Context`), kills the process, also during the start and the load of the model; the next request starts it again and loads the model. A kill skips the exit handlers, so ggml-metal does not assert. The context of a dictation ends when the dictation is discarded: when the undo window of a cancelled dictation ends, or a new dictation starts over it. Cancel alone keeps the cleanup, because Undo inserts its result.
+- A runtime that has no libraries says so in `hello`. Then the app downloads them into the user cache in the background (one download at a time), and the dictation gets the text after replacements.
+
+**Signing on macOS.** The runtime has the hardened runtime and no entitlements, and keeps library validation. Each dylib in `Contents/Frameworks/llama`, also `libffi.8.dylib`, has the signature of the app, so it loads. The runtime needs no `disable-library-validation`.
+

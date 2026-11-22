@@ -136,7 +136,7 @@ The `.node` files of the addons are not signed with the Developer ID. Each app t
 
 ### Windows signing (optional)
 
-The Windows job signs the installer and the exes (`Sayso.exe`, the three builds of the speech engine: `sayso-engine.exe`, `sayso-engine-avx.exe`, and `sayso-engine-baseline.exe`, and the three builds of the cleanup runtime: `sayso-cleanup.exe`, `sayso-cleanup-avx.exe`, and `sayso-cleanup-baseline.exe`) when these secrets exist. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
+The Windows job signs the installer and the exes (`Sayso.exe`, the three builds of the speech engine: `sayso-engine.exe`, `sayso-engine-avx.exe`, and `sayso-engine-baseline.exe`, the cleanup runtime `llama\sayso-cleanup.exe` and the llama.cpp DLLs and `libffi-8.dll` beside it, and the three builds of the Rust cleanup runtime of the release file: `sayso-cleanup.exe`, `sayso-cleanup-avx.exe`, and `sayso-cleanup-baseline.exe`) when these secrets exist. The Visual C++ runtime DLLs keep the signature of Microsoft. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
 
 | Secret | Contents |
 |---|---|
@@ -225,30 +225,44 @@ The workflow does not change a release that users already get: each job stops wh
 
 ## What ships where
 
-Each release file holds three programs: the app, the speech engine, and the cleanup runtime `sayso-cleanup` (`native/cleanup`, its own Cargo workspace, which builds llama.cpp with CMake). The app finds the runtime in the folder of its own executable (`Runtime::default_path` in `crates/sayso-cleanup-client/src/runtime.rs`). So the runtime goes where the app executable is. No release file is new: the runtime is inside the 12 that exist.
+Each release file holds the app, the speech engine, and the cleanup runtime `sayso-cleanup` (`cmd/sayso-cleanup`, Go with `CGO_ENABLED=0`) with its llama.cpp libraries. The runtime loads llama.cpp through [yzma](https://github.com/hybridgroup/yzma) (purego and libffi) from prebuilt shared libraries of one pinned llama.cpp release (`internal/llamalib/pins.go`). No release file builds llama.cpp, and no app build runs Cargo. [cleanup-models.md](cleanup-models.md), "Runtime", has the design.
 
-On x86_64 (Windows and Linux) the runtime has three builds, because llama.cpp compiles its kernels for one instruction set and a processor without it stops the runtime with SIGILL (issue #37): `sayso-cleanup` (AVX2, FMA, F16C, and BMI2), `sayso-cleanup-avx` (AVX and SSE 4.2), and `sayso-cleanup-baseline` (x86-64 only). Each one goes beside `sayso-cleanup`, and the app starts the best one that the processor runs (`crates/sayso-core/src/cpu.rs`). `scripts/build-cleanup.sh` and `scripts/bundle-windows.ps1` build them. macOS and Linux aarch64 have one build. The Windows speech engine has the same three builds for whisper.cpp (`sayso-engine.exe`, `sayso-engine-avx.exe`, `sayso-engine-baseline.exe`, from `scripts/bundle-windows.ps1`), and the app picks one the same way (`crates/sayso-engine/NOTES.md`).
+The libraries are in a folder of their own, never beside the speech engine, so the ggml of llama.cpp and the ggml of whisper.cpp and parakeet.cpp never meet. The runtime starts in its own folder and loads the ggml backends only from the libraries folder (llama.cpp also looks in the folder of the program and the working folder).
 
-| Release file | Where `sayso-cleanup` is | Signing |
+| Release file | The runtime | The libraries | Signing |
+|---|---|---|---|
+| macOS DMG | `Sayso.app/Contents/MacOS/sayso-cleanup` | `Sayso.app/Contents/Frameworks/llama/` (code belongs in `Frameworks`, not in `Resources`), with `libffi.8.dylib` | Developer ID: the runtime with the hardened runtime, no entitlements, identifier `dev.sayso.Sayso.cleanup`; each dylib with the same identity, so library validation accepts it. The notarization of the app covers them. |
+| Windows installer | `llama\sayso-cleanup.exe` in the install folder | The same `llama\` folder: `llama.dll`, `ggml.dll`, `ggml-base.dll`, the 14 `ggml-cpu-*.dll`, `libomp.dll`, `libffi-8.dll`, and a copy of the Visual C++ runtime | The exe and the DLLs, with the same certificate as the exes, when the secrets exist |
+| Linux tarball | `bin/llama/sayso-cleanup` | `bin/llama/`, with the soname links and `libgomp.so.1` | None |
+| `.deb`, `.rpm`, AUR | `/usr/lib/sayso/llama/sayso-cleanup` | `/usr/lib/sayso/llama/` | None |
+| AppImage | `usr/bin/llama/sayso-cleanup` | `usr/bin/llama/` | None |
+| Flatpak | `/app/bin/llama/sayso-cleanup` | `/app/bin/llama/` | None |
+| Nix | `$out/lib/sayso/llama/sayso-cleanup` | `$out/lib/sayso/llama/` (autoPatchelf rewrites them) | None |
+| Homebrew cask | Inside `Sayso.app`, as in the DMG | | The DMG |
+
+The pinned release is llama.cpp `v1.0.0`, whose binaries are the nightly build `b12359` (the default of yzma v1.33.0). Each archive and each file Sayso keeps from it has a SHA-256 in `internal/llamalib/pins.go`:
+
+| Platform | Archive | Backend |
 |---|---|---|
-| macOS DMG | `Sayso.app/Contents/MacOS/sayso-cleanup`, beside `Sayso` and `SaysoEngine` | Developer ID, hardened runtime, no entitlements, identifier `dev.sayso.Sayso.cleanup`. The notarization of the app covers it. |
-| Windows installer | `sayso-cleanup.exe` in the install folder, beside `Sayso.exe` and `sayso-engine.exe` | Signed with the same certificate as the exes, when the secrets exist |
-| Linux tarball | `bin/sayso-cleanup`, beside `bin/sayso` | None |
-| `.deb`, `.rpm`, AUR | `/usr/lib/sayso/sayso-cleanup`, beside `sayso` (`/usr/bin/sayso` is a link) | None |
-| AppImage | `usr/bin/sayso-cleanup` | None |
-| Flatpak | `/app/bin/sayso-cleanup` | None |
-| Nix | `$out/lib/sayso/sayso-cleanup` | None |
-| Homebrew cask | Inside `Sayso.app`, as in the DMG | The DMG |
+| macOS arm64 | `llama-b12359-bin-macos-arm64.tar.gz` (ggml-org/llama.cpp) | Metal |
+| macOS x86_64 | `llama-b12359-bin-macos-x64.tar.gz` (pinned; Sayso has no Intel app) | CPU |
+| Windows x86_64 | `llama-b12359-bin-win-cpu-x64.zip` | CPU |
+| Linux x86_64 | `llama-b12359-bin-ubuntu-x64.tar.gz` | CPU |
+| Linux arm64 | `llama-v1.0.0-bin-ubuntu-cpu-arm64.tar.gz` (hybridgroup/llama-cpp-builder, a third-party build: llama.cpp publishes no Linux arm64 CPU build) | CPU |
 
-The Linux tarball and the packages made from its `bin` folder (the Flatpak and the AppImage) also have `sayso-bridge`, a static program. Only a Sayso in a Flatpak starts it ([sdk.md](sdk.md), "Flatpak").
+On x86_64, one build runs on every processor: ggml has a CPU library for each processor level (`ggml-cpu-x64`, `-sse42`, `-sandybridge`, `-haswell`, and newer) and loads the best one that the processor runs. A processor without AVX2 works (issue #37); `linux.yml` runs the runtime under QEMU down to x86-64 with no SSE 4.2 (`scripts/test-llama-cpus.sh`). The libraries need glibc 2.34 and GLIBCXX 3.4.29 at most, under the floor of the packages; `scripts/package-linux.sh` checks them with the programs.
 
-`scripts/bundle.sh`, `scripts/bundle-windows.ps1`, and `scripts/bundle-linux.sh` (through `scripts/build-cleanup.sh`) build the runtime in release mode, also for a debug app, because llama.cpp is slow in a debug build. Every other Linux format takes the binary from the tarball.
+The bundle scripts get the libraries with `go run ./scripts/llama-libs fetch`, which downloads each archive once into `build/llama-libs/archives`, checks it, and keeps the files in `build/llama-libs/<tag>-<os>-<arch>`, so a second build downloads nothing. libffi: on macOS the runtime is built with `-tags ffi_no_embed` and `-X github.com/jupiterrider/ffi.filename=@executable_path/../Frameworks/llama/libffi.8.dylib` (the file comes from the yzma binding, pinned by `go.sum` and a SHA-256 in `internal/llamalib`); on Windows `libffi-8.dll` is beside the exe, where the default search finds it; Linux uses the system's `libffi.so.8` (the packages depend on `libffi8`, `libffi.so.8()(64bit)`, or `libffi`). Linux also ships `libgomp.so.1`, from the build system, because the llama.cpp libraries need it and find it through their RUNPATH `$ORIGIN`.
 
-The CI job **Cleanup runtime** (`ci.yml`, start it with `gh workflow run ci.yml`) builds, tests, and lints the runtime on the four targets: macOS arm64, Windows x86_64, Linux x86_64, and Linux arm64. It prints the size and the libraries of the binary, and fails when the binary needs OpenMP. `linux.yml` also starts the installed runtime in the `.deb` test and checks that it answers `hello` with the `cpu` backend.
+A runtime that finds no libraries (a development build, a broken install) says so in its `hello`, and the app downloads the archive of its platform into the user cache (`<cache>/llama/<tag>-<os>-<arch>`), checks the archive and each file, and the runtime loads them from there. A signed macOS app cannot load these: library validation accepts only libraries signed with its team identity, so a Mac always uses the libraries of the bundle.
+
+The SDKs (the Rust `sayso-sdk`, `@justsayso/cleanup`, and the `sayso-cleanup-<version>-<os>-<arch>` release files) still use the Rust runtime of `native/cleanup`, its own Cargo workspace, which links llama.cpp. The release workflow builds it on its own for those files (`scripts/build-cleanup.sh`, `scripts/build-cleanup.ps1`), no longer from the app. It speaks the same protocol, so the SDKs could move to the Go runtime later.
+
+The CI job **Cleanup runtime** (`ci.yml`, start it with `gh workflow run ci.yml`) builds, tests, and lints the Rust runtime on the four targets. `linux.yml` starts the installed Go runtime in the `.deb` test and checks that it answers `hello` with the `cpu` backend and its libraries, and that its libraries take `libgomp` from their own folder.
 
 ## Build the release files on your Mac
 
-`scripts/release.sh` does the same steps as the macOS job and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`) and CMake (for the cleanup runtime). It does not build the engine file for Intel Macs. See "The engine release files".
+`scripts/release.sh` does the same steps as the macOS job and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`) and CMake (for the MediaRemoteAdapter framework). It needs no Cargo. It does not build the engine file for Intel Macs. See "The engine release files".
 
 ```sh
 scripts/release.sh --skip-notarize   # bundle and DMG only. Nothing goes to Apple.

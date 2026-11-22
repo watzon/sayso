@@ -1,6 +1,7 @@
 package enhance
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -373,5 +374,29 @@ func TestPipelineCleanup(t *testing.T) {
 	run.LanguageSetting = "pl"
 	if out := p.Run("x"); out.Notice.Kind != "language" || out.Enhance.Result != store.EnhanceNotUsed {
 		t.Fatal(out)
+	}
+}
+
+type ctxCleaner struct{ got chan context.Context }
+
+func (c ctxCleaner) Clean(r CleanupRequest) (CleanupResponse, error) {
+	c.got <- r.Context
+	return CleanupResponse{Text: r.Text}, nil
+}
+
+// The context of the dictation reaches the cleanup runtime, so a cancel stops it.
+func TestPipelineCleanupGetsTheContext(t *testing.T) {
+	email := builtin("email")
+	sp, _ := FindCleanupModel("spokenly-cleanup-1")
+	m := sp.ID
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := ctxCleaner{got: make(chan context.Context, 1)}
+	run := &CleanerRun{Cleaner: c, ProviderID: "cm", Model: sp,
+		Plan: email.RunPlanOn(config.Provider{Kind: config.KindCleanupModel, Model: &m}), LanguageSetting: "en", Context: ctx}
+	p := TextPipeline{Replacer: NewReplacer(nil), Style: &email, Cleaner: run}
+	p.Run("open the docs")
+	if got := <-c.got; got != ctx {
+		t.Fatal("the cleanup request has no context")
 	}
 }

@@ -206,8 +206,12 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 		lm = speech.LanguageModel()
 	}
 	cleanupRuntime := engine.NewCleanupClient("")
-	a.OnConfig(cleanupSwitch(cleanupRuntime, a.ControllerConfig()))
 	styler := newStyler(secrets, a.ControllerConfig, lm, cleanupRuntime, p.ModelsDir())
+	var warm []func(*config.Config)
+	if w, ok := styler.Cleaner.(interface{ Warm(string) error }); ok {
+		warm = append(warm, cleanupWarmer(w.Warm))
+	}
+	a.OnConfig(cleanupSwitch(cleanupRuntime, a.ControllerConfig(), warm...))
 
 	// The dictation controller.
 	deps := dictation.Deps{

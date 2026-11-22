@@ -435,6 +435,52 @@ func TestAStyleRunsWithItsProvider(t *testing.T) {
 	}
 }
 
+// waiting is a Styler that runs until its context ends.
+type waiting struct{ started, ended chan struct{} }
+
+func (w waiting) Run(j StyleJob) enhance.PipelineOutput {
+	close(w.started)
+	<-j.Context.Done()
+	close(w.ended)
+	return enhance.PipelineOutput{Text: j.Text}
+}
+
+// Cancel keeps the style step for Undo; when the undo window ends (here: a
+// new dictation starts), its context ends, so a local cleanup model stops.
+func TestADiscardedDictationEndsItsStyleStep(t *testing.T) {
+	r := newRig(t, func(c *config.Config) {
+		c.AI.Enabled = true
+		model := "gpt-x"
+		id := "p"
+		c.AI.Providers = []config.Provider{{ID: "p", Name: "P", Kind: config.KindOpenAICompatible, Model: &model}}
+		c.AI.DefaultProvider = &id
+	})
+	lib := enhance.LoadStyles(filepath.Join(t.TempDir(), "styles"))
+	r.c.d.Styles = func() *enhance.StyleLibrary { return lib }
+	w := waiting{started: make(chan struct{}), ended: make(chan struct{})}
+	r.c.d.Styler = w
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	r.c.Toggle()
+	select {
+	case <-w.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the style step did not start")
+	}
+	r.c.Cancel()
+	select {
+	case <-w.ended:
+		t.Fatal("Cancel ended the style step; Undo needs it")
+	case <-time.After(100 * time.Millisecond):
+	}
+	r.c.Toggle()
+	select {
+	case <-w.ended:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the style step did not end when the dictation was discarded")
+	}
+}
+
 // preparing is a Styler that hears Prepare.
 type preparing struct {
 	upper

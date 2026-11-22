@@ -1,5 +1,7 @@
 # Cleanup runtime notes
 
+Since 2026-11-22 the app does not ship this runtime: it runs `cmd/sayso-cleanup` (Go, yzma, prebuilt llama.cpp libraries), which speaks the same protocol and passes the tests of this folder (`docs/cleanup-models.md`, "Runtime"). This runtime stays for the SDKs: `sayso-sdk`, `@justsayso/cleanup`, and the `sayso-cleanup-<version>-<os>-<arch>` release files, which the release workflow builds on its own (`scripts/build-cleanup.sh`, `scripts/build-cleanup.ps1`). The sections on the app below describe the time before.
+
 `sayso-cleanup` is the process that runs the local cleanup models (S1-mini, Cleanup 1). It knows no model. It loads one GGUF file with llama.cpp and completes raw text with greedy decoding. The app builds the prompts and checks the answers. See `docs/cleanup-models.md`, "Runtime and protocol".
 
 This folder is its own Cargo workspace (package `sayso-cleanup`, library `sayso_cleanup`, binary `sayso-cleanup`), with its own `Cargo.lock` and `target`. The app workspace does not build llama.cpp. `rust-toolchain.toml` of the repository applies here too.

@@ -69,6 +69,10 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 [InstallDelete]
 ; The speech engine before 0.12. sayso-engine.exe replaces it.
 Type: files; Name: "{app}\SaysoEngine.exe"
+; The Rust cleanup runtime of older versions, in the app folder. llama\sayso-cleanup.exe replaces it.
+Type: files; Name: "{app}\sayso-cleanup.exe"
+Type: files; Name: "{app}\sayso-cleanup-avx.exe"
+Type: files; Name: "{app}\sayso-cleanup-baseline.exe"
 
 [Icons]
 Name: "{autoprograms}\Sayso"; Filename: "{app}\Sayso.exe"
@@ -84,9 +88,8 @@ Filename: "{app}\Sayso.exe"; Description: "{cm:LaunchProgram,Sayso}"; Flags: now
 ; Quit a running Sayso, so its files can be removed.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM Sayso.exe /F"; Flags: runhidden; RunOnceId: "QuitSayso"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-engine.exe /F"; Flags: runhidden; RunOnceId: "QuitEngine"
+; The cleanup runtime (llama\sayso-cleanup.exe) holds the llama.cpp DLLs open.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanup"
-Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup-avx.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanupAvx"
-Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup-baseline.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanupBaseline"
 
 [Registry]
 ; Settings › General › Launch at login writes this value. Remove it with the app.

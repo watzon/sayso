@@ -1,6 +1,7 @@
 package enhance
 
 import (
+	"context"
 	"log/slog"
 	"strings"
 	"time"
@@ -71,6 +72,7 @@ type CleanerRun struct {
 	LanguageSetting     string
 	FinalModelLanguages []string
 	App, Site           string
+	Context             context.Context // ends the cleanup early; nil means none
 }
 
 // CleanupNotice is what the overlay says about a cleanup model.
@@ -248,7 +250,7 @@ func (p *TextPipeline) runCleanup(run CleanerRun, replaced string, reps []store.
 	spoken := Spelled(replaced)
 	timeout := p.stepTimeout(spoken)
 	started := time.Now()
-	resp, cerr := run.Cleaner.Clean(CleanupRequest{Model: model, Text: spoken, Settings: settings, App: run.App, Site: run.Site, Timeout: timeout})
+	resp, cerr := run.Cleaner.Clean(CleanupRequest{Model: model, Text: spoken, Settings: settings, App: run.App, Site: run.Site, Timeout: timeout, Context: run.Context})
 	var err error
 	if cerr != nil {
 		if ce, ok := cerr.(*CleanError); ok {

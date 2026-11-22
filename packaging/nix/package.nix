@@ -6,6 +6,7 @@
   stdenv,
   fetchurl,
   autoPatchelfHook,
+  libffi,
   alsa-lib,
   fontconfig,
   freetype,
@@ -38,24 +39,23 @@ stdenv.mkDerivation {
     stdenv.cc.cc.lib
     vulkan-loader # the engine links libvulkan.so.1; autoPatchelf resolves that from here, not runtimeDependencies
   ];
-  # The app loads these at run time (Wayland, and Vulkan with a GL fallback).
+  # The app loads these at run time (Wayland, and Vulkan with a GL fallback),
+  # and the cleanup runtime loads libffi.so.8.
   runtimeDependencies = [
+    libffi
     libGL
     vulkan-loader
     wayland
   ];
   dontStrip = true;
 
-  # The app finds the engine and the cleanup runtime next to itself, so the
-  # binaries live in one folder.
+  # The app finds the engine next to itself, and the cleanup runtime with its
+  # llama.cpp libraries in llama/ next to itself.
   installPhase = ''
     runHook preInstall
     install -Dm755 bin/sayso $out/lib/sayso/sayso
     install -Dm755 bin/sayso-engine $out/lib/sayso/sayso-engine
-    # On x86_64 the cleanup runtime has one build for each instruction set.
-    for cleanup in bin/sayso-cleanup*; do
-      install -Dm755 $cleanup $out/lib/sayso/$(basename $cleanup)
-    done
+    cp -a bin/llama $out/lib/sayso/llama
     mkdir -p $out/bin
     ln -s $out/lib/sayso/sayso $out/bin/sayso
     cp -r share $out/share

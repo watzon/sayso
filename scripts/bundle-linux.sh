@@ -14,13 +14,24 @@ profile=release
 [[ "${1:-}" == "--debug" ]] && profile=debug
 version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
 arch=$(uname -m)
+case "$arch" in
+  x86_64) goarch=amd64 ;;
+  aarch64) goarch=arm64 ;;
+  *) echo "no llama.cpp build for $arch" >&2; exit 1 ;;
+esac
 export CGO_ENABLED=0
 if [[ "$profile" == release ]]; then ldflags=(-ldflags="-s -w" -tags mygo_noinspector); else ldflags=(); fi
 
-echo "==> app and engine (go, $profile)"
+echo "==> app, engine, and cleanup runtime (go, $profile)"
 mkdir -p build/go
 go build -buildvcs=false ${ldflags[@]+"${ldflags[@]}"} -o build/go/sayso ./cmd/sayso
 go build -buildvcs=false ${ldflags[@]+"${ldflags[@]}"} -o build/go/sayso-engine ./cmd/sayso-engine
+# The cleanup runtime loads llama.cpp with yzma, through the system's
+# libffi.so.8 (ffi_no_embed: Linux has no embedded copy anyway).
+go build -buildvcs=false -tags ffi_no_embed -ldflags="-s -w" -o build/go/sayso-cleanup ./cmd/sayso-cleanup
+
+echo "==> llama.cpp libraries (pinned)"
+llama_libs=$(go run ./scripts/llama-libs fetch -os linux -arch "$goarch" -out build/llama-libs)
 
 name="sayso-$version-linux-$arch"
 out="${SAYSO_BUNDLE_DIR:-build}/$name"
@@ -33,20 +44,30 @@ install -m 755 build/go/sayso-engine "$out/bin/sayso-engine"
 if [[ -n "${SAYSO_NATIVE_LIBS_DIR:-}" ]]; then
   install -m 755 "$SAYSO_NATIVE_LIBS_DIR"/*.so* "$out/bin/"
 fi
-# The cleanup runtime is its own Cargo workspace (it builds llama.cpp, which is
-# slow in a debug build), so it is always a release build. The app finds it
-# next to itself, like the engine. On x86_64 there are three builds, one for
-# each instruction set (scripts/build-cleanup.sh).
-scripts/build-cleanup.sh "$out/bin"
+# The cleanup runtime and its llama.cpp libraries live in bin/llama, apart from
+# the ggml of the engine in bin/ (internal/llamalib). The libraries find each
+# other and libgomp through RUNPATH $ORIGIN, and need their soname links. On
+# x86_64 ggml loads the CPU library that the processor runs (issue #37).
+mkdir -p "$out/bin/llama"
+install -m 755 build/go/sayso-cleanup "$out/bin/llama/sayso-cleanup"
+cp -a "$llama_libs"/lib* "$out/bin/llama/"
+# libgomp (OpenMP of GCC), which ggml needs, from this build system: so a
+# system without it runs the runtime too.
+gomp=$(PATH="$PATH:/sbin:/usr/sbin" ldconfig -p | awk '$1 == "libgomp.so.1" && $NF ~ /^\// { print $NF; exit }')
+[[ -n "$gomp" ]] || { echo "This system has no libgomp.so.1 (apt install libgomp1)" >&2; exit 1; }
+install -m 755 "$(realpath "$gomp")" "$out/bin/llama/libgomp.so.1"
 cp packaging/linux/dev.sayso.Sayso.desktop "$out/share/applications/"
 cp packaging/linux/dev.sayso.Sayso.metainfo.xml "$out/share/metainfo/"
 cp packaging/linux/70-sayso-uinput.rules "$out/lib/udev/rules.d/"
 install -m 755 packaging/linux/install.sh "$out/install.sh"
 cp LICENSE "$out/"
 # The licenses of the libraries that the engine loads: parakeet.cpp and ggml (MIT) and sherpa-onnx (Apache-2.0) and ONNX Runtime (MIT).
-# The cleanup runtime links llama.cpp statically, and its LICENSE has the same
-# text as ggml.txt.
+# llama.cpp has the same license text as ggml.txt; libgomp is GCC's runtime
+# (libgomp.txt).
 install -D -m 644 -t "$out/share/licenses/sayso" packaging/licenses/*.txt
+# llama.cpp's license is ggml's MIT text (ggml.txt, byte for byte); not every
+# llama.cpp archive has its LICENSE (linux-arm64 has none).
+install -m 644 packaging/licenses/ggml.txt "$out/share/licenses/sayso/llama.cpp.txt"
 # The macOS icon set has the sizes the hicolor theme uses.
 for size in 16 32 128 256 512; do
   mkdir -p "$out/share/icons/hicolor/${size}x${size}/apps"
