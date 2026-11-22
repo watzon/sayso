@@ -515,3 +515,54 @@ func TestWhatADictationNeeds(t *testing.T) {
 		t.Fatal(msg("k", "a", 1).String())
 	}
 }
+
+// slowContext is a focused app that takes until release to answer, as an
+// app busy with its own work answers Accessibility.
+type slowContext struct{ release chan struct{} }
+
+func (c slowContext) ActiveApp() (platform.ActiveApp, error) {
+	<-c.release
+	return fakeContext{}.ActiveApp()
+}
+
+// The overlay shows a recording at once: a media player that takes its
+// time to pause, or to resume, holds neither the recording state nor the
+// processing state.
+func TestSlowMediaDoesNotHoldTheStates(t *testing.T) {
+	r := newRig(t, nil)
+	hold := make(chan struct{})
+	free := sync.OnceFunc(func() { close(hold) })
+	t.Cleanup(free) // before the rig closes, so a held controller can stop
+	r.media.hold = hold
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	r.audio.speak(16000)
+	r.c.Toggle()
+	r.obs.waitFor(t, "processing")
+	free()
+	r.obs.waitFor(t, "done")
+	r.media.waitCounts(t, 1, 1)
+}
+
+// The recording state comes before the focused app is known: the overlay
+// does not wait for Accessibility. The dictation still learns the app.
+func TestRecordingShowsBeforeTheFocusedApp(t *testing.T) {
+	r := newRig(t, nil)
+	release := make(chan struct{})
+	free := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(free) // before the rig closes, so a held controller can stop
+	r.c.d.Platform.Context = slowContext{release: release}
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	free()
+	r.audio.speak(16000)
+	r.c.Toggle()
+	r.obs.waitFor(t, "done")
+	<-r.history.saved
+	r.history.mu.Lock()
+	e := r.history.entries[0]
+	r.history.mu.Unlock()
+	if e.App == nil || e.App.BundleID != "com.example.notes" {
+		t.Fatalf("app %+v", e.App)
+	}
+}
