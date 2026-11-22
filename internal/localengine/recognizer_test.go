@@ -158,4 +158,3 @@ func TestAPanicInTheLoadIsAFailure(t *testing.T) {
 		t.Fatal("no error after a panic")
 	}
 }
-
