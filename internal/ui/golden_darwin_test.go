@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	mu "github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/golden"
 
 	"github.com/watzon/sayso/internal/config"
+	"github.com/watzon/sayso/internal/store"
 )
 
 // The paper kit as Rust draws it (spec §7.6): buttons, the switch, chips,
@@ -84,4 +86,20 @@ func TestGoldenOverlayRecording(t *testing.T) {
 			golden.Match(t, tt, "testdata/golden-overlay-recording-"+string(size)+"-"+mode+".png", golden.Tolerance{Channel: 8, PerMille: 5})
 		}
 	}
+}
+
+// "How it got here" of a long dictation: the italic transcript in two
+// lines, and "Show full transcript" under it at its left edge.
+func TestGoldenHistoryTrail(t *testing.T) {
+	e := newEnv(t)
+	a := e.a
+	long := strings.Repeat("so the plan is to move the standup to Thursday and invite the design team ", 3)
+	en := store.HistoryEntry{Transcript: long, FinalText: long, StyleID: "raw", Model: "parakeet-tdt-v3"}
+	en.Insert.Result = store.InsertPasted
+	view := func(c *mu.Context) {
+		p := a.look(c)
+		mu.Column(c).Padding(20).Background(p.Sheet).Grow(1).Children(func() { a.trail(c, p, en) })
+	}
+	tt := mu.NewTester(view, 560, 360)
+	golden.Match(t, tt, "testdata/golden-history-trail-light.png", golden.Tolerance{Channel: 8, PerMille: 5})
 }

@@ -1150,3 +1150,33 @@ func TestSettingsHistoryRetentionAndDeleteAudio(t *testing.T) {
 		t.Errorf("%d entries after Delete audio, want the entry kept", n)
 	}
 }
+
+// "Show full transcript" under the italic transcript of "How it got here"
+// starts at the transcript's left edge, as a link, not centered in the
+// step (Paper History).
+func TestHistoryShowTranscriptLinkIsLeftAligned(t *testing.T) {
+	e := newEnv(t)
+	long := strings.Repeat("a long dictation that needs more than two lines in the trail ", 4)
+	e.addEntry(t, long, "Notes", false)
+	e.a.SetPage(PageHistory)
+	tt := e.hub(t)
+	link, ok := controlBounds(tt, i18n.T("history.trail.show_transcript"))
+	if !ok {
+		t.Fatalf("no link: %q", tt.Texts())
+	}
+	title := i18n.T("history.trail.transcript", "model", e.a.modelName(models.ModelID("parakeet-tdt-v3")))
+	var step mu.Rect
+	for _, a := range tt.AccessAll() {
+		if a.Role == mu.RoleText && a.Name == title {
+			step = a.Bounds
+		}
+	}
+	if step.W == 0 {
+		t.Fatalf("no trail title %q: %q", title, tt.Texts())
+	}
+	// The link is as wide as its label: a link stretched across the step
+	// centers its label in it.
+	if d := link.X - step.X; d > 1 || d < -1 || link.W > step.W/2 {
+		t.Errorf("the link %+v in the transcript step %+v", link, step)
+	}
+}
