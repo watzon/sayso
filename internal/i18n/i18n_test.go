@@ -9,8 +9,8 @@ import (
 
 // Leaf counts per locale, counted independently with Ruby's YAML parser.
 var wantLeaves = map[string]int{
-	"en": 1874, "es": 1902, "pt-BR": 1902, "zh-CN": 1846, "ja": 1846,
-	"de": 1874, "fr": 1902, "it": 1902, "ko": 1846, "ru": 1930,
+	"en": 1876, "es": 1904, "pt-BR": 1904, "zh-CN": 1848, "ja": 1848,
+	"de": 1876, "fr": 1904, "it": 1904, "ko": 1848, "ru": 1932,
 }
 
 func use(t *testing.T, code string) {
