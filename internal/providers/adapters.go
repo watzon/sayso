@@ -93,7 +93,9 @@ func firstString(v any, ptrs ...string) string {
 	return ""
 }
 
-func openAIError(v any) string { return firstString(v, "/error/message", "/message", "/detail", "/error") }
+func openAIError(v any) string {
+	return firstString(v, "/error/message", "/message", "/detail", "/error")
+}
 
 func openAITranscribe(t *target, r Request, d *deadline) (string, error) {
 	form := openAIForm(t.kind, r)
