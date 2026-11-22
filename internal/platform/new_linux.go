@@ -17,5 +17,6 @@ func New() (*Services, error) {
 		Media:       &linuxMedia{},
 		LoginItem:   newLinuxLoginItem(),
 		Dock:        linuxDock{},
+		AppIcons:    noopAppIcons{},
 	}, nil
 }

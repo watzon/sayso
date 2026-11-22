@@ -12,5 +12,6 @@ func New() (*Services, error) {
 		Media:       &windowsMedia{},
 		LoginItem:   windowsLoginItem{},
 		Dock:        windowsDock{},
+		AppIcons:    noopAppIcons{},
 	}, nil
 }
