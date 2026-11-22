@@ -3,8 +3,10 @@ module github.com/watzon/sayso
 go 1.27.4
 
 require (
+	github.com/Microsoft/go-winio v0.6.4
 	github.com/abadojack/whatlanggo v1.0.1
 	github.com/ebitengine/purego v0.11.3
+	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/mewkiz/flac v1.0.14
 	github.com/pelletier/go-toml/v2 v2.4.3
 	golang.org/x/sys v0.50.0
@@ -13,7 +15,6 @@ require (
 )
 
 require (
-	github.com/Microsoft/go-winio v0.6.4 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
