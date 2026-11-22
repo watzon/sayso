@@ -27,13 +27,16 @@ type homeState struct {
 	rules  int
 }
 
-// dataChanged makes every page read the store again.
+// dataChanged makes every page read the store again, and redraws every
+// window, so a hub or popover that shows the data reads it now rather
+// than at the next input.
 func (a *App) dataChanged() {
 	a.home.loaded = false
 	a.hist.loaded = false
 	a.dict.loaded = false
 	a.sty.names = nil
 	a.publish()
+	a.invalidate()
 }
 
 func (a *App) loadHome() {

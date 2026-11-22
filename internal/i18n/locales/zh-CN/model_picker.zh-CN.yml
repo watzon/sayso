@@ -12,5 +12,6 @@ model_picker:
   no_models: "此服务商未列出任何模型。"
   no_match: "没有符合过滤条件的模型。"
   refresh: "刷新"
+  use_typed: "使用“%{model}”"
   count:
     other: "%{count} 个模型"

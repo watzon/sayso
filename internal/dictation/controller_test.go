@@ -163,9 +163,20 @@ type fakeHistory struct {
 	entries []store.HistoryEntry
 	audio   int
 	saved   chan struct{}
+	// gate, when set, holds InsertEntry until it is closed: a slow disk.
+	gate chan struct{}
+}
+
+func (h *fakeHistory) count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.entries)
 }
 
 func (h *fakeHistory) InsertEntry(e store.HistoryEntry) (int64, error) {
+	if h.gate != nil {
+		<-h.gate
+	}
 	h.mu.Lock()
 	h.entries = append(h.entries, e)
 	h.mu.Unlock()
@@ -204,12 +215,24 @@ type states struct {
 	mu      sync.Mutex
 	seen    []State
 	notices []Message
+	// history gets a value for each HistoryChanged, with the number of
+	// entries the history had then.
+	history chan int
+	h       *fakeHistory
 }
 
 func (s *states) StateChanged(st State)  { s.mu.Lock(); s.seen = append(s.seen, st); s.mu.Unlock() }
 func (s *states) Notice(m Message)       { s.mu.Lock(); s.notices = append(s.notices, m); s.mu.Unlock() }
 func (s *states) Level(float32)          {}
 func (s *states) Preview(string, string) {}
+func (s *states) HistoryChanged() {
+	if s.history != nil {
+		select {
+		case s.history <- s.h.count():
+		default: // a test that does not read them
+		}
+	}
+}
 
 func (s *states) waitFor(t *testing.T, phase string) State {
 	t.Helper()
@@ -264,6 +287,7 @@ func newRig(t *testing.T, edit func(*config.Config)) *rig {
 		edit(&cfg)
 	}
 	r := &rig{audio: &fakeAudio{}, ins: &fakeInserter{}, sounds: &fakeSounds{}, media: &fakeMedia{}, hot: &fakeHotkeys{}, eng: &fakeEngine{text: " hello world period "}, history: &fakeHistory{saved: make(chan struct{}, 4)}, host: &fakeHost{gate: bridge.NewDictationGate()}, obs: &states{}, cfg: &cfg}
+	r.obs.h, r.obs.history = r.history, make(chan int, 4)
 	timing := DefaultTiming()
 	timing.MinDurationMs = 0
 	r.c = New(Deps{
@@ -283,6 +307,37 @@ func newRig(t *testing.T, edit func(*config.Config)) *rig {
 	})
 	t.Cleanup(r.c.Close)
 	return r
+}
+
+// The history entry is written on its own goroutine, which can end after
+// the dictation's last state: the views that read the history for that
+// state saw no entry. The observer hears HistoryChanged once the entry is
+// written, never before (Home and History stayed stale, issue 3).
+func TestHistoryChangedComesAfterTheWrite(t *testing.T) {
+	r := newRig(t, nil)
+	r.history.gate = make(chan struct{})
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	r.audio.speak(16000)
+	r.c.Toggle()
+	r.obs.waitFor(t, "done")
+	select {
+	case n := <-r.obs.history:
+		t.Fatalf("HistoryChanged before the write, with %d entries", n)
+	default:
+	}
+	if r.history.count() != 0 {
+		t.Fatal("the entry was written before the gate opened")
+	}
+	close(r.history.gate)
+	select {
+	case n := <-r.obs.history:
+		if n != 1 {
+			t.Fatalf("HistoryChanged with %d entries, want the new one", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no HistoryChanged after the write")
+	}
 }
 
 func TestADictationGoesInAndToHistory(t *testing.T) {

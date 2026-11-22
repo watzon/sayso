@@ -12,6 +12,7 @@ model_picker:
   no_models: "Dieser Anbieter listet keine Modelle auf."
   no_match: "Kein Modell passt zum Filter."
   refresh: "Aktualisieren"
+  use_typed: "„%{model}“ verwenden"
   count:
     one: "%{count} Modell"
     other: "%{count} Modelle"

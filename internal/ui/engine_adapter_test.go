@@ -156,6 +156,8 @@ func (s *seenStates) StateChanged(st dictation.State) {
 	s.phases = append(s.phases, st.Phase())
 	s.mu.Unlock()
 }
+func (s *seenStates) HistoryChanged() {}
+
 func (s *seenStates) Notice(m dictation.Message) {
 	s.mu.Lock()
 	s.notices = append(s.notices, m.Key)

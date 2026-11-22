@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -153,6 +154,10 @@ func newEnv(t *testing.T) *testEnv {
 	e.a.TrackKeys = true
 	// Onboarding never looks for the AI tools of the machine that runs the tests.
 	e.a.detectAI = func(enhance.LanguageModel) detected { return detected{} }
+	// Nor does the model picker run a real CLI or call a real server.
+	e.a.d.ListModels = func(config.Provider, providers.SecretStore, enhance.LanguageModel, time.Duration) ([]enhance.ModelChoice, error) {
+		return nil, errors.New("no model list in this test")
+	}
 	RegisterFonts()
 	return e
 }

@@ -139,6 +139,9 @@ type Deps struct {
 	Now func() time.Time
 	// Shell does what needs the desktop; nil does nothing.
 	Shell Shell
+	// ListModels lists a provider's models for the model picker; nil is
+	// enhance.ListProviderModels.
+	ListModels ModelLister
 }
 
 // Shell is what App asks of the desktop: windows and the system.
@@ -205,6 +208,7 @@ type App struct {
 	set   settingsState
 	ov    overlayState
 	pop   popoverState
+	pick  pickerState
 	onb   onboardingState
 	news  whatsNewState
 	upd   updateState
@@ -527,6 +531,13 @@ func (a *App) StateChanged(s dictation.State) {
 		a.syncOverlay()
 		a.invalidate()
 	})
+}
+
+// HistoryChanged implements dictation.Observer: the controller saved a
+// dictation, after StateChanged already had Home and History read the
+// store without it. They read it again, and every window redraws.
+func (a *App) HistoryChanged() {
+	a.post(a.dataChanged)
 }
 
 // Notice implements dictation.Observer.

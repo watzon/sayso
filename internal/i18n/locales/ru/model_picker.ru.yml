@@ -12,6 +12,7 @@ model_picker:
   no_models: "У этого провайдера нет моделей."
   no_match: "Нет моделей, подходящих под фильтр."
   refresh: "Обновить"
+  use_typed: "Использовать «%{model}»"
   count:
     one: "%{count} модель"
     few: "%{count} модели"

@@ -12,7 +12,6 @@ import (
 
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/i18n"
-	"github.com/watzon/sayso/internal/platform"
 )
 
 // Desktop is the Shell of the running app: MyGo windows, the tray item
@@ -23,6 +22,8 @@ type Desktop struct {
 	overlay *mygo.Window
 	wins    map[Window]*mygo.Window
 	tray    *mygo.Tray
+	// layer is the window system under the tray path; tests give a fake.
+	layer   shellLayer
 	popover popoverToggle
 	// popoverClosing is set once the popover's close was handled: Sayso
 	// closing it, or the flyout's dismissal, of which OnHide and OnClosed
@@ -42,6 +43,7 @@ var (
 // mygo.App.WhenReady.
 func NewDesktop(a *App) *Desktop {
 	d := &Desktop{a: a, wins: map[Window]*mygo.Window{}}
+	d.layer = mygoLayer{d}
 	a.d.Shell = d
 	if a.d.Post == nil {
 		a.d.Post = mygo.RunOnMain
@@ -159,13 +161,18 @@ func (d *Desktop) windows() []*mygo.Window {
 	return out
 }
 
-// ShowHub shows and focuses the hub.
+// ShowHub shows and focuses the hub, which activates Sayso: for "Open
+// Sayso" and the other actions that ask for the hub.
 func (d *Desktop) ShowHub() {
 	if d.a.cfg.General.DockIconWithHub && runtime.GOOS == "darwin" {
-		mygo.App.SetActivationPolicy(mygo.ActivationPolicyRegular)
+		d.layer.showInDock()
 	}
-	d.hub.Show()
-	d.hub.Focus()
+	h := d.layer.hub()
+	if h == nil {
+		return
+	}
+	h.Show()
+	h.Focus()
 }
 
 // ShowOverlay shows the overlay without taking the keyboard, or hides it.
@@ -208,6 +215,14 @@ func (d *Desktop) applyInputRegion() {
 
 // ShowWindow shows or hides a secondary window, making it on first use.
 func (d *Desktop) ShowWindow(which Window, show bool) {
+	if which == WinPopover {
+		if show {
+			d.showPopover()
+		} else if w := d.layer.popover(false); w != nil {
+			w.Hide()
+		}
+		return
+	}
 	w := d.wins[which]
 	if !show {
 		if w != nil {
@@ -222,9 +237,6 @@ func (d *Desktop) ShowWindow(which Window, show bool) {
 		}
 		d.wins[which] = w
 	}
-	if which == WinPopover {
-		d.popoverClosing = false
-	}
 	w.Show()
 	w.Focus()
 	if which == WinOnboarding {
@@ -232,11 +244,37 @@ func (d *Desktop) ShowWindow(which Window, show bool) {
 	}
 }
 
+// showPopover shows the tray popover, making it on first use. It calls Show
+// alone: the popover is a nonactivating flyout that takes the keyboard as
+// it shows (popoverOptions). Focus, or activating the app, would bring the
+// hub in front of the app the user is in.
+func (d *Desktop) showPopover() {
+	w := d.layer.popover(true)
+	if w == nil {
+		return
+	}
+	d.popoverClosing = false
+	w.Show()
+}
+
+// trayClicked is a primary click on the tray icon at now: it opens the
+// popover, or closes it, and touches no other window.
+func (d *Desktop) trayClicked(now time.Time) {
+	w := d.layer.popover(false)
+	visible := w != nil && !w.IsDestroyed() && w.IsVisible()
+	switch d.popover.click(now, visible) {
+	case popoverHide:
+		d.ClosePopover(false)
+	case popoverShow:
+		d.showPopover()
+	}
+}
+
 // ClosePopover closes the tray popover on purpose: keep leaves the keyboard
 // in Sayso, for the hub that shows next; otherwise it goes back to the app
 // the user came from.
 func (d *Desktop) ClosePopover(keep bool) {
-	w := d.wins[WinPopover]
+	w := d.layer.popover(false)
 	if w == nil || w.IsDestroyed() || !w.IsVisible() {
 		return
 	}
@@ -266,8 +304,6 @@ func (d *Desktop) newWindow(which Window) *mygo.Window {
 	case WinApproval:
 		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("apps.approval.window_title"), ApprovalW, ApprovalH, mu.View(d.a.ApprovalView)
 		opts.AlwaysOnTop = true
-	case WinPopover:
-		return d.newPopover()
 	default:
 		return nil
 	}
@@ -297,14 +333,7 @@ func (d *Desktop) newPopover() *mygo.Window {
 	if d.tray == nil {
 		return nil
 	}
-	// Focusable: it closes as a menu does, on a press outside it (in
-	// another app, the desktop or a window of Sayso), when another window
-	// takes the keyboard or the app is deactivated, and on Escape (Rust
-	// popover.rs). A press on the tray icon only closes it.
-	w := mygo.NewFlyout(mygo.FlyoutOptions{
-		Tray: d.tray, Placement: mygo.PlacementBottom, Gap: 6, Width: PopoverW, Height: PopoverH,
-		Shadow: true, Popover: true, Focusable: true, CornerRadius: 12, Content: mu.View(d.a.PopoverView),
-	})
+	w := mygo.NewFlyout(popoverOptions(d.tray, mu.View(d.a.PopoverView)))
 	// The flyout's own close, at its start: a press outside it or the loss
 	// of the keyboard. OnHide and OnClosed come after its fade, and only
 	// matter for a close OnClose did not hear.
@@ -332,13 +361,7 @@ func (d *Desktop) popoverClosed(exit popoverExit, pressInSayso bool) {
 	if exit == exitDismissed {
 		delay = 120 * time.Millisecond
 	}
-	time.AfterFunc(delay, func() {
-		mygo.RunOnMain(func() {
-			if mygo.App.IsActive() {
-				platform.DeactivateApp()
-			}
-		})
-	})
+	d.layer.giveBack(delay)
 }
 
 // pressInSayso reports whether the pointer is over the hub or a secondary
@@ -382,16 +405,7 @@ func (d *Desktop) newTray() {
 	}
 	// The primary click opens the themed popover; the secondary click the
 	// plain menu, for screen readers and keyboard users.
-	d.tray.OnClick(func() {
-		w := d.wins[WinPopover]
-		visible := w != nil && !w.IsDestroyed() && w.IsVisible()
-		switch d.popover.click(time.Now(), visible) {
-		case popoverHide:
-			d.ClosePopover(false)
-		case popoverShow:
-			d.ShowWindow(WinPopover, true)
-		}
-	})
+	d.tray.OnClick(func() { d.trayClicked(time.Now()) })
 	d.tray.OnRightClick(func() {
 		d.tray.SetMenu(menu)
 		d.tray.PopUpMenu()

@@ -12,5 +12,6 @@ model_picker:
   no_models: "このプロバイダにはモデルがありません。"
   no_match: "フィルタに一致するモデルはありません。"
   refresh: "更新"
+  use_typed: "「%{model}」を使う"
   count:
     other: "%{count}個のモデル"
