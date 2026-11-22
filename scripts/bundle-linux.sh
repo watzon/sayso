@@ -65,7 +65,9 @@ cp LICENSE "$out/"
 # llama.cpp has the same license text as ggml.txt; libgomp is GCC's runtime
 # (libgomp.txt).
 install -D -m 644 -t "$out/share/licenses/sayso" packaging/licenses/*.txt
-install -m 644 "$llama_libs/LICENSE" "$out/share/licenses/sayso/llama.cpp.txt"
+# llama.cpp's license is ggml's MIT text (ggml.txt, byte for byte); not every
+# llama.cpp archive has its LICENSE (linux-arm64 has none).
+install -m 644 packaging/licenses/ggml.txt "$out/share/licenses/sayso/llama.cpp.txt"
 # The macOS icon set has the sizes the hicolor theme uses.
 for size in 16 32 128 256 512; do
   mkdir -p "$out/share/icons/hicolor/${size}x${size}/apps"

@@ -106,7 +106,9 @@ strip "$app/Contents/MacOS/SaysoEngine"
 # from any other.
 cp build/sayso-cleanup "$app/Contents/MacOS/sayso-cleanup"
 cp -a "$signed"/*.dylib "$app/Contents/Frameworks/llama/"
-cp "$llama_libs/LICENSE" "$app/Contents/Resources/licenses/llama.cpp.txt"
+# llama.cpp's license is ggml's MIT text (ggml.txt, byte for byte); not every
+# llama.cpp archive has its LICENSE.
+cp packaging/licenses/ggml.txt "$app/Contents/Resources/licenses/llama.cpp.txt"
 cp packaging/licenses/libffi.txt "$app/Contents/Resources/licenses/"
 cp assets/app/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
 # Pause media while recording: /usr/bin/perl runs the script, and the script
