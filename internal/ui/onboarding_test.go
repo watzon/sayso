@@ -535,9 +535,12 @@ func TestOnboardingStepsHaveKeys(t *testing.T) {
 		"onboarding.model.choices", "onboarding.model.show_all", "onboarding.model.download", "onboarding.model.status",
 		"onboarding.all_models.filter", "onboarding.all_models.close", "onboarding.all_models.list",
 		"onboarding.ai.options", "onboarding.ai.claude", "onboarding.ai.cloud", "onboarding.ai.ollama",
-		"onboarding.permissions.allow_mic", "onboarding.permissions.open_ax", "onboarding.permissions.why_ax", "onboarding.permissions.download",
+		"onboarding.permissions.allow_mic", "onboarding.permissions.download",
 		"onboarding.hotkeys.change_toggle", "onboarding.hotkeys.toggle", "onboarding.hotkeys.ptt_record",
 		"onboarding.practice", "onboarding.practice.result",
+	}
+	if hasInputPermissions() { // Windows has no Accessibility card.
+		want = append(want, "onboarding.permissions.open_ax", "onboarding.permissions.why_ax")
 	}
 	if miss := missingKeys(e.a.Keys(), want); len(miss) > 0 {
 		t.Errorf("keys never built: %v", miss)
