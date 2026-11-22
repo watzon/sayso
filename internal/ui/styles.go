@@ -409,7 +409,8 @@ func (a *App) drawer(c *mu.Context, p theme.Colors, body, footer func()) {
 	if clicked(c, scrim) {
 		a.sty.close()
 	}
-	floating(mu.Column(c).Absolute().Top(12).Right(12).Bottom(12).Width(500).ZIndex(5).Radius(sheetRadius).Clip(), p).
+	// 12 px inside the sheet, which sits 10 px inside the window (styles.rs).
+	floating(mu.Column(c).Absolute().Top(22).Right(22).Bottom(22).Width(500).ZIndex(5).Radius(sheetRadius).Clip(), p).
 		Role(mu.RoleDialog).Children(func() {
 		mu.Scroll(c.Key("drawer")).Grow(1).Padding(28).Gap(18).Children(body)
 		mu.Row(c).Gap(8).Padding(14, 28).AlignItems(mu.Center).BorderWidth(1, 0, 0, 0).BorderColor(p.Rule).Children(footer)
@@ -422,7 +423,7 @@ func (a *App) styleEditor(c *mu.Context, p theme.Colors) {
 	if !d.isNew {
 		title = i18n.T("styles.editor.edit_title", "name", d.name)
 	}
-	mu.Column(c).Gap(6).Children(func() {
+	mu.Column(c).Gap(10).Padding(6, 0, 0, 0).Children(func() {
 		mu.Row(c).AlignItems(mu.Start).Children(func() {
 			heading(c, p, title, 28).Grow(1).Role(mu.RoleHeading)
 			if a.iconBtnSized(c, p, "styles.editor.close", "close", i18n.T("styles.a11y.close"), 30, 16) {
@@ -432,10 +433,10 @@ func (a *App) styleEditor(c *mu.Context, p theme.Colors) {
 		switch d.origin {
 		case enhance.OriginBuiltIn:
 			if !d.isNew {
-				uiText(c, i18n.T("styles.editor.built_in_note"), 14, 400, p.Graphite)
+				uiText(c, i18n.T("styles.editor.built_in_note"), 13, 400, p.Graphite)
 			}
 		case enhance.OriginOverridden:
-			uiText(c, i18n.T("styles.editor.overridden_note"), 14, 400, p.Graphite)
+			uiText(c, i18n.T("styles.editor.overridden_note"), 13, 400, p.Graphite)
 		}
 	})
 	if a.sty.err != "" {
@@ -533,7 +534,17 @@ func (a *App) resetStyle(id string) {
 // inkPicker is the six inks as seals, and a custom #hex.
 func (a *App) inkPicker(c *mu.Context, p theme.Colors, key string, hex *string) {
 	custom := true
-	mu.Row(c).Gap(10).AlignItems(mu.Center).Wrap().Children(func() {
+	// A plain Graphite text button, as Rust's "Custom #6B4A6E".
+	customBtn := func(label string) bool {
+		b := mu.ButtonBase(a.k(c, key+".custom_show")).Label(label).PaddingX(4).Cursor(mu.CursorPointer)
+		col := p.Graphite
+		if b.Hovered() {
+			col = p.Ink
+		}
+		b.Children(func() { uiText(c, label, 13, 500, col).SingleLine() })
+		return clicked(c, b)
+	}
+	mu.Row(c).Gap(14).AlignItems(mu.Center).Wrap().Children(func() {
 		for _, ink := range inkPresets {
 			col := ink.Color()
 			on := strings.EqualFold(*hex, col.Hex())
@@ -550,12 +561,12 @@ func (a *App) inkPicker(c *mu.Context, p theme.Colors, key string, hex *string) 
 			}
 		}
 		if custom && *hex != "" && !a.sty.customInk {
-			if a.link(c, p, key+".custom_show", i18n.T("styles.editor.ink_custom", "ink", strings.ToUpper(*hex)), 13, 500, "") {
+			if customBtn(i18n.T("styles.editor.ink_custom", "ink", strings.ToUpper(*hex))) {
 				a.sty.customInk = true
 			}
 		} else if a.sty.customInk {
 			a.fieldW(c, p, key+".custom", i18n.T("settings.appearance.custom_ink"), "#2D3C8C", hex, 110)
-		} else if a.link(c, p, key+".custom_show", i18n.T("settings.appearance.custom"), 13, 500, "") {
+		} else if customBtn(i18n.T("settings.appearance.custom")) {
 			a.sty.customInk = true
 		}
 	})

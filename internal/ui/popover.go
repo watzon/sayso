@@ -92,9 +92,14 @@ func (a *App) popoverStart(c *mu.Context, p theme.Colors) {
 		AlignItems(mu.Center).Cursor(mu.CursorPointer)
 	inkButton(b, p, b.Pressed())
 	b.Children(func() {
-		mu.Box(c).Size(22, 22).Radius(99).Background(black.Alpha(0.35)).InsetShadow(0, 1, 2, 0, black.Alpha(0.5)).
-			Justify(mu.Center).AlignItems(mu.Center).Children(func() {
-			mu.Box(c).Size(12, 12).Radius(99).Background(p.Accent)
+		// popover.rs: a 12 px status dot, light periwinkle on the ink of
+		// light paper, the accent on dark paper.
+		dot := mu.RGB(0x8D, 0x9B, 0xE6)
+		if p.Dark {
+			dot = p.Accent
+		}
+		mu.Box(c).Size(18, 18).Shrink(0).Radius(99).Background(dot.Alpha(0.16)).Justify(mu.Center).AlignItems(mu.Center).Children(func() {
+			mu.Box(c).Size(12, 12).Radius(99).Background(dot)
 		})
 		uiText(c, label, 15, 600, p.OnInk).Grow(1).SingleLine()
 		if h := a.cfg.Hotkeys.Toggle; h != nil {

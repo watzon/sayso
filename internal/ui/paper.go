@@ -410,7 +410,12 @@ func (a *App) installedNames(bundles []string) (names map[string]string, ok bool
 		}
 	}
 	if len(missing) == 0 {
-		return ic.names, true
+		// A copy: a later lookup writes the cache from its goroutine.
+		out := make(map[string]string, len(bundles))
+		for _, b := range bundles {
+			out[b] = ic.names[b]
+		}
+		return out, true
 	}
 	if ic.namesBusy {
 		return nil, false

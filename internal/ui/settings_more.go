@@ -758,18 +758,19 @@ func (a *App) downloadCleanup(m enhance.CleanupModelInfo) {
 
 func (a *App) appsSection(c *mu.Context, p theme.Colors) {
 	if a.d.Apps == nil {
-		uiText(c, i18n.T("apps.settings.empty"), 14, 400, p.Graphite)
+		uiText(c, i18n.T("apps.settings.empty"), 15, 400, p.Graphite).PaddingY(4)
 		return
 	}
 	if a.d.Apps.IsBroken() {
 		uiText(c, i18n.T("apps.settings.broken", "path", a.d.Apps.Path()), 13, 500, p.Danger)
 	}
 	apps := a.d.Apps.Current()
+	if apps == nil || len(apps.Apps) == 0 {
+		// connected_apps.rs: a plain line, no group.
+		uiText(c, i18n.T("apps.settings.empty"), 15, 400, p.Graphite).PaddingY(4)
+		return
+	}
 	a.group(c, p, i18n.T("apps.settings.title"), func() {
-		if apps == nil || len(apps.Apps) == 0 {
-			uiText(c, i18n.T("apps.settings.empty"), 13, 400, p.Graphite).PaddingY(14).LineHeight(1.4).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
-			return
-		}
 		for i := range apps.Apps {
 			rec := &apps.Apps[i]
 			id := rec.ID()

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -92,11 +93,12 @@ type fakeShell struct {
 	hub     int
 	quit    bool
 	theme   config.ThemeMode
-	redraws int
+	// redraws is atomic: background loaders (Keychain, storage) redraw too.
+	redraws atomic.Int64
 }
 
 func newFakeShell() *fakeShell                         { return &fakeShell{shown: map[Window]bool{}} }
-func (s *fakeShell) Invalidate()                       { s.redraws++ }
+func (s *fakeShell) Invalidate()                       { s.redraws.Add(1) }
 func (s *fakeShell) ShowHub()                          { s.hub++ }
 func (s *fakeShell) ShowOverlay(show bool)             { s.overlay = show }
 func (s *fakeShell) ShowWindow(w Window, show bool)    { s.shown[w] = show }

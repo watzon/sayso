@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	mu "github.com/egoist/mygo/ui"
@@ -32,10 +33,8 @@ type settingsState struct {
 	// confirmAudio asks once more before Delete audio deletes.
 	confirmAudio bool
 	// storage is what History, audio and models take on disk, read off the
-	// UI thread; storageAt is when (zero: read it again).
-	storage     storageUse
-	storageAt   time.Time
-	storageBusy bool
+	// UI thread.
+	storage     storageCache
 	customInk   string
 	inkErr      string
 	devices     []platform.AudioDevice
@@ -819,7 +818,7 @@ func (a *App) historySection(c *mu.Context, p theme.Colors) {
 			*dst = choices[i]
 			a.saveConfig()
 			a.applyRetention()
-			a.set.storageAt = time.Time{}
+			a.set.storage.stale()
 		}
 	}
 	a.group(c, p, i18n.T("settings.history.history"), func() {
@@ -972,7 +971,7 @@ func (a *App) permissionsSection(c *mu.Context, p theme.Colors) {
 							mu.Box(c).Size(16, 16).Radius(99).Background(p.InkFill).Justify(mu.Center).AlignItems(mu.Center).Children(func() {
 								mu.Icon(c, icon("check")).FontSize(10).TextColor(p.OnInk)
 							})
-							uiText(c, i18n.T("settings.common.allowed"), 14, 600, p.Ink)
+							uiText(c, i18n.T("settings.common.allowed"), 13, 600, p.Ink)
 						})
 					} else if a.btn(c, p, it.key+".request", i18n.T("settings.permissions.request"), btnPrimary) && pm != nil {
 						kind := it.kind
@@ -1028,12 +1027,39 @@ type storageUse struct {
 	models      int
 }
 
+// storageCache is the last storageUse, read off the UI thread; at is when
+// (zero: read it again).
+type storageCache struct {
+	mu   sync.Mutex
+	use  storageUse
+	at   time.Time
+	busy bool
+}
+
+func (s *storageCache) get() storageUse {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.use
+}
+
+// stale makes the next frame read the sizes again.
+func (s *storageCache) stale() {
+	s.mu.Lock()
+	s.at = time.Time{}
+	s.mu.Unlock()
+}
+
 // loadStorage reads the sizes off the UI thread, at most every 10 s.
 func (a *App) loadStorage() {
-	if a.set.storageBusy || (!a.set.storageAt.IsZero() && a.now().Sub(a.set.storageAt) < 10*time.Second) {
+	sc := &a.set.storage
+	now := a.now()
+	sc.mu.Lock()
+	if sc.busy || (!sc.at.IsZero() && now.Sub(sc.at) < 10*time.Second) {
+		sc.mu.Unlock()
 		return
 	}
-	a.set.storageBusy = true
+	sc.busy = true
+	sc.mu.Unlock()
 	st := a.d.Store
 	var modelsBytes uint64
 	n := 0
@@ -1048,11 +1074,11 @@ func (a *App) loadStorage() {
 		if st != nil {
 			u, _ = st.StorageUse()
 		}
-		a.post(func() {
-			a.set.storage = storageUse{store: u, modelsBytes: modelsBytes, models: n}
-			a.set.storageAt, a.set.storageBusy = a.now(), false
-			a.invalidate()
-		})
+		sc.mu.Lock()
+		sc.use = storageUse{store: u, modelsBytes: modelsBytes, models: n}
+		sc.at, sc.busy = now, false
+		sc.mu.Unlock()
+		a.post(a.invalidate)
 	}()
 }
 
@@ -1060,7 +1086,7 @@ func (a *App) loadStorage() {
 // then a row for History, Audio and Models (history_privacy.rs).
 func (a *App) dataOnThisComputer(c *mu.Context, p theme.Colors) {
 	a.loadStorage()
-	u := a.set.storage
+	u := a.set.storage.get()
 	n := 0
 	if a.d.Store != nil {
 		n, _ = a.d.Store.Count(store.HistoryQuery{})
@@ -1142,7 +1168,7 @@ func (a *App) dataOnThisComputer(c *mu.Context, p theme.Colors) {
 				}
 			}
 			a.stopPlayer()
-			a.set.storageAt = time.Time{}
+			a.set.storage.stale()
 			a.dataChanged()
 		}
 	})
