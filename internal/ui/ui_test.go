@@ -551,7 +551,8 @@ func TestOverlayPillStates(t *testing.T) {
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateShowing, Notice: dictation.Notice{Kind: dictation.NoticeInserted, StyleName: "Clean"}})
 	tt.Frame()
-	if !tt.HasText(i18n.T("overlay.inserted") + " · Clean") {
+	// The style is a tag beside "Inserted" (Paper Overlay, Inserted).
+	if !tt.HasText(i18n.T("overlay.inserted")) || !tt.HasText("Clean") {
 		t.Errorf("done pill: %q", tt.Texts())
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateShowing, Notice: dictation.Notice{Kind: dictation.NoticeError, Message: "Mic broke"}})
