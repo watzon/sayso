@@ -1,0 +1,7 @@
+libgomp (bin/llama/libgomp.so.1 in the Linux packages) is the OpenMP runtime
+of GCC, which the llama.cpp libraries of the cleanup runtime use. It is
+licensed under the GNU General Public License, version 3 (the text is in the
+LICENSE file of Sayso), with the GCC Runtime Library Exception, version 3.1:
+https://www.gnu.org/licenses/gcc-exception-3.1.html
+
+Copyright (C) 2005-2026 Free Software Foundation, Inc.

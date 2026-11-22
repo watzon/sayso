@@ -87,7 +87,8 @@ jobs:
       - name: Install the Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
 
-      # The cleanup runtime (native/cleanup) is its own Cargo workspace.
+      # The Rust cleanup runtime of the release files (native/cleanup) is its
+      # own Cargo workspace. The app does not use it.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native/cleanup
@@ -161,13 +162,38 @@ jobs:
           path: dist/sayso-engine-*-macos-arm64.tar.gz
           if-no-files-found: error
 
-      # The cleanup runtime release file has the runtime of the signed app, not
-      # a new build, like the engine release file above. The signature has the
-      # identifier dev.sayso.Sayso.cleanup (scripts/bundle.sh), and the
-      # notarization of the app covers it. --require-signed stops the job when
-      # the runtime has no Developer ID signature.
+      # The cleanup runtime release file (and the npm package
+      # @justsayso/cleanup) has the Rust runtime of native/cleanup. The app has
+      # the Go runtime cmd/sayso-cleanup instead, so this step builds the Rust
+      # runtime on its own, and signs and notarizes it like the Intel runtime
+      # below. --require-signed stops the job when the runtime has no Developer
+      # ID signature.
+      - name: Build, sign, and notarize the cleanup runtime
+        env:
+          APPLE_API_KEY_PATH: ${{ runner.temp }}/AuthKey.p8
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          SIGN_IDENTITY: ${{ vars.SAYSO_SIGN_IDENTITY }}
+        run: |
+          # The same default as scripts/bundle.sh.
+          identity="${SIGN_IDENTITY:-Developer ID Application: Watzon Ventures LLc (MB5789APU7)}"
+          cargo build --release --manifest-path native/cleanup/Cargo.toml
+          mkdir -p dist/cleanup-arm64
+          runtime=dist/cleanup-arm64/sayso-cleanup
+          install -m 755 native/cleanup/target/release/sayso-cleanup "$runtime"
+          strip "$runtime"
+          codesign --force --timestamp --options runtime --identifier dev.sayso.Sayso.cleanup -s "$identity" "$runtime"
+          codesign --verify --strict "$runtime"
+          source scripts/notarize-lib.sh
+          ditto -c -k --keepParent "$runtime" dist/cleanup-arm64/sayso-cleanup-notarize.zip
+          notarize dist/cleanup-arm64/sayso-cleanup-notarize.zip
+          rm dist/cleanup-arm64/sayso-cleanup-notarize.zip
+
+      - name: Check the Mach-O file of the cleanup runtime
+        run: python3 scripts/check-macho.py dist/cleanup-arm64
+
       - name: Make the cleanup runtime release file
-        run: scripts/package-cleanup.sh --require-signed dist/Sayso.app/Contents/MacOS
+        run: scripts/package-cleanup.sh --require-signed dist/cleanup-arm64
 
       - name: Attach the cleanup runtime release file to the release
         env:
@@ -316,14 +342,13 @@ jobs:
       ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
       official_build: true
 
-  # The cleanup runtime release files of Linux. The runtime is in the tarball
-  # that the linux job built (artifact release-linux-<arch>), so this job packs
-  # the builds of the tarball, not new ones. Like the Linux engine files, the
-  # manifest job attaches the files to the release (linux.yml does not touch the
-  # release).
+  # The cleanup runtime release files of Linux: the Rust runtime of
+  # native/cleanup, for the SDKs (the app has the Go runtime cmd/sayso-cleanup).
+  # It builds on Ubuntu 22.04, the glibc floor, like the tarball. Like the
+  # Linux engine files, the manifest job attaches the files to the release.
   cleanup-linux:
     name: Cleanup runtime file (Linux ${{ matrix.arch }})
-    needs: linux
+    needs: linux-check
     strategy:
       fail-fast: false
       matrix:
@@ -333,24 +358,39 @@ jobs:
           - arch: aarch64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    container: ubuntu:22.04
+    timeout-minutes: 90
     steps:
+      - name: Install the base tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl git python3
+
       - name: Checkout the tag
         uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
 
-      - name: Get the tarball
-        uses: actions/download-artifact@v4
-        with:
-          name: release-linux-${{ matrix.arch }}
-          path: tarball
+      - name: Install the build packages
+        run: DEBIAN_FRONTEND=noninteractive scripts/linux-deps.sh
 
-      - name: Make the cleanup runtime release file
+      - name: Install the Rust toolchain from rust-toolchain.toml
         run: |
-          tar -xzf tarball/sayso-*-linux-${{ matrix.arch }}.tar.gz -C tarball
-          # The file name has arm64 where the tarball has aarch64.
-          scripts/package-cleanup.sh --out cleanup tarball/sayso-*-linux-${{ matrix.arch }}/bin
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          "$HOME/.cargo/bin/rustup" toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/cleanup
+
+      # On x86_64 there are three builds, one for each instruction set
+      # (issue #37). The file name has arm64 where the runner has aarch64.
+      - name: Make the cleanup runtime release file
+        shell: bash
+        run: |
+          scripts/build-cleanup.sh cleanup-bin
+          scripts/package-cleanup.sh --out cleanup cleanup-bin
 
       - name: Keep the cleanup runtime release file for the manifest job
         uses: actions/upload-artifact@v4
@@ -403,9 +443,9 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # llama.cpp in the cleanup runtime builds with CMake, and its bindings
-      # need libclang (the runner has
-      # LLVM). Inno Setup makes the installer.
+      # llama.cpp in the Rust cleanup runtime of the release file builds with
+      # CMake, and its bindings need libclang (the runner has LLVM). Inno Setup
+      # makes the installer.
       - name: Install CMake and Inno Setup
         run: |
           choco install cmake innosetup --no-progress -y
@@ -458,11 +498,17 @@ jobs:
           path: dist/sayso-engine-*-windows-x64.zip
           if-no-files-found: error
 
-      # The cleanup runtime release file has the three exes of the app folder
-      # (signed there when the certificate exists) and the Visual C++ runtime
-      # DLLs, not a new build.
+      # The cleanup runtime release file has the three builds of the Rust
+      # runtime (native/cleanup, for the SDKs; the app has the Go runtime) and
+      # the Visual C++ runtime DLLs. build-cleanup.ps1 signs the exes when the
+      # certificate exists.
+      - name: Build the cleanup runtime for its release file
+        env:
+          SAYSO_SIGN_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: scripts\build-cleanup.ps1 -Out build\cleanup
+
       - name: Make the cleanup runtime release file
-        run: scripts\package-cleanup.ps1
+        run: scripts\package-cleanup.ps1 -Folder build\cleanup
 
       - name: Attach the cleanup runtime release file to the release
         env:

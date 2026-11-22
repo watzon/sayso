@@ -9,7 +9,7 @@ pkgdesc="Local voice dictation into any app"
 arch=('x86_64' 'aarch64')
 url="https://justsayso.app"
 license=('GPL-3.0-only')
-depends=('glibc' 'gcc-libs' 'alsa-lib' 'libxcb' 'libxkbcommon' 'libxkbcommon-x11' 'fontconfig' 'freetype2' 'wayland' 'vulkan-icd-loader' 'hicolor-icon-theme')
+depends=('glibc' 'gcc-libs' 'libffi' 'alsa-lib' 'libxcb' 'libxkbcommon' 'libxkbcommon-x11' 'fontconfig' 'freetype2' 'wayland' 'vulkan-icd-loader' 'hicolor-icon-theme')
 optdepends=('xdg-desktop-portal: global shortcuts and the paste key on Wayland'
             'libglvnd: OpenGL when Vulkan is not available'
             'xdg-utils: open links and folders')
@@ -23,12 +23,11 @@ sha256sums_aarch64=('@SHA256_AARCH64@')
 
 package() {
   cd "sayso-$pkgver-linux-$CARCH"
-  # The app finds the engine and the cleanup runtime next to itself, so the
-  # binaries live in one folder.
+  # The app finds the engine next to itself, and the cleanup runtime with its
+  # llama.cpp libraries in llama/ next to itself.
   install -Dm755 bin/sayso "$pkgdir/usr/lib/sayso/sayso"
   install -Dm755 bin/sayso-engine "$pkgdir/usr/lib/sayso/sayso-engine"
-  # On x86_64 the cleanup runtime has one build for each instruction set.
-  install -Dm755 -t "$pkgdir/usr/lib/sayso" bin/sayso-cleanup*
+  cp -a bin/llama "$pkgdir/usr/lib/sayso/llama"
   install -d "$pkgdir/usr/bin"
   ln -s /usr/lib/sayso/sayso "$pkgdir/usr/bin/sayso"
   install -Dm644 share/applications/dev.sayso.Sayso.desktop "$pkgdir/usr/share/applications/dev.sayso.Sayso.desktop"

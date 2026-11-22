@@ -32,8 +32,8 @@ on:
       - '.github/workflows/linux.yml'
       - 'packaging/linux/**'
       - 'scripts/bundle-linux.sh'
-      - 'scripts/build-cleanup.sh'
-      - 'scripts/test-cleanup-cpus.sh'
+      - 'scripts/llama-libs/**'
+      - 'scripts/test-llama-cpus.sh'
       - 'scripts/tiny-gguf.py'
       - 'scripts/package-linux.sh'
       - 'scripts/package-engine.sh'
@@ -107,17 +107,6 @@ jobs:
         with:
           path: ${{ env.VULKAN_SDK }}
           key: ${{ steps.vulkan-deps.outputs.cache-primary-key }}
-
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: |
-          curl --proto '=https' --tlsv1.2 --fail --silent --show-error https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          "$HOME/.cargo/bin/rustup" toolchain install
-
-      # The cleanup runtime (native/cleanup) is its own Cargo workspace.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native/cleanup
 
       - uses: actions/setup-go@v5
         with:
@@ -204,28 +193,22 @@ jobs:
           echo "$reply"
           [[ "$reply" == *'"type":"hello"'* ]] || { echo "::error::sayso-engine gave no hello reply."; exit 1; }
       # The cleanup runtime needs no model to answer hello, and its backend
-      # is the CPU on Linux. It must not need libgomp (OpenMP is off). On
-      # x86_64 there are three builds (scripts/build-cleanup.sh).
+      # is the CPU on Linux. Its llama.cpp libraries are in /usr/lib/sayso/llama
+      # with libgomp, and libffi comes from the libffi8 dependency.
       - name: Start the installed cleanup runtime
         shell: bash
         run: |
-          for runtime in /usr/lib/sayso/sayso-cleanup*; do
-            echo "== $runtime"
-            deps=$(ldd "$runtime")
-            echo "$deps"
-            if grep -qE 'libgomp|not found' <<< "$deps"; then
-              echo "::error::$runtime has a library that it must not have, or one that is missing."
-              exit 1
-            fi
-            reply=$(printf '{"v":1,"id":"1","type":"hello"}\n' | timeout 20 "$runtime")
-            echo "$reply"
-            [[ "$reply" == *'"type":"hello"'*'"backend":"cpu"'* ]] || { echo "::error::$runtime gave no hello reply with the cpu backend."; exit 1; }
-          done
-          if [[ "${{ matrix.arch }}" == x86_64 ]]; then
-            for build in sayso-cleanup-avx sayso-cleanup-baseline; do
-              [[ -x /usr/lib/sayso/$build ]] || { echo "::error::The package has no $build."; exit 1; }
-            done
+          llama=/usr/lib/sayso/llama
+          ldd "$llama/sayso-cleanup"
+          deps=$(ldd "$llama/libllama.so" "$llama/libggml-base.so")
+          echo "$deps"
+          if grep -q 'not found' <<< "$deps" || ! grep -q "libgomp.so.1 => $llama/libgomp.so.1" <<< "$deps"; then
+            echo "::error::The llama.cpp libraries miss a library, or do not take libgomp from $llama."
+            exit 1
           fi
+          reply=$(printf '{"v":1,"id":"1","type":"hello"}\n' | timeout 20 "$llama/sayso-cleanup")
+          echo "$reply"
+          [[ "$reply" == *'"type":"hello"'* && "$reply" == *'"backend":"cpu"'* && "$reply" == *'"libraries":"found"'* ]] || { echo "::error::The cleanup runtime gave no hello with the cpu backend and its libraries."; exit 1; }
 
       - name: Keep the packages
         uses: actions/upload-artifact@v4
@@ -240,12 +223,11 @@ jobs:
           if-no-files-found: error
           overwrite: true
 
-  # Each x86_64 build of the cleanup runtime loads a model and completes text
-  # on the oldest processor that it is for, under QEMU, and the AVX2 build
-  # stops on a processor without AVX2 (issue #37). This job runs on Ubuntu
-  # 24.04 for its QEMU 8.2: QEMU emulates AVX and AVX2 from 7.2 on, and the
-  # QEMU 6.2 of Ubuntu 22.04 cannot run the AVX and AVX2 builds. The binaries
-  # of the tarball, built on 22.04, run on the newer glibc.
+  # The x86_64 cleanup runtime loads a model and completes text on older
+  # processors under QEMU, down to x86-64 with no SSE 4.2: ggml loads the CPU
+  # library that the processor runs (issue #37). This job runs on Ubuntu
+  # 24.04 for its QEMU 8.2: QEMU emulates AVX and AVX2 from 7.2 on. The
+  # binaries of the tarball, built on 22.04, run on the newer glibc.
   cleanup-cpus:
     name: Cleanup runtime on older processors
     needs: build
@@ -257,7 +239,7 @@ jobs:
       - name: Install the tools
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git python3 python3-venv qemu-user
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates git python3 python3-venv qemu-user libffi8 libstdc++6
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -270,7 +252,7 @@ jobs:
           name: release-linux-x86_64
           path: dist
 
-      - name: Run the cleanup runtime builds on older processors
+      - name: Run the cleanup runtime on older processors
         shell: bash
         run: |
           qemu-x86_64 --version
@@ -278,4 +260,4 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install --quiet gguf==0.19.0 numpy
           "$RUNNER_TEMP/venv/bin/python" scripts/tiny-gguf.py "$RUNNER_TEMP/tiny.gguf"
-          scripts/test-cleanup-cpus.sh "$RUNNER_TEMP"/sayso-*-linux-x86_64/bin "$RUNNER_TEMP/tiny.gguf"
+          scripts/test-llama-cpus.sh "$RUNNER_TEMP"/sayso-*-linux-x86_64/bin/llama "$RUNNER_TEMP/tiny.gguf"

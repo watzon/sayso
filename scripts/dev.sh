@@ -8,8 +8,10 @@
 # permissions. Use --bundle to get the prompts and grants of dev.sayso.Sayso.
 #
 # XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME, SAYSO_FAKE_MIC,
-# SAYSO_ENGINE_PATH, SAYSO_CLEANUP_PATH, SAYSO_UPDATE_URL, and SAYSO_UPDATE_KEY
-# pass through to the app. Press Ctrl+C to quit Sayso.
+# SAYSO_ENGINE_PATH, SAYSO_CLEANUP_PATH, SAYSO_LLAMA_LIB_DIR, SAYSO_UPDATE_URL,
+# and SAYSO_UPDATE_KEY pass through to the app. Without SAYSO_CLEANUP_PATH, the
+# script builds the cleanup runtime and points it at the pinned llama.cpp
+# libraries in build/llama-libs. Press Ctrl+C to quit Sayso.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -46,6 +48,17 @@ else
     mkdir -p build/dev
     go build -o build/dev/sayso-engine ./cmd/sayso-engine
     export SAYSO_ENGINE_PATH="$PWD/build/dev/sayso-engine"
+  fi
+fi
+
+if [[ -z "${SAYSO_CLEANUP_PATH:-}" ]]; then
+  echo "==> cleanup runtime (go)"
+  mkdir -p build/dev
+  go build -o build/dev/sayso-cleanup ./cmd/sayso-cleanup
+  export SAYSO_CLEANUP_PATH="$PWD/build/dev/sayso-cleanup"
+  if [[ -z "${SAYSO_LLAMA_LIB_DIR:-}" ]]; then
+    SAYSO_LLAMA_LIB_DIR=$(go run ./scripts/llama-libs fetch -out build/llama-libs)
+    export SAYSO_LLAMA_LIB_DIR
   fi
 fi
 

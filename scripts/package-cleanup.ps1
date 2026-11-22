@@ -2,7 +2,7 @@
 # sayso-cleanup with the Visual C++ runtime that it needs, its README, and its
 # licenses, and the checksum.
 #
-#   powershell -ExecutionPolicy Bypass -File scripts\package-cleanup.ps1 [-Folder <app folder>] [-Out <folder>] [-NoSmoke]
+#   powershell -ExecutionPolicy Bypass -File scripts\package-cleanup.ps1 [-Folder <folder>] [-Out <folder>] [-NoSmoke]
 #
 #   dist\sayso-cleanup-<version>-windows-x64.zip
 #   dist\sayso-cleanup-<version>-windows-x64.zip.sha256
@@ -11,10 +11,10 @@
 # its AVX and baseline builds (sayso-cleanup-avx.exe, sayso-cleanup-baseline.exe;
 # llama.cpp is compiled for one instruction set, issue #37, and the SDK starts
 # the best build that the processor runs), the Visual C++ runtime DLLs,
-# README.md, LICENSE, and licenses\. The script copies these files from the app
-# folder that scripts\bundle-windows.ps1 makes (build\windows\Sayso, or Sayso
-# in SAYSO_BUNDLE_DIR), so the exes are the ones that were signed there. It
-# never builds a runtime. By default the script starts each build in the zip
+# README.md, LICENSE, and licenses\. The script copies these files from the
+# folder that scripts\build-cleanup.ps1 makes (build\cleanup by default), so
+# the exes are the ones that were signed there. It never builds a runtime. (The
+# app has the Go runtime cmd/sayso-cleanup, not these builds.) By default the script starts each build in the zip
 # and sends it a hello request; -NoSmoke skips that. The zip is better than a
 # tarball here: Windows opens a zip without another program. The macOS and
 # Linux files are made by scripts/package-cleanup.sh.
@@ -31,18 +31,15 @@ $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
-if (-not $Folder) {
-    $bundle = if ($env:SAYSO_BUNDLE_DIR) { $env:SAYSO_BUNDLE_DIR } else { Join-Path $root 'build\windows' }
-    $Folder = Join-Path $bundle 'Sayso'
-}
+if (-not $Folder) { $Folder = Join-Path $root 'build\cleanup' }
 if (-not $Out) { $Out = Join-Path $root 'dist' }
 
 $names = 'sayso-cleanup.exe', 'sayso-cleanup-avx.exe', 'sayso-cleanup-baseline.exe'
 $exes = $names | ForEach-Object { Join-Path $Folder $_ }
 foreach ($exe in $exes) {
-    if (-not (Test-Path $exe)) { throw "the runtime $exe does not exist. Run scripts\bundle-windows.ps1 first." }
+    if (-not (Test-Path $exe)) { throw "the runtime $exe does not exist. Run scripts\build-cleanup.ps1 first." }
 }
-# The Visual C++ runtime that bundle-windows.ps1 ships app-local.
+# The Visual C++ runtime that build-cleanup.ps1 puts beside the exes.
 $crt = 'vcruntime140.dll', 'vcruntime140_1.dll', 'msvcp140.dll', 'msvcp140_1.dll'
 foreach ($dll in $crt) {
     if (-not (Test-Path (Join-Path $Folder $dll))) { throw "$dll is not in $Folder. The runtime does not start without it." }

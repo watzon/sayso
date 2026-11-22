@@ -63,11 +63,12 @@ jobs:
         run: go vet ./internal/... ./cmd/...
       - name: Test
         run: go test ./internal/... ./cmd/...
-      - name: Build the app and the engine like a release
+      - name: Build the app, the engine, and the cleanup runtime like a release
         shell: bash
         run: |
           go build -tags mygo_noinspector -ldflags="-s -w" -o "${RUNNER_TEMP}/sayso" ./cmd/sayso
           go build -ldflags="-s -w" -o "${RUNNER_TEMP}/sayso-engine" ./cmd/sayso-engine
+          go build -tags ffi_no_embed -ldflags="-s -w" -o "${RUNNER_TEMP}/sayso-cleanup" ./cmd/sayso-cleanup
 
   rust-sdk:
     name: Rust SDK tests
@@ -115,7 +116,8 @@ jobs:
       - name: Test
         run: pnpm test
 
-  # The cleanup runtime (native/cleanup, the sayso-cleanup binary) is its own
+  # The Rust cleanup runtime (native/cleanup, the sayso-cleanup binary of the
+  # SDK release files and @justsayso/cleanup; the app runs cmd/sayso-cleanup) is its own
   # Cargo workspace. It builds llama.cpp with CMake, so no job above builds it.
   # One job for each target that Sayso ships. It reports the size and the
   # libraries of the binary, and fails on OpenMP (libgomp, libomp, vcomp):
@@ -217,12 +219,6 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-      # The cleanup runtime (native/cleanup) is its own Cargo workspace.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native/cleanup
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
