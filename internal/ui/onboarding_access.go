@@ -59,6 +59,9 @@ func (a *App) permissions() platform.PermissionStatus {
 	}
 	if s.permStale.Swap(false) || s.permRead.IsZero() || now.Sub(s.permRead) >= permPoll || now.Before(s.permRead) {
 		s.perm, s.permRead = pm.Status(), now
+		// The microphones too: one plugged in while the step shows
+		// appears in the microphone test (the next read lists them).
+		a.set.devicesRead = false
 	}
 	return s.perm
 }
@@ -118,6 +121,45 @@ type micMeter struct {
 	levels  [48]float32
 	next    int
 	running platform.AudioCapture
+	// ops are the starts and stops of the capture, run in the order asked
+	// by one goroutine at a time: a Stop asked while the device still opens
+	// runs after the open, never before it (where it would find nothing to
+	// stop and leave the microphone on).
+	ops     []func()
+	working bool
+}
+
+// queue runs op after every op asked before it, off the main goroutine.
+func (m *micMeter) queue(op func()) {
+	m.mu.Lock()
+	m.ops = append(m.ops, op)
+	if m.working {
+		m.mu.Unlock()
+		return
+	}
+	m.working = true
+	m.mu.Unlock()
+	go func() {
+		for {
+			m.mu.Lock()
+			if len(m.ops) == 0 {
+				m.working = false
+				m.mu.Unlock()
+				return
+			}
+			op := m.ops[0]
+			m.ops = m.ops[1:]
+			m.mu.Unlock()
+			op()
+		}
+	}()
+}
+
+// current reports whether gen is still the test that runs.
+func (m *micMeter) current(gen int) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.gen == gen && m.on
 }
 
 // syncMeter runs the test while the permissions step shows and the
@@ -140,7 +182,11 @@ func (a *App) syncMeter(micOK bool) {
 	m.gen++
 	gen := m.gen
 	m.mu.Unlock()
-	go func() {
+	m.queue(func() {
+		// A stop asked after this start already ran its course.
+		if !m.current(gen) {
+			return
+		}
 		err := capture.Start(context.Background(), device, func(ch platform.AudioChunk) {
 			m.mu.Lock()
 			if m.gen == gen {
@@ -157,10 +203,11 @@ func (a *App) syncMeter(micOK bool) {
 			m.mu.Unlock()
 			a.post(a.invalidate)
 		}
-	}()
+	})
 }
 
-// stopMeter ends the test.
+// stopMeter ends the test and clears its error, so the next visit of the
+// step tries again.
 func (a *App) stopMeter() {
 	m := &a.onb.access.meter
 	m.mu.Lock()
@@ -169,11 +216,11 @@ func (a *App) stopMeter() {
 	m.gen++
 	m.mu.Unlock()
 	if capture != nil {
-		go func() {
+		m.queue(func() {
 			if err := capture.Stop(); err != nil {
 				log.Printf("mic test: %v", err)
 			}
-		}()
+		})
 	}
 }
 
@@ -404,6 +451,136 @@ type hotkeyRecorder struct {
 	note string
 	// paused is true while the global hotkeys are off for the recording.
 	paused bool
+	// conflicts are the other programs found per hotkey (recorder.rs).
+	conflicts conflictCache
+}
+
+// conflictTTL is how long a lookup of other programs counts: running apps
+// change.
+const conflictTTL = 4 * time.Second
+
+// conflictCache holds the conflicts of each hotkey. A lookup runs off the
+// main goroutine (it starts processes), and the step redraws when it ends.
+type conflictCache struct {
+	mu      sync.Mutex
+	entries map[string]conflictEntry
+}
+
+type conflictEntry struct {
+	at   time.Time
+	busy bool
+	list []platform.HotkeyConflict
+}
+
+// conflictFinder is the platform's finder of other programs, or nil where
+// the system gives no way to look (Windows and Linux for now).
+func (a *App) conflictFinder() platform.ConflictFinder {
+	if a.d.Platform == nil || a.d.Platform.Hotkeys == nil {
+		return nil
+	}
+	f, _ := a.d.Platform.Hotkeys.(platform.ConflictFinder)
+	return f
+}
+
+// hotkeyConflicts are the other programs that react to h, as last found;
+// a system shortcut that is off does not count.
+func (a *App) hotkeyConflicts(h *config.Hotkey) []platform.HotkeyConflict {
+	f := a.conflictFinder()
+	if h == nil || f == nil {
+		return nil
+	}
+	key := h.String()
+	cc := &a.onb.keys.conflicts
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	if cc.entries == nil {
+		cc.entries = map[string]conflictEntry{}
+	}
+	e, ok := cc.entries[key]
+	if (!ok || time.Since(e.at) >= conflictTTL) && !e.busy {
+		e.busy = true
+		cc.entries[key] = e
+		go func() {
+			var list []platform.HotkeyConflict
+			for _, x := range f.Conflicts(key) {
+				if x.App || x.Enabled {
+					list = append(list, x)
+				}
+			}
+			cc.mu.Lock()
+			cc.entries[key] = conflictEntry{at: time.Now(), list: list}
+			cc.mu.Unlock()
+			a.post(a.invalidate)
+		}()
+	}
+	return e.list
+}
+
+// hotkeyWords is a hotkey in words, for sentences: "Option+Space".
+func hotkeyWords(h config.Hotkey) string {
+	caps := h.Keycaps()
+	for i, c := range caps {
+		switch c {
+		case "⌃":
+			c = "Control"
+		case "⌥":
+			c = "Option"
+		case "⇧":
+			c = "Shift"
+		case "⌘":
+			c = "Command"
+		case "↵":
+			c = "Return"
+		case "⇥":
+			c = "Tab"
+		case "⌫":
+			c = "Delete"
+		case "fn":
+			c = "Fn"
+		default:
+			c = strings.NewReplacer("⌥", "Option", "⌘", "Command", "⌃", "Control", "⇧", "Shift").Replace(c)
+		}
+		caps[i] = c
+	}
+	return strings.Join(caps, "+")
+}
+
+// shortcutName is a system shortcut's name in the interface language; a
+// name Sayso has no text for (a product name) stays as it is.
+func shortcutName(name string) string {
+	var b strings.Builder
+	under := false
+	for _, r := range strings.ToLower(name) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			if under && b.Len() > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r)
+			under = false
+		} else {
+			under = true
+		}
+	}
+	if text, ok := i18n.Translate("settings.recorder.shortcut." + b.String()); ok {
+		return text
+	}
+	return name
+}
+
+// conflictText is the banner of one conflict (recorder.rs conflict_text,
+// with the app open).
+func conflictText(x platform.HotkeyConflict) string {
+	keys := x.Hotkey
+	if h, err := config.ParseHotkey(x.Hotkey); err == nil {
+		keys = hotkeyWords(h)
+	}
+	switch {
+	case x.App && x.Confirmed:
+		return i18n.T("settings.recorder.conflict_app", "name", x.Name, "keys", keys)
+	case x.App:
+		return i18n.T("settings.recorder.conflict_app_open_default", "name", x.Name, "keys", keys)
+	}
+	return i18n.TOS("settings.recorder.conflict_system", map[string]any{"keys": keys, "name": shortcutName(x.Name)})
 }
 
 // startRecording listens for the next chord pressed in this window. The
@@ -568,7 +745,19 @@ func (a *App) onbHotkeys(c *mu.Context, p theme.Colors) {
 	recToggle, recPTT := k.slot == slotToggle, k.slot == slotPTT
 	st := a.permissions()
 	a.pollPermissions(c)
-	stepColumn(c, p, i18n.T("onboarding.hotkeys.title"), i18n.T("onboarding.hotkeys.lead"), func() {
+	// Other programs: Sayso can look on macOS. Elsewhere the step promises
+	// only the check of Sayso's own actions.
+	finder := a.conflictFinder() != nil
+	toggleConflicts := a.hotkeyConflicts(h.Toggle)
+	conflicts := append(append([]platform.HotkeyConflict(nil), toggleConflicts...), a.hotkeyConflicts(h.PushToTalk)...)
+	if finder {
+		c.After(conflictTTL) // running apps change
+	}
+	lead := i18n.T("onboarding.hotkeys.lead")
+	if !finder {
+		lead = i18n.T("onboarding.hotkeys.lead_local")
+	}
+	stepColumn(c, p, i18n.T("onboarding.hotkeys.title"), lead, func() {
 		mu.Row(c).Gap(14).AlignItems(mu.Stretch).Children(func() {
 			// Start and stop.
 			onbCard(c, p).Gap(14).Children(func() {
@@ -599,6 +788,8 @@ func (a *App) onbHotkeys(c *mu.Context, p theme.Colors) {
 				switch {
 				case recToggle:
 					uiText(c, i18n.T("onboarding.hotkeys.press_new_keys"), 13, 400, p.Graphite).Role(mu.RoleStatus)
+				case h.Toggle != nil && len(toggleConflicts) > 0:
+					uiText(c, i18n.T("onboarding.hotkeys.conflict"), 13, 400, p.Danger).Role(mu.RoleStatus)
 				case h.Toggle != nil:
 					held := heldCaps(c, *h.Toggle)
 					all := len(held) > 0
@@ -606,6 +797,9 @@ func (a *App) onbHotkeys(c *mu.Context, p theme.Colors) {
 						all = all && x
 					}
 					text := i18n.T("onboarding.hotkeys.no_clash")
+					if finder {
+						text = i18n.T("onboarding.hotkeys.no_conflict")
+					}
 					if all {
 						text = i18n.T("onboarding.hotkeys.pressed_now", "keys", keysText(h.Toggle.Keycaps()))
 					}
@@ -658,6 +852,9 @@ func (a *App) onbHotkeys(c *mu.Context, p theme.Colors) {
 				a.inputMonitoringLine(c, p, st)
 			})
 		})
+		for _, x := range conflicts {
+			banner(c, p, bannerWarning, conflictText(x))
+		}
 		if k.note != "" {
 			banner(c, p, bannerWarning, k.note)
 		}

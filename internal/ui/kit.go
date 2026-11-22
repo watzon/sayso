@@ -338,7 +338,12 @@ func (a *App) chip(c *mu.Context, p theme.Colors, key, label string, on bool) bo
 }
 
 func (a *App) chipT(c *mu.Context, p theme.Colors, key, label string, on bool, trail string) bool {
-	b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleToggleButton).Checked(on).
+	return clicked(c, a.chipBase(c, p, key, label, on, trail, mu.RoleToggleButton))
+}
+
+// chipBase is a chip with its role (a toggle, or a radio of a group).
+func (a *App) chipBase(c *mu.Context, p theme.Colors, key, label string, on bool, trail string, role mu.Role) mu.Element {
+	b := mu.ButtonBase(a.k(c, key)).Label(label).Role(role).Checked(on).
 		Height(28).PaddingX(11).Gap(6).Radius(99).AlignItems(mu.Center).Shrink(0).Cursor(mu.CursorPointer)
 	fg, weight := p.Graphite, 500
 	if on {
@@ -356,7 +361,7 @@ func (a *App) chipT(c *mu.Context, p theme.Colors, key, label string, on bool, t
 			mu.Icon(c, icon(trail)).FontSize(10).TextColor(fg)
 		}
 	})
-	return clicked(c, b)
+	return b
 }
 
 // pageHead is a page's title (display 44), intro and actions at the right,

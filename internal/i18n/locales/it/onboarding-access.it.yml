@@ -37,6 +37,8 @@ onboarding:
   hotkeys:
     title: "Scegli i tuoi tasti"
     lead: "Premi i tasti per provarli. Sayso controlla che nessun'altra app usi gli stessi tasti."
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "Premi i tasti per provarli. Sayso controlla che nessun'altra azione di Sayso usi gli stessi tasti."
     start_stop: "Avvia e ferma"
     push_to_talk: "Tieni premuto per parlare"
     no_key: "Nessun tasto impostato"

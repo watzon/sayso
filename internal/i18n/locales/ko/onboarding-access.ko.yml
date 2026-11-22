@@ -37,6 +37,8 @@ onboarding:
   hotkeys:
     title: "키 선택"
     lead: "키를 눌러 테스트하세요. 다른 앱이 같은 키를 쓰지 않는지 Sayso가 확인해요."
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "키를 눌러 테스트하세요. 다른 Sayso 동작이 같은 키를 쓰지 않는지 Sayso가 확인해요."
     start_stop: "시작 및 중지"
     push_to_talk: "누르고 말하기"
     no_key: "설정된 키 없음"

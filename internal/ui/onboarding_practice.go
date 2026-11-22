@@ -109,13 +109,13 @@ func (a *App) onbPractice(c *mu.Context, p theme.Colors) {
 	stepColumn(c, p, i18n.T("onboarding.practice.title"), lead, func() {
 		mu.Column(c).Gap(6).PaddingX(4).Children(func() {
 			caps(c, p, i18n.T("onboarding.practice.read_this"))
-			mu.Text(c, "“"+practiceSentence()+"”").Font(theme.Display).FontSize(22).FixedLineHeight(30).Italic().TextColor(p.Graphite)
+			mu.Text(c, "“"+practiceSentence()+"”").Font(serifFont(theme.Display)).FontSize(22).FixedLineHeight(30).Italic().TextColor(p.Graphite)
 		})
 		field := mu.Column(c).MinHeight(120).Gap(12).Padding(18, 20).Radius(12).Background(p.SheetRaised).
 			InsetShadow(0, 1, 3, 0, p.ShadowA(0.12)).Shadow(0, 0, 0, 2, p.Accent).Shadow(0, 1, 0, 0, p.Highlight(1))
 		field.Children(func() {
 			mu.TextAreaBase(a.k(c, "onboarding.practice"), &a.onb.practiceText).Label(i18n.T("onboarding.practice.field_label")).
-				Placeholder(i18n.T("onboarding.practice.placeholder")).PlaceholderColor(p.Pencil).Font(theme.Display).FontSize(20).
+				Placeholder(i18n.T("onboarding.practice.placeholder")).PlaceholderColor(p.Pencil).Font(serifFont(theme.Display)).FontSize(20).
 				FixedLineHeight(28).TextColor(p.Ink).MinHeight(56).Lines(2, 5).Bind(&a.onb.practiceField).AutoFocus()
 			a.practiceResult(c, p)
 		})
@@ -156,7 +156,13 @@ func (a *App) onbPractice(c *mu.Context, p theme.Colors) {
 			case engine.StateOptimizing:
 				label, col = i18n.TOS("onboarding.practice.opt_optimizing", nil), p.Accent
 			case engine.StateDownloaded:
-				label, col = i18n.T("onboarding.practice.opt_idle"), p.Success
+				// Rust model_idle: a model Sayso does not keep loaded
+				// (preload off) waits for the first dictation; else it is
+				// on its way into memory.
+				label, col = i18n.T("onboarding.practice.opt_loading"), p.Accent
+				if !a.cfg.Dictation.PreloadModel {
+					label, col = i18n.T("onboarding.practice.opt_idle"), p.Success
+				}
 			}
 			readiness(c, p, label, col)
 		})

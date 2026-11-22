@@ -193,7 +193,7 @@ func (a *App) onbModel(c *mu.Context, p theme.Colors) {
 				Label(i18n.T("onboarding.model.title")).Children(func() {
 				for i, id := range choices {
 					if m, ok := models.Find(id); ok {
-						a.modelCard(c, p, m, i == 0, m.ID == active, i, len(choices))
+						a.modelCard(c, p, m, i == 0, choices, active, i)
 					}
 				}
 			})
@@ -223,10 +223,14 @@ func (a *App) onbModel(c *mu.Context, p theme.Colors) {
 }
 
 // modelCard is one of the three models: a radio button.
-func (a *App) modelCard(c *mu.Context, p theme.Colors, m models.ModelInfo, recommended, selected bool, i, n int) {
+func (a *App) modelCard(c *mu.Context, p theme.Colors, m models.ModelInfo, recommended bool, choices []models.ModelID, active models.ModelID, i int) {
+	selected, n := m.ID == active, len(choices)
 	b := mu.ButtonBase(a.k(c, "onboarding.model."+string(m.ID))).Label(m.Name).Role(mu.RoleRadio).Checked(selected).
 		PositionInSet(i+1, n).Description(modelDescription(m) + " " + sizeText(m.SizeBytes) + " · " + languageLabel(m)).
 		Column().Grow(1).Basis(0).MinWidth(0).Gap(10).Padding(18).Radius(14).Justify(mu.Start).AlignItems(mu.Stretch).Cursor(mu.CursorPointer)
+	a.radioArrows(b, i, slices.Index(choices, active), n,
+		func(j int) string { return "model:" + string(choices[j]) },
+		func(j int) { a.chooseModel(choices[j]) })
 	raised(b, p)
 	if selected {
 		ring(b, p)
@@ -397,6 +401,15 @@ func (a *App) allModelsDialog(c *mu.Context, p theme.Colors) {
 			if len(list) == 0 {
 				uiText(c, i18n.T("onboarding.all_models.no_match"), 13, 400, p.Graphite).Padding(20, 12)
 			}
+			// The rows in the order they show, for the arrow keys.
+			var order []models.ModelID
+			for _, fam := range localGroups {
+				for _, m := range list {
+					if m.Engine.Family() == fam {
+						order = append(order, m.ID)
+					}
+				}
+			}
 			index := 0
 			for _, fam := range localGroups {
 				var group []models.ModelInfo
@@ -414,7 +427,10 @@ func (a *App) allModelsDialog(c *mu.Context, p theme.Colors) {
 					uiText(c, strings.ToUpper(i18n.T("onboarding.all_models.size")), 11, 500, p.Graphite).Width(64).Shrink(0).TextAlign(mu.End).AccessHidden(true)
 				})
 				for _, m := range group {
-					a.allModelsRow(c, p, m, m.ID == active, m.ID == suggested, index, len(list))
+					row := a.allModelsRow(c, p, m, m.ID == active, m.ID == suggested, index, len(list))
+					a.radioArrows(row, index, slices.Index(order, active), len(order),
+						func(j int) string { return "all:" + string(order[j]) },
+						func(j int) { a.chooseModel(order[j]) })
 					index++
 				}
 			}
@@ -425,7 +441,7 @@ func (a *App) allModelsDialog(c *mu.Context, p theme.Colors) {
 	}
 }
 
-func (a *App) allModelsRow(c *mu.Context, p theme.Colors, m models.ModelInfo, selected, recommended bool, i, n int) {
+func (a *App) allModelsRow(c *mu.Context, p theme.Colors, m models.ModelInfo, selected, recommended bool, i, n int) mu.Element {
 	st := a.modelStatus(m.ID)
 	state := ""
 	switch {
@@ -470,6 +486,7 @@ func (a *App) allModelsRow(c *mu.Context, p theme.Colors, m models.ModelInfo, se
 		a.chooseModel(m.ID)
 		a.closeAllModels()
 	}
+	return b
 }
 
 // sortedLanguages are the dictation languages, by their name.

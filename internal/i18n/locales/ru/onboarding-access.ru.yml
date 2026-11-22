@@ -37,6 +37,8 @@ onboarding:
   hotkeys:
     title: "Выберите клавиши"
     lead: "Нажмите клавиши, чтобы проверить их. Sayso проверит, что другие приложения не используют те же клавиши."
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "Нажмите клавиши, чтобы проверить их. Sayso проверит, что другие действия Sayso не используют те же клавиши."
     start_stop: "Начать и остановить"
     push_to_talk: "Нажать и говорить"
     no_key: "Клавиша не задана"

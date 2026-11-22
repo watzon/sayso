@@ -3,6 +3,8 @@ package ui
 import (
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	mu "github.com/egoist/mygo/ui"
@@ -61,6 +63,45 @@ type onboardingState struct {
 	practiceSince time.Time
 
 	pindropChecked, pindrop bool
+
+	// focus is the radio choice the arrow keys moved the focus to (the
+	// FocusBind field of the window: "model:<id>", "ai:<row>", ...).
+	focus string
+}
+
+// arrowTarget is what an arrow key does in a radio group of count choices
+// (mod.rs arrow_target): the index to choose, or false at an end. Right and
+// Down go forward, Left and Up back; with nothing chosen (selected < 0) the
+// first key picks the first or the last choice.
+func arrowTarget(k mu.Key, selected, count int) (int, bool) {
+	switch k {
+	case mu.KeyRight, mu.KeyDown:
+		next := max(selected, -1) + 1
+		return next, next < count
+	case mu.KeyLeft, mu.KeyUp:
+		if selected < 0 {
+			return count - 1, count > 0
+		}
+		return selected - 1, selected > 0
+	}
+	return 0, false
+}
+
+// radioArrows gives choice i of a hand-built radio group the arrow keys of
+// a radio group: they choose the neighbor and move the focus to it.
+// selected is the chosen index (-1: none); focusKey names a choice for the
+// focus, unique in the window.
+func (a *App) radioArrows(b mu.Element, i, selected, count int, focusKey func(int) string, choose func(int)) {
+	b.FocusBind(&a.onb.focus, focusKey(i))
+	for _, k := range []mu.Key{mu.KeyRight, mu.KeyDown, mu.KeyLeft, mu.KeyUp} {
+		b.OnShortcut(0, k, func() {
+			if next, ok := arrowTarget(k, selected, count); ok {
+				choose(next)
+				a.onb.focus = focusKey(next)
+				a.invalidate()
+			}
+		})
+	}
 }
 
 // NeedsOnboarding is true until the user finished onboarding.
@@ -361,27 +402,43 @@ const onbSide = 72
 func stepColumn(c *mu.Context, p theme.Colors, title, lead string, body func()) {
 	mu.Column(c).Padding(28, onbSide, 24, onbSide).Gap(22).Children(func() {
 		mu.Column(c).Gap(8).Shrink(0).Children(func() {
-			pressed(c, p, title, 36, 44).Role(mu.RoleHeading)
+			pressed(c, p, title, 36, 44, false).Role(mu.RoleHeading)
 			uiText(c, lead, 15, 400, p.Graphite).FixedLineHeight(22)
 		})
 		body()
 	})
 }
 
-// pressed is a letterpressed Fraunces title with a line of line DIPs.
-// MyGo never makes a line shorter than the face's ascent and descent, so a
-// tighter line takes negative margins (see heading).
-func pressed(c *mu.Context, p theme.Colors, s string, size, line float32) mu.Element {
-	e := mu.Text(c, s).Font(theme.Display).FontSize(size).FontWeight(600).TextColor(p.Ink).LineHeight(line / size)
-	if d := (frauncesLine*size - line) / 2; d > 0 {
-		e.Margin(-d, 0, -d, 0)
+// pressed is a letterpressed Fraunces title with a line of line DIPs, as
+// the Paper titles: tracking -0.03 em, a pale copy 1 DIP under the glyphs
+// and a shadow copy 0.5 DIP over them (two text shadows in Paper; MyGo has
+// one per text, so the second is a hidden copy behind it). MyGo never makes
+// a line shorter than the face's ascent and descent, so a tighter line
+// takes negative margins (see heading).
+func pressed(c *mu.Context, p theme.Colors, s string, size, line float32, center bool) mu.Element {
+	align := mu.Start
+	if center {
+		align = mu.Center
 	}
-	return letterpress(e, p)
+	text := func() mu.Element {
+		e := mu.Text(c, s).Font(serifFont(theme.Display)).FontSize(size).FontWeight(600).LetterSpacing(-0.03 * size).
+			LineHeight(line / size).TextAlign(align)
+		if d := (frauncesLine*size - line) / 2; d > 0 {
+			e.Margin(-d, 0, -d, 0)
+		}
+		return e
+	}
+	var e mu.Element
+	mu.Column(c).Shrink(0).Children(func() {
+		text().TextColor(p.ShadowA(0.25)).Absolute().Left(0).Right(0).Top(-0.5).AccessHidden(true)
+		e = letterpress(text().TextColor(p.Ink), p).ZIndex(1)
+	})
+	return e
 }
 
 // title is a Fraunces SemiBold card title (text::title).
 func cardTitle(c *mu.Context, p theme.Colors, s string, size, line float32) mu.Element {
-	return mu.Text(c, s).Font(theme.Display).FontSize(size).FontWeight(600).TextColor(p.Ink).FixedLineHeight(line)
+	return mu.Text(c, s).Font(serifFont(theme.Display)).FontSize(size).FontWeight(600).TextColor(p.Ink).FixedLineHeight(line)
 }
 
 // onbCard is a raised card, as in the onboarding design.
@@ -442,9 +499,56 @@ func sizeLabel(m models.ModelInfo) string {
 
 // ---- Step 1: Welcome ----
 
-// heroLevels is a calm stroke for the hero: high in the middle, two
-// smaller swells.
-var heroLevels = [12]float32{0.35, 0.55, 0.8, 0.62, 0.9, 1.0, 0.86, 0.66, 0.84, 0.6, 0.42, 0.3}
+// heroPaths are the three layers of the hero's ink stroke, as the Paper
+// artboard "Welcome" draws them (a 200x32 view box): four crests, the
+// second the tallest. Each is the fill alpha and the SVG path (M, C, Z).
+var heroPaths = [3]struct {
+	alpha float32
+	d     string
+}{
+	{0.07, "M0,16 C10,16 14,13.15 20,12.2 C28,10.3 32,6.5 40,5.55 C48,4.6 52,11.25 60,10.3 C68,9.35 72,2.7 82,2.7 C92,2.7 96,9.35 104,9.35 C112,9.35 116,4.6 126,5.55 C136,6.5 140,12.2 150,12.2 C160,12.2 164,8.4 172,9.35 C182,10.3 190,15.05 200,16 C190,16.95 182,21.7 172,22.65 C164,23.6 160,19.8 150,19.8 C140,19.8 136,25.5 126,26.45 C116,27.4 112,22.65 104,22.65 C96,22.65 92,29.3 82,29.3 C72,29.3 68,22.65 60,21.7 C52,20.75 48,27.4 40,26.45 C32,25.5 28,21.7 20,19.8 C14,18.85 10,16 0,16 Z"},
+	{0.16, "M0,16 C10,16 14,13.9 20,13.2 C28,11.8 32,9 40,8.3 C48,7.6 52,12.5 60,11.8 C68,11.1 72,6.2 82,6.2 C92,6.2 96,11.1 104,11.1 C112,11.1 116,7.6 126,8.3 C136,9 140,13.2 150,13.2 C160,13.2 164,10.4 172,11.1 C182,11.8 190,15.3 200,16 C190,16.7 182,20.2 172,20.9 C164,21.6 160,18.8 150,18.8 C140,18.8 136,23 126,23.7 C116,24.4 112,20.9 104,20.9 C96,20.9 92,25.8 82,25.8 C72,25.8 68,20.9 60,20.2 C52,19.5 48,24.4 40,23.7 C32,23 28,20.2 20,18.8 C14,18.1 10,16 0,16 Z"},
+	{1, "M0,16 C10,16 14,14.65 20,14.2 C28,13.3 32,11.5 40,11.05 C48,10.6 52,13.75 60,13.3 C68,12.85 72,9.7 82,9.7 C92,9.7 96,12.85 104,12.85 C112,12.85 116,10.6 126,11.05 C136,11.5 140,14.2 150,14.2 C160,14.2 164,12.4 172,12.85 C182,13.3 190,15.55 200,16 C190,16.45 182,18.7 172,19.15 C164,19.6 160,17.8 150,17.8 C140,17.8 136,20.5 126,20.95 C116,21.4 112,19.15 104,19.15 C96,19.15 92,22.3 82,22.3 C72,22.3 68,19.15 60,18.7 C52,18.25 48,21.4 40,20.95 C32,20.5 28,18.7 20,17.8 C14,17.35 10,16 0,16 Z"},
+}
+
+// heroPath builds one layer in r. breath scales the stroke's height around
+// its middle line, so the ink breathes while motion is on.
+func heroPath(d string, r mu.Rect, breath float32) *mu.Path {
+	sx, sy := r.W/200, r.H/32
+	pt := func(x, y float32) (float32, float32) { return r.X + x*sx, r.Y + (16+(y-16)*breath)*sy }
+	var path mu.Path
+	fields := strings.FieldsFunc(d, func(r rune) bool { return r == ' ' || r == ',' })
+	var nums []float32
+	cmd := byte(0)
+	flush := func() {
+		switch {
+		case cmd == 'M' && len(nums) == 2:
+			path.MoveTo(pt(nums[0], nums[1]))
+		case cmd == 'C' && len(nums) == 6:
+			x1, y1 := pt(nums[0], nums[1])
+			x2, y2 := pt(nums[2], nums[3])
+			x, y := pt(nums[4], nums[5])
+			path.CubeTo(x1, y1, x2, y2, x, y)
+		default:
+			return
+		}
+		nums = nums[:0]
+	}
+	for _, f := range fields {
+		if c := f[0]; c == 'M' || c == 'C' || c == 'Z' {
+			cmd, f = c, f[1:]
+			if c == 'Z' {
+				path.Close()
+				continue
+			}
+		}
+		if v, err := strconv.ParseFloat(f, 32); err == nil {
+			nums = append(nums, float32(v))
+			flush()
+		}
+	}
+	return &path
+}
 
 func (a *App) onbWelcome(c *mu.Context, p theme.Colors) {
 	reduce := reduceMotion(c)
@@ -456,17 +560,19 @@ func (a *App) onbWelcome(c *mu.Context, p theme.Colors) {
 				t = float32(time.Since(started).Seconds()) * 0.35
 				pt.AnimationFrame()
 			}
-			levels := make([]float32, len(heroLevels))
-			for i, l := range heroLevels {
-				levels[i] = l * (0.92 + 0.08*float32(math.Sin(float64(t*2+float32(i)*0.7))))
+			breath := 0.94 + 0.06*float32(math.Sin(float64(t*2)))
+			if reduce {
+				breath = 1
 			}
-			paintInkLayers(pt, r, levels, t, p.Ink, inkLayers)
+			for _, l := range heroPaths {
+				pt.FillPath(heroPath(l.d, r, breath), p.Ink.Alpha(l.alpha))
+			}
 			for _, d := range [][4]float32{{484, 21, 2.6, 0.4}, {86, 60, 2.1, 0.3}, {313, 74, 1.6, 0.3}} {
 				pt.Fill(mu.Rect{X: r.X + d[0], Y: r.Y + d[1], W: d[2] * 2, H: d[2] * 2}, p.Ink.Alpha(d[3]), d[2])
 			}
 		})
 		mu.Column(c).Gap(14).AlignItems(mu.Center).Children(func() {
-			pressed(c, p, i18n.T("onboarding.welcome.title"), 56, 59).Role(mu.RoleHeading).TextAlign(mu.Center)
+			pressed(c, p, i18n.T("onboarding.welcome.title"), 56, 59, true).Role(mu.RoleHeading)
 			uiText(c, i18n.TOS("onboarding.welcome.lead", nil), 17, 400, p.Graphite).FixedLineHeight(26).TextAlign(mu.Center).Width(520)
 		})
 		mu.Row(c).Gap(28).Padding(8, 0, 0, 0).Wrap().Justify(mu.Center).Children(func() {
@@ -536,7 +642,7 @@ func (a *App) onbDone(c *mu.Context, p theme.Colors) {
 	mu.Column(c).FillWidth().MinHeight(462).Justify(mu.Center).AlignItems(mu.Center).Gap(26).Padding(0, onbSide, 16, onbSide).Children(func() {
 		ringedSeal(c, p, 92)
 		mu.Column(c).Gap(10).AlignItems(mu.Center).Children(func() {
-			pressed(c, p, i18n.T("onboarding.done.title"), 48, 58).Role(mu.RoleHeading).TextAlign(mu.Center)
+			pressed(c, p, i18n.T("onboarding.done.title"), 48, 58, true).Role(mu.RoleHeading)
 			uiText(c, lead, 16, 400, p.Graphite).FixedLineHeight(24).TextAlign(mu.Center).Width(480)
 		})
 		mu.Row(c).FillWidth().Gap(14).AlignItems(mu.Stretch).Children(func() {

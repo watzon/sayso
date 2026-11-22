@@ -37,6 +37,8 @@ onboarding:
   hotkeys:
     title: "选择快捷键"
     lead: "按下快捷键进行测试。Sayso 会检查是否有其他 App 使用了相同的按键。"
+    # Where Sayso cannot look at other apps (Windows, Linux): only its own actions.
+    lead_local: "按下快捷键进行测试。Sayso 会检查是否有其他 Sayso 操作使用了相同的按键。"
     start_stop: "开始和停止"
     push_to_talk: "按住说话"
     no_key: "未设置按键"

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"math"
 	"runtime"
 	"slices"
 	"strings"
@@ -430,6 +431,10 @@ func (a *App) onbAI(c *mu.Context, p theme.Colors) {
 		order = append(order, aiChoice{kind: aiApple})
 	}
 	is := func(ch aiChoice) bool { return chosen && ch == choice }
+	sel := -1
+	if chosen {
+		sel = slices.Index(order, choice)
+	}
 	stepColumn(c, p, i18n.T("onboarding.ai.title"), i18n.T("onboarding.ai.lead"), func() {
 		mu.Column(a.k(c, "onboarding.ai.options")).Gap(8).Role(mu.RoleRadioGroup).Label(i18n.T("onboarding.ai.title")).Children(func() {
 			if !d.done {
@@ -438,33 +443,33 @@ func (a *App) onbAI(c *mu.Context, p theme.Colors) {
 			for i, ch := range order {
 				switch ch.kind {
 				case aiClaude:
-					a.aiRow(c, p, ch, is(ch), i, len(order), "Claude CLI", "", i18n.T("onboarding.ai.claude_desc", "path", tildePath(d.claude)),
+					a.aiRow(c, p, ch, is(ch), i, order, sel, "Claude CLI", "", i18n.T("onboarding.ai.claude_desc", "path", tildePath(d.claude)),
 						func() { badge(c, p, i18n.T("onboarding.ai.cloud"), toneAccent, "") }, nil, nil)
 				case aiCloud:
 					var extra func()
 					if is(ch) {
 						extra = func() { a.cloudForm(c, p) }
 					}
-					a.aiRow(c, p, ch, is(ch), i, len(order), i18n.T("onboarding.ai.cloud_api"), "",
+					a.aiRow(c, p, ch, is(ch), i, order, sel, i18n.T("onboarding.ai.cloud_api"), "",
 						i18n.T("onboarding.ai.cloud_desc", "store", i18n.TOS("os.secret_store", nil)),
 						func() { badge(c, p, i18n.T("onboarding.ai.cloud"), toneAccent, "") }, nil, extra)
 				case aiLocal:
 					if len(d.ollama) == 0 {
-						a.aiRow(c, p, ch, is(ch), i, len(order), "Ollama", "", i18n.T("onboarding.ai.ollama_empty", "computer", computer()), nil, nil, nil)
+						a.aiRow(c, p, ch, is(ch), i, order, sel, "Ollama", "", i18n.T("onboarding.ai.ollama_empty", "computer", computer()), nil, nil, nil)
 						continue
 					}
 					var extra func()
 					if f.localOpen && is(ch) {
 						extra = func() { a.ollamaList(c, p) }
 					}
-					a.aiRow(c, p, ch, is(ch), i, len(order), "Ollama", "", i18n.T("onboarding.ai.ollama_running", "computer", computer()),
+					a.aiRow(c, p, ch, is(ch), i, order, sel, "Ollama", "", i18n.T("onboarding.ai.ollama_running", "computer", computer()),
 						nil, func() { a.ollamaPicker(c, p) }, extra)
 				case aiCleanup:
 					info := enhance.CleanupCatalog()[ch.cleanup]
-					a.aiRow(c, p, ch, is(ch), i, len(order), info.Name, i18n.T("onboarding.ai.by", "publisher", info.Publisher), cleanupDesc(info),
+					a.aiRow(c, p, ch, is(ch), i, order, sel, info.Name, i18n.T("onboarding.ai.by", "publisher", info.Publisher), cleanupDesc(info),
 						func() { sizeBadge(c, p, info.SizeBytes) }, nil, nil)
 				case aiApple:
-					a.aiRow(c, p, ch, is(ch), i, len(order), "Apple Intelligence", "", i18n.T("onboarding.ai.apple_desc", "model", d.apple), nil, nil, nil)
+					a.aiRow(c, p, ch, is(ch), i, order, sel, "Apple Intelligence", "", i18n.T("onboarding.ai.apple_desc", "model", d.apple), nil, nil, nil)
 				}
 			}
 		})
@@ -477,8 +482,12 @@ func (a *App) onbAI(c *mu.Context, p theme.Colors) {
 // aiRow is one option. The radio button holds the dot, the title and the
 // description, and trailing (a badge). control and extra are outside it,
 // because a button cannot hold another control.
-func (a *App) aiRow(c *mu.Context, p theme.Colors, ch aiChoice, selected bool, i, n int, title, by, desc string, trailing, control, extra func()) {
+func (a *App) aiRow(c *mu.Context, p theme.Colors, ch aiChoice, selected bool, i int, order []aiChoice, sel int, title, by, desc string, trailing, control, extra func()) {
+	n := len(order)
 	card := mu.Column(a.k(c, "onboarding.ai.card."+ch.key())).Radius(12).Background(p.SheetRaised)
+	if !selected && card.Hovered() {
+		card.Background(p.Sheet)
+	}
 	if selected {
 		card.Shadow(0, 0, 0, 2, p.Ink).Shadow(0, 1, 2, 0, p.ShadowA(0.14))
 	} else {
@@ -492,6 +501,7 @@ func (a *App) aiRow(c *mu.Context, p theme.Colors, ch aiChoice, selected bool, i
 			}
 			b := mu.ButtonBase(a.k(c, "onboarding.ai."+ch.key())).Label(name).Role(mu.RoleRadio).Checked(selected).
 				PositionInSet(i+1, n).Description(desc).Grow(1).Basis(0).MinWidth(0).Gap(14).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+			a.radioArrows(b, i, sel, n, func(j int) string { return "ai:" + order[j].key() }, func(j int) { a.selectAI(order[j]) })
 			b.Children(func() {
 				radioDot(c, p, selected)
 				mu.Column(c).Grow(1).Basis(0).MinWidth(0).Gap(2).Children(func() {
@@ -568,11 +578,26 @@ func (a *App) ollamaList(c *mu.Context, p theme.Colors) {
 				}
 				uiText(c, name, 13, w, p.Ink)
 			})
+			a.radioArrows(it, i, slices.Index(f.found.ollama, current), len(f.found.ollama),
+				func(j int) string { return "ollama:" + f.found.ollama[j] },
+				func(j int) { f.local, f.testDone = f.found.ollama[j], false })
 			if clicked(c, it) {
 				f.local, f.localOpen, f.testDone = name, false, false
 			}
 		}
 	})
+}
+
+// cloudLabelWidth is the width of the cloud form's label column: the
+// widest label in the interface language, at least 70 DIPs, so a long one
+// ("API-Schlüssel") stays on one line.
+func cloudLabelWidth() float32 {
+	w := float32(70)
+	for _, k := range []string{"onboarding.ai.base_url", "onboarding.ai.api_key", "onboarding.ai.model"} {
+		lw, _ := mu.ShapeText(i18n.T(k), mu.Font{Family: theme.UI, Size: 13, Weight: 500}, 0).Size()
+		w = max(w, float32(math.Ceil(float64(lw))))
+	}
+	return w
 }
 
 // cloudForm is the form of the Cloud API option: a preset, the URL, the
@@ -586,14 +611,17 @@ func (a *App) cloudForm(c *mu.Context, p theme.Colors) {
 				if ps[1] == "custom" {
 					label = i18n.T("onboarding.ai.preset_other")
 				}
-				if a.chip(c, p, "onboarding.ai.preset."+ps[1], label, f.preset == i) {
-					f.preset, f.baseURL, f.model, f.testDone = i, ps[2], "", false
+				choose := func(j int) { f.preset, f.baseURL, f.model, f.testDone = j, aiPresets[j][2], "", false }
+				b := a.chipBase(c, p, "onboarding.ai.preset."+ps[1], label, f.preset == i, "", mu.RoleRadio).PositionInSet(i+1, len(aiPresets))
+				a.radioArrows(b, i, f.preset, len(aiPresets), func(j int) string { return "preset:" + aiPresets[j][1] }, choose)
+				if clicked(c, b) {
+					choose(i)
 				}
 			}
 		})
 		field := func(key, label string, v *string, secret bool, placeholder string) {
 			mu.Row(c).Gap(12).AlignItems(mu.Center).Children(func() {
-				uiText(c, label, 13, 500, p.Graphite).Width(70).Shrink(0)
+				uiText(c, label, 13, 500, p.Graphite).Width(cloudLabelWidth()).Shrink(0)
 				in := mu.TextInputBase(a.k(c, key), v).Label(label).Placeholder(placeholder).PlaceholderColor(p.Pencil).
 					Height(34).PaddingX(12).Radius(9).FontSize(13).Font(theme.Mono).TextColor(p.Ink).Grow(1).Basis(0).MinWidth(0)
 				debossed(in, p)
@@ -605,7 +633,7 @@ func (a *App) cloudForm(c *mu.Context, p theme.Colors) {
 		field("onboarding.ai.base_url", i18n.T("onboarding.ai.base_url"), &f.baseURL, false, "https://…/v1")
 		field("onboarding.ai.api_key", i18n.T("onboarding.ai.api_key"), &f.key, true, i18n.T("onboarding.ai.key_placeholder"))
 		a.cloudModel(c, p)
-		mu.Row(c).Gap(12).Padding(0, 0, 0, 82).AlignItems(mu.Center).Children(func() {
+		mu.Row(c).Gap(12).Padding(0, 0, 0, cloudLabelWidth()+12).AlignItems(mu.Center).Children(func() {
 			if a.button(c, p, "onboarding.ai.test", i18n.T("onboarding.ai.test_connection"), bopt{size: sizeSmall, disabled: f.testing}) && !f.testing {
 				a.testAI()
 			}
@@ -629,7 +657,7 @@ func (a *App) cloudForm(c *mu.Context, p theme.Colors) {
 func (a *App) cloudModel(c *mu.Context, p theme.Colors) {
 	f := &a.onb.ai
 	mu.Row(c).Gap(12).AlignItems(mu.Center).Children(func() {
-		uiText(c, i18n.T("onboarding.ai.model"), 13, 500, p.Graphite).Width(70).Shrink(0)
+		uiText(c, i18n.T("onboarding.ai.model"), 13, 500, p.Graphite).Width(cloudLabelWidth()).Shrink(0)
 		label := f.model
 		if label == "" {
 			label = i18n.T("onboarding.ai.choose_model")
