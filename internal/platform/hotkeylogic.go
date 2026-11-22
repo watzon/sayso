@@ -1,3 +1,5 @@
+//go:build darwin || linux
+
 package platform
 
 // The platform-neutral part of the global hotkeys: the hotkey string format,
