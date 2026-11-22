@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -688,6 +690,35 @@ func TestAFailedLoadReportsFailed(t *testing.T) {
 	h.loader.fail.Store(true)
 	r := h.call(obj{"v": 1, "type": "load", "id": "o", "model": "w", "engine": whisper})
 	if s := states(r); len(s) == 0 || s[len(s)-1] != "failed" || last(r)["type"] != "error" {
+		t.Fatalf("%v", r)
+	}
+}
+
+func TestAFailedDownloadReportsFailedOnceAndLeavesNothingComplete(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+	h := newHarness(t, srv.URL)
+	engine := specJSON("whisper", "sherpa-onnx-missing", nil)
+	r := h.call(obj{"v": 1, "type": "download", "id": "d1", "model": "m", "engine": engine})
+	if !reflect.DeepEqual(states(r), []string{"downloading", "failed"}) {
+		t.Fatalf("%v", r)
+	}
+	errorsSent := 0
+	for _, m := range r {
+		if m["state"] == "failed" && m["reason"] != "download_failed" {
+			t.Fatalf("%v", m)
+		}
+		if m["type"] == "error" {
+			errorsSent++
+		}
+	}
+	if e := last(r); errorsSent != 1 || e["type"] != "error" || e["id"] != "d1" || !strings.Contains(e["message"].(string), "404") {
+		t.Fatalf("one error reply with the status: %v", r)
+	}
+	if isFile(filepath.Join(h.modelsDir(), "m", ".complete")) {
+		t.Fatal("marked complete")
+	}
+	if r := h.call(obj{"v": 1, "type": "load", "id": "o1", "model": "m", "engine": engine}); r[0]["message"] != "model m is not downloaded" {
 		t.Fatalf("%v", r)
 	}
 }
