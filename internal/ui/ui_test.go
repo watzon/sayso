@@ -521,6 +521,8 @@ func TestOverlayPillStates(t *testing.T) {
 	a.cfg.Overlay.IdlePill = true
 	a.cfg.Hotkeys.Toggle = ptr(config.MustHotkey("opt+space"))
 	tt := mu.NewTester(a.OverlayView, PillWindowW, PillWindowH)
+	settle := func() { tt.Frame(); tt.Advance(time.Second) }
+	settle()
 	// At rest the idle pill is a small dash (Rust overlay idle_pill); it
 	// says how to dictate only while the pointer is over it.
 	if tt.HasText(i18n.T("overlay.to_dictate")) {
@@ -531,7 +533,7 @@ func TestOverlayPillStates(t *testing.T) {
 		t.Fatalf("no idle pill: %q", tt.Texts())
 	}
 	tt.Move(r.X+r.W/2, r.Y+r.H/2)
-	tt.Frame()
+	settle()
 	if !tt.HasText(i18n.T("overlay.to_dictate")) {
 		t.Errorf("hovered idle pill: %q", tt.Texts())
 	}
@@ -545,41 +547,43 @@ func TestOverlayPillStates(t *testing.T) {
 	}
 	a.cfg.Overlay.ShowPreview = true
 	a.Preview("hello", "wor")
-	tt.Frame()
+	settle()
 	if !hasControl(tt, i18n.T("overlay.a11y.stop")) {
 		t.Errorf("recording pill: %q", tt.Texts())
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateProcessing})
-	tt.Frame()
+	settle()
 	if !tt.HasText(i18n.T("overlay.stage.transcribing")) {
 		t.Errorf("processing pill: %q", tt.Texts())
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateShowing, Notice: dictation.Notice{Kind: dictation.NoticeCancelled}})
-	tt.Frame()
+	settle()
 	press(t, tt, i18n.T("overlay.undo"))
 	if e.dict.count("undo") != 1 {
 		t.Error("undo did not reach the controller")
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateShowing, Notice: dictation.Notice{Kind: dictation.NoticeInserted, StyleName: "Clean"}})
-	tt.Frame()
+	settle()
 	// The style is a tag beside "Inserted" (Paper Overlay, Inserted).
 	if !tt.HasText(i18n.T("overlay.inserted")) || !tt.HasText("Clean") {
 		t.Errorf("done pill: %q", tt.Texts())
 	}
 	a.StateChanged(dictation.State{Kind: dictation.StateShowing, Notice: dictation.Notice{Kind: dictation.NoticeError, Message: "Mic broke"}})
-	tt.Frame()
+	settle()
 	if !tt.HasText("Mic broke") {
 		t.Errorf("failed pill: %q", tt.Texts())
 	}
 	a.Notice(dictation.Message{Key: "overlay.notice.no_engine"})
 	a.StateChanged(dictation.State{Kind: dictation.StateIdle})
-	tt.Frame()
+	settle()
 	if !tt.HasText(i18n.T("overlay.notice.no_engine")) {
 		t.Errorf("an idle notice does not show: %q", tt.Texts())
 	}
 	a.lastNotice = ""
 	a.cfg.Overlay.IdlePill = false
 	a.StateChanged(dictation.State{Kind: dictation.StateIdle})
+	// The card shrinks out first; the window hides at the end (Rust hide_after_close).
+	settle()
 	if e.shell.overlay {
 		t.Error("idle without the idle pill should hide the overlay")
 	}
@@ -590,12 +594,15 @@ func TestOverlaySizesZoom(t *testing.T) {
 	e.a.cfg.Overlay.IdlePill = true
 	e.a.cfg.Overlay.Size = config.OverlayMedium
 	tt := mu.NewTester(e.a.OverlayView, PillWindowW, PillWindowH)
+	// The card eases to each size; let it settle.
+	settle := func() { tt.Frame(); tt.Advance(time.Second) }
+	settle()
 	medium := inkWidth(tt)
 	e.a.cfg.Overlay.Size = config.OverlayLarge
-	tt.Frame()
+	settle()
 	large := inkWidth(tt)
 	e.a.cfg.Overlay.Size = config.OverlaySmall
-	tt.Frame()
+	settle()
 	small := inkWidth(tt)
 	if !(small < medium && medium < large) {
 		t.Errorf("drawn widths small %d, medium %d, large %d", small, medium, large)
