@@ -135,7 +135,7 @@ func (a *App) popoverLast(c *mu.Context, p theme.Colors) {
 				c.WriteClipboard(e.FinalText)
 			}
 		})
-		mu.Text(c, e.FinalText).Font(theme.Body).FontSize(15).LineHeight(21.0 / 15).TextColor(p.Ink).MaxLines(3).Ellipsis("…")
+		mu.Text(c, e.FinalText).Font(serifFont(theme.Body)).FontSize(15).LineHeight(21.0 / 15).TextColor(p.Ink).MaxLines(3).Ellipsis("…")
 	})
 }
 

@@ -268,9 +268,9 @@ func (a *App) ruleInput(c *mu.Context, p theme.Colors, key, label, placeholder s
 	in := mu.TextInputBase(a.k(c, key), v).Label(label).Placeholder(placeholder).PlaceholderColor(p.Pencil).
 		Height(32).PaddingX(10).Radius(7).FontSize(15).TextColor(p.Ink)
 	if from {
-		in.Font(theme.Display).Italic().Width(150).Shrink(0)
+		in.Font(serifFont(theme.Display)).Italic().Width(150).Shrink(0)
 	} else {
-		in.Font(theme.Display).Grow(1).Basis(0)
+		in.Font(serifFont(theme.Display)).Grow(1).Basis(0)
 	}
 	return debossed(in, p)
 }
@@ -333,7 +333,7 @@ func (a *App) tryPhrase(c *mu.Context, p theme.Colors) {
 		})
 		mu.TextInputBase(a.k(c, "dict.try_input"), &d.try).Label(i18n.T("dictionary.try.title")).
 			Placeholder(i18n.T("dictionary.placeholder.phrase")).PlaceholderColor(p.Graphite).
-			Font(theme.Display).Italic().FontSize(15).TextColor(p.Ink)
+			Font(serifFont(theme.Display)).Italic().FontSize(15).TextColor(p.Ink)
 		mu.Box(c).Height(1).Background(p.DebossShade)
 		mu.Column(c).Role(mu.RoleStatus).Children(func() {
 			if strings.TrimSpace(d.try) == "" {
