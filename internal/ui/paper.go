@@ -144,8 +144,19 @@ func display(c *mu.Context, p theme.Colors, s string, size float32) mu.Element {
 // heading is a title in Fraunces SemiBold, with the line height of the
 // Rust type scale (44/48, 22/28...).
 func heading(c *mu.Context, p theme.Colors, s string, size float32) mu.Element {
-	return mu.Text(c, s).Font(theme.Display).FontSize(size).FontWeight(600).TextColor(p.Ink).LineHeight(headingLine(size))
+	e := mu.Text(c, s).Font(theme.Display).FontSize(size).FontWeight(600).TextColor(p.Ink).LineHeight(headingLine(size))
+	// MyGo never makes a line shorter than the font's ascent and descent
+	// (Fraunces: about 1.18 em), where GPUI sets 44/48 and 40/44. Negative
+	// margins give the line back the height Rust lays it out at.
+	if d := (frauncesLine*size - headingLine(size)*size) / 2; d > 0 {
+		e.Margin(-d, 0, -d, 0)
+	}
+	return e
 }
+
+// frauncesLine is the natural line height of Fraunces, ascent plus descent,
+// in em.
+const frauncesLine = 1.1777
 
 func headingLine(size float32) float32 {
 	switch {
@@ -339,6 +350,10 @@ type appIcons struct {
 	mu    sync.Mutex
 	known map[string]*mu.Bitmap
 	busy  map[string]bool
+	// names are the display names of installed apps; "" for an app that
+	// is not installed.
+	names     map[string]string
+	namesBusy bool
 }
 
 // appIcon is the icon of an app, read once off the UI thread; nil until
@@ -377,4 +392,46 @@ func (a *App) appIcon(bundle string) *mu.Bitmap {
 		}
 	}()
 	return nil
+}
+
+// installedNames are the names of the installed apps among bundles, read
+// once off the UI thread. ok is false until all of them are read.
+func (a *App) installedNames(bundles []string) (names map[string]string, ok bool) {
+	if a.d.Platform == nil || a.d.Platform.AppIcons == nil {
+		return nil, true
+	}
+	ic := &a.icons
+	ic.mu.Lock()
+	defer ic.mu.Unlock()
+	var missing []string
+	for _, b := range bundles {
+		if _, known := ic.names[b]; !known {
+			missing = append(missing, b)
+		}
+	}
+	if len(missing) == 0 {
+		return ic.names, true
+	}
+	if ic.namesBusy {
+		return nil, false
+	}
+	ic.namesBusy = true
+	src := a.d.Platform.AppIcons
+	go func() {
+		got := make(map[string]string, len(missing))
+		for _, b := range missing {
+			got[b] = src.AppName(b)
+		}
+		ic.mu.Lock()
+		if ic.names == nil {
+			ic.names = map[string]string{}
+		}
+		for b, n := range got {
+			ic.names[b] = n
+		}
+		ic.namesBusy = false
+		ic.mu.Unlock()
+		a.post(a.invalidate)
+	}()
+	return nil, false
 }

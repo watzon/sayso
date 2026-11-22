@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"math"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/enhance"
 	"github.com/watzon/sayso/internal/i18n"
+	"github.com/watzon/sayso/internal/models/languages"
 	"github.com/watzon/sayso/internal/theme"
 	"github.com/watzon/sayso/internal/update"
 )
@@ -58,6 +61,12 @@ func logoName(pr config.Provider) string {
 		return "openai"
 	case config.KindAppleIntelligence:
 		return "apple"
+	case config.KindCleanupModel:
+		// logo.rs cleanup: the publisher's app icon fills the plate.
+		if strings.HasPrefix(pr.ModelName(), "spokenly") {
+			return "spokenly"
+		}
+		return "superwhisper"
 	case config.KindACP:
 		for _, n := range []string{"opencode", "cursor", "gemini", "qwen", "kimi"} {
 			if strings.Contains(strings.ToLower(pr.Command+" "+pr.Name), n) {
@@ -91,6 +100,15 @@ func logoTile(c *mu.Context, p theme.Colors, pr config.Provider, size float32) {
 		raised(t, p)
 	} else {
 		raisedSmall(t, p)
+	}
+	if pr.Kind == config.KindCleanupModel {
+		// An app icon fills its plate (logo.rs Mark::AppIcon).
+		if src := providerLogo(logoName(pr)); src != nil {
+			t.Radius(float32(math.Round(float64(size * 0.27)))).Clip().Children(func() {
+				mu.Image(c, src).Size(size, size)
+			})
+			return
+		}
 	}
 	t.Children(func() {
 		if src := providerLogo(logoName(pr)); src != nil {
@@ -135,6 +153,16 @@ func (a *App) providerSub(pr config.Provider) string {
 	case config.KindAppleIntelligence:
 		return i18n.T("settings.providers.apple_model_detail")
 	case config.KindCleanupModel:
+		// "No prompts · English", as providers/mod.rs summary.
+		for _, m := range enhance.CleanupCatalog() {
+			if m.ID == pr.ModelName() {
+				langs := i18n.TP("core.models.languages", len(m.Languages), nil)
+				if len(m.Languages) == 1 {
+					langs = languages.Name(m.Languages[0])
+				}
+				return i18n.T("settings.providers.no_prompts") + " · " + langs
+			}
+		}
 		return i18n.T("hub.place.local")
 	}
 	parts := []string{}
@@ -180,7 +208,9 @@ func (a *App) providersSection(c *mu.Context, p theme.Colors, sub string) {
 		})
 	})
 	sel := a.set.provSel
-	if _, ok := ai.Provider(sel); !ok && sel != addProviderSel {
+	// ai.Provider("") is the default provider, so "" (nothing picked yet)
+	// must fall through to the pick below.
+	if _, ok := ai.Provider(sel); (sel == "" || !ok) && sel != addProviderSel {
 		sel = addProviderSel
 		if len(ai.Providers) > 0 {
 			sel = ai.Providers[0].ID
@@ -191,15 +221,26 @@ func (a *App) providersSection(c *mu.Context, p theme.Colors, sub string) {
 			}
 		}
 	}
-	mu.Row(c).AlignItems(mu.Stretch).MinHeight(520).BorderWidth(1, 0, 0, 0).BorderColor(p.Rule).Children(func() {
+	// The split fills the window below the header, as Rust's two panes do;
+	// the AI group comes after it.
+	_, winH := c.Size()
+	mu.Row(c).AlignItems(mu.Stretch).MinHeight(max(520, winH-190)).BorderWidth(1, 0, 0, 0).BorderColor(p.Rule).Children(func() {
 		mu.Column(c).Width(264).Shrink(0).Padding(16, 16, 16, 0).Gap(4).BorderEndWidth(1).BorderColor(p.Rule).Role(mu.RoleList).
 			Label(i18n.T("settings.providers.your_providers")).Children(func() {
 			groups := []string{i18n.T("settings.providers.group_subscriptions"), i18n.T("settings.providers.group_servers"),
 				i18n.T("settings.providers.group_on_this_computer", "computer", computer())}
 			for g, title := range groups {
 				first := true
-				for i := range ai.Providers {
-					pr := ai.Providers[i]
+				// Apple Intelligence last in its group (providers/mod.rs grouped).
+				order := make([]config.Provider, 0, len(ai.Providers))
+				for _, apple := range []bool{false, true} {
+					for _, pr := range ai.Providers {
+						if (pr.Kind == config.KindAppleIntelligence) == apple {
+							order = append(order, pr)
+						}
+					}
+				}
+				for _, pr := range order {
 					if providerGroup(pr) != g {
 						continue
 					}
@@ -282,7 +323,7 @@ func (a *App) providerListRow(c *mu.Context, p theme.Colors, pr config.Provider,
 
 func (a *App) addProviderCard(c *mu.Context, p theme.Colors, on bool) {
 	b := mu.ButtonBase(a.k(c, "providers.select.add")).Label(i18n.T("settings.providers.add_a_provider")).Padding(12).Gap(12).Radius(12).
-		AlignItems(mu.Center).Border(1.5, p.Rule).BorderStyle(mu.BorderDashed).Cursor(mu.CursorPointer)
+		AlignItems(mu.Center).Border(1, p.DebossShade).Cursor(mu.CursorPointer)
 	if on {
 		b.Background(p.Deboss.Alpha(0.5))
 	} else if b.Hovered() {
@@ -349,9 +390,26 @@ func (a *App) providerDetail(c *mu.Context, p theme.Colors, i int) {
 			})
 		})
 	case config.KindClaudeCLI:
+		a.row(c, p, i18n.T("settings.providers.config_folder"), i18n.T("settings.providers.config_folder_detail"), func() {
+			dir := pr.ConfigDirSet()
+			a.fieldW(c, p, "providers.config_dir."+pr.ID, i18n.T("settings.providers.config_folder"), "~/.claude", &dir, 240).OnChange(func() {
+				for j := range ai.Providers {
+					if ai.Providers[j].ID == pr.ID {
+						ai.Providers[j].ConfigDir = nil
+						if strings.TrimSpace(dir) != "" {
+							ai.Providers[j].ConfigDir = ptr(dir)
+						}
+					}
+				}
+				a.saveConfig()
+			})
+		})
 		a.row(c, p, i18n.T("settings.providers.model"), i18n.T("settings.providers.model_detail"), func() {
 			uiText(c, a.providerSub(pr), 13, 600, p.Ink)
 		})
+	}
+	if pr.Kind == config.KindClaudeCLI || pr.Kind == config.KindChatGPT {
+		a.thinkingRow(c, p, pr)
 	}
 	a.row(c, p, i18n.T("settings.providers.default_provider"), i18n.T("settings.providers.default_provider_detail"), func() {
 		on := isDefault
@@ -388,7 +446,7 @@ func (a *App) providerDetail(c *mu.Context, p theme.Colors, i int) {
 			where = *pr.Path
 		}
 		mono(c, where, 12, p.Graphite).Grow(1).Basis(0).Ellipsis("…")
-		if a.button(c, p, "providers.remove."+pr.ID, i18n.T("settings.providers.remove"), bopt{kind: btnDanger}) {
+		if a.button(c, p, "providers.remove."+pr.ID, i18n.T("settings.providers.remove_named", "name", pr.Name), bopt{kind: btnDanger}) {
 			a.removeProvider(pr.ID)
 		}
 	})
@@ -788,5 +846,35 @@ func (a *App) updatesSection(c *mu.Context, p theme.Colors) {
 				a.CheckForUpdates()
 			}
 		})
+	})
+}
+
+// thinkingRow picks the thinking level of a CLI provider: the levels of
+// model.rs thinking_choices when there is no model list, and the chosen
+// level when the list lacks it.
+func (a *App) thinkingRow(c *mu.Context, p theme.Colors, pr config.Provider) {
+	levels := []string{config.DefaultCLIThinking, "medium", "high"}
+	if t := pr.ThinkingChosen(); t != "" && !slices.Contains(levels, t) {
+		levels = config.SortThinking(append(levels, t))
+	}
+	sent := pr.ThinkingSent()
+	keys, labels := make([]string, len(levels)), make([]string, len(levels))
+	chosen := 0
+	for i, l := range levels {
+		keys[i], labels[i] = "providers.thinking."+pr.ID+"."+l, config.ThinkingLabel(l)
+		if l == sent {
+			chosen = i
+		}
+	}
+	a.row(c, p, i18n.T("settings.providers.thinking"), i18n.T("settings.providers.thinking_detail"), func() {
+		if i := a.choice(c, p, keys, labels, chosen, false); i >= 0 {
+			ai := &a.cfg.AI
+			for j := range ai.Providers {
+				if ai.Providers[j].ID == pr.ID {
+					ai.Providers[j].SetThinking(ptr(levels[i]))
+				}
+			}
+			a.saveConfig()
+		}
 	})
 }

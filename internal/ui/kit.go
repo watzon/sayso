@@ -3,6 +3,7 @@ package ui
 import (
 	mu "github.com/egoist/mygo/ui"
 
+	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/theme"
 )
 
@@ -420,4 +421,44 @@ func clicked(c *mu.Context, el mu.Element) bool {
 		return true
 	}
 	return false
+}
+
+// radioDot is controls.rs radio_dot: ink with a paper center when chosen,
+// debossed otherwise.
+func radioDot(c *mu.Context, p theme.Colors, on bool) {
+	d := mu.Box(c).Size(18, 18).Shrink(0).Radius(99)
+	if !on {
+		d.Background(p.Deboss).InsetShadow(0, 1, 2, 0, p.ShadowA(0.3))
+		return
+	}
+	d.Background(p.InkFill).Justify(mu.Center).AlignItems(mu.Center).Children(func() {
+		mu.Box(c).Size(6, 6).Radius(99).Background(p.OnInk)
+	})
+}
+
+// stepper is controls.rs Stepper: − value + in a debossed well. It returns
+// -1 or +1 when a step is pressed, else 0.
+func (a *App) stepper(c *mu.Context, p theme.Colors, key, label, value string) int {
+	delta := 0
+	debossed(mu.Row(a.k(c, key)).Role(mu.RoleGroup).Label(label).Height(32).PaddingX(3).Gap(2).Radius(9).
+		Shrink(0).AlignItems(mu.Center), p).Children(func() {
+		step := func(k, glyph, name string, d int) {
+			b := mu.ButtonBase(a.k(c, key+"."+k)).Label(name).Size(26, 26).Radius(6).Justify(mu.Center).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+			col := p.Graphite
+			if b.Hovered() {
+				b.Background(p.SheetRaised)
+				col = p.Ink
+			}
+			b.Children(func() { uiText(c, glyph, 15, 400, col) })
+			if clicked(c, b) {
+				delta = d
+			}
+		}
+		step("dec", "−", i18n.T("a11y.decrease"), -1)
+		mu.Row(c).MinWidth(40).PaddingX(4).Justify(mu.Center).Children(func() {
+			mu.Text(c, value).Font(theme.Mono).FontSize(13).FontWeight(500).TextColor(p.Ink).SingleLine()
+		})
+		step("inc", "+", i18n.T("a11y.increase"), 1)
+	})
+	return delta
 }

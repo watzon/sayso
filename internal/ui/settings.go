@@ -7,12 +7,16 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"sort"
 	"strings"
+	"time"
 
 	mu "github.com/egoist/mygo/ui"
 
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/i18n"
+	"github.com/watzon/sayso/internal/models"
 	"github.com/watzon/sayso/internal/platform"
 	"github.com/watzon/sayso/internal/store"
 	"github.com/watzon/sayso/internal/theme"
@@ -25,20 +29,27 @@ type settingsState struct {
 	engineEdited bool   // the engine path changed since launch
 	recording    string // the key of the recorder that listens
 	confirmClear bool
-	customInk    string
-	inkErr       string
-	devices      []platform.AudioDevice
-	devicesRead  bool
-	importMsg    string
-	provName     string
-	provURL      string
-	provKey      string
-	provModel    string
-	provErr      string
-	keyEdit      map[string]string
-	provSel      string // the provider Settings › Providers shows
-	customOpen   bool   // Appearance shows the custom ink field
-	customField  mu.Handle
+	// confirmAudio asks once more before Delete audio deletes.
+	confirmAudio bool
+	// storage is what History, audio and models take on disk, read off the
+	// UI thread; storageAt is when (zero: read it again).
+	storage     storageUse
+	storageAt   time.Time
+	storageBusy bool
+	customInk   string
+	inkErr      string
+	devices     []platform.AudioDevice
+	devicesRead bool
+	importMsg   string
+	provName    string
+	provURL     string
+	provKey     string
+	provModel   string
+	provErr     string
+	keyEdit     map[string]string
+	provSel     string // the provider Settings › Providers shows
+	customOpen  bool   // Appearance shows the custom ink field
+	customField mu.Handle
 }
 
 func (a *App) settingsPage(c *mu.Context, p theme.Colors) {
@@ -254,8 +265,25 @@ func (a *App) dictationSection(c *mu.Context, p theme.Colors) {
 		}
 	}
 	a.group(c, p, i18n.T("settings.dictation.language"), func() {
-		a.row(c, p, i18n.T("settings.dictation.dictation_language"), "", func() {
-			langs := []string{"auto", "en", "es", "fr", "de", "it", "pt", "ja", "zh", "ko", "ru", "nl"}
+		// The languages the active model understands (dictation.rs
+		// language_group); a one-language model shows its language, disabled.
+		langs := []string{"auto", "en", "es", "fr", "de", "it", "pt", "ja", "zh", "ko", "ru", "nl"}
+		detail, single := "", false
+		if m, ok := models.Find(a.cfg.Dictation.Model); ok && len(m.Languages) > 0 {
+			current := m.LanguageFor(a.cfg.Dictation.Language)
+			codes := slices.Clone(m.Languages)
+			sort.SliceStable(codes, func(i, j int) bool { return i18n.LanguageName(codes[i]) < i18n.LanguageName(codes[j]) })
+			if m.IsMultilingual() {
+				codes = append([]string{"auto"}, codes...)
+				detail = i18n.T("settings.dictation.language_detail_multi", "model", m.Name,
+					"languages", strings.ToLower(i18n.TP("core.models.languages", len(m.Languages), nil)))
+			} else {
+				single = true
+				detail = i18n.T("settings.dictation.language_detail_single", "model", m.Name, "language", i18n.LanguageName(current))
+			}
+			langs = codes
+		}
+		a.row(c, p, i18n.T("settings.dictation.dictation_language"), detail, func() {
 			labels := make([]string, len(langs))
 			sel := langs[0]
 			for i, l := range langs {
@@ -267,10 +295,14 @@ func (a *App) dictationSection(c *mu.Context, p theme.Colors) {
 					sel = labels[i]
 				}
 			}
-			if a.cfg.Dictation.Language == "" {
+			if a.cfg.Dictation.Language == "" || !slices.Contains(langs, a.cfg.Dictation.Language) {
 				sel = labels[0]
 			}
-			a.selectBtn(c, p, "dictation.language", i18n.T("settings.dictation.dictation_language"), &sel, labels, 0).OnChange(func() {
+			b := a.selectBtn(c, p, "dictation.language", i18n.T("settings.dictation.dictation_language"), &sel, labels, 0)
+			if single {
+				b.Disabled(true).Opacity(0.55)
+			}
+			b.OnChange(func() {
 				for i, l := range labels {
 					if l == sel {
 						a.cfg.Dictation.Language = langs[i]
@@ -314,13 +346,8 @@ func (a *App) dictationSection(c *mu.Context, p theme.Colors) {
 		})
 	})
 	a.group(c, p, i18n.T("settings.dictation.inserting"), func() {
-		a.toggleRow(c, p, "dictation.live_preview", i18n.T("settings.audio.live_preview"), i18n.T("settings.audio.live_preview_detail"), &a.cfg.Dictation.LivePreview, a.saveConfig)
 		a.toggleRow(c, p, "dictation.restore_clipboard", i18n.T("settings.dictation.restore_clipboard"), i18n.T("settings.dictation.restore_clipboard_detail"), &a.cfg.Insertion.RestoreClipboard, a.saveConfig)
 		a.toggleRow(c, p, "dictation.trailing_space", i18n.T("settings.dictation.trailing_space"), i18n.T("settings.dictation.trailing_space_detail"), &a.cfg.Insertion.TrailingSpace, a.saveConfig)
-		a.row(c, p, i18n.T("settings.audio.max_length"), i18n.T("settings.audio.max_length_detail"), func() {
-			a.uintSelect(c, "dictation.max_duration", i18n.T("settings.audio.max_length"), &a.cfg.Dictation.MaxDurationS,
-				[]uint64{60, 120, 300, 600, 1200}, func(v uint64) string { return i18n.T("settings.audio.length_minutes", "minutes", v/60) })
-		})
 		a.row(c, p, tr("settings.dictation.min_duration", "Minimum length"), "", func() {
 			a.uintSelect(c, "dictation.min_duration", tr("settings.dictation.min_duration", "Minimum length"), &a.cfg.Dictation.MinDurationMs,
 				[]uint64{0, 200, 300, 500, 1000}, func(v uint64) string { return fmt.Sprintf("%d ms", v) })
@@ -407,36 +434,82 @@ func (a *App) audioDevices() []platform.AudioDevice {
 
 func (a *App) audioSection(c *mu.Context, p theme.Colors) {
 	a.audioDevices()
+	// The inputs as one radio group (audio.rs): System default with the
+	// device it follows now, then each microphone.
 	a.group(c, p, i18n.T("settings.audio.input"), func() {
-		a.row(c, p, i18n.T("settings.audio.input"), i18n.T("settings.audio.follows_other"), func() {
-			labels := []string{i18n.T("settings.audio.system_default")}
-			ids := []string{""}
-			for _, d := range a.set.devices {
-				labels, ids = append(labels, d.Name), append(ids, d.ID)
+		follows, followsNow := "settings.audio.follows_other", "settings.audio.follows_now_other"
+		if runtime.GOOS == "darwin" {
+			follows, followsNow = "settings.audio.follows_mac", "settings.audio.follows_now_mac"
+		}
+		defDetail := i18n.T(follows)
+		for _, d := range a.set.devices {
+			if d.IsDefault {
+				defDetail = i18n.T(followsNow, "name", d.Name)
 			}
-			sel := labels[0]
-			for i, id := range ids {
-				if a.cfg.Audio.InputDevice != nil && id == platform.NormalizeDeviceID(*a.cfg.Audio.InputDevice) {
-					sel = labels[i]
+		}
+		labels, ids, details := []string{i18n.T("settings.audio.system_default")}, []string{""}, []string{defDetail}
+		for _, d := range a.set.devices {
+			labels, ids, details = append(labels, d.Name), append(ids, d.ID), append(details, "")
+		}
+		chosen := 0
+		for i, id := range ids {
+			if a.cfg.Audio.InputDevice != nil && id == platform.NormalizeDeviceID(*a.cfg.Audio.InputDevice) {
+				chosen = i
+			}
+		}
+		mu.Column(a.k(c, "audio.input_device")).Role(mu.RoleRadioGroup).Label(i18n.T("settings.audio.input")).Value(labels[chosen]).Children(func() {
+			for i := range labels {
+				on := i == chosen
+				key := "audio.device.default"
+				if ids[i] != "" {
+					key = "audio.device." + ids[i]
 				}
-			}
-			a.selectBtn(c, p, "audio.input_device", i18n.T("settings.audio.input"), &sel, labels, 0).Value(sel).OnChange(func() {
-				for i, l := range labels {
-					if l == sel {
-						if ids[i] == "" {
-							a.cfg.Audio.InputDevice = nil
-						} else {
-							a.cfg.Audio.InputDevice = ptr(ids[i])
+				r := mu.ButtonBase(a.k(c, key)).Label(labels[i]).Role(mu.RoleRadio).Checked(on).PaddingY(12).Gap(14).
+					AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Cursor(mu.CursorPointer)
+				r.Children(func() {
+					radioDot(c, p, on)
+					mu.Column(c).Gap(2).Grow(1).Basis(0).MinWidth(0).Children(func() {
+						w := 500
+						if on {
+							w = 600
 						}
+						uiText(c, labels[i], 15, w, p.Ink).FixedLineHeight(18)
+						if details[i] != "" {
+							uiText(c, details[i], 13, 400, p.Graphite).FixedLineHeight(17)
+						}
+					})
+				})
+				if clicked(c, r) && !on {
+					if ids[i] == "" {
+						a.cfg.Audio.InputDevice = nil
+					} else {
+						a.cfg.Audio.InputDevice = ptr(ids[i])
 					}
+					a.saveConfig()
 				}
-				a.saveConfig()
-			})
+			}
 		})
 		if len(a.set.devices) == 0 {
 			uiText(c, i18n.T("settings.audio.no_microphone", "settings", i18n.TOS("os.sound_settings", nil)), 13, 400, p.Graphite).PaddingY(10).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
 		}
+	})
+	a.group(c, p, i18n.T("settings.audio.recording"), func() {
+		a.toggleRow(c, p, "dictation.live_preview", i18n.T("settings.audio.live_preview"), i18n.T("settings.audio.live_preview_detail"), &a.cfg.Dictation.LivePreview, a.saveConfig)
 		a.toggleRow(c, p, "audio.pause_media", i18n.T("settings.audio.pause_media"), i18n.T("settings.audio.pause_media_detail"), &a.cfg.Audio.PauseMedia, a.saveConfig)
+		a.row(c, p, i18n.T("settings.audio.max_length"), i18n.T("settings.audio.max_length_detail"), func() {
+			d := &a.cfg.Dictation
+			at := len(recordingLengths) - 1
+			for i, l := range recordingLengths {
+				if l >= d.MaxDurationS {
+					at = i
+					break
+				}
+			}
+			if n := a.stepper(c, p, "audio.max_length", i18n.T("settings.audio.max_length"), lengthLabel(d.MaxDurationS)); n != 0 {
+				d.MaxDurationS = recordingLengths[max(0, min(len(recordingLengths)-1, at+n))]
+				a.saveConfig()
+			}
+		})
 	})
 	snd := &a.cfg.Sounds
 	a.group(c, p, i18n.T("settings.dictation.sounds"), func() {
@@ -522,15 +595,16 @@ func (a *App) overlaySection(c *mu.Context, p theme.Colors) {
 // overlayOption is a style card: a drawn preview of the pill or the notch,
 // its name and what it does. Chosen, it has an ink ring.
 func (a *App) overlayOption(c *mu.Context, p theme.Colors, key, title, detail string, on, notch bool, style config.OverlayStyle) {
-	b := mu.ButtonBase(a.k(c, key)).Label(title).Role(mu.RoleRadio).Checked(on).Width(264).Gap(10).AlignItems(mu.Stretch).Cursor(mu.CursorPointer)
+	b := mu.ButtonBase(a.k(c, key)).Label(title).Role(mu.RoleRadio).Checked(on).Column().Width(264).Gap(10).AlignItems(mu.Stretch).Cursor(mu.CursorPointer)
 	b.Children(func() {
-		prev := mu.Box(c).Height(132).Radius(14).Background(p.Deboss)
-		if on {
-			prev.Border(2, p.Ink)
-		}
+		prev := mu.Box(c).Height(132).Radius(14).Clip().Background(p.Deboss)
 		prev.Draw(func(pt *mu.Painter, r mu.Rect) {
+			// The ink ring of the chosen card goes over the drawing.
+			if on {
+				defer pt.Stroke(mu.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: r.H - 2}, p.Ink, 13, 2)
+			}
 			// The menu bar of a screen, then the overlay on it.
-			pt.Fill(mu.Rect{X: r.X, Y: r.Y, W: r.W, H: 20}, p.Sheet, 0)
+			pt.Fill(mu.Rect{X: r.X, Y: r.Y, W: r.W, H: 20}, theme.Over(p.Deboss, p.Sheet, 0.55), 0)
 			if notch {
 				pt.Fill(mu.Rect{X: r.X, Y: r.Y, W: r.W, H: 4}, black, 0)
 				n := mu.Rect{X: r.X + r.W/2 - 76, Y: r.Y, W: 152, H: 18}
@@ -578,7 +652,7 @@ func (a *App) appearanceSection(c *mu.Context, p theme.Colors) {
 	ap := &a.cfg.Appearance
 	a.group(c, p, i18n.T("settings.appearance.ink"), func() {
 		uiText(c, i18n.T("settings.appearance.ink_detail"), 15, 400, p.Graphite).LineHeight(22.0 / 15).MaxWidth(560).PaddingY(6)
-		mu.Row(c).Gap(36).Padding(14, 0, 8, 6).Wrap().Role(mu.RoleRadioGroup).Label(i18n.T("settings.appearance.ink")).Children(func() {
+		mu.Row(c).Gap(12).Padding(14, 0, 8, 0).MarginStart(-6).Wrap().Role(mu.RoleRadioGroup).Label(i18n.T("settings.appearance.ink")).Children(func() {
 			for _, ink := range inkPresets {
 				named := config.NamedInk(ink)
 				on := !ap.Ink.IsCustom && ap.Ink.Named == named
@@ -649,7 +723,9 @@ func (a *App) appearanceSection(c *mu.Context, p theme.Colors) {
 // inkSwatch is a 60 px well holding a domed ink disc, with its name below;
 // an empty hex is the dashed Custom circle.
 func (a *App) inkSwatch(c *mu.Context, p theme.Colors, key, label, shown, hex string, on bool) bool {
-	b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleRadio).Checked(on).Gap(10).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+	// A column with the name under the swatch; every item has one width so
+	// the swatches sit 96 px apart, as in Rust.
+	b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleRadio).Checked(on).Column().Width(84).Shrink(0).Gap(10).AlignItems(mu.Center).Cursor(mu.CursorPointer)
 	b.Children(func() {
 		w := mu.Box(c).Size(60, 60).Radius(99).Justify(mu.Center).AlignItems(mu.Center)
 		switch {
@@ -724,34 +800,27 @@ func (a *App) inkSpecimens(c *mu.Context) {
 
 func (a *App) historySection(c *mu.Context, p theme.Colors) {
 	h := &a.cfg.History
-	days := []*uint32{nil, ptr(uint32(1)), ptr(uint32(7)), ptr(uint32(30)), ptr(uint32(90)), ptr(uint32(365))}
-	dayLabel := func(v *uint32) string {
-		if v == nil {
-			return i18n.T("settings.history.forever")
-		}
-		return i18n.TP("settings.history.days", int(*v), nil)
-	}
-	daySelect := func(key, label string, dst **uint32) {
-		labels := make([]string, len(days))
-		sel := labels[0]
-		for i, d := range days {
-			labels[i] = dayLabel(d)
+	// Keep text and Keep audio are segmented, with Rust's choices
+	// (history_privacy.rs TEXT_DAYS, AUDIO_DAYS).
+	daySeg := func(key string, dst **uint32, choices []*uint32) {
+		keys, labels := make([]string, len(choices)), make([]string, len(choices))
+		chosen := 0
+		for i, d := range choices {
+			if d == nil {
+				keys[i], labels[i] = key+".forever", i18n.T("settings.history.forever")
+			} else {
+				keys[i], labels[i] = fmt.Sprintf("%s.%d", key, *d), i18n.TP("settings.history.days", int(*d), nil)
+			}
 			if (d == nil && *dst == nil) || (d != nil && *dst != nil && *d == **dst) {
-				sel = labels[i]
+				chosen = i
 			}
 		}
-		if sel == "" {
-			sel = labels[0]
-		}
-		a.selectBtn(c, p, key, label, &sel, labels, 0).OnChange(func() {
-			for i, l := range labels {
-				if l == sel {
-					*dst = days[i]
-				}
-			}
+		if i := a.choice(c, p, keys, labels, chosen, false); i >= 0 && i != chosen {
+			*dst = choices[i]
 			a.saveConfig()
 			a.applyRetention()
-		})
+			a.set.storageAt = time.Time{}
+		}
 	}
 	a.group(c, p, i18n.T("settings.history.history"), func() {
 		detail := i18n.T("settings.history.save_detail")
@@ -760,34 +829,15 @@ func (a *App) historySection(c *mu.Context, p theme.Colors) {
 		}
 		a.toggleRow(c, p, "history_settings.enabled", i18n.T("settings.history.save"), detail, &h.Enabled, a.saveConfig)
 		a.row(c, p, i18n.T("settings.history.keep_text"), i18n.T("settings.history.keep_text_detail"), func() {
-			daySelect("history_settings.keep_text", i18n.T("settings.history.keep_text"), &h.KeepTextDays)
+			daySeg("history_settings.keep_text", &h.KeepTextDays, []*uint32{nil, ptr(uint32(90)), ptr(uint32(30)), ptr(uint32(7))})
 		})
 		a.toggleRow(c, p, "history_settings.save_audio", i18n.T("settings.history.save_audio"), i18n.T("settings.history.save_audio_detail"), &h.SaveAudio, a.saveConfig)
 		a.row(c, p, i18n.T("settings.history.keep_audio"), i18n.T("settings.history.keep_audio_detail"), func() {
-			daySelect("history_settings.keep_audio", i18n.T("settings.history.keep_audio"), &h.KeepAudioDays)
+			daySeg("history_settings.keep_audio", &h.KeepAudioDays, []*uint32{ptr(uint32(30)), ptr(uint32(7)), ptr(uint32(1))})
 		})
 		a.toggleRow(c, p, "history_settings.site_icons", i18n.T("settings.history.site_icons"), i18n.T("settings.history.site_icons_detail"), &h.SiteIcons, a.saveConfig)
 	})
-	a.group(c, p, i18n.T("settings.history.data", "computer", computer()), func() {
-		n := 0
-		if a.d.Store != nil {
-			n, _ = a.d.Store.Count(store.HistoryQuery{})
-		}
-		line := i18n.T("settings.history.entries_none")
-		if n > 0 {
-			line = i18n.TP("settings.history.entries", n, map[string]any{"number": n})
-		}
-		a.row(c, p, i18n.T("settings.history.data_history"), line, func() {
-			if a.btn(c, p, "history_settings.clear", i18n.T("settings.history.clear_history"), btnDanger) {
-				a.set.confirmClear = true
-			}
-		})
-		a.row(c, p, i18n.T("settings.history.data_audio"), a.d.Paths.AudioDir(), func() {
-			if a.btn(c, p, "history_settings.show_audio", i18n.TOS("settings.history.show", nil), btnGhost) {
-				a.openPath(a.d.Paths.AudioDir())
-			}
-		})
-	})
+	a.group(c, p, i18n.T("settings.history.data", "computer", computer()), func() { a.dataOnThisComputer(c, p) })
 	a.group(c, p, i18n.T("settings.history.leaves", "computer", computer()), func() {
 		uiText(c, i18n.T("settings.history.leaves_local", "computer", computer()), 13, 400, p.Graphite).PaddingY(14).LineHeight(1.4).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
 	})
@@ -957,5 +1007,153 @@ func (a *App) permissionsSection(c *mu.Context, p theme.Colors) {
 	mu.Row(c).Gap(12).Padding(14, 16).Radius(12).Border(1, p.Rule).AlignItems(mu.Start).Margin(-16, 0, 0, 0).Children(func() {
 		mu.Icon(c, icon("info")).FontSize(15).TextColor(p.Graphite)
 		uiText(c, i18n.TOS("settings.permissions.note", nil), 13, 400, p.Graphite).LineHeight(1.45).Grow(1).Basis(0)
+	})
+}
+
+// recordingLengths are the steps of Maximum length (audio.rs LENGTHS).
+var recordingLengths = []uint64{30, 60, 120, 300, 600, 900, 1800}
+
+// lengthLabel is a recording length: "30 s", "10 min".
+func lengthLabel(s uint64) string {
+	if s < 60 {
+		return i18n.T("settings.audio.length_seconds", "seconds", s)
+	}
+	return i18n.T("settings.audio.length_minutes", "minutes", s/60)
+}
+
+// storageUse is the data of Settings › History › Data on this computer.
+type storageUse struct {
+	store       store.StorageUse
+	modelsBytes uint64
+	models      int
+}
+
+// loadStorage reads the sizes off the UI thread, at most every 10 s.
+func (a *App) loadStorage() {
+	if a.set.storageBusy || (!a.set.storageAt.IsZero() && a.now().Sub(a.set.storageAt) < 10*time.Second) {
+		return
+	}
+	a.set.storageBusy = true
+	st := a.d.Store
+	var modelsBytes uint64
+	n := 0
+	for _, m := range models.Catalog() {
+		if !m.IsRemote() && a.modelStatus(m.ID).IsOnDisk() {
+			modelsBytes += m.SizeBytes
+			n++
+		}
+	}
+	go func() {
+		var u store.StorageUse
+		if st != nil {
+			u, _ = st.StorageUse()
+		}
+		a.post(func() {
+			a.set.storage = storageUse{store: u, modelsBytes: modelsBytes, models: n}
+			a.set.storageAt, a.set.storageBusy = a.now(), false
+			a.invalidate()
+		})
+	}()
+}
+
+// dataOnThisComputer is the size of everything Sayso keeps, as one bar,
+// then a row for History, Audio and Models (history_privacy.rs).
+func (a *App) dataOnThisComputer(c *mu.Context, p theme.Colors) {
+	a.loadStorage()
+	u := a.set.storage
+	n := 0
+	if a.d.Store != nil {
+		n, _ = a.d.Store.Count(store.HistoryQuery{})
+	}
+	parts := []struct {
+		bytes uint64
+		col   mu.Color
+	}{{u.modelsBytes, p.Ink}, {u.store.AudioBytes, p.Accent}, {u.store.DatabaseBytes, p.Pencil}}
+	all := uint64(0)
+	for _, pt := range parts {
+		all += pt.bytes
+	}
+	mu.Row(c).Gap(28).Padding(12, 0, 16, 0).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+		mu.Row(c).Gap(8).Shrink(0).AlignItems(mu.Baseline).Children(func() {
+			display(c, p, models.FormatSize(all), 32).SingleLine()
+			uiText(c, i18n.T("settings.history.in_total"), 13, 400, p.Graphite)
+		})
+		mu.Row(c).Grow(1).Basis(0).Height(10).Padding(2).Gap(2).Radius(99).Background(p.Deboss).
+			InsetShadow(0, 1, 2, 0, p.ShadowA(0.28)).Children(func() {
+			for _, pt := range parts {
+				if pt.bytes == 0 || all == 0 {
+					continue
+				}
+				mu.Box(c).Height(6).Radius(99).Background(pt.col).Grow(max(float32(pt.bytes)/float32(all), 0.01)).Basis(0).Shrink(1)
+			}
+		})
+		if a.link(c, p, "history_settings.show_data", i18n.TOS("settings.history.show", nil), 13, 600, "") {
+			_ = os.MkdirAll(a.d.Paths.DataDir, 0o755)
+			a.openPath(a.d.Paths.DataDir)
+		}
+	})
+	row := func(dot mu.Color, title, detail string, bytes uint64, action func()) {
+		mu.Row(c).Gap(16).PaddingY(14).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+			mu.Box(c).Size(8, 8).Shrink(0).Radius(99).Background(dot)
+			mu.Column(c).Gap(2).Grow(1).Basis(0).MinWidth(0).Children(func() {
+				uiText(c, title, 15, 600, p.Ink).FixedLineHeight(18)
+				uiText(c, detail, 13, 400, p.Graphite).FixedLineHeight(16)
+			})
+			mono(c, models.FormatSize(bytes), 13, p.Ink).Width(72).Shrink(0).TextAlign(mu.End)
+			mu.Row(c).Width(172).Shrink(0).Justify(mu.End).Gap(8).AlignItems(mu.Center).Children(action)
+		})
+	}
+	entries := i18n.T("settings.history.entries_none")
+	if n > 0 {
+		key := "settings.history.entries"
+		if !a.cfg.History.Enabled {
+			key = "settings.history.entries_kept"
+		}
+		entries = i18n.TP(key, n, map[string]any{"number": formatCount(n)})
+	}
+	row(p.Pencil, i18n.T("settings.history.data_history"), entries, u.store.DatabaseBytes, func() {
+		if a.button(c, p, "history_settings.clear", i18n.T("settings.history.clear_history"), bopt{kind: btnDanger, size: sizeSmall, disabled: n == 0}) {
+			a.set.confirmClear = true
+		}
+	})
+	files := u.store.AudioFiles
+	audio := i18n.T("settings.history.recordings_none")
+	switch {
+	case a.set.confirmAudio:
+		audio = i18n.TP("settings.history.recordings_confirm", files, map[string]any{"number": formatCount(files)})
+	case files > 0:
+		audio = i18n.TP("settings.history.recordings", files, map[string]any{"number": formatCount(files)})
+	}
+	row(p.Accent, i18n.T("settings.history.data_audio"), audio, u.store.AudioBytes, func() {
+		if !a.set.confirmAudio {
+			if a.button(c, p, "history_settings.delete_audio", i18n.T("settings.history.delete_audio"), bopt{kind: btnDanger, size: sizeSmall, disabled: files == 0}) {
+				a.set.confirmAudio = true
+			}
+			return
+		}
+		if a.button(c, p, "history_settings.delete_audio_cancel", i18n.T("settings.history.cancel"), bopt{kind: btnGhost, size: sizeSmall}) {
+			a.set.confirmAudio = false
+		}
+		if a.button(c, p, "history_settings.delete_audio_confirm", i18n.T("settings.history.delete_audio"), bopt{kind: btnDanger, size: sizeSmall}) {
+			a.set.confirmAudio = false
+			if a.d.Store != nil {
+				if _, err := a.d.Store.ClearAudio(); err != nil {
+					a.flash = err.Error()
+				}
+			}
+			a.stopPlayer()
+			a.set.storageAt = time.Time{}
+			a.dataChanged()
+		}
+	})
+	modelsLine := i18n.T("settings.history.models_none")
+	if u.models > 0 {
+		modelsLine = i18n.TP("settings.history.models", u.models, nil)
+	}
+	row(p.Ink, i18n.T("settings.history.data_models"), modelsLine, u.modelsBytes, func() {
+		if a.link(c, p, "history_settings.open_models", i18n.T("settings.history.open_models"), 13, 600, "") {
+			a.CloseSettings()
+			a.SetPage(PageModels)
+		}
 	})
 }

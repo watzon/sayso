@@ -214,7 +214,7 @@ func (a *App) statsStrip(c *mu.Context, p theme.Colors, narrow bool) {
 	if s.PaceWPM > 0 {
 		pace = i18n.T("home.stats.wpm", "wpm", s.PaceWPM)
 	}
-	mu.Row(c).Gap(24).PaddingY(24).BorderWidth(1, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+	mu.Row(c).PaddingY(24).BorderWidth(1, 0, 1, 0).BorderColor(p.Rule).Children(func() {
 		cell(i18n.T("home.stats.words_today"), 1, true, figure(formatCount(s.WordsToday)))
 		cell(i18n.T("home.stats.time_saved"), 1, false, figure(i18n.T("home.stats.minutes", "minutes", s.MinutesSavedToday)))
 		cell(i18n.T("home.stats.pace"), 1, false, figure(pace))
@@ -330,7 +330,7 @@ func (a *App) recentRow(c *mu.Context, p theme.Colors, i int, e store.HistoryEnt
 		app, bundle = e.App.Name, e.App.BundleID
 	}
 	r := mu.ButtonBase(a.k(c, fmt.Sprintf("home.recent.%d", i))).Label(app+", "+e.FinalText).Role(mu.RoleListItem).
-		Height(56).PaddingX(4).Gap(14).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Cursor(mu.CursorPointer)
+		Height(62).PaddingX(4).Gap(14).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Cursor(mu.CursorPointer)
 	if r.Hovered() {
 		r.Background(p.Deboss.Alpha(0.35))
 	}
@@ -380,7 +380,7 @@ func (a *App) defaultStyleCard(c *mu.Context, p theme.Colors) {
 		under := theme.Over(p.Sheet, p.Deboss, 0.5)
 		mu.Box(c).Absolute().Top(0).Left(14).Right(14).Height(40).Radius(12).Background(p.Deboss).Shadow(0, 1, 2, 0, p.ShadowA(0.10))
 		mu.Box(c).Absolute().Top(5).Left(7).Right(7).Height(40).Radius(12).Background(under).Shadow(0, 1, 2, 0, p.ShadowA(0.10))
-		mu.Column(c).Padding(18, 20).Gap(12).Radius(12).Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).
+		mu.Column(c).ZIndex(1).Padding(18, 20).Gap(12).Radius(12).Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).
 			Shadow(0, 1, 2, 0, p.ShadowA(0.14)).Shadow(0, 10, 26, 0, p.ShadowA(0.12)).Children(func() {
 			mu.Row(c).Height(22).AlignItems(mu.Center).Children(func() {
 				caps(c, p, i18n.T("home.style.default")).Grow(1)

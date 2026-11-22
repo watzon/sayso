@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	mu "github.com/egoist/mygo/ui"
 
@@ -62,11 +64,11 @@ func (a *App) stylesDir() string {
 
 func (a *App) stylesPage(c *mu.Context, p theme.Colors) {
 	pageHead(c, p, i18n.T("styles.title"), i18n.T("styles.intro", "dir", tildePath(a.stylesDir())), 560, func() {
-		if a.button(c, p, "styles.base_prompt", i18n.T("styles.base.button"), bopt{icon: "file"}) {
+		if a.button(c, p, "styles.base_prompt", i18n.T("styles.base.button"), bopt{icon: "file", size: sizeLarge}) {
 			a.sty.baseOpen, a.sty.editing = true, false
 			a.sty.base = a.styles.BasePrompt()
 		}
-		if a.button(c, p, "styles.new", i18n.T("styles.new_style"), bopt{kind: btnPrimary, icon: "plus"}) {
+		if a.button(c, p, "styles.new", i18n.T("styles.new_style"), bopt{kind: btnPrimary, icon: "plus", size: sizeLarge}) {
 			a.editStyle(nil)
 		}
 	})
@@ -122,7 +124,7 @@ func (a *App) featuredStyle(c *mu.Context, p theme.Colors, active string) {
 	}
 	mu.Row(c).Padding(20, 22).Gap(24).Radius(14).Background(p.SheetRaised).InsetShadow(0, 1, 0, 0, p.Highlight(1)).
 		Shadow(0, 1, 2, 0, p.ShadowA(0.14)).Shadow(0, 8, 22, 0, p.ShadowA(0.08)).Children(func() {
-		mu.Column(c).Gap(8).Grow(1).Basis(0).MinWidth(220).Justify(mu.Center).Children(func() {
+		mu.Column(c).Gap(8).Width(252).Shrink(0).Children(func() {
 			if e == nil {
 				return
 			}
@@ -144,7 +146,7 @@ func (a *App) featuredStyle(c *mu.Context, p theme.Colors, active string) {
 				}
 			})
 		})
-		debossed(mu.Row(c).Grow(1.5).Basis(0).Radius(10).AlignItems(mu.Stretch), p).Children(func() {
+		debossed(mu.Row(c).Grow(1).Basis(0).MinWidth(0).Radius(10).AlignItems(mu.Stretch), p).Children(func() {
 			half := func(label string, body func()) {
 				mu.Column(c).Grow(1).Basis(0).Padding(14, 16).Gap(6).Children(func() {
 					uiText(c, strings.ToUpper(label), 11, 500, p.Graphite).SingleLine()
@@ -152,7 +154,7 @@ func (a *App) featuredStyle(c *mu.Context, p theme.Colors, active string) {
 				})
 			}
 			half(i18n.T("styles.featured.you_say"), func() {
-				mu.Text(c, i18n.T("styles.featured.said")).Font(theme.Mono).FontSize(12).LineHeight(1.5).TextColor(p.Graphite)
+				mu.Text(c, i18n.T("styles.featured.said")).Font(theme.Mono).FontSize(12).FixedLineHeight(18).TextColor(p.Graphite)
 			})
 			mu.Box(c).Width(1).Background(p.DebossShade)
 			half(i18n.T("styles.featured.sayso_writes"), func() {
@@ -193,13 +195,22 @@ func (a *App) targetLine(id string) string {
 		return ""
 	}
 	names := a.appNames()
-	var all []string
+	// The apps on this computer first, by the names the user knows
+	// (styles.rs target_names).
+	installed, _ := a.installedNames(r.Apps)
+	var here, away []string
 	for _, b := range r.Apps {
-		if n := names[b]; n != "" {
-			b = n
+		if n := installed[b]; n != "" {
+			here = append(here, n)
+			continue
 		}
-		all = append(all, b)
+		n := names[b]
+		if n == "" {
+			n = appNameFor(b)
+		}
+		away = append(away, n)
 	}
+	all := append(here, away...)
 	all = append(all, r.Sites...)
 	switch len(all) {
 	case 0:
@@ -237,7 +248,7 @@ func (a *App) styleRowDetail(st *enhance.Style, p theme.Colors) (string, mu.Colo
 func (a *App) styleRow(c *mu.Context, p theme.Colors, e *enhance.StyleEntry, active string, last bool) {
 	st := &e.Style
 	name := styleName(st)
-	row := mu.Row(c).Height(48).PaddingX(4).Gap(8).AlignItems(mu.Center)
+	row := mu.Row(c).Height(48).PaddingX(4).Gap(14).AlignItems(mu.Center)
 	if !last {
 		row.BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
 	}
@@ -249,7 +260,11 @@ func (a *App) styleRow(c *mu.Context, p theme.Colors, e *enhance.StyleEntry, act
 			Label(i18n.T("styles.a11y.make_default", "name", name)).FillHeight().Gap(14).Grow(1).Basis(0).MinWidth(0).
 			AlignItems(mu.Center).Cursor(mu.CursorPointer)
 		r.Children(func() {
-			sealDot(c, p, st.Ink, 14)
+			ink := st.Ink
+			if st.IsRaw() {
+				ink = "" // Raw has the open ring
+			}
+			sealDot(c, p, ink, 14)
 			heading(c, p, name, 18).LineHeight(24.0 / 18).Width(112).Shrink(0).SingleLine().Ellipsis("…")
 			uiText(c, styleDescription(st), 14, 400, p.Graphite).SingleLine().Ellipsis("…").Grow(1).Basis(0).MinWidth(0)
 			mu.Row(c).Width(236).Shrink(0).Gap(6).AlignItems(mu.Center).Children(func() {
@@ -266,17 +281,22 @@ func (a *App) styleRow(c *mu.Context, p theme.Colors, e *enhance.StyleEntry, act
 		if clicked(c, r) {
 			a.SetActiveStyle(st.ID)
 		}
-		if hk, ok := a.cfg.StyleHotkeys.Get(st.ID); ok {
-			miniKey(c, p, hk.CompactLabel(), p.Ink)
-		}
-		if row.Hovered() || row.FocusWithin() {
-			if a.button(c, p, "styles.edit."+st.ID, i18n.T("styles.edit"), bopt{kind: btnGhost, size: sizeSmall}) {
-				a.editStyle(e)
+		// Fixed lanes for the shortcut and for Default / Edit, so the
+		// columns line up on every row.
+		mu.Row(c).Width(76).Shrink(0).Justify(mu.End).AlignItems(mu.Center).Children(func() {
+			if hk, ok := a.cfg.StyleHotkeys.Get(st.ID); ok {
+				miniKey(c, p, hk.CompactLabel(), p.Ink)
 			}
-		}
-		if st.ID == active {
-			badge(c, p, i18n.T("styles.default"), toneInk, "")
-		}
+		})
+		mu.Row(c).Width(80).Shrink(0).Justify(mu.End).AlignItems(mu.Center).Children(func() {
+			if row.Hovered() || row.FocusWithin() {
+				if a.button(c, p, "styles.edit."+st.ID, i18n.T("styles.edit"), bopt{kind: btnGhost, size: sizeSmall}) {
+					a.editStyle(e)
+				}
+			} else if st.ID == active {
+				badge(c, p, i18n.T("styles.default"), toneInk, "")
+			}
+		})
 	})
 }
 
@@ -690,4 +710,21 @@ func (a *App) baseEditorActions(c *mu.Context, p theme.Colors) {
 			a.sty.close()
 		}
 	}
+}
+
+// appNameFor guesses an app's name from its bundle id or executable, as
+// settings/ext.rs app_name_for: "com.microsoft.Outlook" is "Outlook",
+// "slack.exe" is "Slack".
+func appNameFor(bundleID string) string {
+	last := bundleID
+	if n := len(bundleID); n > 4 && strings.EqualFold(bundleID[n-4:], ".exe") {
+		last = bundleID[:n-4]
+	} else if i := strings.LastIndexByte(bundleID, '.'); i >= 0 {
+		last = bundleID[i+1:]
+	}
+	if last == "" {
+		return bundleID
+	}
+	r, size := utf8.DecodeRuneInString(last)
+	return string(unicode.ToUpper(r)) + last[size:]
 }

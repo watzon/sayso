@@ -104,6 +104,6 @@ func (p Palette) uiTheme() *ui.Theme {
 	t.Inverse, t.InverseText = c.InkFill, c.OnInk
 	t.Scrollbar = c.DebossShade
 	t.Font, t.FontSize = UI, 14
-	t.Radius = 8
+	t.Radius = 10
 	return &t
 }

@@ -101,7 +101,7 @@ func (a *App) dictionaryPage(c *mu.Context, p theme.Colors) {
 	d := &a.dict
 	pageHead(c, p, i18n.T("dictionary.title"), i18n.T("dictionary.intro"), 520, func() {
 		a.searchWell(c, p, "dict.filter", i18n.T("dictionary.placeholder.filter"), &d.filter, 36, 220, "")
-		if a.button(c, p, "dict.add", i18n.T("dictionary.add"), bopt{kind: btnPrimary, icon: "plus"}) {
+		if a.button(c, p, "dict.add", i18n.T("dictionary.add"), bopt{kind: btnPrimary, icon: "plus", size: sizeLarge}) {
 			if strings.TrimSpace(d.newWord) != "" {
 				a.AddWord(d.newWord)
 			} else {
@@ -180,7 +180,8 @@ func (a *App) addWordSlip(c *mu.Context, p theme.Colors) {
 	if typing {
 		debossed(s, p).Width(170)
 	} else {
-		s.Border(1.5, p.Rule).BorderStyle(mu.BorderDashed).Width(106)
+		// GPUI draws this "dashed" border solid on a rounded box.
+		s.Border(1, p.DebossShade).PaddingX(12).Width(106)
 	}
 	s.Children(func() {
 		add := mu.ButtonBase(a.k(c, "dict.add_word")).Label(i18n.T("dictionary.add_word")).Size(16, 16).Radius(4).

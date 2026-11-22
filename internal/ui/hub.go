@@ -336,7 +336,7 @@ func (a *App) settingsSidebar(c *mu.Context, p theme.Colors, rail bool) {
 			return
 		}
 		mu.Row(c).Gap(8).AlignItems(mu.End).Children(func() {
-			mu.Column(c).Gap(4).PaddingX(10).Grow(1).Basis(0).Children(func() {
+			mu.Column(c).Gap(4).PaddingX(10).Grow(1).Basis(0).AlignItems(mu.Start).Children(func() {
 				if a.link(c, p, "settings.open_config", label, 13, 600, "") {
 					a.openPath(a.d.ConfigPath)
 				}

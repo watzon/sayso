@@ -497,7 +497,8 @@ func TestProvidersAddAndRemove(t *testing.T) {
 		t.Fatalf("provider %+v, %v", pr, ok)
 	}
 	tt.Frame()
-	press(t, tt, i18n.T("settings.providers.remove"))
+	// The button names the provider, as Rust's "Remove Claude Code".
+	press(t, tt, i18n.T("settings.providers.remove_named", "name", "My Server"))
 	if len(e.a.cfg.AI.Providers) != 0 || e.a.d.Secrets.Get("provider.my-server") != "" {
 		t.Error("remove left the provider or its key")
 	}
@@ -1052,5 +1053,81 @@ func TestAdvancedEngineSavedNoteShowsOnlyAfterAnEdit(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText(saved) {
 		t.Errorf("no saved note after an edit: %q", tt.Texts())
+	}
+}
+
+func TestAppNameFor(t *testing.T) {
+	for in, want := range map[string]string{
+		"com.microsoft.Outlook": "Outlook",
+		"ru.keepcoder.Telegram": "Telegram",
+		"slack.exe":             "Slack",
+		"Notes":                 "Notes",
+		"com.example.":          "com.example.",
+	} {
+		if got := appNameFor(in); got != want {
+			t.Errorf("appNameFor(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestProviderThinkingAndConfigFolder(t *testing.T) {
+	e := newEnv(t)
+	e.a.cfg.AI.Providers = []config.Provider{{ID: "claude-code", Name: "Claude Code", Kind: config.KindClaudeCLI, Model: ptr("sonnet")}}
+	e.a.cfg.AI.DefaultProvider = ptr("claude-code")
+	e.a.OpenSettings(SecProviders)
+	tt := e.hub(t)
+	// The default provider is picked when nothing is chosen yet.
+	if !tt.HasText(i18n.T("settings.providers.thinking")) || !tt.HasText(i18n.T("settings.providers.config_folder")) {
+		t.Fatalf("no Thinking or Config folder row: %q", tt.Texts())
+	}
+	press(t, tt, "Medium")
+	if pr, _ := e.a.cfg.AI.Provider("claude-code"); pr.ThinkingChosen() != "medium" {
+		t.Errorf("thinking %q", pr.ThinkingChosen())
+	}
+}
+
+func TestSettingsAudioDeviceRadiosAndMaxLength(t *testing.T) {
+	e := newEnv(t)
+	e.a.d.Platform = &platform.Services{Audio: devicesStub{}}
+	e.a.cfg.Dictation.MaxDurationS = 600
+	e.a.OpenSettings(SecAudio)
+	tt := e.hub(t)
+	press(t, tt, "Desk Mic")
+	if d := e.a.cfg.Audio.InputDevice; d == nil || *d != "USBMic" {
+		t.Errorf("device %v", d)
+	}
+	press(t, tt, i18n.T("settings.audio.system_default"))
+	if e.a.cfg.Audio.InputDevice != nil {
+		t.Errorf("device %v after System default", *e.a.cfg.Audio.InputDevice)
+	}
+	press(t, tt, i18n.T("a11y.increase"))
+	if got := e.a.cfg.Dictation.MaxDurationS; got != 900 {
+		t.Errorf("max length %d after +, want 900", got)
+	}
+	if !tt.HasText("15 min") {
+		t.Errorf("stepper does not show 15 min: %q", tt.Texts())
+	}
+}
+
+func TestSettingsHistoryRetentionAndDeleteAudio(t *testing.T) {
+	e := newEnv(t)
+	e.addEntry(t, "hello world", "Notes", true)
+	e.a.OpenSettings(SecHistory)
+	tt := e.hub(t)
+	press(t, tt, i18n.TP("settings.history.days", 90, nil))
+	if d := e.a.cfg.History.KeepTextDays; d == nil || *d != 90 {
+		t.Errorf("keep text %v, want 90", d)
+	}
+	press(t, tt, i18n.T("settings.history.delete_audio"))
+	if !e.a.set.confirmAudio {
+		t.Fatal("Delete audio did not ask first")
+	}
+	tt.Frame()
+	press(t, tt, i18n.T("settings.history.delete_audio"))
+	if u, _ := e.db.StorageUse(); u.AudioFiles != 0 {
+		t.Errorf("%d audio files after Delete audio", u.AudioFiles)
+	}
+	if n, _ := e.db.Count(store.HistoryQuery{}); n != 1 {
+		t.Errorf("%d entries after Delete audio, want the entry kept", n)
 	}
 }

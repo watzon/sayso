@@ -3,7 +3,11 @@ package platform
 // App icons for the badges of Home and History, from Launch Services
 // (NSWorkspace iconForFile:), as sayso-platform-macos's app_icon_png.
 
-import "github.com/ebitengine/purego/objc"
+import (
+	"strings"
+
+	"github.com/ebitengine/purego/objc"
+)
 
 // nsBitmapImageFileTypePNG is NSBitmapImageFileTypePNG.
 const nsBitmapImageFileTypePNG = 4
@@ -55,4 +59,23 @@ func (macAppIcons) AppIconPNG(bundleID string, size int) []byte {
 		out = goBytes(best.Send(sel("representationUsingType:properties:"), uint64(nsBitmapImageFileTypePNG), props))
 	})
 	return out
+}
+
+// AppName is the display name of the installed app with bundleID, as
+// NSFileManager displayNameAtPath: gives it, or "" when it is not installed.
+func (macAppIcons) AppName(bundleID string) string {
+	if bundleID == "" || loadDarwin() != nil {
+		return ""
+	}
+	var name string
+	withPool(func() {
+		ws := class("NSWorkspace").Send(sel("sharedWorkspace"))
+		url := ws.Send(sel("URLForApplicationWithBundleIdentifier:"), nsString(bundleID))
+		if url == 0 {
+			return
+		}
+		fm := class("NSFileManager").Send(sel("defaultManager"))
+		name = goStringFromCF(uintptr(fm.Send(sel("displayNameAtPath:"), url.Send(sel("path")))))
+	})
+	return strings.TrimSuffix(name, ".app")
 }

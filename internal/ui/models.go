@@ -105,7 +105,7 @@ func (a *App) modelsPage(c *mu.Context, p theme.Colors) {
 			used += m.SizeBytes
 		}
 	}
-	pageHead(c, p, i18n.T("models.page.title"), i18n.TOS("models.page.intro", nil), 560, func() {
+	pageHead(c, p, i18n.T("models.page.title"), i18n.TOS("models.page.intro", nil), 600, func() {
 		line := i18n.T("models.page.nothing_downloaded")
 		if used > 0 {
 			line = i18n.T("models.page.used", "size", models.FormatSize(used))
@@ -275,7 +275,11 @@ func (a *App) modelSlots(c *mu.Context, p theme.Colors) {
 		if state != "" {
 			title += " · " + state
 		}
-		mu.Column(c).Grow(1).Basis(0).MinWidth(0).Padding(22, 28).Gap(6).Children(func() {
+		grow := float32(1)
+		if key == "models.slot.final" {
+			grow = 1.25 // models.rs: the final slot takes more room
+		}
+		mu.Column(c).Grow(grow).Basis(0).MinWidth(0).Padding(22, 28).Gap(6).Children(func() {
 			mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
 				statusDot(c, dot)
 				caps(c, p, title)
