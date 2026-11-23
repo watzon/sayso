@@ -579,3 +579,23 @@ func sameSet(a, b map[string]bool) bool {
 	}
 	return true
 }
+
+// A dictation language that is not an interface locale gets its name, not
+// its code (the Whisper list used to end in "af", "ar", ...).
+func TestLanguageNameOfDictationLanguages(t *testing.T) {
+	use(t, "en")
+	for code, want := range map[string]string{"af": "Afrikaans", "ar": "Arabic", "pt": "Portuguese", "zh": "Chinese", "yue": "Cantonese", "es": "Spanish", "pt-BR": "Portuguese"} {
+		if got := LanguageName(code); got != want {
+			t.Errorf("en %s = %q, want %q", code, got, want)
+		}
+	}
+	SetLocale("ar")
+	for code, want := range map[string]string{"af": "الأفريكانية", "ar": "العربية", "en": "الإنجليزية", "zh-CN": "الصينية المبسّطة"} {
+		if got := LanguageName(code); got != want {
+			t.Errorf("ar %s = %q, want %q", code, got, want)
+		}
+	}
+	if got := LanguageName("zz"); got != "zz" {
+		t.Errorf("unknown = %q", got)
+	}
+}

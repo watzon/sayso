@@ -105,9 +105,14 @@ func IsValidSetting(value string) bool {
 	return ok
 }
 
-// LanguageName is the name of a locale's language in the interface language:
-// "Spanish" in English, "スペイン語" in Japanese.
+// LanguageName is the name of a language in the interface language:
+// "Spanish" in English, "スペイン語" in Japanese. code is a dictation
+// language ("af", "yue") or a locale ("pt-BR"). A code without a name in any
+// catalog gives the code.
 func LanguageName(code string) string {
+	if text, ok := Translate("languages." + code); ok {
+		return text
+	}
 	if l, ok := Find(code); ok {
 		return T("language." + l.Code)
 	}
