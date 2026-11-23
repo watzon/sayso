@@ -62,7 +62,7 @@ type Learner struct {
 	j       *journal
 	err     error // the first journal write error
 
-	words        map[string]bool // explicit personal words
+	words        map[string]bool  // explicit personal words
 	keeps        map[string]*kept // kept spellings the model lacks, by lower case
 	replacements map[string]Replacement
 	reverts      map[pair]int
