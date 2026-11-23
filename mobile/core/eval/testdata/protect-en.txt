@@ -1,0 +1,40 @@
+# Protected forms: names typed with a capital mid-sentence and contractions
+# typed with their apostrophe, after words that make a common word more
+# likely ("I told Jim" against "him", "I feel we'll" against "well").
+# Written for Sayso's replay gate; not taken from any corpus.
+I told Jim about the party.
+I saw Jim at the station.
+Please ask Jim to call me.
+I told Kim the good news.
+I saw Kim near the river.
+I told Tim the truth.
+Ask Tim if he can drive.
+I would ask Mike first.
+I feel Mike was right about that.
+Do you think Mike will come?
+I gave Will the keys.
+I met Mark after lunch.
+I think Max is asleep.
+We can ask Don tomorrow.
+Let Jack decide this time.
+I sent Grace a letter.
+Say hello to Kim for me.
+Did Tim enjoy the film?
+I miss Mike a lot.
+I feel we'll be fine.
+I really think we'll win.
+I hope we'll meet again.
+I feel we'll need more time.
+Honestly I feel we'll lose this one.
+I think she'll call later.
+He says he'll be late.
+I know we're close now.
+I think I'll stay home.
+Maybe we'd better go.
+I guess it's over now.
+I bet she'd agree with you.
+I knew he'd come back.
+They said they'll help us.
+I really feel we'll make it.
+Tell Rose I'm sorry.
+I asked Hope for help.
