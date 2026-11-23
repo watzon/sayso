@@ -198,18 +198,25 @@ func TestHotkeyKeycapsStayLeftToRight(t *testing.T) {
 	if len(caps) < 2 {
 		t.Skipf("one key: %q", caps)
 	}
-	tt := e.hub(t)
-	tt.Frame()
-	prev := float32(-1)
-	for _, k := range caps {
-		r, ok := tt.Find(k)
-		if !ok {
-			t.Fatalf("no keycap %q: %q", k, tt.Texts())
+	for _, view := range []struct {
+		name string
+		tt   *mu.Tester
+	}{
+		{"home", e.hub(t)},
+		{"popover", mu.NewTester(e.a.PopoverView, PopoverW, PopoverH)},
+	} {
+		view.tt.Frame()
+		prev := float32(-1)
+		for _, k := range caps {
+			r, ok := view.tt.Find(k)
+			if !ok {
+				t.Fatalf("%s: no keycap %q: %q", view.name, k, view.tt.Texts())
+			}
+			if r.X <= prev {
+				t.Errorf("%s: keycap %q at %v is left of the key before it", view.name, k, r.X)
+			}
+			prev = r.X
 		}
-		if r.X <= prev {
-			t.Errorf("keycap %q at %v is left of the key before it", k, r.X)
-		}
-		prev = r.X
 	}
 }
 

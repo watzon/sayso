@@ -113,7 +113,7 @@ func (a *App) popoverStart(c *mu.Context, p theme.Colors) {
 		})
 		uiText(c, label, 15, 600, p.OnInk).Grow(1).SingleLine()
 		if h := a.cfg.Hotkeys.Toggle; h != nil {
-			mu.Row(c).Gap(3).Children(func() {
+			ltr(mu.Row(c)).Gap(3).Children(func() {
 				for _, k := range h.Keycaps() {
 					mu.Box(c).Height(22).MinWidth(22).PaddingX(6).Radius(5).Background(white.Alpha(0.12)).
 						InsetShadow(0, -1, 0, 0, black.Alpha(0.4)).Justify(mu.Center).AlignItems(mu.Center).Children(func() {
