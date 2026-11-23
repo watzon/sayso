@@ -141,6 +141,6 @@ class FakeVoiceCore : VoiceCore {
     }
 
     private companion object {
-        val BUILT_IN = listOf(VoiceStyle("default", "Default", "", builtIn = true))
+        val BUILT_IN = listOf(VoiceStyle("clean", "Clean", "", builtIn = true))
     }
 }

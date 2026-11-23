@@ -52,7 +52,7 @@ data class VoiceSettings(
         get() = cloud.asrProvider != CloudAsrProvider.OFF && cloud.asrApiKey.isNotBlank()
 
     companion object {
-        const val DEFAULT_STYLE = "default"
+        const val DEFAULT_STYLE = "clean"
     }
 }
 
