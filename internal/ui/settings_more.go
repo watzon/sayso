@@ -224,7 +224,7 @@ func (a *App) providersSection(c *mu.Context, p theme.Colors, sub string) {
 	// the AI group comes after it.
 	_, winH := c.Size()
 	mu.Row(c).AlignItems(mu.Stretch).MinHeight(max(520, winH-190)).BorderWidth(1, 0, 0, 0).BorderColor(p.Rule).Children(func() {
-		mu.Column(c).Width(264).Shrink(0).Padding(16, 16, 16, 0).Gap(4).BorderEndWidth(1).BorderColor(p.Rule).Role(mu.RoleList).
+		mu.Column(c).Width(264).Shrink(0).Padding(16, 0, 16, 0).PaddingEnd(16).Gap(4).BorderEndWidth(1).BorderColor(p.Rule).Role(mu.RoleList).
 			Label(i18n.T("settings.providers.your_providers")).Children(func() {
 			groups := []string{i18n.T("settings.providers.group_subscriptions"), i18n.T("settings.providers.group_servers"),
 				i18n.T("settings.providers.group_on_this_computer", "computer", computer())}
@@ -253,7 +253,7 @@ func (a *App) providersSection(c *mu.Context, p theme.Colors, sub string) {
 			mu.Spacer(c)
 			a.addProviderCard(c, p, sel == addProviderSel)
 		})
-		mu.Column(c).Grow(1).Basis(0).MinWidth(0).Padding(24, 0, 8, 36).Children(func() {
+		mu.Column(c).Grow(1).Basis(0).MinWidth(0).Padding(24, 0, 8, 0).PaddingStart(36).Children(func() {
 			if sel == addProviderSel {
 				a.addProviderForm(c, p)
 				return
@@ -587,7 +587,7 @@ func (a *App) addProviderForm(c *mu.Context, p theme.Colors) {
 			a.field(c, p, "providers.new.name", i18n.T("settings.providers.name"), i18n.T("settings.providers.name_placeholder"), &s.provName)
 		})
 		a.labelled(c, p, i18n.T("settings.providers.base_url"), func() {
-			a.field(c, p, "providers.new.url", i18n.T("settings.providers.base_url"), "https://openrouter.ai/api/v1", &s.provURL)
+			ltr(a.field(c, p, "providers.new.url", i18n.T("settings.providers.base_url"), "https://openrouter.ai/api/v1", &s.provURL))
 		})
 		a.labelled(c, p, i18n.T("settings.providers.api_key"), func() {
 			a.field(c, p, "providers.new.key", i18n.T("settings.providers.api_key"), i18n.TOS("settings.providers.key_placeholder", nil), &s.provKey).Password()

@@ -90,11 +90,8 @@ func underSheets(p theme.Colors) func(*mu.Painter, mu.Rect) {
 
 // sheet is the page on its stack of paper.
 func (a *App) sheet(c *mu.Context, p theme.Colors) {
-	top := float32(10)
-	if bar := c.TitleBar(); bar.Bottom > 0 && bar.Left == 0 {
-		top = max(top, bar.Bottom) // Windows' caption, a custom Linux title bar
-	}
-	mu.Box(c).Grow(1).Basis(0).Padding(top, 10, 10, 0).Draw(underSheets(p)).Children(func() {
+	top := sheetTop(c)
+	mu.Box(c).Grow(1).Basis(0).Padding(top, 0, 10, 0).PaddingEnd(10).Draw(mirrored(rtl(c), underSheets(p))).Children(func() {
 		page := sheetStack(mu.Column(c).Fill().Radius(sheetRadius).Clip(), p).Draw(a.grain(p, "sheet", sheetRadius)).
 			Role(mu.RoleMain).Label(a.routeName())
 		page.Children(func() {
@@ -142,6 +139,22 @@ func (a *App) sheet(c *mu.Context, p theme.Colors) {
 	})
 }
 
+// sheetTop is the board above the page sheet. The window controls on the
+// sheet's side push it down: Windows' caption and a custom Linux title bar
+// at the right, and right to left the macOS traffic lights, which stay at
+// the top left over the sheet.
+func sheetTop(c *mu.Context) float32 {
+	top := float32(10)
+	bar := c.TitleBar()
+	switch {
+	case bar.Bottom > 0 && bar.Left == 0:
+		top = max(top, bar.Bottom)
+	case rtl(c) && bar.Left > 0:
+		top = max(top, bar.Bottom+8)
+	}
+	return top
+}
+
 // routeName names the page for assistive technology.
 func (a *App) routeName() string {
 	if a.inSettings {
@@ -162,8 +175,14 @@ func (a *App) sidebarColumn(c *mu.Context, rail bool, label string) mu.Element {
 		w = railWidth
 	}
 	top := float32(52) // room for the traffic lights
-	if bar := c.TitleBar(); bar.Left == 0 && bar.Bottom > 0 {
+	bar := c.TitleBar()
+	switch {
+	case bar.Left == 0 && bar.Bottom > 0:
 		top = bar.Bottom + 16
+	case rtl(c) && bar.Left > 0:
+		// The lights are over the sheet: the sidebar's title lines up
+		// with the page's, as it does left to right.
+		top = sheetTop(c) + 42
 	}
 	return mu.Column(c).Width(w).Shrink(0).Padding(top, 14, 16, 14).Gap(24).DragWindow().
 		Role(mu.RoleNavigation).Label(label)
@@ -213,7 +232,7 @@ func (a *App) navItem(c *mu.Context, p theme.Colors, key, iconName, label string
 		row.Background(p.Deboss.Alpha(0.55))
 	}
 	row.Children(func() {
-		mu.Icon(c, icon(iconName)).FontSize(18).TextColor(fg)
+		mu.Icon(c, dirIcon(c, iconName)).FontSize(18).TextColor(fg)
 		if !rail {
 			uiText(c, label, 14, weight, fg).Grow(1).SingleLine()
 		}
@@ -311,7 +330,7 @@ func (a *App) settingsSidebar(c *mu.Context, p theme.Colors, rail bool) {
 			b.Background(p.Deboss.Alpha(0.55))
 		}
 		b.Children(func() {
-			mu.Icon(c, icon("chevron-left")).FontSize(16).TextColor(p.Ink)
+			mu.Icon(c, dirIcon(c, "chevron-left")).FontSize(16).TextColor(p.Ink)
 			if !rail {
 				mu.Text(c, i18n.T("hub.nav.settings")).Font(serifFont(theme.Display)).FontSize(22).FontWeight(600).TextColor(p.Ink)
 			}
@@ -341,7 +360,7 @@ func (a *App) settingsSidebar(c *mu.Context, p theme.Colors, rail bool) {
 					a.openPath(a.d.ConfigPath)
 				}
 				if a.d.ConfigPath != "" {
-					mu.Text(c, tildePath(a.d.ConfigPath)).Font(theme.Mono).FontSize(11).TextColor(p.Graphite).LineHeight(1.45).Selectable()
+					ltr(mu.Text(c, tildePath(a.d.ConfigPath))).Font(theme.Mono).FontSize(11).TextColor(p.Graphite).LineHeight(1.45).Selectable()
 				}
 			})
 			a.collapseBtn(c, p)

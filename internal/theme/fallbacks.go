@@ -14,13 +14,35 @@ var serifFallbacks = map[string][]string{
 	"zh": {"Songti SC", "SimSun", "Noto Serif CJK SC"},
 	"ko": {"AppleMyungjo", "Batang", "Noto Serif CJK KR"},
 	"ru": {"Georgia", "Noto Serif"},
+	// Arabic script (Arabic, Persian, Urdu) in a Naskh, the book hand that
+	// sits with a serif; Hebrew in its serif faces.
+	"ar": {"Al Nile", "Geeza Pro", "Sakkal Majalla", "Traditional Arabic", "Noto Naskh Arabic"},
+	"fa": {"Al Nile", "Geeza Pro", "Sakkal Majalla", "Traditional Arabic", "Noto Naskh Arabic"},
+	"ur": {"Al Nile", "Geeza Pro", "Sakkal Majalla", "Traditional Arabic", "Noto Naskh Arabic"},
+	"he": {"New Peninim MT", "Times New Roman", "David", "Noto Serif Hebrew"},
+}
+
+// sansFallbacks are the fonts for the scripts Instrument Sans lacks that
+// the system could draw in a mismatched or blurry face: the system UI face
+// of the script on macOS, then Windows, then Linux.
+var sansFallbacks = map[string][]string{
+	"ar": {"SF Arabic", "Geeza Pro", "Segoe UI", "Segoe UI Arabic", "Tahoma", "Noto Sans Arabic", "Noto Naskh Arabic"},
+	"fa": {"SF Arabic", "Geeza Pro", "Segoe UI", "Segoe UI Arabic", "Tahoma", "Noto Sans Arabic", "Noto Naskh Arabic"},
+	"ur": {"SF Arabic", "Geeza Pro", "Segoe UI", "Segoe UI Arabic", "Tahoma", "Noto Sans Arabic", "Noto Naskh Arabic"},
+	"he": {"SF Hebrew", "Arial Hebrew", "Segoe UI", "Tahoma", "Noto Sans Hebrew"},
 }
 
 // SerifFor is a serif family (Display or Body) followed by the fallbacks
 // of locale, as a comma-separated family list.
-func SerifFor(family, locale string) string {
+func SerifFor(family, locale string) string { return withFallbacks(family, serifFallbacks, locale) }
+
+// UIFor is the interface face (UI) followed by the fallbacks of locale; UI
+// alone for a locale whose script it has or the system draws well.
+func UIFor(locale string) string { return withFallbacks(UI, sansFallbacks, locale) }
+
+func withFallbacks(family string, fallbacks map[string][]string, locale string) string {
 	lang, _, _ := strings.Cut(strings.ReplaceAll(locale, "_", "-"), "-")
-	if fb := serifFallbacks[lang]; len(fb) > 0 {
+	if fb := fallbacks[strings.ToLower(lang)]; len(fb) > 0 {
 		return family + ", " + strings.Join(fb, ", ")
 	}
 	return family

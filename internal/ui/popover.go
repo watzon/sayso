@@ -98,7 +98,7 @@ func (a *App) popoverStart(c *mu.Context, p theme.Colors) {
 	if a.Busy() {
 		label = i18n.T("popover.stop_dictation")
 	}
-	b := mu.ButtonBase(a.k(c, "popover.toggle")).Label(label).Height(52).Padding(0, 12, 0, 14).Gap(12).Radius(12).
+	b := mu.ButtonBase(a.k(c, "popover.toggle")).Label(label).Height(52).PaddingStart(14).PaddingEnd(12).Gap(12).Radius(12).
 		AlignItems(mu.Center).Cursor(mu.CursorPointer)
 	inkButton(b, p, b.Pressed())
 	b.Children(func() {
@@ -113,7 +113,7 @@ func (a *App) popoverStart(c *mu.Context, p theme.Colors) {
 		})
 		uiText(c, label, 15, 600, p.OnInk).Grow(1).SingleLine()
 		if h := a.cfg.Hotkeys.Toggle; h != nil {
-			mu.Row(c).Gap(3).Children(func() {
+			ltr(mu.Row(c)).Gap(3).Children(func() {
 				for _, k := range h.Keycaps() {
 					mu.Box(c).Height(22).MinWidth(22).PaddingX(6).Radius(5).Background(white.Alpha(0.12)).
 						InsetShadow(0, -1, 0, 0, black.Alpha(0.4)).Justify(mu.Center).AlignItems(mu.Center).Children(func() {
@@ -186,10 +186,10 @@ func (a *App) popoverRow(c *mu.Context, p theme.Colors, key, iconName, label, va
 		b.Background(p.Deboss.Alpha(0.5))
 	}
 	b.Children(func() {
-		mu.Icon(c, icon(iconName)).FontSize(16).TextColor(p.Graphite)
+		mu.Icon(c, dirIcon(c, iconName)).FontSize(16).TextColor(p.Graphite)
 		uiText(c, label, 14, 400, p.Ink).Grow(1)
 		uiText(c, value, 13, 400, p.Graphite).SingleLine().Ellipsis("…").MaxWidth(170)
-		mu.Icon(c, icon("chevron-right")).FontSize(12).TextColor(p.Graphite)
+		mu.Icon(c, dirIcon(c, "chevron-right")).FontSize(12).TextColor(p.Graphite)
 	})
 	if clicked(c, b) {
 		if a.pop.open == open {
@@ -221,7 +221,7 @@ func (a *App) popoverChoice(c *mu.Context, p theme.Colors, key, label string, on
 }
 
 func (a *App) popoverModels(c *mu.Context, p theme.Colors) {
-	mu.Column(c).Padding(4, 6, 4, 32).Children(func() {
+	mu.Column(c).Padding(4, 0, 4, 0).PaddingStart(32).PaddingEnd(6).Children(func() {
 		n := 0
 		for _, m := range models.Catalog() {
 			if !m.FinalPass || m.IsRemote() || !a.modelStatus(m.ID).IsOnDisk() {
@@ -248,7 +248,7 @@ func (a *App) popoverMics(c *mu.Context, p theme.Colors) {
 	if a.cfg.Audio.InputDevice != nil {
 		cur = platform.NormalizeDeviceID(*a.cfg.Audio.InputDevice)
 	}
-	mu.Column(c).Padding(4, 6, 4, 32).Children(func() {
+	mu.Column(c).Padding(4, 0, 4, 0).PaddingStart(32).PaddingEnd(6).Children(func() {
 		a.popoverChoice(c, p, "popover.mic.default", i18n.T("popover.system_default"), cur == "", func() {
 			a.cfg.Audio.InputDevice = nil
 			a.saveConfig()

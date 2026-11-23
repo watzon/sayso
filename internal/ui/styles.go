@@ -285,7 +285,7 @@ func (a *App) styleRow(c *mu.Context, p theme.Colors, e *enhance.StyleEntry, act
 					return
 				}
 				if target {
-					mu.Icon(c, icon("arrow-right")).FontSize(11).TextColor(col)
+					mu.Icon(c, dirIcon(c, "arrow-right")).FontSize(11).TextColor(col)
 				}
 				uiText(c, line, 12, 500, col).SingleLine().Ellipsis("…")
 			})
@@ -421,8 +421,13 @@ func (a *App) drawer(c *mu.Context, p theme.Colors, body, footer func()) {
 	if clicked(c, scrim) {
 		a.sty.close()
 	}
-	// 12 px inside the sheet, which sits 10 px inside the window (styles.rs).
-	floating(mu.Column(c).Absolute().Top(22).Right(22).Bottom(22).Width(500).ZIndex(5).Radius(sheetRadius).Clip(), p).
+	// 12 px inside the sheet, which sits 10 px inside the window (styles.rs),
+	// on the side of the sheet away from the sidebar.
+	top := float32(22)
+	if rtl(c) {
+		top = sheetTop(c) + 12
+	}
+	floating(mu.Column(c).Absolute().Top(top).End(22).Bottom(22).Width(500).ZIndex(5).Radius(sheetRadius).Clip(), p).
 		Role(mu.RoleDialog).Children(func() {
 		mu.Scroll(c.Key("drawer")).Grow(1).Padding(28).Gap(18).Children(body)
 		mu.Row(c).Gap(8).Padding(14, 28).AlignItems(mu.Center).BorderWidth(1, 0, 0, 0).BorderColor(p.Rule).Children(footer)
@@ -685,7 +690,7 @@ func (a *App) targetsEditor(c *mu.Context, p theme.Colors, d *styleDraft) {
 				uiText(c, i18n.T("styles.targets.summary_none"), 13, 400, p.Graphite)
 			}
 			for i, t := range append(append([]string(nil), d.apps...), d.sites...) {
-				debossed(mu.Row(c).Height(28).Gap(2).Padding(0, 2, 0, 11).Radius(99).AlignItems(mu.Center), p).Children(func() {
+				debossed(mu.Row(c).Height(28).Gap(2).PaddingStart(11).PaddingEnd(2).Radius(99).AlignItems(mu.Center), p).Children(func() {
 					uiText(c, t, 13, 500, p.Ink)
 					if a.iconBtnSized(c, p, fmt.Sprintf("styles.target.remove.%d", i), "close", i18n.T("styles.a11y.remove_app", "name", t), 22, 10) {
 						d.apps, d.sites = removeString(d.apps, t), removeString(d.sites, t)

@@ -531,7 +531,7 @@ func (a *App) aiRow(c *mu.Context, p theme.Colors, ch aiChoice, selected bool, i
 			}
 		})
 		if extra != nil {
-			mu.Column(c).Padding(0, 16, 14, 48).Children(extra)
+			mu.Column(c).Padding(0, 0, 14, 0).PaddingStart(48).PaddingEnd(16).Children(extra)
 		}
 	})
 }
@@ -632,13 +632,15 @@ func (a *App) cloudForm(c *mu.Context, p theme.Colors) {
 				debossed(in, p)
 				if secret {
 					in.Password()
+				} else if key == "onboarding.ai.base_url" {
+					ltr(in)
 				}
 			})
 		}
 		field("onboarding.ai.base_url", i18n.T("onboarding.ai.base_url"), &f.baseURL, false, "https://…/v1")
 		field("onboarding.ai.api_key", i18n.T("onboarding.ai.api_key"), &f.key, true, i18n.T("onboarding.ai.key_placeholder"))
 		a.cloudModel(c, p)
-		mu.Row(c).Gap(12).Padding(0, 0, 0, cloudLabelWidth()+12).AlignItems(mu.Center).Children(func() {
+		mu.Row(c).Gap(12).PaddingStart(cloudLabelWidth() + 12).AlignItems(mu.Center).Children(func() {
 			if a.button(c, p, "onboarding.ai.test", i18n.T("onboarding.ai.test_connection"), bopt{size: sizeSmall, disabled: f.testing}) && !f.testing {
 				a.testAI()
 			}

@@ -172,7 +172,7 @@ func (a *App) WhatsNewView(c *mu.Context) {
 					if ic == "" {
 						ic = "sparkle"
 					}
-					mu.Icon(c, icon(ic)).FontSize(18).TextColor(p.Accent)
+					mu.Icon(c, dirIcon(c, ic)).FontSize(18).TextColor(p.Accent)
 					mu.Column(c).Gap(3).Grow(1).Basis(0).Children(func() {
 						mu.Text(c, it.Title).FontSize(14.5).FontWeight(600).TextColor(p.Ink)
 						mu.Text(c, it.Text).FontSize(13).TextColor(p.Graphite).LineHeight(1.4)
@@ -405,7 +405,7 @@ func (a *App) ApprovalView(c *mu.Context) {
 			}
 			mu.Text(c, signer).FontSize(12.5).TextColor(p.Pencil)
 			if id := identityText(q.Identity); id != "" {
-				mu.Text(c, id).Font(theme.Mono).FontSize(12).TextColor(p.Graphite)
+				ltr(mu.Text(c, id)).Font(theme.Mono).FontSize(12).TextColor(p.Graphite)
 			}
 			if q.ClaimedName != "" && q.ClaimedName != q.Name {
 				mu.Text(c, i18n.T("apps.approval.claimed", "name", q.ClaimedName)).FontSize(12.5).TextColor(p.Pencil)

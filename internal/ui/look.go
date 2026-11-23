@@ -45,10 +45,12 @@ func (a *App) dark(system bool) bool {
 	return system
 }
 
-// look sets the window's theme for this frame and returns its colors.
+// look sets the window's theme and direction for this frame and returns its
+// colors. Views call it first.
 func (a *App) look(c *mu.Context) theme.Colors {
 	th := a.themes.get(a.cfg.Appearance.Ink, a.dark(c.Theme().Dark))
 	c.SetTheme(th.UI)
+	applyDirection(c)
 	return th.Colors
 }
 

@@ -162,7 +162,7 @@ func (a *App) wordsSection(c *mu.Context, p theme.Colors, f string) {
 // next one as the pointer crossed it.
 func (a *App) wordSlip(c *mu.Context, p theme.Colors, w store.Word) {
 	d := &a.dict
-	s := mu.Row(c).Height(32).Padding(0, 6, 0, 12).Gap(4).Radius(6).AlignItems(mu.Center).Background(p.SheetRaised).
+	s := mu.Row(c).Height(32).PaddingStart(12).PaddingEnd(6).Gap(4).Radius(6).AlignItems(mu.Center).Background(p.SheetRaised).
 		InsetShadow(0, 1, 0, 0, p.Highlight(1)).Shadow(0, 1, 2, 0, p.ShadowA(0.16)).Shadow(0, 3, 8, 0, p.ShadowA(0.06))
 	s.Children(func() {
 		serif(c, w.Text, 15, p.Ink).SingleLine()
@@ -279,7 +279,7 @@ func (a *App) ledgerRow(c *mu.Context, p theme.Colors, r store.Replacement) {
 	row := mu.Row(c).Height(48).Gap(12).AlignItems(mu.Center).Role(mu.RoleRow).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
 	row.Children(func() {
 		serif(c, r.From, 15, p.Graphite).Italic().Width(150).Shrink(0).SingleLine().Ellipsis("…")
-		mu.Icon(c, icon("arrow-right")).FontSize(16).TextColor(p.Ink).Width(18)
+		mu.Icon(c, dirIcon(c, "arrow-right")).FontSize(16).TextColor(p.Ink).Width(18)
 		serif(c, showTo(r.To), 15, p.Ink).Grow(1).Basis(0).SingleLine().Ellipsis("…")
 		mu.Row(c).Width(56).Shrink(0).Gap(2).Justify(mu.End).AlignItems(mu.Center).Children(func() {
 			if row.Hovered() || row.FocusWithin() {
@@ -313,7 +313,7 @@ func (a *App) addRuleRow(c *mu.Context, p theme.Colors) {
 	d := &a.dict
 	mu.Row(c).Height(52).Gap(12).AlignItems(mu.Center).Children(func() {
 		a.ruleInput(c, p, "dict.new_from", i18n.T("dictionary.placeholder.from"), i18n.T("dictionary.placeholder.from"), &d.from, true)
-		mu.Icon(c, icon("arrow-right")).FontSize(16).TextColor(p.Pencil).Width(18)
+		mu.Icon(c, dirIcon(c, "arrow-right")).FontSize(16).TextColor(p.Pencil).Width(18)
 		to := a.ruleInput(c, p, "dict.new_to", i18n.T("dictionary.placeholder.to"), i18n.T("dictionary.placeholder.to"), &d.to, false)
 		to.OnSubmit(func() { a.AddReplacement(d.from, d.to) })
 		if a.button(c, p, "dict.add_replacement", i18n.T("dictionary.add_rule"), bopt{size: sizeSmall}) {
@@ -326,7 +326,7 @@ func (a *App) editRuleRow(c *mu.Context, p theme.Colors, r store.Replacement) {
 	d := &a.dict
 	mu.Row(c).Height(52).Gap(12).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
 		a.ruleInput(c, p, "dict.edit_from", i18n.T("dictionary.placeholder.from"), "", &d.editFr, true)
-		mu.Icon(c, icon("arrow-right")).FontSize(16).TextColor(p.Pencil).Width(18)
+		mu.Icon(c, dirIcon(c, "arrow-right")).FontSize(16).TextColor(p.Pencil).Width(18)
 		a.ruleInput(c, p, "dict.edit_to", i18n.T("dictionary.placeholder.to"), "", &d.editTo, false)
 		if a.button(c, p, "dict.save_rule", i18n.T("dictionary.save_rule"), bopt{kind: btnPrimary, size: sizeSmall}) {
 			if strings.TrimSpace(d.editFr) == "" {
