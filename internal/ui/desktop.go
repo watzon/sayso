@@ -12,6 +12,7 @@ import (
 
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/i18n"
+	"github.com/watzon/sayso/internal/platform"
 )
 
 // Desktop is the Shell of the running app: MyGo windows, the tray item
@@ -32,6 +33,16 @@ type Desktop struct {
 	quitting       bool
 	// region is the overlay's card, the part of its window that takes the mouse.
 	region mu.Rect
+	// focus is the display the keyboard focus was last on, which the
+	// overlay follows (desktop_overlay.go); placed is where it last put
+	// the overlay.
+	focus  focusState
+	placed overlayPlaced
+	// wasRecording is the state ShowOverlay last saw, to place the overlay
+	// as a dictation starts.
+	wasRecording bool
+	// focusTracker replaces the platform's tracker in tests.
+	focusTracker platform.FocusTracker
 }
 
 var (
@@ -81,8 +92,13 @@ func (d *Desktop) Start(showHub bool) {
 	})
 	d.overlay = d.newOverlay()
 	d.newTray()
-	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { d.quitting = true })
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) {
+		d.quitting = true
+		d.stopFocus()
+	})
 	mygo.App.OnWindowAllClosed(func() {})
+	mygo.Screen.OnDisplaysChanged(d.displaysChanged)
+	d.startFocus()
 	d.a.syncOverlay()
 	if d.a.NeedsOnboarding() {
 		d.ShowWindow(WinOnboarding, true)
@@ -107,34 +123,6 @@ func (d *Desktop) newOverlay() *mygo.Window {
 	})
 	win.OnMove(func() { d.notePillHalf() })
 	return win
-}
-
-// placeOverlay puts the pill at the bottom center (or the notch at the
-// top center) of the display with the pointer.
-func (d *Desktop) placeOverlay() {
-	w, h := d.overlaySize()
-	d.overlay.SetSize(w, h)
-	disp := mygo.Screen.PrimaryDisplay()
-	if d.a.cfg.Overlay.FollowDisplay {
-		disp = mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
-	}
-	if d.a.cfg.Overlay.Style == config.OverlayNotch {
-		b := disp.Bounds
-		d.overlay.SetPosition(b.X+(b.Width-w)/2, b.Y)
-	} else {
-		// The card's bottom edge is overlayMargin inside the window, and
-		// sits that far above the bottom of the work area (Rust placement
-		// DEFAULT_BOTTOM).
-		wa := disp.WorkArea
-		d.overlay.SetPosition(wa.X+(wa.Width-w)/2, wa.Y+wa.Height-h)
-	}
-	d.notePillHalf()
-}
-
-func (d *Desktop) notePillHalf() {
-	x, y := d.overlay.Position()
-	disp := mygo.Screen.DisplayNearestPoint(mygo.Point{X: x, Y: y})
-	d.a.SetPreviewBelow(y < disp.Bounds.Y+disp.Bounds.Height/2)
 }
 
 // Invalidate redraws every window.
@@ -175,23 +163,6 @@ func (d *Desktop) ShowHub() {
 	h.Focus()
 }
 
-// ShowOverlay shows the overlay without taking the keyboard, or hides it.
-func (d *Desktop) ShowOverlay(show bool) {
-	if d.overlay == nil {
-		return
-	}
-	if !show {
-		d.overlay.Hide()
-		return
-	}
-	if !d.overlay.IsVisible() {
-		d.placeOverlay()
-	}
-	d.overlay.SetIgnoreMouseEvents(d.a.OverlayClickThrough())
-	d.applyInputRegion()
-	d.overlay.ShowInactive()
-}
-
 // SetOverlayInputRegion makes only r, the visible card, take the mouse:
 // the rest of the overlay window lets it through to what is under it.
 func (d *Desktop) SetOverlayInputRegion(r mu.Rect) {
@@ -200,17 +171,18 @@ func (d *Desktop) SetOverlayInputRegion(r mu.Rect) {
 }
 
 func (d *Desktop) applyInputRegion() {
-	if d.overlay == nil {
+	ov := d.layer.overlay()
+	if ov == nil {
 		return
 	}
 	r := d.region
 	if r.W <= 0 || r.H <= 0 {
-		d.overlay.SetInputRegion([]mygo.Rectangle{})
+		ov.SetInputRegion([]mygo.Rectangle{})
 		return
 	}
 	x0, y0 := int(math.Floor(float64(r.X))), int(math.Floor(float64(r.Y)))
 	x1, y1 := int(math.Ceil(float64(r.X+r.W))), int(math.Ceil(float64(r.Y+r.H)))
-	d.overlay.SetInputRegion([]mygo.Rectangle{{X: x0, Y: y0, Width: x1 - x0, Height: y1 - y0}})
+	ov.SetInputRegion([]mygo.Rectangle{{X: x0, Y: y0, Width: x1 - x0, Height: y1 - y0}})
 }
 
 // ShowWindow shows or hides a secondary window, making it on first use.
@@ -444,7 +416,7 @@ func (d *Desktop) SetThemeMode(m config.ThemeMode) {
 
 // SetOverlaySize resizes the overlay window for a size.
 func (d *Desktop) SetOverlaySize(config.OverlaySize) {
-	if d.overlay != nil && d.overlay.IsVisible() {
+	if ov := d.layer.overlay(); ov != nil && ov.IsVisible() {
 		d.placeOverlay()
 	}
 }
@@ -470,5 +442,6 @@ func (d *Desktop) OpenURL(url string) {
 // Quit quits the app.
 func (d *Desktop) Quit() {
 	d.quitting = true
+	d.stopFocus()
 	mygo.App.Quit()
 }

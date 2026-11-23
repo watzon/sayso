@@ -7,7 +7,7 @@ import "os/exec"
 func New() (*Services, error) {
 	s := currentSession()
 	ins := newLinuxInserter(s)
-	return &Services{
+	svc := &Services{
 		Audio:       newLinuxAudio(),
 		Meter:       newLinuxAudio(),
 		Hotkeys:     newLinuxHotkeys(s),
@@ -19,5 +19,10 @@ func New() (*Services, error) {
 		LoginItem:   newLinuxLoginItem(),
 		Dock:        linuxDock{},
 		AppIcons:    noopAppIcons{},
-	}, nil
+	}
+	// Wayland tells no client where another app's window is.
+	if s.kind == sessionX11 {
+		svc.Focus = newX11Focus()
+	}
+	return svc, nil
 }

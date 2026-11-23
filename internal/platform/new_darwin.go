@@ -18,5 +18,6 @@ func New() (*Services, error) {
 		LoginItem:   macLoginItem{},
 		Dock:        macDock{},
 		AppIcons:    macAppIcons{},
+		Focus:       newMacFocus(),
 	}, nil
 }

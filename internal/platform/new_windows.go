@@ -14,5 +14,6 @@ func New() (*Services, error) {
 		LoginItem:   windowsLoginItem{},
 		Dock:        windowsDock{},
 		AppIcons:    noopAppIcons{},
+		Focus:       newWindowsFocus(),
 	}, nil
 }

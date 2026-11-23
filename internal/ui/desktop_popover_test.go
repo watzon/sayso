@@ -89,7 +89,7 @@ func on(at mygo.Point, d mygo.Display) bool {
 // where it first had).
 func TestTrayPopoverFollowsTheClickedDisplay(t *testing.T) {
 	d, l := fakeDesktop(t)
-	l.displays = stacked
+	l.screens = stacked
 	at := time.Unix(1_800_000_000, 0)
 	click := func(cursor mygo.Point, tray mygo.Rectangle, want mygo.Display, name string) {
 		t.Helper()
@@ -122,7 +122,7 @@ func TestTrayPopoverFollowsTheClickedDisplay(t *testing.T) {
 // one where it is.
 func TestShowWindowPopoverPlacesOnlyAsItOpens(t *testing.T) {
 	d, l := fakeDesktop(t)
-	l.displays, l.cursor, l.trayAt = stacked, topPress, topIcon
+	l.screens, l.cursor, l.trayAt = stacked, topPress, topIcon
 	d.ShowWindow(WinPopover, true)
 	first := l.pop.at
 	if !on(first, topDisplay) {

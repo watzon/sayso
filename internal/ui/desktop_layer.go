@@ -40,6 +40,10 @@ type shellLayer interface {
 	// tray icon's bounds (empty when the system does not say) and the
 	// displays.
 	popoverAnchor() (cursor mygo.Point, tray mygo.Rectangle, displays []mygo.Display)
+	// overlay is the overlay window, nil before Start.
+	overlay() overlayWindow
+	// displays are the displays, the primary one first.
+	displays() []mygo.Display
 }
 
 // mygoLayer is the layer of the running app.
@@ -72,6 +76,15 @@ func (l mygoLayer) popoverAnchor() (mygo.Point, mygo.Rectangle, []mygo.Display) 
 	}
 	return mygo.Screen.CursorScreenPoint(), tray, mygo.Screen.Displays()
 }
+
+func (l mygoLayer) overlay() overlayWindow {
+	if l.d.overlay == nil {
+		return nil
+	}
+	return l.d.overlay
+}
+
+func (mygoLayer) displays() []mygo.Display { return mygo.Screen.Displays() }
 
 func (mygoLayer) showInDock() { mygo.App.SetActivationPolicy(mygo.ActivationPolicyRegular) }
 

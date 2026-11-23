@@ -199,6 +199,44 @@ type DockPolicy interface {
 	SetShowInDock(show bool) error
 }
 
+// Rect is a rectangle of the screen. X and Y are its top-left corner.
+type Rect struct {
+	X, Y, Width, Height int
+}
+
+// Empty is true for a rectangle with no area.
+func (r Rect) Empty() bool { return r.Width <= 0 || r.Height <= 0 }
+
+// FocusFrame is where the keyboard focus is: the frame of the focused input,
+// else of the focused window, of the app in front.
+type FocusFrame struct {
+	// Rect is in the screen space of the UI toolkit's displays: points (or
+	// DIPs) with y growing down from the top of the primary display, so a
+	// display above the primary one has negative y. Empty when only
+	// Display is known.
+	Rect Rect
+	// Pixels is true when Rect is in device pixels: divide it by a
+	// display's scale factor to compare it with the display (X11 with a
+	// GDK scale).
+	Pixels bool
+	// Display is the toolkit's ID of the display that holds the focus, or
+	// 0 when only Rect is known (Windows: the HMONITOR).
+	Display int64
+}
+
+// FocusTracker follows the keyboard focus across displays.
+type FocusTracker interface {
+	// Focused is where the focus is. ok is false when nothing has it that
+	// a dictation could type into: the desktop, or no window. Sayso's own
+	// overlay and tray popover never count; its hub does. It may wait for
+	// the app in front (Accessibility IPC), so call it off the main thread.
+	Focused() (f FocusFrame, ok bool)
+	// Watch calls changed, on any goroutine and without blocking it, when
+	// the focus may have moved to another app, window or input. stop
+	// stops it and releases what it holds; it may be called once.
+	Watch(changed func()) (stop func(), err error)
+}
+
 // Services bundles all platform services for the current OS.
 type Services struct {
 	Audio AudioCapture
@@ -216,6 +254,9 @@ type Services struct {
 	// AppIcons renders app icons for badges; nil where the platform has
 	// none, and the badges show the app's first letter.
 	AppIcons AppIconSource
+	// Focus follows the keyboard focus, for the overlay to show on the
+	// display the user types on; nil where it is not known.
+	Focus FocusTracker
 }
 
 // AppIconSource renders the icon of an app.

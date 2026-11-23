@@ -44,9 +44,11 @@ type fakeLayer struct {
 	gaveBack []time.Duration
 	// cursor, trayAt and displays are the popover's anchor; with no
 	// displays it is not placed.
-	cursor   mygo.Point
-	trayAt   mygo.Rectangle
-	displays []mygo.Display
+	cursor  mygo.Point
+	trayAt  mygo.Rectangle
+	screens []mygo.Display
+	// ov is the overlay window; nil has none.
+	ov *fakeOverlay
 }
 
 func newFakeLayer() *fakeLayer {
@@ -69,8 +71,15 @@ func (l *fakeLayer) popover(make bool) layerWindow {
 }
 func (l *fakeLayer) showInDock() { l.log.add("dock") }
 func (l *fakeLayer) popoverAnchor() (mygo.Point, mygo.Rectangle, []mygo.Display) {
-	return l.cursor, l.trayAt, l.displays
+	return l.cursor, l.trayAt, l.screens
 }
+func (l *fakeLayer) overlay() overlayWindow {
+	if l.ov == nil {
+		return nil
+	}
+	return l.ov
+}
+func (l *fakeLayer) displays() []mygo.Display { return l.screens }
 func (l *fakeLayer) giveBack(d time.Duration) {
 	l.log.add("giveBack")
 	l.gaveBack = append(l.gaveBack, d)
