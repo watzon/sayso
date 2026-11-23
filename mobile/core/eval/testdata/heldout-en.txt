@@ -1,0 +1,3002 @@
+# Held-out Tatoeba sentences (IDs divisible by 50), not used to build the model.
+# Tatoeba (https://tatoeba.org), CC BY 2.0 FR. See mobile/tools/sslmgen/DATA_SOURCES.md.
+I may give up soon and just nap instead.
+It's a word I'd like to find a substitute for.
+The police will get you to find the bullets.
+I am not much of a traveller.
+There will always be things I will never learn, I don't have eternity before me!
+Democracy is the worst form of government, except all the others that have been tried.
+I would never have guessed that.
+I have to go shopping. I'll be back in an hour.
+What if you gave a speech and nobody came?
+What does it mean to have an educated mind in the 21st century?
+Don't worry, be happy!
+I'm at the hospital. I got struck by lightning.
+My little brother is watching TV.
+If Spenser doesn't keep adding and translating sentences, the other contributors will surely surpass him.
+The wealthy, self-indulgent young man felt oddly drawn to the strict, ascetic life led by members of some monastic orders.
+During summer breaks, I ate dinner at midnight.
+The best way to make your dreams come true is to wake up.
+I am proud to be a part of this project.
+What is the advantage of this technology?
+Any chance you know where I put my keys?
+They are waiting for you in front of the door.
+All cats are grey in the dark.
+She would willingly come but she was on vacation.
+He told me he would go to Venice.
+Let's not be in too much of a hurry.
+They forgot to lock the door.
+You should have acted on her advice.
+You must apologize to her, and that at once.
+You had better keep him at a respectful distance.
+Have you ever seen him swimming?
+Sooner or later, you will regret your idleness.
+You ran a red light.
+You are too old not to see the reason.
+You must perform your duty.
+You must come back before nine o'clock.
+You may go anywhere.
+Can you swim?
+You should act more calmly.
+Have you done all your homework?
+Why can't you come?
+Why did you say such a thing?
+You must practice it at regular intervals.
+You must inform your superior of the results.
+You will soon get accustomed to your new school.
+You'll soon get accustomed to this cold weather.
+You're starting to warm up now.
+Have you ever been to America?
+Please go on with your story.
+Tell me about your program for the future.
+Your answer is wrong.
+You shall have a bicycle for your birthday.
+The button on your coat is coming off.
+Could you lend me your bicycle for a couple of days?
+Where do you come from?
+What you are saying is equal to "no", isn't it?
+You can go or stay, as you wish.
+You burnt a hole in my coat with your cigarette.
+I blush for your mistake.
+Here is your bag.
+I'll boil you the beans.
+You've got nothing to complain of.
+I bought the same shirt as yours.
+It is imperative for you to act at once.
+I took it for granted that you would come.
+You did well not to follow his advice.
+I'm so glad that you succeeded.
+I'll help you so long as you do your best.
+If you are wrong, I am wrong too.
+It was silly of you to trust them.
+You are mad to try to do it all alone.
+We shall all miss you when you go away.
+Give my shoes a good shine.
+Judging from the look of the sky, it is likely to rain.
+Where do I get an airport bus?
+The balloon descended gradually as the air came out.
+The sky brightened.
+I make it a rule not to watch television after nine o'clock.
+Banks will try to lend you an umbrella on a sunny day, but they will turn their backs on a rainy day.
+Love of money is common to all men.
+The gold coin was much more valuable than was supposed.
+I wouldn't like to be in his position, for all his wealth.
+We are going to make up for lost time by taking a short cut.
+In the near future, we may have a big earthquake in Japan.
+In case of an emergency, push this button.
+To my surprise, they ate the meat raw.
+I have heartburn.
+In culture, they are on the same plane as savages.
+The teacher often emphasizes that students should have courage.
+You must not forget your schoolbooks.
+May I make so bold as to request your assistance?
+The burglar tied my hands behind my back with a rope.
+The GOP accused the Democrats of pork barrel politics.
+Kyoto depends on the tourist industry.
+Fish live in the sea.
+We're doing the same old routine: going bar hopping and then to karaoke.
+The cow missed being hit by a gnat's whisker.
+Ultimately, space flight will be beneficial to all mankind.
+Urgent business has called him away.
+Come on! We're going to be late.
+The palace has a tall tower.
+The holidays came to an end at last.
+Will Mr Oka teach English?
+From an objective viewpoint, his argument was far from rational.
+It's foolish to think that smoking has little to do with cancer.
+The chairman should take the minority opinion into account.
+Engineers are crazy about solar energy.
+You are human.
+A valuable object decreases in value if it is damaged.
+A reporter is interviewing Dr. Patterson about Koko, a talking gorilla.
+The train was so crowded that I was kept standing all the way.
+Low temperatures turn water into ice.
+I appreciate your concern.
+I don't wanna go back.
+When the time is ripe, be bold and go for it! I'll stand by you.
+I see a book on the desk.
+I'll give you as many as you like.
+That game is easy, once you learn the basic rules.
+There's a scent of danger.
+You look pale. You'd better take a day off.
+The cancer has spread to her stomach.
+To make mistakes is not always wrong.
+I just hope it makes it in time.
+The can is empty.
+He left his team as he could not get along with the manager.
+May I present this to you in token of my appreciation?
+We'd like separate checks.
+The stock market tumbled.
+A high forehead is indicative of great mental power.
+Read as many books as you can while you are a student.
+Not all the students are against the plan.
+Students took the lead in the campaign against pollution.
+While crossing the street on my way to school, I encountered an accident.
+Our school begins at eight.
+Why are you here when you should be in school?
+No one is too old to learn.
+I did write to him.
+It has been demonstrated in various studies that the private sector has little influence over policy making.
+Generally speaking, the climate here is mild.
+Don't make fun of foreigners.
+It takes a great deal of practice to master a foreign language.
+If I were to go abroad, I would go by boat.
+You should put on a raincoat because it's cold outside.
+The colonists bartered with the natives for fur.
+If we are to judge the future of ocean study by its past, we can surely look forward to many exciting discoveries.
+The circumstances did not allow me to go abroad.
+Most creatures in the sea are affected by pollution.
+Would you please replace the broken one promptly?
+The hall was filled with such a large audience that there wasn't even standing room.
+It took me several days to balance the company books.
+I had intended to attend the meeting.
+The conference is already over, sir.
+Each member was called upon.
+A painter only becomes a true painter by practicing his craft.
+We have achieved all our aims.
+We cannot distinguish her from her younger sister.
+We cannot speak too highly of his great achievements.
+We are against war.
+We must always be prepared for the worst.
+We usually met at a certain place in the city.
+We left a margin for error in our estimates.
+We hoped to have done with the work before the holidays.
+We eat a meal three times a day.
+We have to do a great deal of reading.
+We talked over the plan with him.
+We communicated with each other by gesture.
+We retire at eleven o'clock.
+Even our brains are subject to the laws of physics.
+The reasons for our failure are as follows.
+It is very hard to get rid of cockroaches from our house.
+It is good for us to understand other cultures.
+Our showroom made a hit with young ladies.
+What with fatigue and lack of sleep, he has fallen ill at last.
+In days gone by, things were different.
+The vase fell from the table and crashed to pieces.
+The flowers are beginning to grow and everything is becoming green.
+The fire started in the bathhouse.
+Let's play some video games to kill time.
+Science is based on very careful observations.
+How much is the rent per month?
+I had to do all the housework, but I wish I had gone to the movies or shopping.
+The house burned down completely.
+Can you deliver it to my house?
+Entering the house, I tripped over the mat.
+The summer vacation has come to an end, and we will have to go back to school.
+Summer is the season when women look most beautiful.
+Take all possible measures.
+Hundreds of people were on the spot.
+Thousands of people died of hunger.
+He was worn out after hours of work.
+When are you going on summer vacation?
+Why didn't you tell it to me in advance?
+Not knowing what to say, she remained silent.
+Not knowing what to do, I asked for his advice.
+Not having heard from him, I wrote to him again.
+I sort of understand.
+What are you going to do?
+Are you doing anything special?
+There appears to have been an accident.
+Whatever happens, keep calm.
+What is the matter with you?
+Lend me something with which to cut the string.
+Nothing can ever stagger her belief.
+Here's some medicine for diarrhea.
+I cheered myself up by listening to music.
+Don't make any noise, I'm studying.
+I am just a castaway on an island lost at sea.
+I feel something.
+I've never been beyond Okayama.
+Mr. Oh came to Japan to study Japanese.
+Please say hello to your wife.
+Salt is used to season food.
+We can see the island in the distance.
+Seen from a distance, the rock looked like a human face.
+The smoke went upward through the chimney.
+The yen is rising and the dollar is falling.
+Please be so kind as to show me the way to the station.
+The station is two miles away.
+I'll drop you off at the station.
+In 1971 the United Kingdom changed its currency to the decimal system.
+Have you begun studying English?
+I like English so much, but sometimes it is very difficult for me.
+English is spoken in America.
+Do you swim very fast, too?
+After seeing the movie, I was impressed.
+We need to reorganize it in order to strengthen our business activities.
+What with having no exercise and being overweight, he had a heart attack.
+The car crashed because the driver was careless.
+It is wrong to tell lies.
+It will stop raining soon.
+The game was called off on account of the rain.
+The rain discouraged us from going out.
+If it rains, the game will be canceled.
+The rain began to fall.
+Few were at the seaside because it was raining.
+The rain is raining all around.
+I'm afraid I have a crack in my right arm.
+Drinking and driving can be dangerous.
+The lock on my drawer had been tampered with and some of my papers were missing.
+Can you break a 10,000 yen bill?
+How much is the most expensive car?
+I read the whole book in one evening.
+The general opinion is against the war.
+There is nothing like a glass of beer after a whole day's work.
+I know that if we discuss it, we can find a solution that will satisfy both of us.
+Who ever can it be?
+Study hard, or you'll fail the exam.
+Nothing is so pleasant as traveling alone.
+Instead of going myself, I sent a messenger.
+Would you like to go swimming with us?
+I'll be back within an hour.
+I will bite off just a little bit.
+I'll give you a piece of good advice.
+Do you think we should send for the doctor?
+The doctor advised a change of air.
+Doctors are not, as a rule, trained in child rearing.
+You had better see the doctor.
+The medical profession keeps handing out warnings about smoking.
+The belly has no ears.
+The wicked witch cast an evil spell on the man and turned him into an insect.
+The committee is composed of five students.
+On your marks, get set, go!
+I had met him once before.
+This book is surprisingly easy to read, isn't it?
+It is getting dark. Let's go home.
+Do you know of any inexpensive stores?
+Father was in a bad mood since he couldn't play golf because of bad weather.
+You will be disliked by girls if you play practical jokes on them.
+It is I that am bad.
+We must be kind to the elderly.
+We are liable to err.
+We must consider these matters as a whole.
+Language, as we know it, is a human invention.
+I don't think I'm cut out for city life.
+I didn't consider the subject seriously.
+I met Mary and John when in London.
+We speak that we do know, and testify that we have seen; and ye receive not our witness.
+Don't take the trouble to come and meet me.
+Certainly. What can I do?
+While in London, she studied English.
+Which do you like better, rock music or classical music?
+Romans did not want their empire to decline; but it did.
+Roast chicken is one of my favorite dishes.
+I am terribly busy because the report deadline is near.
+Luciano, the underdog in the match, will be trying to make the champ eat humble pie.
+Linda loves chocolate.
+Lincoln is admired because of his leadership.
+Lisa told me that she had tried natto.
+I had my radio repaired by him.
+It was Marie Curie who discovered radium.
+Did you hear the roar of the lions?
+Cut it out!
+I often get conjunctivitis.
+A good theory is characterized by the fact that it makes a number of predictions that could in principle be disproved or falsified by observation.
+I am happy to have so many good friends.
+The hand that rocks the cradle rules the world.
+A strange thing happened last night.
+He stuck to his opinion though I told him not to.
+In the end, I found out what was wrong with my TV.
+The day will soon come when there will be no more wars in the world.
+I hope to make clear why I think Emmet's theory, originally introduced in the field of design architecture, is so important in physics.
+If it's possible, I'd like to exchange this for a larger size.
+You should try to behave better.
+Help yourself to more potato chips.
+I am against the war, of course.
+In case you sleep, set the alarm.
+If they hadn't found the vase, John would have been accused of stealing it.
+If he had been careful then, the terrible accident would not have happened.
+If it were not for water, humans could not survive.
+In case I am late, you don't have to wait for me.
+If the plant is completed next year, a new production manager will have to be hired.
+If there's anything urgent, you can get in touch with me.
+If you cannot make full remittance, please get in touch with me by October 28, 1998.
+I will help you if possible.
+It might rain before evening.
+It will have been raining for a week if it does not stop tomorrow.
+I really must say good-bye.
+No one trusts him any more.
+Could you give me a few more minutes?
+I'd like some more bread, please.
+Don't regard me as your father anymore.
+It's time we went home.
+Would you have another cup of tea?
+I tried it over again.
+It is time you went to bed. Turn off the radio.
+The rainy season is near at hand.
+I can't think about the design any more.
+We've talked over this matter in detail for half an hour already. Let's finish it off.
+May I trouble you for the salt?
+Meg must carry on her studies.
+Nobody was to be seen on the main street.
+Mary understands Chinese.
+Mary pretended she was sick to avoid going to school.
+Mary set the basket on the table.
+I see Mary playing the piano.
+They were all hoarse from shouting.
+All of us are working on the case.
+When the Venus de Milo was entire, there were arms on the statue.
+Listen, all of you.
+Let me apologize once again for missing our meeting.
+Mary has a flower in her hand.
+Mayuko always wants the best.
+Spring will soon come.
+The manager complimented him on his achievement.
+Max looked into the mirror all the time he was talking.
+I don't know my address yet. I'm going to stay with my friend for a while.
+You're still green.
+If we have the chance, let's get together on another occasion.
+To begin with, you have no right to be here.
+Let's decide together where to go first.
+Mike is proud of his father being rich.
+Mike always stays cool.
+Mark was a work horse on his construction crew.
+Just a word can do harm to a person.
+Mr White appeared for him in court.
+It's been raining for around a week.
+Bob lost interest in rock music.
+I found a kindred spirit in Bob.
+I scarcely slept a wink.
+Would you send, by real mail, some brochures that will help me to choose a hotel?
+The more popcorn you eat, the more you want.
+I was a stranger in Boston.
+I have gone astray somewhere in my calculations.
+I belong to the karate club.
+Some other boys came along.
+Paul made a lot of money last year.
+Paula left the room to call her mother.
+For Hawking, writing this book was not easy.
+Ben, if anything, is a sensible man.
+Helen is always at the top of her class.
+Perry visited Uraga in 1853.
+Betty is a pretty girl, isn't she?
+Beth is an odd girl who likes snakes.
+I don't think I'll make the grade if I try to play professional baseball.
+Please give us a 20-30 min. time slot for our presentation.
+She acted as if she knew French well.
+I've been wandering around.
+Professor Brown is very pleased about getting his book published.
+Brian barely has enough money so he consulted his parents.
+One of the twins is alive, but the other is dead.
+The boomerang hurtled whistling through the air.
+Hiroshi is sawing the wood into boards.
+Bill is nervous about the exam.
+Bill is still a legendary figure in this company.
+The pyramids were built in ancient times.
+I'm going to rock the boat.
+He is hurt badly and is unconscious; that is, he can't think, speak, or hear.
+The eaves are dripping.
+I would like to have something to munch on with my beer.
+Playing the piano is her favorite pastime.
+Have you ever seen a panda?
+Haruyo steeled herself to tell Akiyoshi that she wanted to stop dating him.
+There are good grounds for the view that Paris was the scene of frequent riots even before the revolution of 1789.
+There are 340 species of hummingbirds.
+Butter is made from milk.
+The man waiting for the bus lost his temper.
+The buses left one after another.
+How long will it take me to get there by bus?
+I didn't like rock music at first, but it soon grew on me.
+The fly is on the ceiling.
+The sound of the violin is very sweet.
+Bourbon is made from corn.
+Are the party preparations okay?
+We'll run into her at the party.
+Words of abuse poured from his lips.
+Clean the window with a damp cloth.
+New York is a huge city.
+We broadcast news on the hour.
+How unlucky I am!
+I've no idea what's happening.
+Nancy knows better than to marry Jack.
+So this is New York.
+I'm still single.
+Why are you so angry with him?
+Why didn't you attend the class meeting?
+Why is the politician trying to kill off the opinions of the majority?
+There still remains much to be done.
+Cut them with a knife.
+What did you have to eat?
+What magazines do you subscribe to?
+I can't praise him enough.
+However hard I try, I can't do it any better than she can.
+I'll make you happy no matter what happens.
+Take whichever flower you like.
+Among other things, he has an eye for good pictures.
+Tom kept talking all night.
+Tom received a heavy blow on the head.
+Tom is fitted to become a businessman.
+Tom put off his wedding because of a traffic accident.
+Tom is not an idle boy any longer.
+Tom pretended not to know the answer.
+No other boy in the class is taller.
+Tom's anger blazed out suddenly.
+Tom got first prize, didn't he?
+All the stories are interesting.
+Each boy has a bike.
+How shall we deal with this problem?
+How long have you been abroad?
+Anyhow, let's begin.
+Tony is a very good tennis player.
+It was such a fine day that we decided to have a picnic.
+You're not fit to be seen.
+It is such a beautiful day that I'd like to go fishing in the river.
+He was already aware of it.
+Do you know which way to take?
+Which side won?
+By the way, where are you from?
+Where can I cash this personal check?
+Where can I get on the airplane?
+Where did you find the key?
+There must be something wrong with the engine.
+Dorgan didn't know how to spell dachshund.
+How did you get them?
+I can't work at all with all these useless calls coming in.
+Please warm yourself at the fire.
+Please take care of yourself.
+I wondered why people were staring at me.
+Not knowing what to do, I asked for help.
+What do you want such an old car for?
+As I was at a loss what to do, I asked my teacher for advice.
+Please don't mind me.
+Please write about your real experience.
+The argument presented in Doyle's study was first published as a white paper on drug-related crimes.
+I opened the door and saw two boys standing side by side.
+The door will lock automatically when you go out.
+I heard the door close.
+I must get the television fixed.
+Television enables you to be entertained by people you wouldn't have in your home.
+Cue cards are used primarily on television to help the actors remember their lines.
+I think you should get more rest.
+Let's discuss the respective merits of the candidates.
+Dennis can make the ugliest face in town.
+Looks like you didn't study much for the test.
+I defy you to make it public.
+Express yourself as clearly as you can.
+There is a book on the table.
+Data can be transmitted from the main computer to yours, and vice versa.
+Dick played the piano and Lucy sang.
+I had a hard time of it.
+One swallow does not make a summer.
+At last, her dream to be a doctor came true.
+At last, it began to rain.
+That would be difficult.
+Can you spare me a few minutes?
+Not quite what I want.
+I've just washed the dishes.
+Don't let opportunities pass by.
+What do you say to a game of chess?
+It was getting dark.
+No one can help me.
+Every one wants to live free from care.
+Who painted these pictures?
+Rather than doing any good, the rain did a great deal of harm to the crop.
+It so happens that today is my birthday.
+I'd like a double room.
+For thy sake, tobacco, I would do anything but die.
+No matter what you may do, you must do your best.
+You must do the work, even if you do not like it.
+All you have to do is to cultivate the ability to put yourself in the other fellow's place.
+What time does the cab leave for the airport?
+I saw a lot of birds flying toward the south.
+Although he had many toys, his greed made him want more.
+Traffic downtown is all backed up.
+The typist tried to erase the error.
+Most students do the sights of Kyoto on their school excursion.
+Darwin wrote "The Origin of Species".
+Don't ask me such a hard question.
+You must be out of your mind to say that.
+Do not say such foolish things.
+Never in my life have I seen such a terrible accident.
+You did not need to come so early.
+Don't worry about money so much.
+You've got a nerve to say such a thing!
+That doesn't give you grounds for complaining.
+I think I have to get moving with some work for the exams.
+Please bring it back tomorrow.
+Can you prove it?
+Don't hold it upside down.
+You'll need a special tool to do it.
+They are my grandfather's books.
+The cattle are marked with brands.
+That's my sole concern.
+It was a party to celebrate her birthday.
+I found the book easy.
+That was of great help to me.
+That is all right.
+It sums up the situation pretty well.
+It's me.
+We got a good price for that.
+It is not so difficult as you think.
+It's a problem we do not have any answer for.
+That's an old trick.
+It is not far away from the hotel.
+It must be hard for you.
+It is true of every case.
+It's my favorite food.
+You mustn't touch it.
+And just think, you're on the other side of the world.
+Let us turn now to the fundamental issue.
+Then the wild beasts start wanting to go crazy.
+He did not realize where it had come from.
+The vague rumor proved to be false.
+The truth of the story is familiar to you all.
+The old man had a noble countenance.
+The old man is wise and knows many things about life.
+You will miss the train.
+The new boy had a nervous stammer.
+The medicine tastes bitter.
+The sky was full of clouds that night.
+The problem was under discussion.
+The problem still remains to be solved.
+I consulted him about the matter.
+The trees are planted at intervals of thirty meters.
+I must get the book back from him.
+Bring the book to me, not to Tom.
+Not all of the books are instructive.
+The law doesn't apply to this case.
+The mother used her own milk to nourish the baby.
+The soldier gave his name.
+The story ends happily.
+The room is furnished with two beds.
+All were quiet in the room.
+That article is out of stock.
+The flight was cancelled because of the thick fog.
+The program will be on the air before long.
+Let me relieve you of that case. It looks heavy.
+That cost me a lot in the long run.
+The old man got off the bus.
+The beauty of the sunrise was beyond description.
+The animal died from hunger.
+Few people live on the island.
+The city is laid out with beautiful regularity.
+I can't agree with you here.
+The shop windows display the latest fashion.
+The proposal came up last week.
+Few, if any, passengers survived the crash.
+The city was destroyed by fire.
+That used refrigerator was a real dog.
+Hearing the news they all cried for joy.
+The price is reasonable.
+That man can't have committed suicide.
+The man wore a mask of a tiger.
+The boy lifted the heavy box with one hand.
+The organization is not connected with any political parties.
+The university graduated 500 students last year.
+There's narrow road to the village.
+The frost rendered the orange crop worthless.
+The player contributed to the victory.
+The ship is bound for the Gulf of Mexico.
+The river is 50 meters in breadth.
+The teacher contemplated me for a while.
+I did the washing while the baby was sleeping.
+The industrialist found a wealthy financier to help him weather the storm which was inevitable.
+The politician claimed to oppose the conclusion.
+The people resisted their cruel ruler.
+The gentleman is a very famous pianist.
+It is impossible to get him to understand the new theory.
+The colors shade from yellow into green.
+The place is certainly worth seeing.
+The prize money enabled me to go on a world cruise.
+The boy dreamed of going on an Antarctic expedition.
+The boy dug a grave for his dog that had died.
+The boy knows how to throw a curve.
+The girl was badly injured in the traffic accident.
+The path led to the village.
+The little girl was crying for the teddy bear.
+The woman pressed the baby to her.
+That girl has a lovely doll.
+The boat is to leave for England this evening.
+Post that letter right away.
+The young couple surveyed the room.
+The car is waxed every other day.
+The experiment failed because of some minor faults.
+Few people were killed in the car accident.
+From that moment on, he felt undying hatred for his oppressors.
+I am only too happy to know that fact.
+The accident came about through my carelessness.
+The news of the accident caused public alarm.
+Ten people were slightly injured in the accident.
+The business will yield a fair return on the investment.
+Anyone can participate in the game, no matter what nationality they are.
+Take another good look at the city map.
+He was asleep in the bed.
+He needs proper medical attention at a hospital.
+The kid got hurt.
+The children were well looked after.
+He couldn't get the job.
+The work must be done by Tom.
+The industry is heavily dependent on government funding.
+The magazine is aimed at teenagers.
+The property is mine.
+The country's main products are cocoa and gold.
+The lecture gripped the audience.
+The factory produces cotton goods.
+The beauty of the scene was beyond description.
+There followed a prolonged silence.
+The orphan was fostered by the wealthy man.
+Let's talk about what to do with the stranger.
+The dog came running to us.
+The building fell down suddenly.
+You should look into the matter at once.
+He was rubbing his hands over the report of the result.
+The alarm sent everyone rushing out of the room.
+The plan is incapable of alteration.
+I lost half my interest in the project.
+The exercises did her good.
+The industrious merchant worships his ancestors.
+The center fielder shifted his position for the slugger.
+A discussion of the proposal seems to be in order.
+This gas gives off a bad smell.
+They have taken great pains to finish the project, I hear.
+Since the student has worked very hard, he is making rapid progress.
+I inquired at the school only to find there was no student by the name of Yamada.
+The picture has been drawn well as yet.
+The company will soon go bankrupt.
+The meeting will take place tomorrow.
+We will discuss that later.
+The singer is known to everybody at our school.
+The scientist tried to discover Nature's laws.
+The house is made of stone.
+The roof of the house is red.
+The timid soldier was tormented by terrible nightmares.
+The director used his power to arrange a special place in the cinema world.
+That movie is suitable for people of all ages.
+The astronaut was slow to get used to the condition of weightlessness.
+The idea is typical of him.
+Those candles burned the table.
+It is dangerous to wield an edged tool in such a way.
+Such conduct doesn't fit in with your reputation.
+The milk tasted bad.
+If you want a hotel, look, it's just down there.
+The plan has broken down.
+The balcony commands a splendid view.
+Everybody is supposed to wear a tie at the party.
+The news was suppressed for the time being.
+You look nice in that dress.
+The glaring light is hurtful to the eyes.
+How much is the tour?
+That sukiyaki dinner was a real treat.
+The circus entertained us very much.
+The more I think of it, the less I like it.
+Did he say anything about it to you?
+It is fun to play baseball.
+That glittering accessory doesn't go with your sweatshirt. Try this on!
+As for the money, it is all right.
+The rumor can't be true.
+The iron broke down due to over-heating.
+Sonia had a very amused look on her face.
+The house has pipes under the ground to carry dirty water away.
+The bottom has fallen out of the market.
+Was there a lot of traffic?
+We ran out of gas on the way there.
+Who did you meet there?
+I'd like to have the sauce on the side, please.
+That's just how I was raised.
+He made it clear that he intended to do so.
+That's not the problem.
+It is beneath you to say such a thing.
+Do come and see us again.
+I'd like to use a safe.
+Excuse me, but will you show me the way to the station?
+Excuse me, but I think this is my seat.
+I have a bowing acquaintance with Mr Smith.
+I've known Mr Smith for many years.
+Everything is on schedule.
+Not all birds can fly.
+I will see to it that everything is ready in time.
+It would be to your advantage to study Spanish.
+Have a wonderful eating experience.
+Twenty years already passed.
+Way off in the distance she could see the lights of the city.
+I hope you will answer me soon.
+Send for the doctor at once, or the patient will get worse.
+A policeman was sent for at once.
+Provided you come back soon you may go.
+Leave here at once.
+I'd like to rent skis and ski boots.
+The supermarket hired many part-timers.
+Susan manages to tell her mother that it is time to say goodbye.
+In Switzerland, spring comes in May.
+Stop playing cat and mouse with me and tell me the news.
+John came running into the room.
+John was absent from school yesterday.
+John has not come yet, but when he does, I will call you.
+John's parents seemed relieved to hear that his plane was on time.
+The Johnsons are very sociable people, who enjoy hosting parties often.
+Johnny proposed to Alice and she accepted.
+Miss Jones made a face when she heard the news.
+George married my sister.
+Julia felt like crying when she heard the news.
+I can't turn the shower off. Could you check it for me?
+Scarcely had Jack seen her, he burst out crying.
+Jack was tired from having walked fifty miles.
+All right. Please order it.
+Jim jumped for joy when the news came.
+Jim promised me not to come again.
+Jim is short for James.
+Give me some time to think it over.
+The air of Sydney is cleaner than that of Tokyo.
+And yet the large blocks of stone are fitted together so closely that you cannot put in the point of a knife between them.
+We believe, however, that over a period of time, we will be able to make remittance in full settlement.
+But the farmer smiled at him.
+But when the monkey came back, the tin cup was always empty.
+Jet planes fly much faster than propeller planes.
+Jane insisted that she was right.
+Jane will be excited to see the flowers.
+What's the matter, Jane? You look like you aren't feeling well.
+Fasten your seat belt.
+Sally continued to make excuses and blamed the dog.
+In addition many groups have been formed so that the elderly can socialize with one another and remain active participants in American life.
+Many forms of life are disappearing.
+You kept nodding off during that lecture, didn't you?
+I have in-growing eyelashes.
+Everything is ready now for the party.
+We are sorry we are unable to accept your request.
+Please visit us at your convenience.
+Help yourself to the fruit.
+How about your family?
+Computers are difficult, so I get confused.
+Hi, Roger. I'm pretty good!
+You mustn't miss seeing this wonderful film.
+I feel like playing golf on such a lovely day.
+I had no idea it'd be this beautiful.
+Such playfulness is characteristic of Mr Baker.
+Concrete can be reinforced by putting steel bars inside it.
+Don't give me any more trouble.
+Please send me a reply as soon as you receive this mail.
+Take this to your mother.
+The optimal formula which would encompass all these factors has not been proposed.
+The mixture of these substances is dangerous.
+These creatures evolved from simpler organisms like jellyfish.
+These automobiles, for the most part, are manufactured in Japan.
+These paintings were handed down to me from my father.
+These cameras are made in Japan.
+So far there has been no news.
+This happened under my nose.
+This is the town where he was born.
+This is too long.
+I don't think this is a good approach to biology.
+This is based on fact.
+This is a difficult problem to solve.
+This is the same camera as yours.
+"What's this?" asked Tony.
+Aren't you selling this at a discount price?
+This is a work from Turner's mature period.
+This is an example of the survival of the fittest, as it is called.
+I will accept full responsibility for this.
+Not bad—not bad at all. This is quite a gathering of talent to have under one roof.
+This is what he painted.
+This is what you must do.
+This is the church where Blake is buried.
+Is this your book, Mike?
+Mr Gomez didn't excuse me for my mistake.
+As I heard the story secondhand, I can't ascertain the truth of it.
+This beam won't hold the weight of the second story.
+This oil field used to produce an order of magnitude more oil as it does now.
+I think this medicine will do you good.
+It's almost impossible to work out this problem.
+This matter had best be left unmentioned.
+This problem has often been remarked upon.
+Understanding this book is beyond my capacity.
+Please lend me this book for a few days.
+This is a book often read by adults.
+This book is meant for children.
+This book is written in simple English.
+This book is suitable for your needs.
+It is doubtful whether this method will work.
+Don't stay around here.
+This room gets sunshine.
+There is a television in this room.
+This cloth feels smooth.
+This beautiful dress is made of silk.
+This box is empty. It has nothing in it.
+This meat can be preserved long.
+This road will lead you to the station and the city center.
+This peach is a beauty.
+Can I make a credit card call on this public phone?
+Can I reserve a bottle and have you keep it here for me?
+This avenue is wide but not very long.
+Our city's transport problems are minor when measured against capitals like London and New York.
+This area is rich in marine products.
+I'll answer for this man's honesty.
+This refill lasts half a year.
+The last volume is missing from this set.
+This line represents the longitude.
+This river abounds in small fish.
+This stone is too heavy for me to move.
+There is no room for further improvement in this system.
+I am halfway through this detective story.
+We can offer these new products at 20% below list price.
+You should treat this information in the main body of the text, not in the notes.
+The area of this floor is 600 square meters.
+This check was not honored.
+During my last spring vacation I took a job in a restaurant to help pay the costs of my trip abroad.
+I am accustomed to eating this sort of food.
+Will you mail this letter by airmail?
+This is the same type of car as my father has.
+I had a Nissan before this one.
+This dictionary is as useful as that one.
+Ask him when to get together next.
+Snowing at this time of the year is unusual.
+How did you come to know this?
+This poem was written by him last night.
+I will read a book when I have finished this task.
+Do you think this job is fit for the man?
+This magazine is widely read.
+This country has four seasons.
+I assume that this idea will work well.
+This microscope magnifies objects by 100 times.
+Is there a public toilet in this building?
+This decision is not binding on all of you.
+This airport is easily accessible by bus.
+This bridge was built two years ago.
+This milk is free from germs.
+This rule is applied to foreigners only.
+This machine will be quite useful for our studies.
+This desk was too heavy for Patty to lift.
+I went to the dentist recently and he did a cast of my teeth and took an X-ray, just in case. It sounds like a good business to be in.
+I tried to find out how many people really live in this town.
+This company manufactures televisions.
+This flower is beautiful, isn't it?
+When I visited my hometown this summer, I found the city different from what it had been ten years ago.
+This film is indeed an enduring masterpiece.
+This apple is very red.
+This was how he entered the university.
+Can you please confirm the receipt of this note?
+These potato chips are good enough to make you want more.
+Copy this page in your notebook.
+The building is equipped with emergency stairs.
+These bananas went bad.
+Can you answer this riddle?
+I don't feel like going out these days.
+This textbook has a lot of notes.
+This dance club is really going places.
+Please put on these slippers.
+There is plenty of wear left in this suit yet.
+This system has obvious defects.
+Don't share this with anyone.
+This coat hasn't got any pockets.
+Please confirm the cancellation by e-mail.
+This car wax gives permanent protection against heavy rain.
+I don't know how much this motorcycle is.
+Telephone booths are as scarce as hen's teeth around here.
+You should leave out these two lines.
+There is little water left in the glass.
+Kozue has never given way to despair in her life.
+Are you here on business or for pleasure?
+The climate here is milder than that of England.
+Here is a weekly magazine.
+Here are two dogs; one is white and the other is black.
+Never did I expect to see you here.
+What is the distance from here to the station?
+This is the place where the accident was.
+Give me a coffee, please.
+I don't care much for coffee.
+A button has come off my coat.
+If you do that, it will help you.
+This is why birds like the pigeon or the Arctic tern can find their way around the world.
+Ken complained of a headache.
+Ken saved his face by passing the examination.
+Do you have the time to run over the draft of my speech, Ken?
+I don't feel like taking a walk this morning.
+Won't you have some cake?
+Kate talked over the picture with Brian.
+Keiko informed me of the arrival of his plane.
+Christmas is just around the corner.
+Miss Green asked two questions of me.
+Fill the glass to the brim.
+I've lost my crown.
+Who has eaten all the cookies?
+Would you put on the air conditioning?
+Christ was born in 4 BC.
+Apparently there's a cancellation charge of 30 percent.
+The rough material hurt the child's tender skin.
+Your knowledge surprises me.
+It rained yesterday.
+Go first to those who you are sure will help you.
+The boy playing the guitar is my brother.
+The poor girl went blind.
+It's the place that has all of Gulfport talking.
+I'll have to have my camera repaired.
+Quite a number of people still believe it.
+Do they speak French in Canada?
+A goose is a water bird.
+Kazu likes sports very much.
+I see your point.
+Mother left me a message.
+I look forward to hearing from you.
+My father was a contestant in a cooking contest and won first prize.
+Finish your homework by the time your father comes home.
+I will pick up a little something for you.
+Would you like to have a cup of tea?
+Don't talk about it in my mother's presence.
+She sets your world alight.
+The maid immediately cleaned the dishes from the table.
+Is it to go?
+You may call on me whenever you like.
+For people who dislike the idea of giving money, a gift certificate is a good idea.
+I do not want any money.
+How about cup of tea or something, if you aren't in a hurry?
+Be an angel and turn the radio down.
+Pass me the salt.
+We will go but you won't.
+Most funny stories are based on comic situations.
+Get back to where you started.
+Time to go beddy-byes, dear.
+As a tadpole grows, the tail disappears and legs begin to form.
+Cut the chit-chat and get to work.
+Pride will have a fall.
+Where in Australia did you grow up?
+Hey! Don't be silly.
+Iron the inside of collars first, and then the outside.
+Yes, it does. But it snows more in Niigata than in Hokkaido.
+I will hope for the best.
+We are a family of five.
+My children make pathetically sincere efforts to get up early.
+We have ten cattle.
+All right! Everybody around me is so encouraging I'm getting a rush of motivation.
+The Van Horn family was in the chips.
+Just bring me the ink, will you?
+There were various kinds of sweets.
+They were biting like crazy yesterday.
+I have heard nothing from him yet.
+We are cousins.
+Please tell me when to leave.
+You should always keep your word.
+It's because I missed my usual train.
+How soon will you be able to finish the task?
+Come at any time you like.
+How ever did he succeed in making it?
+When will you ever loosen your purse strings?
+I'll call on you one of these days.
+When did you go to Kyoto with your sister?
+Please bring a chair and join us in the game.
+My resolution dissolved at the last moment.
+He pointed out that the former was inferior to the latter in some respects.
+England is a country that I've wanted to visit for a long time.
+No country should interfere in another country's internal affairs.
+Let's go to the theater early so that we can get good seats.
+Sure. Do you know a good place?
+No, I went out.
+Ann must be dreaming a happy dream.
+How did you come to know such a wonderful girl?
+It's hard to complain against such good people.
+Those are our teachers' cars.
+One thing led to another.
+Is that as heavy as this?
+One day she met a wolf in the woods.
+A man was complaining of something in a sharp voice.
+A certain door-to-door salesman made a fool of a trusting old lady and went off with a lot of her money.
+I made a lot of money on the side.
+Alice has had a cold since last Sunday.
+The history of every country begins in the heart of a man or a woman.
+The USA is composed of 50 states.
+He said that America declared its independence in 1776.
+He told me he was going to America.
+I understand you're visiting from America.
+It seems that you are not having a good time here.
+Africa is exporting beef to Europe.
+Some birds are sitting on the branch of that tree.
+That store sells men's wear.
+He came on board this company with a lot of fanfare and he turns out to have the skill and talent to live up to it.
+Look at the monkey on that bough.
+The politician is as slippery as an eel!
+He is a man of striking individuality.
+Are you acquainted with the man?
+That boy has good brains.
+That girl is arrogant because of her beauty.
+I wish I had been with you then.
+If that boy had not been killed in the traffic accident, he would be a college student now.
+It's heart-warming to see that happy old couple.
+That bridge is very beautiful.
+That painting has started to grow on me.
+Two families live in that house.
+I bought that record in this store.
+The color of that tie does not match the suit.
+That coat may have cost a lot of money, but it's worth it.
+Uh..., where's the post office?
+I never see you without remembering your father.
+You look good in a kimono.
+Are you going to school tomorrow?
+You have a sharp sense of direction.
+You make a box.
+You are equal to him in intelligence.
+Do you travel by sea or by air?
+What do you say about yourself?
+You seem to have lost sight of original objective.
+What subject do you major in?
+Who do you like better, Akiko or Sachiko?
+Which way did you choose?
+All you have to do is fill in this form.
+You mustn't swim in the pond.
+You must talk with him about the matter.
+Do you play soccer?
+Since you're a member of this sports club, you'll have to conform to its rules.
+Are you going to write to your father?
+When did you visit New York?
+Do you think it will be fine tomorrow?
+How often do you wash your car a month?
+I bow to your superior judgement.
+There are a few mistakes in your report.
+I am happy to hear your voice.
+Your train leaves from Platform 10.
+Your question is very hard to answer.
+Your purse is similar to mine.
+What you said is right in a sense, but it made her angry.
+You cannot depend on his support for your project.
+What do you call your father?
+I wish I could speak English like you.
+Please do the work at your own convenience.
+Your mother is very young, isn't she?
+How old is your grandfather?
+I meant to have written to you.
+I have no secrets from you.
+Choose friends you can rely on.
+Let me exchange seats with you.
+You're such a pack rat.
+I can't blame you for breaking your promise.
+Please visit as soon as you get into town.
+I am pleased that you have passed the exam.
+If you don't want to go, you don't need to.
+With your help, our plan would succeed.
+I don't mind your smoking.
+If you are not going to the concert, then neither am I.
+I was expecting you at 11:00 a.m.
+Just stay off your feet for the next couple of weeks, and you'll be just fine.
+I feel ill at ease with her.
+What is going on there now?
+The assistant kept $2.
+Tyger, Tyger, burning bright.
+I'm sorry, but I can't accept your invitation. I have other plans on that day.
+He is a tough customer.
+I wonder where he is hiding.
+A politician like that gets my goat.
+Oh, no! We're running out of gas.
+He didn't have MMR shots in Japan.
+I'd like two one-way tickets from A to B.
+Please read page ninety-four.
+I have to be there by 7:00.
+We need accommodation for six.
+What time is convenient for you on June seventh?
+Five prisoners were recaptured, but three others are still at large.
+No fewer than 50 passengers were killed.
+I'd like to meet you either on the morning of April 5 or on the afternoon of April 6.
+I will answer within three days.
+Come to my room between three and four.
+Given only thirty minutes, we couldn't answer all the questions.
+Never tell me a lie again.
+The couple was quarrelling and Chris knocked Beth down.
+Can you bring down my trunk from upstairs?
+I want to make a person-to person call to 212-836-1725.
+A few days' rest will do you good.
+It is an exciting time of the year.
+A truck was careering along the road.
+After walking for an hour, we stopped to take a rest.
+A meter is not quite equivalent to a yard.
+The 19th century saw the Industrial Revolution.
+Entrance is restricted to those above 18.
+After 11 o'clock the guests began to leave by twos and threes.
+Ten years is a short time when we look back at it.
+Read Lesson 10 from the beginning.
+One thousand dollars will cover all the expenses for the party.
+"Does she play tennis?" "Yes, she does."
+Pleased with The Pilgrim's Progress, my first collection was of John Bunyan's works in separate little volumes.
+"I can make it to my class on time," he thought.
+"Performed" is the right word.
+"Can I help you?" "No, thank you. I'm just looking around."
+"Look, Mike!", Hiroshi cries.
+I said, "Could you please turn your television down?"
+"I am sorry," sighed the boy.
+"Forever and always?" asked the little black rabbit.
+"I sailed around the Mediterranean in a schooner when I was seventeen," she recited slowly and carefully.
+I have not only that to do.
+Don't talk ... as if you know what it's like...
+You can decorate the cocktail with a cherry or a pineapple.
+Let me go with you.
+Can't you divorce fantasy from reality?
+You must never resort to force.
+It's up to me whether I kill you or let you live!
+I could not get out of the stadium because of the crowd.
+The army advanced up the hill.
+My brother is out.
+How many brothers do you have?
+The economy is picking up.
+Slow economic recovery has sent auto sales plummeting.
+It is easier to make plans than to put them into practice.
+The policeman captured the running man.
+The police dug out some facts about the matter.
+Where is the police station?
+The police assembled several unemployed men.
+The police charged him with leaking information to a neighboring country.
+Tell me where the police station is.
+The whale is not a fish but a mammal.
+A loud knocking at the door woke him up.
+We will now report on this year's business results.
+The result was clear at a glance.
+If you try for too much, you'll end up with nothing at all.
+Getting married is a serious matter.
+I put ten thousand yen into the bank every month.
+The moon landing was a monumental achievement.
+Has Ken left Japan for good?
+It is impossible for you to be too careful of your health.
+Health is above wealth: this doesn't give so much pleasure as that.
+The two quarreling children sat making faces at each other.
+The dog walked across the street.
+Dogs' faithfulness impresses us.
+Scarcely had the dog seen me when it ran away.
+The more you study, the more curious you will become.
+It's incredible that you could write such a well-designed program after just picking up programming by imitation.
+As far as I could see, everything was covered with snow.
+The key was nowhere to be found.
+Cause and effect react upon each other.
+Strictly speaking, his view differs somewhat from mine.
+At present freedom of speech is taken for granted.
+It is not always easy to face reality.
+In other words, reliability is impossible unless there is a natural warmth.
+Needless to say, I've come here to help you.
+Linguistic competence is inborn, not acquired.
+Freedom of speech is taken as a matter of course.
+I ran across his telephone number in an old address book of mine.
+He put up a brave and lone struggle, but up against such heavy odds he couldn't get his business plan accepted.
+How I long for a sight of my native land.
+A fox came along.
+We became cordial with one another.
+Is it more expensive to call in the morning?
+I've never heard such a story all my life.
+How about a cup of tea or something, if you aren't in a hurry?
+You don't have to cover your mistake.
+The birds ate the bugs taking turns.
+I know you can rely on him for transportation.
+Too much light hurts the eye.
+The park was extended to the river.
+To do him justice, he's done some good work.
+Keep your mouth shut and your eyes open.
+Look at that koala over there.
+Whether you like it or not, you'll have to do it.
+The factory has been transferred to Hokkaido.
+Luckily, he won the championship.
+Hiroko has charming features.
+The principal came in after the teacher.
+She divorced her good-for-nothing husband because she was disgusted with him.
+I'll have to let you know.
+I'm not going, and that's that.
+The lengthy lecture palled on me.
+I give up.
+The high salary disposed him to accept the position.
+How wonderful that you passed the examination.
+If Katsumi is not allowed to have his own way, he easily gets angry.
+The Diet will open next Monday.
+The people set up a new government.
+Look at the blackboard.
+I made up my mind to quit smoking from now on.
+Wash your hands right now.
+I'm very happy now.
+At the moment they think that the accident is due to his carelessness.
+We don't have time to finish checking the figures now, but we can go over them after lunch.
+We are good friends now, but we didn't like each other at first.
+What's the time? My watch is wrong.
+What you say now isn't consistent with what you said before.
+From now on, I'm going to say what's on my mind.
+I've eaten a great deal of food this week.
+A traffic accident took place this morning.
+I feel cold this morning.
+This morning I got a telegram from home saying that my father had been suddenly taken ill.
+Do you like the new school better?
+What about next Sunday?
+Come and see us sometime.
+Never put off till tomorrow what you can do today.
+Today's rate is 140 yen to the dollar.
+I will go to the doctor this afternoon.
+Today I have a lot of things to do.
+What are you doing dressed so well? Do you have a date or something?
+I would rather stay at home than go out today.
+I have a slight fever today.
+Two boys are absent from school today.
+Another lonely day.
+If only I could be through with my homework today!
+There will be an economic crisis at the end of this year.
+This year we had more snow than last year.
+I am free till 6 o'clock this evening.
+I had a great night.
+Shooting stars will be seen tonight.
+I'm afraid it'll rain tonight.
+It may rain tonight.
+The trouble is that I have no money on me now.
+An insect is a small animal and it has six legs.
+Turn hard left.
+All sugar is sweet.
+It was good of you to give up your seat.
+The wildest colt makes the best horse.
+Recently I get annoyed at the slightest thing he says.
+More and more people these days are getting overwhelmed by housing loans.
+I cannot get enough sleep any more.
+Who was the last to reach the goal?
+You may spend a maximum of 100 dollars.
+Please tell me what I should do first.
+At first I didn't like him, but I do now.
+Great care has been taken to use only the finest ingredients.
+My wife went on a two-day trip.
+Particles of dust float in the atmosphere.
+The guilt manifests itself on his face.
+Much as I admire him as a writer, I don't like him as a man.
+She slept more than ten hours yesterday.
+I read a lot in my diary yesterday.
+Yesterday Mary gave me a book the cover of which was blue.
+Yesterday, I had an old friend of mine call on me in my absence.
+His bag was stolen yesterday.
+We had much rain last year.
+I worked hard till late last night, so I'll have to catch some z's after lunch if it's possible.
+A fire broke out in this neighborhood last night.
+Last night, I indulged in reading the book he lent me.
+Would you like a newspaper or magazine?
+The weather stayed fine for three days.
+You cannot be careful in the mountains.
+May I go out for a walk?
+I'll leave the rest to you.
+I'm afraid I can't help you. You must ask someone else.
+We've finished the work, so we may as well go home.
+How's your business going?
+Work is behind schedule.
+He began to look for a job.
+It is an exciting city, New York.
+I got up early to catch the first train.
+My sister is subject to colds.
+It is dangerous for children to play in the street.
+It is common for children to cause trouble.
+Children need not know every detail of the family budget.
+Even a child knows right from wrong.
+When I was a little child, I used to play baseball after school.
+Some people think you cannot overpraise a child.
+The child cried herself to sleep.
+Children are to obey their parents.
+The children were very amused with his tricks.
+The kitten wanted in.
+The mayor's family was harassed with threatening phone calls all day.
+It is provided that the applicants must be woman.
+I bleed easily when I am cut.
+You need to open an account at a bank to receive the payment.
+One who longs for death is miserable, but more miserable is he who fears it.
+This is the one I meant when I said, 'A man who comes after me has surpassed me because he was before me.'
+Please wait till I have finished my coffee.
+I had scarcely entered the class before the students started asking questions.
+I ought to ask, oughtn't I?
+Please help me clean the house.
+She was in charge of the office while I was away on a trip to Kyoto for a week.
+There is nothing to prevent my going.
+This is the only book I have.
+I will be afflicted that I do not know men.
+The dog gave a yelp when I trod on its paw.
+Do you mind my making a suggestion?
+I offered him fifty pence and he accepted.
+I am far from sad.
+She got all the more angry because I kept silent.
+To know where we are is important.
+No sooner had we sat down than she brought us coffee.
+Didn't you notice us going out of the room?
+We had little water.
+I think it certain that our team will win.
+Our conversation always ends in a quarrel.
+Our plan hasn't the ghost of chance.
+Let's see if our cars have enough gas.
+Our teacher is always cool.
+There is a large river near our town.
+Our neighbors were compelled to sell their houses.
+We waited at the scene of the accident till the police came.
+We arrived at the hotel an hour ago.
+We are going to cycle to the lake tomorrow.
+We discussed our plans for a trip to Italy over coffee.
+We often call America the land of liberty.
+We had no choice but to go there.
+We should have paid attention to the announcement.
+We placed a white tablecloth over the table.
+We learned that Newton discovered the law of gravitation.
+We have yet to know the truth.
+We are all convinced of his success.
+We learned that English is an international language.
+We bought a round table.
+We met her brother at the shop by chance.
+As soon as we got to the lake, we started swimming.
+We are to pay back the money within the week.
+We went to Hawaii last year for the first time.
+We go fishing once in a while.
+We rented the apartment by the week.
+We must work up a reputation.
+We went to Hakata to visit my grandmother.
+We import a large quantity of food.
+We should preserve the beauties of the countryside.
+We become forgetful as we grow older.
+We are to meet in front of his house.
+We chose a good present for each of their children.
+We watched her drive her car away, until it was no more than a dot in the distance.
+We cultivate rice.
+We were beside ourselves with joy.
+Because it was dinnertime, we sat at the dining table.
+We arrived at the station a half-hour before the train started.
+I'm easygoing.
+May we draw your attention to our new products?
+Will you have dinner with me?
+Let me do it.
+I have a friend whose father is an animal doctor.
+I recognized him at once, because I had seen him before.
+I have an aunt who lives in Osaka.
+I can't afford to buy an expensive car.
+I have two children away at university.
+I don't have any family to support.
+Do you have any messages for me?
+I wish I had wings to fly.
+Give me some water, please.
+My anorak, such as it was, stood me in good stead.
+My uncle drives a Ford.
+Half of my class like dogs.
+Don't wait on my account.
+I'm about ready to go.
+My opinion is similar to yours.
+There is a beautiful park near my home.
+My house is close to the park.
+Any phone calls for me while I was out?
+Some of my classmates like volleyball and the others enjoy tennis.
+My brother is so smart and witty that I can not beat him in an argument.
+My favorite sport is skiing.
+My wife's taste in dress is contrary to my own.
+My office faces Fifth Avenue.
+My bicycle needs fixing.
+Will you forgive me the debt?
+My hobby is making model planes.
+Help me with my homework.
+My new pair of shoes are made of leather.
+At the sound of my voice, my dog pricked up his ears.
+My grandfather lived a long life.
+They gave me a vase on my retirement.
+As far as I know, there is nothing wrong with his plan.
+Our city has no water service yet.
+My answer will be all right.
+How dare you speak about my husband in that disgusting way!
+My father is as bald as a billiard ball.
+My father makes it a rule to read a few pages before he goes to bed.
+My father died three years ago, that is to say in 1977.
+It has come to my ears that he will not be long in this country.
+My mother was very weak from a long illness.
+My sister can play the guitar very well.
+My daughter is to get married in June.
+I am sorry that my friend is not here.
+In my understanding, those two experiments do not have common factors.
+The man who lives next door to me is a doctor.
+I believe in this method of teaching.
+I saw you while you were still under the fig tree before Philip called you.
+I can hardly work now.
+I am very ill at ease with strangers.
+Never have I seen her before.
+I found ten mistakes in as many pages.
+I saw a bird flying over a tree.
+I have visited Kyoto three times.
+I ironed my handkerchiefs.
+I saw you driving your new car.
+I gave you explicit instructions not to touch anything.
+I graduated from college in the same year as your father.
+I want to help you with your homework.
+I will protect you from danger.
+I am corresponding with an American high school student.
+I always have two cups of coffee in the morning.
+I look down on liars and cheats.
+I had to keep us amused with toys.
+I am taking a bath now.
+I like curry and rice.
+I like classical music very much.
+I bought this coat at a low price.
+I've been in Sapporo before.
+I want a box three times as large as this.
+I'm a total stranger to things of this kind.
+I can't agree with you in this respect.
+It took me three years to write this book.
+I showed my friends these picture postcards.
+I found it easy to operate the computer.
+I told Jim to restrain himself from drinking too much.
+I have been to the supermarket.
+I visited Kyoto long ago.
+I sat watching an exciting game on television.
+I watched the old woman cross the street.
+Am I included in the team?
+I was very surprised at the huge fish.
+I have no idea of letting the house.
+I made every effort to realize the plan but after all it turned out to be in vain.
+I ought to have attended the lecture.
+I have a guilty conscience about that.
+I refuse to answer the question.
+I hit the man on the belly.
+I participated in the discussion.
+I paid 3 dollars for the book.
+I'm in agreement on that matter.
+I have plenty of time to do that.
+I felt better to hear that.
+I just echoed his opinion.
+I bought some cheese and a little milk.
+I have a book about fishing.
+I can't afford to play tennis.
+I sometimes lie on the grass.
+I'm lonely.
+I make up my mind to do the work however hard it might be.
+I will be reminded of tyranny and cruelty, if Nero is said.
+I sat in the front of the bus.
+I bought a loaf of bread at the baker's.
+I bought a pair of boots.
+I like French food very much.
+I canceled my hotel reservations and stayed with friends.
+I'm quite better now.
+I'm not afraid any more.
+I hit on a good idea.
+I have been to London.
+I have met him before.
+I must return home within a week.
+I was busy all day.
+I was forced to submit to my fate.
+I wrote to my teacher in English.
+I don't like a novel without a hero.
+I got a letter written with a pencil.
+I'm not a bit interested in chemistry.
+I said nothing, which made him angry.
+I lived for years and years.
+I was at a loss when I lost my house key.
+I am allergic to pollen.
+I can't draw, but my sister is a great artist.
+I sometimes help my parents in the shop after school.
+I had a time playing tennis.
+I felt as if my face were on fire.
+I hurried my clothes on.
+I went to Kyoto, where I happened to see her.
+I don't like the taste of onions.
+I met a friend of mine at the airport.
+I am glad to be with you.
+I don't object to your plan.
+I came to Tokyo from Osaka counting on my brother's help.
+I failed after all.
+I traded in my old car for a new one.
+I met Ken at the park.
+I do not need money now.
+I live in Kyoto now.
+I reached Nagoya early this morning.
+I have to cook dinner today.
+I am not used to drinking coffee without sugar.
+I come from Saitama.
+I was obliged to go out yesterday.
+I really regret what I said to her yesterday.
+I wrote a letter last night.
+I was exhausted from work.
+I turned to my sister for a piece of advice.
+I ran for the mayor.
+I was called out to the scene of the accident.
+I would sometimes travel abroad alone.
+I found my bicycle gone.
+I was ashamed of my behavior.
+I felt my heart beating wildly.
+I can drive a car, but Tom can't.
+I have a book in my hand.
+I spent the whole day reading a novel.
+I have no time to do my homework.
+I heard a call for help.
+I was mildly disappointed.
+I don't always brush my teeth after I eat.
+I need to buy new spectacle frames.
+I have been to the library.
+I'd like to travel around the world.
+I like blue best of all colors.
+I saw my old classmate last week. She's as boring as ever.
+I was swimming in the river.
+I was able to answer all the questions.
+I read the most interesting book in my library.
+I will study abroad when I have finished school.
+I waited and waited and at last John arrived.
+I almost laughed out loud.
+I was delighted with the news.
+I slept until noon, and then studied for the rest of the day.
+I live in a town, but my parents live in the country.
+I walked the length of the street.
+I met Tom in front of the store.
+I couldn't keep my anger down.
+I felt a drop of rain on my head.
+I was concentrating on reading.
+I had been studying music in Boston before I returned to Japan.
+I am in the habit of going for a drive on Sundays.
+I worked on a farm.
+I know that he will be introduced to a lady by his uncle today.
+I learned a lot from him.
+I think him in good health.
+I think he will succeed.
+I saw him playing baseball.
+I had a chance to see him.
+I tried to explain to him that we were not responsible for his mistake, but he refused to listen.
+I am indebted to him.
+I paid him the money due to him.
+I remember meeting that man before.
+I asked him if he would go there the next day.
+I like his music.
+I tried to listen to him carefully.
+I demanded that they be allowed to leave.
+I could not find him out.
+I was taken aback by his rudeness.
+I am of the opinion that he will succeed.
+I saw through their plot at once.
+I remember him well.
+I cannot find fault with him.
+I do not know when she can come.
+I received a letter which was written by her.
+I had nothing to do with her.
+I don't like her to go in such a dress.
+He presented her with a doll.
+I was unable to look her in the face.
+I was impatient for her arrival.
+I look on her as my best friend.
+I fell down on the ice.
+I have to go there for my father.
+I have all my suits made to order.
+I am going to study.
+I love, and will continue to love, my mother country.
+I have little time to read.
+I leave home for the company at seven every morning.
+I have a boiled egg for breakfast every day.
+I am planning to make an overnight trip to Nagoya.
+I will have to study tomorrow.
+I waited for my husband till after midnight.
+I waited half an hour for my friend, but he didn't turn up.
+I have my supper at a quarter past seven.
+I decided to study abroad.
+I like hot tea better than cold.
+I'll be back by six o'clock.
+I don't know what to do either.
+Please leave me alone. I am busy.
+It is very kind of you to invite me to dinner.
+The man whom we saw in the park was Mr Hill.
+Our class will go on a picnic next week.
+Our library is on the third floor.
+We advanced to the finals.
+We bought a camera, a clock and some dishes in that store.
+Forever we will change, forever we will learn.
+We are not on the telephone yet.
+We call our English teacher E.T.
+We broke down what little resistance remained.
+We dug a hole in the ground.
+We will start when he comes.
+We visited her house, where we had a Christmas party.
+We must get up at dawn.
+Paper was invented by the Chinese.
+As a poet, he flowered in his twenties.
+I studied really hard to pass the exam.
+Through trial and error, he found the right answer by chance.
+Did you brush your teeth?
+The truth of the matter is dawning on him.
+On account of an accident, I was late for school.
+In fact, the sea has already risen 10 centimeters since the beginning of this century.
+Jim looked right and left before he crossed the road.
+One should bear in mind that time is money.
+Time runs on.
+Take the time to reflect.
+The clock dictates man's movements.
+He sometimes feels like eating Japanese-style food.
+Read a newspaper to keep up with the times.
+She went on to lay out two more parks in the town.
+Please be advised that the next meeting will be held on April 15.
+He was deaf, too.
+She got it at her own expense.
+It cost me 5,000 yen to repair my bicycle.
+I can't conceive how I could have made such a mistake.
+I know myself very well.
+I'll try my luck.
+It's not good to force our ideas on others.
+Try to live within your income.
+It is crazy of you to put your life at risk.
+Too much liberty spoils all.
+A dictionary defines words.
+Excuse me, but aren't you Dr. White?
+Would you mind repeating the question?
+The fact is I didn't go to school today.
+To tell the truth, I would rather stay at home than go out.
+Experiments will enable you to find out what is wrong.
+As a matter of fact, I think he's a nice guy.
+Having seen him in the picture, I recognized him at once.
+The social structure has changed beyond recognition.
+The car ran into a tree.
+Drive carefully.
+Cars go through the tunnel.
+I traded in my car for a new one.
+They that hide can find.
+Nothing is left so vividly in our mind as the impressions we received in our younger days.
+As usual with young girls, Alice loves chocolate.
+There is a lack of communication between the young and the old.
+Hold on to the rail.
+Where are the luggage carts?
+After I write the letter, I'll mail it in a mailbox.
+You don't have to help me.
+Where the drink goes in, there the wit goes out.
+The prime minister fielded some tough questions at the press conference.
+The spell was broken and the pig turned into a man.
+A convict has escaped from prison.
+Nothing can change the look of a city so dramatically as the sudden appearance of a block of offices which towers above all the surrounding buildings.
+Leaves collect on the sidewalk in the fall.
+Practice makes perfect.
+No one else came to the meeting.
+It is probable that Jane will come.
+Employees were allowed to share in reading customer compliments.
+It is not her looks that is important but her ability.
+You ought to have done the homework.
+In case of fire, you should dial 119 immediately.
+They said they'd make the boarding announcement 20 minutes before takeoff.
+Spring came on.
+Spring is just around the corner.
+It was just 6 years ago that I visited New Zealand for the first time.
+It is difficult for beginners to enjoy windsurfing.
+Feeling hot, I turned on the fan.
+Woman as she was, she was brave.
+Women like to talk.
+The position of women, over the years, has definitely changed for the better.
+Victory is unlikely but not impossible.
+Commercial Code can be called an enterprise method.
+Who can predict what will happen in the future?
+When a small boy is helping you, you must make allowance for his age.
+My little finger is swollen.
+Little birds sing merrily.
+Little by little the water gets shallower.
+A little thought will tell you that the whole plan is out of the question.
+Not a few houses were destroyed in the typhoon.
+The girl vanished like magic.
+A boy and a girl came in. I spoke to the boy, who seemed to be older than the girl.
+The boy admitted having broken the vase.
+The boy stripped a tree of the bark.
+Newspapers lay scattered all over the floor.
+The consumer price index has been fluctuating wildly.
+It was no laughing matter.
+The size of the elephant astonished the little boy.
+He had not been in Tokyo a month when he got homesick.
+You'd better wear a sweater under your jacket.
+The passengers came on board all at the same time.
+I was moved to tears in spite of myself.
+You must assess the situation and act accordingly.
+Faded jeans are still in fashion.
+I have difficulty chewing.
+Won't you come to dine with us?
+The conversation at table is lively and interesting.
+The food supplies will not hold out till then.
+It is against the rule to cross the street while the red light is on.
+Don't forget to put out the light before you go to bed.
+Please accept my sincerest condolences.
+My heart quickened.
+Don't look back cause you know what you might see.
+The new model is featured by higher power and speed.
+A new difficulty has arisen.
+The introduction of the new tax is expected to affect the entire economy.
+The new line of dresses is from Paris.
+You have to change trains at Shinjuku.
+The new boys soon accustomed themselves to the school.
+The newspaper reports the prime minister has died of cancer.
+The man reading a newspaper is his father.
+The deep snow prevented the party from getting to the hut.
+What forms do we need to file?
+At midnight, we reached the village by car.
+"How can you win, Satan?" asked God. "All the famous ballplayers are up here."
+Miss Kanda is a very fast runner.
+Parents provide protection for their children.
+I forgot to bring my I.D. card.
+Progress is monitored daily and stored in a database.
+Each person has various reasons for going on a trip abroad.
+We cannot control other people's tongues.
+All shall die.
+People are protesting against nuclear weapons.
+One should wash oneself.
+Every person has a psychological need to feel that what he does is of some importance.
+People can talk but animals cannot.
+People are living in all parts of the world.
+The population remains stationary.
+The character of men depends more on their occupations than on any teaching we can give them.
+People established churches and schools there.
+People came to like her paintings.
+If you would succeed in life, you must work hard.
+We must accept life, for good or for evil.
+Human beings succeeded in flying into space.
+Where is the library?
+Water transmits sound better than air.
+That rose will revive if you water it.
+The atomic number for hydrogen is 1.
+You'd better fight off sleep.
+I worked hard in order to pass the math test.
+Of all the principles he once stood fast on.
+The whole world is off its rocker.
+There is no one that does not long for world peace.
+A great light was diffused over the baseball stadium.
+I will go with you as far as Narita Airport.
+Political unrest was in the air.
+The government has imposed a new tax on wine.
+He argues that the administration must look for alternative sources of revenue.
+On a clear day, you can see Mt. Fuji.
+The exact time is three now.
+It goes without saying that honesty is the key to success.
+A square has four equal sides.
+For the first time in my life, I felt a pang of conscience, but there was no other way out.
+The students stood up one by one and introduced themselves.
+There are about a thousand students in all.
+I'll try to explain it to you to the best of my ability.
+Western countries are jumping on Japan for its stance on the issue.
+How long adolescence continues is determined by biological factors.
+You may be here as long as you keep quiet.
+Where would you like to sit?
+Early explorers used the stars for navigation.
+Long long ago, there lived a pretty girl.
+The discovery of oil was a lucky accident.
+Any flower will do, so long as it is red.
+Red contrasts well with blue.
+A baby has no moral compass.
+The tropical rainforests, located in a narrow region near the equator, are disappearing so fast that by the year 2000 eighty percent of them may be gone.
+May I ask a very special favor of you?
+It is false to say that snow is blue.
+It snowed from Monday to Friday.
+The train bound for Sendai has just left.
+I wrote to her last month.
+Who was absent from school last week?
+She stood up when her teacher came in.
+The teacher's talk stimulates Mary to study harder.
+The teacher dismissed his class when the bell rang.
+The teacher gave us a lot of homework.
+Our teacher advanced the date of the exam.
+His teacher gave it to him straight for breaking the chair.
+Forgive me for interrupting the other day.
+The river is very low.
+During the war, we often had to make do without sugar.
+War must be avoided at all costs.
+Go and help wash up, will you?
+I'd like to sail around the world.
+The ship will cross the equator tonight.
+It must have been broken during shipping.
+Every player is under obligation to keep the rules.
+Thanks in advance.
+It is not easy to distinguish good from evil.
+All are present.
+We've been fine, by and large.
+It is ten years since my grandfather died.
+Grandmother looked very well.
+What a nice car you have! You must have paid a lot for it.
+I hope you get well soon.
+You should cultivate the habit of getting up early.
+You never change, do you?
+Shall I close the window?
+I'd like a window seat.
+The farewell party will take place next week.
+A card was attached to the gift.
+I thank you on behalf of my son.
+Everyone sympathized with the parents about their son's death.
+A sprained ankle disabled him from walking for a month.
+Bill took the blame for the loss.
+Everybody in the village knew him.
+You'll have to ask someone else.
+Tell him to mind his own business.
+One should not speak ill of others.
+Because there are a lot of volcanoes, it is easy for Japan to be hit by earthquakes.
+Many poets write about the beauties of nature.
+Thank you very much for your generous donation.
+Dinner is probably ready, so we had better hurry home.
+The sun appeared from behind the clouds.
+Taro is very likely to pass the university entrance examination.
+Did you take your temperature with a thermometer in your mouth?
+There's no point in waiting.
+Room for rent.
+Ever since she fell in the kitchen, she hasn't been all there.
+The typhoon is gone.
+I have a lot of baggage, so I can't walk home.
+After the heavy rains, the river overflowed its banks.
+I saw a bright red Ferrari parked at the campus gates and my jaw just dropped.
+The atmosphere forms a major part of the environment to which life responds.
+The mountains have brought forth a mouse.
+The minister is to visit Mexico next week.
+Please don't leave valuable things here.
+Murders are very common in big cities.
+The president called on the people to unite in fighting poverty and disease.
+Japanese cars are for the most part reliable.
+Large amounts of timber are used in paper making.
+A potential third party would not be able to crack the code.
+Who will succeed to your father's business?
+Someone broke into my house and ran away with all of my money.
+Who ruled this country?
+I hope that some scientist will soon discover a cure for AIDS.
+Who loves war?
+Everybody wants to live in comfort.
+Everybody knows that he is honest.
+I don't know who to turn to.
+We are all longing for peace in the world.
+Everybody tends to be lazy.
+My homeroom teacher is the same age as my mother.
+How was your birthday?
+A warm current runs off the coast of Shikoku.
+The boy stuffed cake into his mouth.
+The price will not come down.
+No, I don't. You had better look it up in a telephone directory.
+I must read many books to add to my knowledge.
+It's common knowledge that the earth turns on its axis.
+To save the earth, all of us must do something.
+Our train stopped for five hours owing to the earthquake.
+The sun on the horizon is wonderful.
+A big red fish is swimming about in the pond.
+I'm sorry I'm so late.
+I'll be late for school!
+I'm going to change and I'll be back.
+China is much larger than Japan.
+In Central America, forests are replaced by cattle ranches.
+What shall we have for lunch?
+Careful as he was, he made an unexpected mistake.
+I will include the author's and publisher's names.
+In the morning, we clear the futon.
+While having breakfast, we made a plan for the day.
+There she blows!
+The whole town was in a ferment.
+The audience was impressed by his eloquent lecture.
+Let's take advantage of the long weekend.
+Because of the protracted depression, many workers are unemployed.
+Daisuke climbed to the summit.
+Birds sometimes cause accidents by getting in the way of airplanes.
+Opinion against the direct tax was dominant.
+I can't bear the pain.
+There is a crowd of people on the street.
+Walking along the street, I met Mr Smith.
+In addition to taking the regular tests, we have to hand in a long essay.
+Can you name all the trees in the garden?
+My brother will often sit up all night.
+She handed in her term paper after the deadline.
+The burglar broke into the house under the cover of night.
+When the whistle blows, the race will start.
+Iron is tempered by heating and sudden cooling.
+Air the bedclothes when the weather is good.
+The party is to be held next Sunday, weather permitting.
+The weather forecast says it will be fine tomorrow.
+Mother was in a bad mood since she could not play golf because of bad weather.
+I put the tip under two glasses because I knew they were always in a hurry.
+If I get a good mark, I can pull off an A in biology.
+The countryside has many trees.
+Please turn on the light.
+I left my bag on the overhead rack in the train.
+The telephone doesn't work.
+A telephone is something you can't do without.
+Could I borrow your phone?
+The name of the character is Hamlet.
+He was always annoyed in the city by noises of one sort or another.
+I am sorry to cancel the appointment at the last minute.
+I know he's laughing up his sleeve.
+With winter coming on, it's time to buy warm clothes.
+It is easy to slip and fall during icy winters.
+I hear some tribes in eastern Africa live on milk products.
+On arriving in Tokyo, I wrote her a letter.
+The stolen jewels must be recovered at any cost.
+It's more than ten years since we came to live here.
+We'll have to make do with the old one for a while.
+It is dangerous to jump onto a moving train.
+Animals live in many places and in great numbers, too.
+No two men are of a mind.
+Meeting strangers is one of the pleasures of a trip.
+A police car is stopping along the road.
+Watch out for big and small stones on the road!
+Reading is to the mind what food is to the body.
+All at once, I heard a cry.
+There was a sudden change of plan.
+Nara is a city which I like very much.
+Traveling to the southern states during the winter will be costlier than it is now.
+The second term came to an end.
+Two boys came running out of the room.
+Two trucks bumped together.
+The meat cuts tough.
+The east was brightened by the rising sun.
+Please let the blind down.
+It's getting warmer day by day.
+In Japan we have a lot of rain in June.
+No mountain in Japan is higher than Mt. Fuji.
+Japan's fiscal year runs from April 1 till March 31 in the following year.
+Japanese automakers are investing heavily in new plant and equipment.
+Prices have risen in Japan and Tokyo is very expensive to live in.
+Japan is not what it was 15 years ago.
+Earthquakes frequently hit Japan.
+Do you have any museum guides in Japanese?
+What makes the Japanese unique is primarily their belief that they are unique.
+Japanese literature, in spite of its beauty and riches, is as yet inadequately known in the West.
+I hope the weather will clear up on Sunday.
+You may not come in.
+A squirrel is taking a bath in the pond.
+You are a wolf in sheep's clothing.
+A cat jumped onto the chair and lay motionless.
+I have a fever and I ache all over.
+Your age is beginning to tell.
+My annual income approximates fifteen million yen, I suppose.
+Strong coffee kept her awake all night.
+Agriculture is economy of the country.
+The sea was white with foam.
+You boob! I should not have asked you.
+Please drop by when you go out for shopping sometimes.
+There was a sprinkling of foreigners among the visitors in the museum.
+Look into the box.
+Inventions are born, so to speak, of necessity.
+I had a Caesarian section six months ago.
+The criminal was sent into exile.
+He is into the Internet.
+Have you heard from him since he left for America?
+Without him, I would be helpless.
+I believe that he comes here.
+Seeing that he's not preparing at all, it seems that he's not planning to take the exam.
+It goes without saying that he's the best person for the job.
+It is impossible for him to finish it in an hour.
+When he would not give them higher pay, they went on strike.
+I can't make out why he isn't here yet.
+If he had been a little more careful, he would have succeeded.
+It is not likely that he did it on purpose.
+His running away from home is due to his father's severity.
+It's such a long time since he left school.
+We congratulated him on winning a gold medal.
+What he said cannot be true.
+I don't know if he will visit us next Sunday.
+I was surprised at the news of his death.
+It has dawned upon me that he does not like me.
+Three and a half hours have passed since he left.
+He owes his success to good luck.
+That he is alive is certain.
+I caught him by the arm before he could fall.
+We thought it natural that he should be punished.
+I was relieved to hear that he was safe.
+The loss of his sense of smell was due to a head injury.
+For his part he could have done worse.
+Those whom he lived with respected him.
+Don't keep company with him.
+I got even with him.
+Give him plenty of work to do.
+He has the backing of a certain politician.
+He had a strong alibi.
+He is cursed with idle sons.
+He has as many as five brothers.
+He can't afford a new car.
+He could not comprehend the value of her advice.
+Have you sent him a Christmas card yet?
+Let him go his own way.
+Did you advise him to go to the police?
+I called him up, but he wasn't there.
+Judging from what he says, he seems to be a man of ability.
+What he said is capable of several interpretations.
+His camera is three times as expensive as mine.
+I couldn't help laughing at his joke.
+His business plan looks good on paper but I get the feeling it would never work in practice.
+He has a very good sense of humor.
+His opinion is quite different from ours.
+His luck has changed, he is going to the dogs, but no one even lifts a finger to help him.
+His speech was not altogether bad.
+I would rather quit than work under him.
+He belongs to a large family.
+Machines that his company produces are superior to ours.
+His bag was filled with water.
+I found it difficult to please him.
+His heart bounded with expectation.
+His plan is still in the air.
+The methodology used in his study is also helpful to us in conducting our research.
+His words gave rise to doubts concerning his true intentions.
+His favorite baseball team is the Giants, but he likes the Lions as well.
+His ideas were far in advance of the age in which he lived.
+His behavior allows of no criticism.
+His latest work belongs to a different category.
+My acquaintance with his works is slight.
+Immediately I saw him, I trembled with fear.
+The cause of his death still remains a mystery.
+The immediate cause of his failure was lack of study.
+His debt amounted to a considerable sum.
+His resignation as Prime Minister came as a surprise.
+But for his help, your success would be impossible.
+His witness is approximate to the truth.
+His heart was torn by sorrow.
+His noble deed deserves praise indeed.
+His policy puts the accent on national welfare.
+Do you have anything to add to his explanation?
+His sons are not properly brought up.
+He is very blunt in his manner.
+His advice would be very useful to you.
+His proposal was out of the question.
+His answer is far from right.
+His ironical remarks are not directed at you.
+His condition changed for the better.
+There was nothing but a desk in his room.
+His mother has been running a drugstore for fifteen years.
+His book deals with traffic accidents.
+He had been living in Nagano for seven years when his daughter was born.
+I have just remembered his name, which I couldn't for a long time.
+His promise cannot be relied on.
+I can see he is ill by his appearance.
+His parents were glad at his success in the examination.
+His story thrilled me with horror.
+He leaves for Tokyo at ten.
+He has the Joker.
+He played piano by ear.
+He stamped out a fire.
+He is, I believe, a man of his word.
+He ate himself into the grave.
+For all his efforts, he was not paid well.
+He made ten mistakes in as many pages.
+They were born one month apart in 1970.
+He hadn't eaten all day long and was very hungry.
+He comes here every three days.
+He was forced to work more than five hours on end.
+He is over 80 kilos.
+He made a vivid impression.
+He will go along with your plan.
+I don't like him because he is too proud.
+He stood dazedly watching the beauty of the Alpine dawn.
+He seems to be a nice fellow.
+He rose from his chair to welcome me.
+He is always late for school.
+He is always boasting of his achievements.
+He went to stay with his cousin.
+He is what is called a man of action.
+He is above telling lies.
+I think he is from Australia, but I'm not sure.
+He compensated me for the accident with money.
+He belongs to the Catholic faith.
+He lost his temper and began calling me names.
+He will come to the church without fail.
+Is he any better today?
+He worked hard to catch up with the rest of the class.
+He gave me a curt answer.
+He whispered slyly to me.
+He has been well off since he started this job.
+He put great emphasis on this point.
+He will have been in the hospital for a year next March.
+He looked into the matter further.
+He often acted without regard to the feelings of others.
+He is Mr Jones.
+He lost no time in sending the camera back to me.
+His talent was of a high order.
+He was a warm gentleman with a pleasant sense of humor.
+He used all available means.
+He made up his mind to go there.
+He looked at the slide under the microscope.
+He was glad to hear about the good news.
+He is rich enough to buy the furniture.
+He was denied that pleasure.
+The experience gave him the courage.
+He will advise you on that matter.
+He got over the difficulties.
+He accepted the job.
+He mentioned the incident to his wife.
+He couldn't bring himself to shoot the deer.
+He exclaimed that I should not touch the gun.
+He acceded to the office.
+He is on board the ship.
+He was relieved at the news.
+He looked into historical documents to solve the mystery.
+He had no part in the scandal.
+He made a thorough analysis of the problem.
+He was incredulous of the story.
+He is not so tall.
+He will do his best to finish it on time.
+He need not have run so fast.
+He put air in his tires.
+He has no more than 1,000 yen.
+He is by far the best student.
+He can speak a little English.
+He was to all intents and purposes deceived.
+He has made a big improvement in tennis.
+He rang the doorbell.
+Words failed him.
+He sometimes sleeps in.
+Even if he's very nice, I don't really trust him.
+He is a very modest man.
+He studies biology very hard.
+He was knocked down by a truck.
+He is a pretty great guy.
+What a genius he is!
+He wasn't able to attend the party.
+He ran fast so as to catch the bus.
+It cost him 50 dollars to rent a car in Hawaii.
+He got down on his knees and prayed for the souls of the deceased.
+He is very depressed.
+He decided to go to France.
+I think he will become a Beethoven.
+He explained the process of building a boat.
+He is the manager of a hotel.
+He was really a child of his times.
+He is not down yet.
+He is heart and soul a Democrat.
+He is well spoken of by everybody.
+He came near being run over by a car.
+He returned to the country whence he came.
+He nodded slowly in comprehension.
+He often gets angry about trifles.
+He would often go fishing.
+He acted the part of King Lear.
+He is as good as any player on our team.
+He is trespassing on our private property.
+He was looking for something in the dark.
+As great a scientist as he is, he lacks common sense.
+He is engaged in medical research.
+He dedicated his life to medical work.
+He tried hard, but he failed.
+He does nothing but complain all day long.
+He opened the drawer, and took out a letter.
+He is bent on getting the driving license.
+He can't speak English, can he?
+He flatters himself that he is the best speaker of English.
+He ran to the station and caught the train.
+He is twice as heavy as his wife.
+He's no judge of music.
+He is an all-round man.
+He did nothing wrong.
+He will often sit and look at the sea for hours.
+He reads 10 books when he returns to the house.
+He worked hard in order that his family might live in comfort.
+He extinguished the fire.
+He sent us his blessing.
+He called in to say he could not attend the meeting.
+He is beyond the chance of recovery.
+He has a sharp eye for painting.
+He is rich enough to buy a foreign-made car.
+He was made much of at school.
+He made the most of his chance to learn.
+He is very sensitive to cold.
+It won't be a long time before he gets well.
+He is a man with no standards.
+He went to bed the moment he arrived home.
+He wanted to succeed, even at the cost of his health.
+He grew a beard while he was on holiday.
+He moved to a good company that offered a good salary.
+He has a strong mind.
+He is a teacher and novelist.
+I hear he is looking for work.
+He is rich and I am poor.
+He has plenty of money in the bank.
+He left for America by air.
+He has both experience and knowledge.
+He is the last man to break his promise.
+He shuddered at the sight of blood.
+He was in despair over health problems.
+He has broad shoulders.
+He has galvanized back to life.
+He came early, as he had been asked to do.
+He gave a rap on the door.
+He kept me waiting all morning.
+He had the good fortune to marry a pretty girl.
+He was unwilling to go.
+He is a student at a high school.
+He got wet from the waist to the knees.
+He is now a senior at Harvard.
+He is deeply in debt now.
+He feels a lot better today.
+When he is in trouble, he always turns to his sister for help.
+He made up his mind to try again.
+He is busy with the final draft.
+He has no wife, no children and no friends.
+He is badly situated financially.
+He was absent from school yesterday.
+He came home late last night.
+He fells trees on the mountain.
+His work occupies his mind to the exclusion of all else.
+He will come back at four.
+He's been delicate since he was a boy.
+He is looked up to by all as their leader.
+He kept playing the same record over and over until I had to leave the room.
+He was at the point of death when I arrived.
+He was an entire stranger to us.
+He rejected our offer.
+He made a sign to me to keep off the grass.
+He expected great success in the project from me.
+He gave me a good piece of advice.
+He said that money was lent to me.
+He asked me to renew the bond.
+He gave me what money he had.
+He cannot see the matter from my point of view.
+He stood behind me.
+He acted on my advice.
+He was making sheep's eyes at my daughter.
+He is superior in learning to me.
+He invited me to his house.
+He is our next door neighbor.
+He made every effort to pass the exam.
+He squeezed the toothpaste out of a tube.
+He got a position as a clerk.
+He sometimes loses hope.
+He addressed himself to the reporters.
+He works in the automobile industry.
+He is certain of winning the game.
+He describes himself as a great statesman.
+He is unable to provide for his family.
+He will regret his own words.
+He worked at the cost of his own time.
+He saved the boy at the risk of his own life.
+He was almost asleep when he heard his name called.
+He is above asking questions.
+He is anxious to get back into circulation.
+He is old enough to drive.
+He could swim very well when he was young.
+Though young, he had to support his large family.
+He held on to my hand tightly.
+He raised tomato plants from seed.
+Before retiring he usually dumps the chicken feed from all his pockets onto the table.
+He was seriously ill, and the doctor was sent for.
+He cried out for help in a loud voice.
+He had an old pickup truck and a big, battered mower.
+He seems to have a touch of fever.
+He laughed.
+He took off his coat and put it on again.
+He is after a job.
+He is a man of faith.
+He has a doctor's degree in psychology.
+He has bought a new car.
+He delivers newspapers.
+He is a gentleman. He cannot have said such a thing.
+He was very kind to invite me to his birthday party.
+He seems nice, but he's wicked at heart.
+He has no definite object in life.
+He cannot swim.
+He is off work for a few days.
+It is in the cards that he will succeed.
+Politics didn't interest him.
+He seems to be honest.
+His body was weak by nature.
+He is greatly respected by his students.
+He once lied and told her a rare creature lived in her closet.
+He is easy to get on with.
+He had an intense hatred of his teacher.
+He saved a sailor.
+He seems rough, but at heart he's very gentle.
+He had a slight edge on his opponent.
+He ran on and on, until he was completely exhausted.
+He set his son up as a baker.
+He is taller than any other boy.
+He succeeded in the face of many difficulties.
+He has a high batting average.
+He grew up to be a college football player.
+He entered the business world instead of going on to college.
+He will be a doctor when he grows up.
+He is such an honest boy that he never tells a lie.
+He is known to everyone.
+He is acquisitive of knowledge.
+He sent word that he'd be delayed.
+He did not appear until about noon.
+He runs a supermarket in the town.
+He has carried on his business as a builder for many years.
+He's an absolute fool.
+He got assistance from above.
+He made room for an old man in the train.
+He sold all his land.
+He was pinned down by a fallen tree.
+He blotted the good reputation of our school.
+He is clever, but on the other hand he often makes careless mistakes.
+He seems to have a habit of getting on his coworker's back when he makes a mistake.
+He wants a book to read.
+He makes a point of writing to his parents once every two months.
+He went on a one-day trip.
+He is one of the business leaders in Japan.
+He keeps a cat.
+He made a show of helping the old man.
+He is addressed as "Doctor" in his laboratory.
+He was incensed by their lack of incentives.
+He knew she had been busy since morning.
+He didn't offer thanks for the good harvest.
+He went so far as to say that she was stupid.
+He ripped up all her letters and photos.
+He sat next to her.
+He reasoned her into believing what he said.
+He laid bare his secret feelings.
+He is said to be very poor.
+He is bound to solve this question.
+He was ill, so they were quiet.
+He was absent owing to illness.
+He was in the grip of poverty.
+He was crowned with eternal victory.
+He wants to take over his father's business.
+He took off his clothes and put on his pajamas.
+He is reading a book of literary criticism.
+He filled up the hole in the wall.
+He has a lunch.
+His arrogance led to his downfall.
+He was busy, but he took the time to show me around the city.
+He watches TV every day.
+He has a secret desire to play.
+He was absent without leave.
+He is a scholar by name, not in fact.
+He is the leading hitter at present.
+He likes baseball very much.
+He is apt to be late for the appointed time.
+Brave man as he was, he recoiled at the sight.
+He concentrated his energies on helping his friend.
+He is a famous artist.
+He was perplexed at the unexpected result.
+He will either come or call me.
+He had to fight against the storm.
+He stood up and reached for his hat on the table.
+He was busy getting ready for his journey.
+He comes of good stock.
+Will he be able to catch the train?
+He was about to speak.
+He gets tough at times.
+I don't know why they are so steamed off at us.
+He stopped talking to them.
+Their house is being remodeled.
+They heard a noise behind them.
+Their son grew bigger.
+They demanded that the company pay them more.
+They ring the bell at eight.
+They are always arguing about money.
+They offered the guests some coffee.
+They married on Christmas Eve.
+They often complain about the cost of living in Tokyo.
+They spread the rumor abroad.
+They are anticipating trouble when the construction starts.
+They attempted in vain to bribe the witness.
+They adapted themselves to the change quickly.
+Not all of them are present.
+They will get up a party for Tom's birthday.
+They are struggling to survive in business.
+They were all fed up with the noise.
+They moved ahead slowly.
+They used to live next door to us.
+They walked two abreast.
+They sell fruit, bread, cakes, and many other things.
+They are all dead.
+They broke into laughter.
+They shot down two enemy planes during the raid.
+They can come on Monday or Tuesday, but not on Wednesday or Thursday.
+They are talking with each other.
+They sued the government for damages.
+They went to the zoo by bus yesterday.
+They don't allow us to go to the disco.
+They answered my questions with difficulty.
+They blamed him for the accident.
+They fought in the cause of freedom.
+They are about to start.
+They assailed the new teacher with questions.
+They started hours ago, so they ought to have arrived here by now.
+They were to have been married last month.
+They arrived too soon.
+They loved to spend all day playing together.
+They are interested in abstract reasoning.
+They fought against the enemy.
+They are in the same camp.
+They have nothing in common with the older generation.
+They worshipped him as a hero.
+They made her go.
+They complained of the room being too hot.
+They are leaving Japan tomorrow.
+They will arrive a week from today.
+They came walking arm in arm.
+He shan't go there.
+The instant I saw him I knew he was angry.
+It was stupid of you to believe in him.
+It is no exaggeration to call him a genius.
+I was angry that she had deceived my children.
+I often heard her sing that song.
+Do you know where she lives?
+I want to get the book back from her.
+Don't lose your head whatever she says.
+I believe beyond doubt that she is innocent.
+I have known her since she was a little girl.
+I have been to the place that she spoke about in her talk.
+She may well be proud of her son.
+He arrived the day she left.
+The doctor she visited is famous.
+The boy who she brought with her was very handsome.
+I feel comfortable in her company.
+She is equal to the occasion.
+She has some faults, but I love her all the more because of them.
+She had a good argument in favor of choosing him as chairman.
+I am excited at the prospect of seeing her.
+I am reluctant to tell her the truth.
+Her CDs are not bought by young people.
+We couldn't help feeling sorry for her.
+Her cheeks burned with shame.
+Her house is situated in the neighborhood of the park.
+Her face was radiant with happiness.
+The students around her were talking about the test.
+Judging from what she says, he is satisfied to a great extent.
+Her broken leg has not healed yet.
+Her air of innocence is apparent, not real.
+Her new husband turned out to be a snake in the grass.
+Her voice carries very well.
+Her weight increased to 50 kilograms.
+All her motions were graceful.
+Her sorrow found expression in silent tears.
+Her husband intends to bring out a new monthly magazine.
+Her mother was busy cooking the dinner.
+Her name was Agnes then.
+Her cleverness often amazes me.
+She told me she would be here about six.
+She fainted but soon came to.
+She caught it for coming late.
+She set a new Japanese record in the 100 meter dash.
+She went to Mexico by herself.
+She killed herself at the age of thirty.
+She is expecting a baby in June.
+She went from place to place in search of him.
+She doesn't get outdoors much.
+She flung her clothes on.
+She spent more money than usual.
+She is always playing favorites with a few students but very strict with everyone else.
+She always wears fashionable clothes.
+She succeeded in drawing the truth from him.
+She told me this story off the record.
+She curtained the windows.
+She has a lovely round face.
+She is at the top of her class.
+She dresses smartly.
+She is a member of this organization.
+She is often late for school on Mondays.
+She is great at skiing.
+She folded napkins all the way.
+She lives in an expensive style.
+She acted as if she knew nothing about it.
+She has been asked to sit on the committee.
+She was waiting in front of the building.
+She cared for the children.
+She tied up the parcel with string.
+She was beside herself with joy at the news.
+She consented to take the blame.
+She put the blanket over the child sleeping on the sofa.
+She put on an assumption of ignorance.
+She is apt to look only at the surface of things.
+She won't give up easily.
+She had an accident that ended her life as a tennis player.
+She managed to back their boat into the garage.
+She's a very earnest person.
+She is very sad.
+What color do you think she likes?
+She walked past clicking her high heels.
+She went to Paris for the purpose of learning ballet.
+She got so carried away listening to the Beatles that she missed the date with him.
+She tore a hole in her blouse.
+She is Betty.
+She is nothing but a child.
+She still depends on her parents.
+She wore glasses.
+She admonished the child to be more careful.
+She would often play tricks on me.
+She prefers beer to wine.
+She has been here before, and so have I.
+She likes to be on her own.
+She can speak not only English but also French.
+She went to Italy to study music.
+She spoke as though nothing had happened.
+She went home.
+She warmed herself by the fire.
+She stood looking out toward the sea.
+She was late to school.
+She was moved to tears.
+One moment she was happy, the next she was sad.
+She got up late.
+She tried not to cry.
+She earns her living by teaching.
+She had an unnatural desire for money.
+She laced her shoes.
+She is proud of never having been late for school.
+She gave birth to a healthy baby.
+She failed to appear.
+She was injured in the traffic accident.
+She did not want to go, but her father made her go.
+She is at work right now.
+She is now in danger.
+She was always ready to help people in trouble.
+She kept a tight rein on the purse strings.
+She caught a cold last night.
+They say that she quit her job.
+She made the children clean up their own rooms.
+She put the children to bed.
+She got angry about my talk.
+She danced with a grace that surprised us all.
+She wrote to me to come at once.
+She asked me whether I was perhaps not feeling very well.
+She gets up the earliest in my family.
+She was displeased at my letter.
+She caught me by the arm.
+I hope that she will help me.
+She is busy preparing for an examination.
+She received a large advance for her next novel.
+She asserted that she was right.
+She endeavored to do her duty.
+She tried to put energy into her voice.
+She is sensitive about her looks.
+She's fond of taking pictures.
+She married young.
+She abstains from drinking.
+She is diligent and smart enough to win a scholarship.
+She could not keep back a smile.
+She didn't mind doing the dishes.
+She took to her new teacher.
+She was kind enough to give me good advice.
+She lost herself in the crowd.
+She resembles her sister in character.
+She is kind by nature.
+I can always count on her because she is responsible.
+She went in for the audition last week.
+She put her hands over her ears to shut out the noise.
+She tried to screen her son from reality.
+She was aching all over.
+She managed to scare off her attacker by screaming loudly.
+She likes short skirts.
+She is believed to be from China.
+She gazed at me for a long time.
+She weeded the garden.
+She pictured to herself imagined city life.
+She lifted up her head and looked at him.
+She seems shy, but has a strong will in practice.
+She made out the application for admission.
+She seemed surprised to hear her name called from behind.
+She received the letter to the effect that he would soon be back.
+She has broken with him.
+She gave him a necktie which was completely to his taste.
+She went so far as to call him a fool.
+She was disgusted at his persistence.
+No sooner had she found him than she burst into tears.
+She was distracted by grief.
+She spoke to me with a smile.
+She is not always happy.
+She kept an all-night vigil over her sick child.
+She got so carried away when arguing with her husband that she burst into tears.
+She got married against her father's will.
+She was absent from school with a cold.
+She walked away without saying good bye.
+I don't think she takes after her mother.
+She walked side by side with me.
+She takes dinner to his house every evening.
+She saved the drowning child at the risk of her own life.
+She gazed with wide eyes.
+She spoke with a soft voice.
+She sat for a famous painter.
+It isn't likely that she will come.
+She indicated her reasons to us.
+She has an encyclopedic knowledge of cooking.
+Has she ever fallen in love?
+Is she coming, too?
+We sent some flowers to the hospital to cheer her up.
+She's on the rolls.
+You will have heard the sad news.
+Although tired, she kept on working.
+The secretary was dismissed.
+We must provide food and clothes for the victims.
+That was a very delicate situation.
+It will cost you more to go by plane.
+The plane is about to take off for Paris.
+The plane took off at 2:30.
+It's a beautiful day.
+Don't pick your nose.
+Be sure to hand in your homework by tomorrow.
+It will be all the same a hundred years hence.
+Once you get the hang of it, spreadsheet software is really useful.
+If he is not ill, he will come.
+During his illness, he fell away horribly.
+When a man becomes poor, the beggar in him will come out.
+After a slow summer season, business began to pick up.
+Carelessness often causes accidents.
+When my husband died, I had a lot of difficulties keeping my chin up.
+Despite his riches, he's not contented.
+Prefectures are governmental divisions of France and Japan.
+This is one thing my father left to me.
+The property left him by his father enables him to live in comfort.
+My father retired at the age of 65.
+My father must do the work.
+My father would not permit me to go on to college.
+My father usually wears a hat when he goes out.
+My father got home late last night.
+My father bought me a watch, which I don't like very much.
+Father is proud of his car.
+My father never takes a long rest.
+Father is busy looking over my homework.
+It's against the law to carry weapons.
+There was a tense atmosphere in the room.
+People in the room didn't say anything.
+Please put the light out when you leave the room.
+There was a sudden calm as the wind dropped.
+The wind blew all day.
+My voice has gone because of my cold.
+As the bath is too hot, I will run some cold water into it.
+The hungry boys made for the restaurant.
+It amazed us to hear that things were so cheap.
+I don't like a world where things change so slowly.
+He nodded when I asked if he understood.
+Stop complaining and do as you're told.
+The soldiers' mission was to destroy the bridge.
+You'll be OK.
+The price of rice has come down.
+His shadow on the wall looked sad.
+Show me another watch.
+One book is thin, and the other is thick.
+We need a lot of patience when we study.
+Lawyers make mega bucks when they win cases.
+Some went on foot, and others by bicycle.
+My mother will make me a birthday cake.
+We celebrate Mother's Day in honor of our mothers.
+My mother never gets up early.
+My mother doesn't like the heat of summer.
+My mother asked me to set the table.
+My mother caught a cold and couldn't smell.
+He could not but cry, when he heard about his mother's death.
+Please undo the package.
+We will play soccer after school.
+We had to put up with Kunio's poor table manners because he refused to change.
+There was only one warden on duty when the riot started.
+Somebody up there loves me.
+It's been three months since I met her.
+I'm so proud to know that she's mine.
+Oh, would you catch the phone for me, please?
+Where is my watch?
+I'm sure about his name.
+I am fond of playing the guitar.
+I was amazed at the boy's intelligence.
+I have to go now.
+I heaved myself up.
+I borrowed Father's hammer to build a dog house.
+I'm young.
+I grew up in the country.
+I may not be all that I should be as a husband.
+The water was dead around us.
+There were books lying about the room.
+Reading a book is interesting.
+What do you really think of him?
+How's your sister?
+My sister is clumsy, which is a disadvantage to her.
+I'm very glad to see you again.
+If the hunted should perish, the hunter would, too.
+If he should die tomorrow, what in the world would you do?
+How about the taste?
+It may not be a dream.
+It's useless to try and resist.
+The fog is getting thicker.
+A good idea suddenly struck her.
+Please have a seat and wait until your name is called.
+It is clear that he knows the answer.
+A friend's coming over tomorrow.
+For two weeks from tomorrow, please.
+Won't you play tennis tomorrow afternoon?
+When you wake up tomorrow morning, you will find a wonderful thing.
+I believe it will be snowing tomorrow.
+She asked the doctor to come and see her son again the next day.
+Tomorrow, if we can go out, we'll see how they are.
+Give me a ring tomorrow.
+I didn't buy anything at the duty-free shops.
+Beware of the dog!
+The leaves are turning red.
+You also know Mr Kimura very well.
+I can see the light.
+There was not a man without tears in his eyes.
+The alarm went off at five-thirty.
+The problem is Mr. Bark, the man whose secretary is away.
+The question is who will go there for him.
+Night coming on, the boys went home.
+A loud noise in the night scared him.
+I caught cold from exposure to the night fog.
+The manager of the baseball department is 3 people.
+Troublemakers rarely become model citizens.
+It is very important to keep your word.
+Take this prescription to your pharmacy.
+Being less urgent, this plan is lower in priority.
+My friend Henry was not in class yesterday, and neither was I.
+I went shopping with a friend.
+All the money was gone.
+Yuko has never spoken with a foreigner.
+The post office is adjacent to the library.
+Supper was laid out on the table.
+About dinner time, Rev. King was on the balcony outside his room.
+They were spoiled, as might have been expected.
+Will the fare change if I change the reservation?
+Careful preparations ensure success.
+In a word, he tires of everything.
+Your eyes are bigger than your stomach.
+Come and help us.
+I'd like to visit you next week. What day of the week would it be convenient for you?
+Next week, he is going to New York on business.
+The flower is yours for the asking.
+Falling rocks present a danger to climbers.
+The storm rattled the shutters.
+The storm was at its height.
+I fail to see the reason.
+Land occupies the minor portion of the earth's surface.
+A good purpose makes hard work a pleasure.
+Sulfur is used to make matches.
+I want to get a haircut before I go on the trip.
+The traveler stopped to ask me the way.
+Education by the parents of their children is important.
+My parents live in Kyoto.
+Our dorm's having heater problems.
+I want to buy cooking utensils in one lot.
+I was there early so that I might get a good seat.
+Quality is more important than quantity.
+Let's ask the neighbors to look after the dog while we're away.
+You shouldn't eat anything cold.
+Mr Suzuki, as far as I know, has not returned from Hawaii yet.
+The train was derailed and about thirty passengers were either killed or injured.
+Trains are running on schedule.
+Everybody's business is nobody's business.
+The workman, as a rule, works eight hours a day.
+If you want security in your old age, begin saving now.
+The old man wondered why life had passed him by.
+The thesis is finished except for the conclusion.
+There are so many things to tell you that I don't know where to start.
+The wound in the arm left a scar.
+"No, no! That isn't the smiling face we are looking for." It was a 'smirk' either that or a 'sneer'.
+"Kaname, when can you leave?" "It's till closing so it takes till eight."
+Regardless of the subject, he pretends to know all about it.
+No, please don't concern yourself. I have learnt to do as the Romans when in Rome.
+I hear that it has quite the reputation with coffee connoisseurs.
+Sorry, I have a part-time job starting tomorrow morning.
+The club room returned to quiet. All that could be heard was the sound of pencil on sketchpad.
+I had half a mind to throw in the towel.
+It is a consolation that no one was killed.
+No matter how you look at it you're a beautiful, ill-fated woman, the heroine of a tragedy.
+What a surprise! The onsen lodge had turned into a fish breeding farm.
+Well, broadly speaking that's right.
+Please buy a few apples.
+Being seen off by my whole family I shouldered a rucksack, stocked with my trip supplies.
+They took advantage of the stock price increase to raise the idea of building a new factory.
+The air was blocked off, extinguishing the fire.
+In high school, I won the Osaka and Kinki championships in cross-country skiing and Nordic combined skiing on countless occasions.
+To start with, the film crew travelled around the country looking for locations.
+Checking the clock it was exactly 21:00.
+Mr Koizumi was elected the new president of Japan's ruling Liberal Democratic Party.
+The discount can't be used for all goods or at all restaurants.
+Snow completely covered the town.
+Japanese cars are right-hand drive.
+Fighting the fading light he continued to count their names.
+Rina is in the home economics club. Her main activity is dressmaking.
+Newlyweds but with a child? Yes, that's right - the son is from the father's former marriage. He's been divorced once.
+Shurrup! Don't make such a fuss over a little headache. I'm flat out of magical power - this is all your fault!
+"Did I really sigh?" "While giving out an aura of unhappiness."
+"What is this? An offering?" "That's right. Put it in this offertory box ... and pull this rope."
+However, although our companions were willing, they knew nothing about management or getting money.
+Depending on which you think of as the main point, either is OK.
+There can be no people who have gone through as many hardships this century as the Jews.
+I'm not good at posting stuff online.
+There are grammar books that call these sorts of things, not modifiers, but adjuncts (A).
+I switch on my laptop, start up the browser, and type in the address I've already learnt by heart.
+"You don't get on well with your father?" "..." "Sorry, that was none of my business."
+I was very happy to see you at the offline-party.
+We decided not to have peace negotiations with the invaders.
+This is a two-seater sofa using stain-resistant artificial leather.
+Why do you make it open even to rivals in the same trade?
+The recommendation from my boss made all the difference.
+More horseflies than I'd ever seen came and flew around me.
+I feel I've been betrayed!
+I was hitting the slots, and before I knew it, it's this time already.
+For rock it's hard to know on what basis you should call something 'hi-fi'.
+The output of E->J translation software can be improved greatly by the way the user utilises it.
+It is very important to decide what to do about the slope of the roof.
+Of those 2 or 3 were pushed out of the nest, and then fell down from the balcony as well.
+We sometimes combine going for a drive with eating the ramen we love so.
+For delayed flights, seasonal adjustments are made on the basis of the original flight date and so refunds of air-mile difference will not be made.
+Tektronix's new software perfectly responds to the needs of customers using logic analysers.
+Keiko isn't as tall as I.
+My fifth-year junior school son has transferred into a school in Nagoya from Shizuoka.
+It's being manipulated by investors trying to make it rich.
+Finally dawn broke; the long night had ended.
+He was wearing a threadbare suit.
+Stay away from me, I'll catch the stupid.
+Americans who sent a message to the world that we have never been a collection of Red States and Blue States: we are, and always will be, the United States of America.
+And I would not be standing here tonight without the unyielding support of my best friend for the last 16 years, the rock of our family, the love of my life, the nation's next first lady, Michelle Obama.
+The idea that reading makes you short-sighted has been popular for a couple of hundred years.
+I am tired after swimming in that river.
+And while she's no longer with us, I know my grandmother's watching, along with the family that made me who I am. I miss them tonight. I know that my debt to them is beyond measure. To my sister Maya, my sister Alma, all my other brothers and sisters, thank you so much for all the support that you've given me. I'm grateful to them.
+Time flies like an arrow; fruit flies like a banana.
+I like walking alone.
+From which track does the train to Higashi-Kakogawa leave?
+You sure guessed the critical points of that teacher's exam.
+Who are you?
+Let go of your hate.
+Happy New Year!
+Fish stocks are declining due to over-protection of whales, so fish that whales can eat should also be protected.
+As the sun rises, the morning mist gradually fades away.
+I salute your dedicated work.
+Men believe what they want to.
+The world is a small village.
+It looks like you are from India.
+Everyone is a moon, and has a dark side which he never shows to anybody.
+He's the last person I would ask help from, because he is completely unreliable.
+I'm talking about this pen, not that one over there on the desk.
+I just have one other thing to do.
+I would rather sing than dance.
+All these books are mine.
+Among wild ducks, it seems there are homosexual necrophiliacs.
+I understand it a little, but I can't speak it.
+He placed the book on the shelf.
+The river is six miles deep in some areas and the only way to cross it is using a pulley and a rope.
+The hair on the instep of the foot of the stepfather of Father Pedro's mason is black. Whoever says the hair of the inset of the foot of the stepfather of Father Pedro's mason isn't black has blacker hair on the instep of the foot than the black hair of the instep of the foot of the stepfather of Father Pedro's mason.
+It was less than fifteen dollars.
+They can fish.
+I want a camomile.
+In the distance I hear the sound of softly murmuring roads.
+Xiaoming Wang has never been to America. He really wants to go next year.
+I just can't forget about you.
+This bike needs to be repaired.
+He's out taking a walk.
+He spent the evening reading.
+He is American.
+As far as the teacher was concerned, she was a joy to teach.
+She usually gets up early.
+I started liking Mary as soon as I met her.
+She got to the other side in 10 minutes.
+She'll certainly keep the promise she made to him.
+She answered the telephone as soon as she heard the bell ring.
+Compared to his father, he is shallow.
+Love is merely a lyrical way of referring to lust.
+The shepherd always tries to persuade the sheep that their interests and his own are the same.
+Absolute privacy on Facebook is an illusion. It doesn't exist in reality.
+It rained as soon as he got home.
+He is the more capable of the two boys.
+When Vin Diesel does pushups, he's not pushing himself up - he's pushing the Earth down.
+I'm writing the fellow.
+He works at a scientific institute where linguists, literature scholars, historians, sociologists, economists, and other scholars investigate everything that has to do with gnomes.
+I know those women.
+She is known as the Japanese Picasso.
+I think it's very difficult for an Englishman to imitate a real American accent.
+I think his novel is boring.
+That doesn't agree with what he said.
+Yesterday I had a high fever.
+This is his umbrella, right?
+That's my idea.
+In May, they set on him in the street, attacking him with fists, kicks and a knife.
+We asked our teacher: "Can we come to your wedding?"
+There were many guests - most of them were our teacher's classmates and friends.
+I partially understand what he means.
+Because we love you, we are updating Tatoeba to bring you a better user experience. See? We love you huh?
+We couldn't go out because of the heavy rain.
+He doesn't want you to lose a whole week.
+Next period is a German test.
+The next month he achieved his first NHL shutout and showed the talent of an NHL super goalie.
+Confident as I am that you will not trifle with this appeal, my heart sinks and my hand trembles at the bare thought of such a possibility.
+We will visit them soon.
+The water is good.
+I asked the company for his resume.
+When I got to school, the race had already finished.
+Are you at home?
+There was a lot of talk lately about the architecture of the new school.
+We were told that, due to the snow, we may go home.
+Tom is a good person.
+He's not the only fish in the sea.
+It seems that Mr Hatoyama is living in company housing.
+If you convey to a woman that something ought to be done, there is always a dreadful danger that she will suddenly do it.
+I've been wanting to see you.
+A lady of "a certain age," which means certainly aged.
+Either you go, or I go.
+You want to watch a French movie, don't you?
+Will humanity be able to prevent the degradation of ecosystems?
+These shoes are too small.
+English is never wrong when it is beautiful.
+Physician, heal thyself.
+Teaching ESL is usually a gig for losers and boozers.
+I like the short hairstyle.
+She brags about how well she can cook.
+UN stands for United Nations.
+But the person in charge is there precisely to take responsibility.
+The thief-taker arrested many thieves at the same time.
+I'll come back to Australia the day after tomorrow.
+The earth can satisfy our needs but not our greed.
+I can do it by myself!
+When he was young, he was poor and had to live on rice gruel.
+Damn, this ice cream is really good!
+Red and blue - which one do you like?
+Muiriel is an Indian.
+We are the first nation to starve to death in a storehouse that's overfilled with everything we want.
+Good night!
+Seeing a white lilly is splendid.
+What's the word for that in Māori?
+Is a thousand yen enough?
+I think he's right.
+My aunt brought me flowers.
+I do a training at Ford.
+Is this real?
+Cut the potatoes.
+He who risks nothing, gains nothing.
+Where's your date tonight?
+Do you like it?
+I'm a human.
+A snowstorm is coming in.
+Am I going in the right direction?
+Are you on holiday?
+Barcelona is in Spain.
+Can I get a kilo of beef steaks please?
+Can you check my gums?
+Come back later.
+Didn't madam Rodriguez want to see my essay?
+Do you have a vacancy?
+Do you know Professor López, by any chance?
+Does the dress fit well?
+Excuse me, I have to get to Barcelona. Are there any flights today?
+Forgive me, but I have no change.
+Go up the street.
+He approached and fell on his knees.
+He has even more apples.
+He is thirty years old.
+He sent flowers to his mother.
+He works in the morning.
+Here's a list of hotels in the capital and province.
+What illness do I have?
+The lost fishing boat made a safe return to harbour.
+How's it going? Are you busy?
+I want you to dry my tears.
+That's a good question.
+I wash myself.
+When I regained my senses, it seemed that fur had grown on my fingers and knees. When it became slightly brighter, I looked at my reflection in a mountain stream, and I realized that I had become a tiger.
+The power delivered by a one square metre solar panel is approximately one watt. Therefore it is currently difficult to harvest solar energy on a grand scale.
+The power's out.
+Please choose one person.
+I'm 19.
+There's nothing that can be done.
+The devil finds work for idle hands.
+Being 25 letters long, 'anticonstitutionnellement' is the longest word in French.
+What if it continued forever?
+How's your little sister?
+We've created life in our own image.
+She had a cow when she heard the news.
+I plan to stay there one week.
+Hard work conquers all.
+I paid about 50 bucks.
+She spotted him from above as he went through the crowd.
+Please come see me tomorrow.
+He speaks as if he were rich.
+According to his opinion, yes.
+There's a little bit of water in the glass.
+Have you thought of checking the oil level?
+English is a hard language to learn.
+He's Taro's younger brother.
+Do you know if she can speak English?
+The shop had sold out its stock of that magazine.
+She wants but doesn't need it.
+So... he has training three hours a day, five days a week.
+Take the train that's going to Moncloa.
+The 23 fits you better.
+The boy has the greatest amount of fruit.
+The cigarette smoke annoyed the other passengers.
+The employees threatened to go on strike.
+The husband and the wife are visiting Beijing.
+The man likes to play soccer.
+The pencils have already been bought.
+The restaurant is on the ground floor.
+The tea costs two euros.
+The woman likes to play tennis.
+There are five in our family.
+There was moonlight yesterday evening.
+They are eating their apples.
+Things have become so expensive!
+This is cold.
+This museum has been closed for five years.
+This room has two closets for clothing.
+To the village.
+Two small bottles, please.
+We are gray.
+We have twenty-four chairs in this class-room.
+We would like to change room: it's too noisy.
+What are my tasks?
+What do you recommend to me?
+Last week she gave birth to a beautiful daughter.
+The owner of this house is Mr. Yamada.
+Everyone in his family is tall.
+When Columbus discovered America, bison (American buffalo) inhabited a wide-ranging area.
+We drank soju at the karaoke bar.
+Put on a coat. If you don't, you'll catch a cold.
+Have you brought your ID card with you?
+Tom hid himself under the table.
+Mt. Fuji can be seen from here.
+Angelica Pickles is very selfish.
+The Indian flag is called the tricolour because it has stripes of three colours – saffron, white and green.
+Eugene will get the Ig Noble prize for his contribution to literature.
+Please go to the playground to play.
+He looked deeply into his crystal ball and predicted my future.
+Don't forget to attach your photo to the application form.
+Guns don't kill people. People kill people.
+Are you drinking ouzo or pastis?
+My mother hummed to herself as she went about her cooking in the kitchen.
+It's obvious that you're wrong.
+A better world begins in your own heart.
+Could you get a hammer for me from the kitchen please?
+She's lost her car keys.

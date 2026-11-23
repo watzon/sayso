@@ -13,6 +13,7 @@ require (
 	github.com/jezek/xgb v1.3.1
 	github.com/mewkiz/flac v1.0.14
 	github.com/pelletier/go-toml/v2 v2.4.3
+	github.com/watzon/sayso/mobile v0.0.0
 	golang.org/x/sys v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
 	howett.net/plist v1.0.1
@@ -40,3 +41,5 @@ require (
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
+
+replace github.com/watzon/sayso/mobile => ./mobile

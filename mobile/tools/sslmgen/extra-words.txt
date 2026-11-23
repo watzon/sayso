@@ -1,0 +1,18 @@
+# Words the generator adds when SCOWL lacks them. One per line, written as
+# they should appear. Written for Sayso; no third-party list.
+wifi
+lol
+omg
+btw
+idk
+tbh
+imo
+fyi
+asap
+thx
+pls
+ya
+yeah
+nope
+yep
+gonna
