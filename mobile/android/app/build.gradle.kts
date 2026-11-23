@@ -26,6 +26,16 @@ val saysoSherpa = sherpaAar.exists()
 // models/<id>/ with catalog models; SherpaLocalAsrTest then decodes real speech.
 val saysoAsrTestDir = providers.gradleProperty("saysoAsrTestDir").orNull
 
+// The license texts of sherpa-onnx and ONNX Runtime, shown in the acknowledgements
+// when the APK carries them; the same files ship with the desktop app.
+val speechLicenses = layout.buildDirectory.dir("generated/speechLicenses")
+val copySpeechLicenses = tasks.register<Sync>("copySpeechLicenses") {
+    from(file("../../../packaging/licenses")) {
+        include("sherpa-onnx.txt", "onnxruntime.txt")
+    }
+    into(speechLicenses.map { it.dir("licenses") })
+}
+
 android {
     namespace = "app.sayso.mobile"
     compileSdk {
@@ -61,6 +71,7 @@ android {
         getByName("main") {
             kotlin.directories.add(if (saysoNative) "src/native/kotlin" else "src/fake/kotlin")
             kotlin.directories.add(if (saysoSherpa) "src/sherpa/kotlin" else "src/nosherpa/kotlin")
+            if (saysoSherpa) assets.directories.add(speechLicenses.get().asFile.absolutePath)
             if (saysoNative) {
                 jniLibs.directories.add(saysoCoreDir.absolutePath)
                 // en-US.sslm, and SCOWL-Copyright.txt for the acknowledgements.
@@ -112,6 +123,8 @@ android {
         }
     }
 }
+
+if (saysoSherpa) tasks.named("preBuild") { dependsOn(copySpeechLicenses) }
 
 dependencies {
     implementation(libs.androidx.core.ktx)
