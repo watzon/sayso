@@ -142,3 +142,33 @@ func TestHistoryRowContextMenu(t *testing.T) {
 		t.Error("the selected entry was deleted")
 	}
 }
+
+// TestHistoryMenusOneAtATime: right-clicking a row while ⋯ is open
+// closes ⋯, so only one action menu shows.
+func TestHistoryMenusOneAtATime(t *testing.T) {
+	e := newEnv(t)
+	e.addEntry(t, "first apple note", "Notes", false)
+	e.addEntry(t, "second banana mail", "Mail", false)
+	e.a.SetPage(PageHistory)
+	tt := e.hub(t)
+	tt.Frame()
+	press(t, tt, i18n.T("history.a11y.more_actions"))
+	if !e.a.hist.menuOpen {
+		t.Fatal("⋯ did not open")
+	}
+	r, ok := controlBounds(tt, entryRowName(e.a, e.a.hist.entries[1]))
+	if !ok {
+		t.Fatal("no second row")
+	}
+	tt.RightClickAt(r.X+40, r.Y+r.H/2)
+	tt.Frame()
+	copies := 0
+	for _, it := range tt.AccessAll() {
+		if it.Role == mu.RoleMenuItem && it.Name == i18n.T("history.menu.copy") && !it.Offscreen {
+			copies++
+		}
+	}
+	if e.a.hist.menuOpen || copies != 1 {
+		t.Fatalf("after right-click: menuOpen=%v, %d Copy items; want false, 1", e.a.hist.menuOpen, copies)
+	}
+}

@@ -336,7 +336,11 @@ func (a *App) historyRow(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 	// A right-click opens the actions of this entry, whichever is
 	// selected; each row keeps whether its menu shows.
 	open := mu.Local(r, rowMenuKey{}, func() bool { return false })
+	was := *open
 	m := mu.ContextMenuBase(c, r, open)
+	if *open && !was {
+		a.hist.menuOpen = false // one menu at a time: close ⋯
+	}
 	m.Popup(func(panel mu.Element) {
 		list := a.floatingList(c, p, panel.MinWidth(184).Padding(5).Radius(12).Label(entryApp(e)), "history.row_menu", 312)
 		list.Gap(1).Children(func() {
