@@ -40,6 +40,11 @@ type historyState struct {
 	busy      string
 	showRaw   bool
 
+	// textScroll is how far the detail's text is scrolled, for its fade;
+	// textFor is the entry it was scrolled for.
+	textScroll mu.ScrollState
+	textFor    int64
+
 	player    Player
 	playerFor int64
 	playing   bool
@@ -395,14 +400,25 @@ func (a *App) historyDetail(c *mu.Context, p theme.Colors, e store.HistoryEntry)
 		if a.hist.confirm {
 			a.deleteConfirm(c, p, e)
 		}
-		long := len(e.FinalText) > 140
-		text := mu.Scroll(c.Key(fmt.Sprintf("history.text.%d", e.ID))).MinHeight(66).MaxHeight(154)
-		if long {
-			text.DrawOver(func(pt *mu.Painter, r mu.Rect) {
+		if a.hist.textFor != e.ID {
+			// Another entry shows from its start.
+			a.hist.textScroll, a.hist.textFor = mu.ScrollState{}, e.ID
+		}
+		text := mu.Scroll(c.Key(fmt.Sprintf("history.text.%d", e.ID))).MinHeight(66).MaxHeight(154).TrackScroll(&a.hist.textScroll)
+		text.DrawOver(func(pt *mu.Painter, r mu.Rect) {
+			// As laid out for this frame (Rust history.rs text_scroll): an
+			// edge of the box fades while there is more text past it. r is
+			// the box, which stays put as the text scrolls.
+			s := &a.hist.textScroll
+			if moreAbove(s) {
+				f := mu.Rect{X: r.X, Y: r.Y, W: r.W, H: 28}
+				pt.FillGradient(f, mu.LinearGradient{From: p.Sheet, To: p.Sheet.Alpha(0), Angle: 180}, 0)
+			}
+			if moreBelow(s) {
 				f := mu.Rect{X: r.X, Y: r.Y + r.H - 28, W: r.W, H: 28}
 				pt.FillGradient(f, mu.LinearGradient{From: p.Sheet.Alpha(0), To: p.Sheet, Angle: 180}, 0)
-			})
-		}
+			}
+		})
 		text.Children(func() {
 			mu.Text(c, e.FinalText).Font(serifFont(theme.Display)).FontSize(33).FontWeight(500).LineHeight(44.0 / 33).TextColor(p.Ink).
 				Selectable().Label(i18n.T("history.a11y.final_text"))
@@ -412,6 +428,18 @@ func (a *App) historyDetail(c *mu.Context, p theme.Colors, e store.HistoryEntry)
 	mu.Column(c).Margin(28, 48, 0, 48).Padding(20, 4, 32, 4).BorderWidth(1, 0, 0, 0).BorderColor(p.Rule).Children(func() {
 		a.trail(c, p, e)
 	})
+}
+
+// moreAbove reports whether a scroll container tracked in s has content
+// above what it shows: it overflows and is scrolled down from its start.
+func moreAbove(s *mu.ScrollState) bool {
+	return s.MaxY > 1 && s.Y > 1
+}
+
+// moreBelow reports whether a scroll container tracked in s has content
+// below what it shows: it overflows and is not scrolled to its end.
+func moreBelow(s *mu.ScrollState) bool {
+	return s.MaxY > 1 && s.Y < s.MaxY-1
 }
 
 func durationLabel(ms uint64) string {
