@@ -257,8 +257,14 @@ func New(d Deps) *Controller {
 
 func (c *Controller) loop() {
 	defer close(c.done)
+	// The clock runs only while the machine can time out (needsTick), so
+	// the app does not wake up ten times a second at rest.
 	tick := time.NewTicker(c.d.TickEvery)
 	defer tick.Stop()
+	ticking := c.needsTick()
+	if !ticking {
+		tick.Stop()
+	}
 	for {
 		select {
 		case f := <-c.work:
@@ -268,7 +274,22 @@ func (c *Controller) loop() {
 		case <-c.quit:
 			return
 		}
+		switch need := c.needsTick(); {
+		case need && !ticking:
+			tick.Reset(c.d.TickEvery)
+			ticking = true
+		case !need && ticking:
+			tick.Stop()
+			ticking = false
+		}
 	}
+}
+
+// needsTick is true in the states that EvTick can end: a recording (its
+// maximum duration) and a notice that goes away by itself.
+func (c *Controller) needsTick() bool {
+	s := c.machine.State
+	return s.Kind == StateRecording || s.Kind == StateShowing && !s.Stays
 }
 
 // do runs f on the controller goroutine.

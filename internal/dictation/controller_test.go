@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -196,9 +197,10 @@ func (h *fakeHistory) RecordReplacementUses([]store.AppliedReplacement) error {
 }
 
 type fakeHost struct {
-	mu   sync.Mutex
-	done []bridge.DictationDone
-	gate *bridge.DictationGate
+	mu    sync.Mutex
+	done  []bridge.DictationDone
+	gate  *bridge.DictationGate
+	gates atomic.Int64 // calls of DictationGate
 }
 
 func (h *fakeHost) DictationDone(d bridge.DictationDone, a, b bool) {
@@ -209,7 +211,10 @@ func (h *fakeHost) DictationDone(d bridge.DictationDone, a, b bool) {
 	h.done = append(h.done, d)
 	h.mu.Unlock()
 }
-func (h *fakeHost) DictationGate() *bridge.DictationGate { return h.gate }
+func (h *fakeHost) DictationGate() *bridge.DictationGate {
+	h.gates.Add(1)
+	return h.gate
+}
 
 type states struct {
 	mu      sync.Mutex
@@ -688,4 +693,35 @@ func TestRecordingShowsBeforeTheFocusedApp(t *testing.T) {
 	if e.App == nil || e.App.BundleID != "com.example.notes" {
 		t.Fatalf("app %+v", e.App)
 	}
+}
+
+// At rest the controller does not wake up: the clock of the machine runs
+// only while a recording or a notice can time out. It still ends a notice
+// and a recording that is too long.
+func TestTheControllerSleepsAtRest(t *testing.T) {
+	r := newRig(t, nil)
+	time.Sleep(20 * 10 * time.Millisecond) // 20 ticks of the rig
+	if n := r.host.gates.Load(); n != 0 {
+		t.Fatalf("the controller ran %d times at rest", n)
+	}
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	r.audio.speak(16000)
+	r.c.Toggle()
+	r.obs.waitFor(t, "done")
+	r.obs.waitFor(t, "idle")
+	n := r.host.gates.Load()
+	time.Sleep(20 * 10 * time.Millisecond)
+	if m := r.host.gates.Load(); m != n {
+		t.Fatalf("the controller ran %d times at rest after a dictation", m-n)
+	}
+}
+
+func TestATooLongRecordingStops(t *testing.T) {
+	r := newRig(t, nil)
+	r.c.do(func() { r.c.machine.Timing.MaxDurationMs = 50 })
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	r.audio.speak(16000)
+	r.obs.waitFor(t, "done")
 }
