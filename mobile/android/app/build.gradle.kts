@@ -22,6 +22,9 @@ val modelsDir = file("../../models")
 // -PsaysoSherpaAar points at another copy.
 val sherpaAar = file(providers.gradleProperty("saysoSherpaAar").getOrElse("../../build/sherpa-onnx/sherpa-onnx-2.0.3.aar"))
 val saysoSherpa = sherpaAar.exists()
+// -PsaysoAsrTestDir=<dir>: lib/ with the sherpa-onnx JNI library for this computer and
+// models/<id>/ with catalog models; SherpaLocalAsrTest then decodes real speech.
+val saysoAsrTestDir = providers.gradleProperty("saysoAsrTestDir").orNull
 
 android {
     namespace = "app.sayso.mobile"
@@ -65,6 +68,7 @@ android {
             }
         }
         if (saysoNative) getByName("test").kotlin.directories.add("src/testNative/kotlin")
+        if (saysoSherpa) getByName("test").kotlin.directories.add("src/testSherpa/kotlin")
     }
 
     // The core maps the model straight out of the APK, which needs it stored uncompressed.
@@ -98,10 +102,13 @@ android {
         unitTests.isReturnDefaultValues = true
         unitTests.all { test ->
             test.systemProperty("sayso.model", File(modelsDir, "en-US.sslm").absolutePath)
-            if (saysoHostLibDir != null) {
-                test.systemProperty("java.library.path", file(saysoHostLibDir).absolutePath)
-                test.systemProperty("sayso.hostLibs", "true")
-            }
+            val libPath = listOfNotNull(
+                saysoHostLibDir?.let { file(it).absolutePath },
+                saysoAsrTestDir?.let { File(file(it), "lib").absolutePath },
+            )
+            if (libPath.isNotEmpty()) test.systemProperty("java.library.path", libPath.joinToString(File.pathSeparator))
+            if (saysoHostLibDir != null) test.systemProperty("sayso.hostLibs", "true")
+            if (saysoAsrTestDir != null) test.systemProperty("sayso.asrTestDir", file(saysoAsrTestDir).absolutePath)
         }
     }
 }
