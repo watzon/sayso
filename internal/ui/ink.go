@@ -20,12 +20,13 @@ var (
 // input levels from 0 to 1, oldest first. The shape tapers at both ends;
 // phase (seconds) moves the ripple so the ink looks alive between levels.
 func inkWaveform(c *mu.Context, levels []float32, phase float32, col mu.Color) mu.Element {
-	return mu.Box(c).Draw(func(pt *mu.Painter, r mu.Rect) {
+	// The newest level is at the end of the line.
+	return mu.Box(c).Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
 		paintInkLayers(pt, r, levels, phase, col, inkLayers)
 		// Two spatters of ink, where the Paper design has them.
 		pt.Fill(mu.Rect{X: r.X + r.W*0.935 - 1, Y: r.Y + r.H*0.28 - 1, W: 2, H: 2}, col.Alpha(0.4), 1)
 		pt.Fill(mu.Rect{X: r.X + r.W*0.17 - 0.8, Y: r.Y + r.H*0.75 - 0.8, W: 1.6, H: 1.6}, col.Alpha(0.3), 0.8)
-	})
+	}))
 }
 
 func sampleLevel(levels []float32, x float32) float32 {
@@ -95,7 +96,7 @@ func smoothedLevels(ordered []float32, n int) []float32 {
 // inkLine is the processing stage: a line of ink drawn across to progress
 // (0 to 1), with a wet nib, and a dotted pencil remainder.
 func inkLine(c *mu.Context, progress float32, ink, pencil mu.Color) mu.Element {
-	return mu.Box(c).Draw(func(pt *mu.Painter, r mu.Rect) {
+	return mu.Box(c).Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
 		y := r.Y + r.H/2
 		x0, x1 := r.X+2, r.X+r.W-2
 		nib := x0 + (x1-x0)*max(0, min(progress, 1))
@@ -109,7 +110,7 @@ func inkLine(c *mu.Context, progress float32, ink, pencil mu.Color) mu.Element {
 		const rad = 3.2
 		pt.Fill(mu.Rect{X: nib - rad*2, Y: y - rad*2, W: rad * 4, H: rad * 4}, ink.Alpha(0.08), rad*2)
 		pt.Fill(mu.Rect{X: nib - rad, Y: y - rad, W: rad * 2, H: rad * 2}, ink, rad)
-	})
+	}))
 }
 
 // processingProgress is how far the ink line of the processing stage has

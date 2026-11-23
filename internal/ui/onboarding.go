@@ -256,6 +256,9 @@ func (a *App) OnboardingView(c *mu.Context) {
 			if dir == 0 {
 				dir = 1
 			}
+			if rtl(c) {
+				dir = -dir // forward is to the left
+			}
 			// The step slides in from the side it comes from.
 			mu.Box(c).Grow(1).Basis(0).MinHeight(0).ClipY().ChildExit(mu.Motion{X: -24 * dir}).Children(func() {
 				mu.Scroll(c.Key(onbStepKey(a.onb.step))).Absolute().Fill().Transition(mu.ElementTransition{
@@ -330,8 +333,13 @@ func (a *App) onboardingTopBar(c *mu.Context, p theme.Colors) {
 			}
 		})
 		// A live node: a screen reader says the new step when it changes.
+		// Right to left it is under the traffic lights: it keeps to the trail.
+		align := mu.End
+		if rtl(c) && bar.Left > 0 {
+			align = mu.Start
+		}
 		uiText(c, i18n.T("onboarding.step", "step", a.onb.step+1, "total", OnboardingSteps), 12, 400, p.Graphite).
-			Width(side - 18).Shrink(0).TextAlign(mu.End).SingleLine().Role(mu.RoleStatus)
+			Width(side - 18).Shrink(0).TextAlign(align).SingleLine().Role(mu.RoleStatus)
 	})
 }
 
@@ -476,7 +484,7 @@ func banner(c *mu.Context, p theme.Colors, kind bannerKind, text string) {
 		bg, fg, border, ic, role = mu.Color{}, p.Graphite, p.Rule, "info", mu.RoleStatus
 	}
 	mu.Row(c).Gap(12).Padding(12, 14).Radius(10).Background(bg).Border(1, border).AlignItems(mu.Start).Role(role).Label(text).Children(func() {
-		mu.Icon(c, icon(ic)).FontSize(16).TextColor(fg).Margin(1, 0, 0, 0)
+		mu.Icon(c, dirIcon(c, ic)).FontSize(16).TextColor(fg).Margin(1, 0, 0, 0)
 		uiText(c, text, 13, 400, fg).FixedLineHeight(19).Grow(1).Basis(0).MinWidth(0)
 	})
 }

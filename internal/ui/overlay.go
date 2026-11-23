@@ -317,7 +317,7 @@ func (a *App) pill(c *mu.Context, p theme.Colors) {
 		content = func() {
 			mu.Row(c).Opacity(a.ov.fade).AlignItems(mu.Center).Children(func() {
 				if failed {
-					mu.Column(c).Width(320).Padding(14, 14, 12, 16).Gap(10).Role(mu.RoleStatus).Children(func() { a.failedBody(c, p) })
+					mu.Column(c).Width(320).Padding(14, 0, 12, 0).PaddingStart(16).PaddingEnd(14).Gap(10).Role(mu.RoleStatus).Children(func() { a.failedBody(c, p) })
 					return
 				}
 				a.pillFace(c, p, idle)
@@ -358,7 +358,7 @@ func (a *App) pillFace(c *mu.Context, p theme.Colors, idle bool) {
 	case idle && !hover:
 		b.Size(52, 14)
 	case idle:
-		b.Padding(7, 14, 7, 8).Gap(10)
+		b.Padding(7, 0, 7, 0).PaddingStart(8).PaddingEnd(14).Gap(10)
 	}
 	b.Children(func() {
 		if idle {
@@ -399,7 +399,7 @@ func (a *App) idleContent(c *mu.Context, p theme.Colors, hover bool) {
 func (a *App) pillContent(c *mu.Context, p theme.Colors, b mu.Element, hover bool) {
 	switch a.state.Kind {
 	case dictation.StateRecording:
-		b.Padding(10, 18, 10, 10).Gap(14)
+		b.Padding(10, 0, 10, 0).PaddingStart(10).PaddingEnd(18).Gap(14)
 		debossed(mu.Box(c).Size(36, 36).Shrink(0).Radius(99).Justify(mu.Center).AlignItems(mu.Center), p).Children(func() {
 			if hover {
 				// A click anywhere on the pill stops, so hover shows a stop button.
@@ -436,9 +436,9 @@ func (a *App) pillContent(c *mu.Context, p theme.Colors, b mu.Element, hover boo
 // noticePill is a notice on the card: an icon in a debossed well, a title,
 // and a detail under it.
 func (a *App) noticePill(c *mu.Context, p theme.Colors, b mu.Element, iconName, title, detail string) {
-	b.Padding(8, 18, 8, 8).Gap(10)
+	b.Padding(8, 0, 8, 0).PaddingStart(8).PaddingEnd(18).Gap(10)
 	debossed(mu.Box(c).Size(28, 28).Shrink(0).Radius(99).Justify(mu.Center).AlignItems(mu.Center), p).Children(func() {
-		mu.Icon(c, icon(iconName)).FontSize(14).TextColor(p.Ink)
+		mu.Icon(c, dirIcon(c, iconName)).FontSize(14).TextColor(p.Ink)
 	})
 	mu.Column(c).Gap(1).Shrink(1).Children(func() {
 		uiText(c, title, a.ts(14), 600, p.Ink).SingleLine().Ellipsis("…").MaxWidth(320).Role(mu.RoleStatus)
@@ -453,9 +453,9 @@ func (a *App) noticeContent(c *mu.Context, p theme.Colors, b mu.Element) {
 	n := a.state.Notice
 	switch n.Kind {
 	case dictation.NoticeInserted:
-		b.Padding(8, 18, 8, 8).Gap(10)
+		b.Padding(8, 0, 8, 0).PaddingStart(8).PaddingEnd(18).Gap(10)
 		if n.StyleName != "" {
-			b.Padding(8, 10, 8, 8)
+			b.Padding(8, 0, 8, 0).PaddingStart(8).PaddingEnd(10)
 		}
 		inkSeal(c, p, 28)
 		uiText(c, i18n.T("overlay.inserted"), a.ts(14), 600, p.Ink).SingleLine().Role(mu.RoleStatus)
@@ -465,7 +465,7 @@ func (a *App) noticeContent(c *mu.Context, p theme.Colors, b mu.Element) {
 	case dictation.NoticeInsertedRaw:
 		a.noticePill(c, p, b, "check", i18n.T("overlay.inserted_raw"), n.Reason)
 	case dictation.NoticeCancelled, dictation.NoticeDiscarded:
-		b.Padding(8, 0, 8, 18).Gap(12)
+		b.Padding(8, 0, 8, 0).PaddingStart(18).Gap(12)
 		uiText(c, i18n.T("overlay.cancelled"), a.ts(14), 500, p.Graphite).SingleLine().Role(mu.RoleStatus)
 	case dictation.NoticeNoSpeech:
 		a.noticePill(c, p, b, "info", i18n.T("overlay.error.no_speech"), "")
@@ -503,7 +503,7 @@ const undoWindow = 5 * time.Second
 // empties as the time to undo runs out.
 func (a *App) undoButton(c *mu.Context, p theme.Colors) {
 	left := 1 - float32(a.now().Sub(a.stateAt))/float32(undoWindow)
-	b := mu.ButtonBase(a.k(c, "overlay.undo")).Height(30).Padding(0, 12, 0, 10).Margin(0, 8, 0, 12).Gap(8).Radius(99).
+	b := mu.ButtonBase(a.k(c, "overlay.undo")).Height(30).PaddingStart(10).PaddingEnd(12).MarginStart(12).MarginEnd(8).Gap(8).Radius(99).
 		AlignItems(mu.Center).Cursor(mu.CursorPointer)
 	inkButton(b, p, b.Pressed()).Children(func() {
 		countdownRing(c, left, p.OnInk).Size(18, 18).Shrink(0)
@@ -770,7 +770,7 @@ func (a *App) rightWing(c *mu.Context, night theme.Colors) {
 
 // paleWaveform is the waveform in the notch: pale ink with denser layers.
 func paleWaveform(c *mu.Context, levels []float32, phase float32, col mu.Color) mu.Element {
-	return mu.Box(c).Draw(func(pt *mu.Painter, r mu.Rect) { paintInkLayers(pt, r, levels, phase, col, notchLayers) })
+	return mu.Box(c).Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) { paintInkLayers(pt, r, levels, phase, col, notchLayers) }))
 }
 
 // notchSlip is the slip under the notch: the live preview, or a notice. It

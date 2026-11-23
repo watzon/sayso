@@ -258,11 +258,11 @@ func (a *App) modelCard(c *mu.Context, p theme.Colors, m models.ModelInfo, recom
 func track(c *mu.Context, p theme.Colors, key string, fraction float32, height float32, label string) mu.Element {
 	f := max(0, min(fraction, 1))
 	return mu.Box(a11yKey(c, key)).Height(height).Radius(99).Background(p.DebossShade).InsetShadow(0, 1, 2, 0, p.ShadowA(0.3)).
-		Role(mu.RoleProgress).Label(label).Range(0, 100, math.Round(float64(f)*100)).Draw(func(pt *mu.Painter, r mu.Rect) {
+		Role(mu.RoleProgress).Label(label).Range(0, 100, math.Round(float64(f)*100)).Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
 		if f > 0 {
 			pt.Fill(mu.Rect{X: r.X, Y: r.Y, W: max(r.H, r.W*f), H: r.H}, p.InkFill, r.H/2)
 		}
-	})
+	}))
 }
 
 func a11yKey(c *mu.Context, key string) *mu.Context {

@@ -393,7 +393,7 @@ func (a *App) micWell(c *mu.Context, p theme.Colors) {
 			uiText(c, i18n.T("onboarding.permissions.mic_failed", "error", err), 12, 400, p.Danger).Role(mu.RoleAlert).Grow(1).Basis(0)
 			return
 		}
-		mu.Box(c).Size(200, 34).Shrink(0).AccessHidden(true).Draw(func(pt *mu.Painter, r mu.Rect) {
+		mu.Box(c).Size(200, 34).Shrink(0).AccessHidden(true).Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
 			levels, on, _ := m.snapshot()
 			t := float32(0)
 			if !reduce {
@@ -403,7 +403,7 @@ func (a *App) micWell(c *mu.Context, p theme.Colors) {
 				}
 			}
 			paintInkLayers(pt, r, smoothedLevels(levels, 28), t, p.Ink, inkLayers)
-		})
+		}))
 		uiText(c, a.inputDeviceName(), 12, 400, p.Graphite).Grow(1).Basis(0).MinWidth(0).TextAlign(mu.End).SingleLine().Ellipsis("…")
 	})
 }
@@ -432,11 +432,11 @@ func (a *App) permissionsDownload(c *mu.Context, p theme.Colors) {
 		f := max(0, min(frac, 1))
 		mu.Box(a.k(c, "onboarding.permissions.download")).Grow(1).Basis(0).Height(4).Radius(99).Background(p.Deboss).
 			InsetShadow(0, 1, 1, 0, p.ShadowA(0.25)).Role(mu.RoleProgress).Label(i18n.T("onboarding.permissions.download_label", "name", m.Name)).
-			Range(0, 100, float64(int(f*100+0.5))).Draw(func(pt *mu.Painter, r mu.Rect) {
+			Range(0, 100, float64(int(f*100+0.5))).Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
 			if f > 0 {
 				pt.Fill(mu.Rect{X: r.X, Y: r.Y, W: max(r.H, r.W*f), H: r.H}, p.InkFill, r.H/2)
 			}
-		})
+		}))
 		mu.Text(c, label).Font(theme.Mono).FontSize(12).TextColor(p.Graphite).Shrink(0).SingleLine()
 	})
 }
@@ -721,9 +721,10 @@ func heldCaps(c *mu.Context, h config.Hotkey) []bool {
 }
 
 // bigKeycaps are the 52 px keys of the onboarding wells, with "+" between
-// them; a key held down now is pressed ink.
+// them; a key held down now is pressed ink. A chord reads left to right in
+// every language.
 func bigKeycaps(c *mu.Context, p theme.Colors, caps []string, held []bool) {
-	mu.Row(c).Gap(10).AlignItems(mu.Center).Shrink(0).Role(mu.RoleText).Label(strings.Join(caps, " ")).Children(func() {
+	ltr(mu.Row(c)).Gap(10).AlignItems(mu.Center).Shrink(0).Role(mu.RoleText).Label(strings.Join(caps, " ")).Children(func() {
 		for i, k := range caps {
 			if i > 0 {
 				uiText(c, "+", 16, 400, p.Pencil).AccessHidden(true)

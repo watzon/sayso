@@ -597,7 +597,7 @@ func (a *App) overlayOption(c *mu.Context, p theme.Colors, key, title, detail st
 	b := mu.ButtonBase(a.k(c, key)).Label(title).Role(mu.RoleRadio).Checked(on).Column().Width(264).Gap(10).AlignItems(mu.Stretch).Cursor(mu.CursorPointer)
 	b.Children(func() {
 		prev := mu.Box(c).Height(132).Radius(14).Clip().Background(p.Deboss)
-		prev.Draw(func(pt *mu.Painter, r mu.Rect) {
+		prev.Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
 			// The ink ring of the chosen card goes over the drawing.
 			if on {
 				defer pt.Stroke(mu.Rect{X: r.X + 1, Y: r.Y + 1, W: r.W - 2, H: r.H - 2}, p.Ink, 13, 2)
@@ -627,7 +627,7 @@ func (a *App) overlayOption(c *mu.Context, p theme.Colors, key, title, detail st
 				h := float32(2 + 5*math.Abs(math.Sin(float64(i)*0.55)))
 				pt.Fill(mu.Rect{X: pl.X + 30 + float32(i)*2.6, Y: pl.Y + 13 - h/2, W: 1.6, H: h}, p.Ink, 1)
 			}
-		})
+		}))
 		mu.Column(c).Gap(4).Children(func() {
 			uiText(c, title, 15, 600, p.Ink)
 			uiText(c, detail, 13, 400, p.Graphite).LineHeight(18.0 / 13)
@@ -674,7 +674,7 @@ func (a *App) appearanceSection(c *mu.Context, p theme.Colors) {
 		if a.set.customOpen || ap.Ink.IsCustom {
 			a.row(c, p, i18n.T("settings.appearance.custom_ink"), i18n.T("settings.appearance.hex_hint"), func() {
 				mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-					in := a.fieldW(c, p, "appearance.ink.custom", i18n.T("settings.appearance.custom_ink"), "#2D3C8C", &a.set.customInk, 120).Font(theme.Mono).Bind(&a.set.customField)
+					in := ltr(a.fieldW(c, p, "appearance.ink.custom", i18n.T("settings.appearance.custom_ink"), "#2D3C8C", &a.set.customInk, 120)).Font(theme.Mono).Bind(&a.set.customField)
 					in.OnSubmit(a.applyCustomInk)
 					if a.btn(c, p, "appearance.ink.custom_apply", i18n.T("settings.appearance.custom"), btnSecondary) {
 						a.applyCustomInk()
@@ -894,7 +894,7 @@ func (a *App) ClearHistory() {
 func (a *App) advancedSection(c *mu.Context, p theme.Colors) {
 	a.group(c, p, i18n.T("settings.advanced.engine"), func() {
 		a.row(c, p, i18n.T("settings.advanced.engine_path"), i18n.T("settings.advanced.engine_path_detail"), func() {
-			a.fieldW(c, p, "advanced.engine_path", i18n.T("settings.advanced.engine_path"), "SaysoEngine", &a.set.enginePath, 280).Font(theme.Mono).FontSize(12).OnChange(func() {
+			ltr(a.fieldW(c, p, "advanced.engine_path", i18n.T("settings.advanced.engine_path"), "SaysoEngine", &a.set.enginePath, 280)).Font(theme.Mono).FontSize(12).OnChange(func() {
 				if v := strings.TrimSpace(a.set.enginePath); v == "" {
 					a.cfg.Advanced.EnginePath = nil
 				} else {

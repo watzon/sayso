@@ -129,7 +129,7 @@ func (a *App) historyPage(c *mu.Context, p theme.Colors) {
 	mu.Row(c).Fill().AlignItems(mu.Stretch).Children(func() {
 		mu.Column(c).Width(listW).Shrink(0).BorderEndWidth(1).BorderColor(p.Rule).Children(func() {
 			a.historyToolbar(c, p)
-			mu.Scroll(c.Key("history.list")).Grow(1).Padding(0, 20, 20, 28).Gap(4).Role(mu.RoleList).
+			mu.Scroll(c.Key("history.list")).Grow(1).Padding(0, 0, 20, 0).PaddingStart(28).PaddingEnd(20).Gap(4).Role(mu.RoleList).
 				Label(i18n.T("history.a11y.list")).Children(func() { a.historyList(c, p) })
 		})
 		mu.Scroll(c.Key("history.detail")).Grow(1).Basis(0).Children(func() {
@@ -142,7 +142,7 @@ func (a *App) historyPage(c *mu.Context, p theme.Colors) {
 }
 
 func (a *App) historyToolbar(c *mu.Context, p theme.Colors) {
-	mu.Column(c).Padding(40, 20, 18, 28).Gap(18).Children(func() {
+	mu.Column(c).Padding(40, 0, 18, 0).PaddingStart(28).PaddingEnd(20).Gap(18).Children(func() {
 		mu.Row(c).PaddingX(4).AlignItems(mu.End).Gap(8).Children(func() {
 			heading(c, p, i18n.T("history.title"), 32).LineHeight(40.0 / 32).Role(mu.RoleHeading).Grow(1)
 			count := i18n.TP("history.count", a.hist.total, map[string]any{"formatted": formatCount(a.hist.total)})
@@ -492,7 +492,7 @@ func (a *App) historyActionItems(c *mu.Context, p theme.Colors, acts []historyAc
 		if act.danger && i > 0 {
 			mu.Box(c).Height(1).Shrink(0).Margin(4, 6).Background(p.Rule)
 		}
-		b := menuLine(item(act).Height(32).Padding(0, 14, 0, 10).Gap(10).Radius(8))
+		b := menuLine(item(act).Height(32).PaddingStart(10).PaddingEnd(14).Gap(10).Radius(8))
 		fg, iconFg, hover := p.Ink, p.Graphite, p.Deboss
 		if act.danger {
 			fg, iconFg, hover = p.Danger, p.Danger, p.DangerWash
@@ -501,7 +501,7 @@ func (a *App) historyActionItems(c *mu.Context, p theme.Colors, acts []historyAc
 			b.Background(hover)
 		}
 		b.Children(func() {
-			mu.Icon(c, icon(act.icon)).FontSize(14).TextColor(iconFg)
+			mu.Icon(c, dirIcon(c, act.icon)).FontSize(14).TextColor(iconFg)
 			uiText(c, act.label, 13, 500, fg).SingleLine()
 		})
 		if clicked(c, b) {
@@ -630,7 +630,7 @@ func (a *App) audioPlayer(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 		}
 	}
 	mu.Column(c).Gap(10).Children(func() {
-		tray := mu.Row(c).Padding(14, 18, 14, 14).Gap(16).Radius(16).AlignItems(mu.Center).Background(p.Deboss).
+		tray := mu.Row(c).Padding(14, 0, 14, 0).PaddingStart(14).PaddingEnd(18).Gap(16).Radius(16).AlignItems(mu.Center).Background(p.Deboss).
 			InsetShadow(0, 2, 4, 0, p.ShadowA(0.18)).InsetShadow(0, -1, 0, 0, p.Highlight(0.75))
 		tray.Children(func() {
 			label, ic := i18n.T("history.a11y.play"), "play"
@@ -643,7 +643,7 @@ func (a *App) audioPlayer(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 			if a.d.NewPlayer == nil {
 				b.Opacity(0.35)
 			}
-			b.Children(func() { mu.Icon(c, icon(ic)).FontSize(16).TextColor(p.OnInk) })
+			b.Children(func() { mu.Icon(c, dirIcon(c, ic)).FontSize(16).TextColor(p.OnInk) })
 			if clicked(c, b) {
 				a.togglePlay(e)
 			}
@@ -655,7 +655,7 @@ func (a *App) audioPlayer(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 			wave := e.Waveform
 			mu.SliderBase(a.k(c, "history.position"), &pos, 0, max(total, 0.1)).Label(i18n.T("history.a11y.position")).
 				Grow(1).Basis(0).Height(44).Cursor(mu.CursorPointer).OnChange(func() { a.seek(e, pos) }).
-				Draw(func(pt *mu.Painter, r mu.Rect) { paintWave(pt, r, wave, played, p.Ink, p.Ink.Alpha(0.35)) })
+				Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) { paintWave(pt, r, wave, played, p.Ink, p.Ink.Alpha(0.35)) }))
 			mono(c, clock(h.position)+" / "+clock(total), 12, p.Graphite).Shrink(0)
 		})
 		kept := i18n.T("history.audio.kept")

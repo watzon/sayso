@@ -213,7 +213,7 @@ func (a *App) weekBars(c *mu.Context, p theme.Colors, s Stats) {
 	for _, n := range s.WeekByDay {
 		most = max(most, n)
 	}
-	mu.Box(c).Size(7*8+6*6, 44).Shrink(0).Label(formatCount(s.WordsThisWeek)).Draw(func(pt *mu.Painter, r mu.Rect) {
+	mu.Box(c).Size(7*8+6*6, 44).Shrink(0).Label(formatCount(s.WordsThisWeek)).Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
 		for i, n := range s.WeekByDay {
 			h, col := float32(6), p.Rule
 			if n > 0 && i <= s.TodayIndex {
@@ -225,7 +225,7 @@ func (a *App) weekBars(c *mu.Context, p theme.Colors, s Stats) {
 			}
 			pt.Fill(mu.Rect{X: r.X + float32(i)*14, Y: r.Y + r.H - h, W: 8, H: h}, col, 3)
 		}
-	})
+	}))
 }
 
 func (a *App) historyOffCard(c *mu.Context, p theme.Colors) {
@@ -384,7 +384,7 @@ func (a *App) defaultStyleCard(c *mu.Context, p theme.Colors) {
 				if h := a.cfg.Hotkeys.CycleStyle; h != nil {
 					mu.Box(c).Label(i18n.T("home.style.cycle_hotkey")).Children(func() {
 						keycapStack(mu.Box(c).Height(22).PaddingX(6).Radius(5).Justify(mu.Center).AlignItems(mu.Center), p).Children(func() {
-							mono(c, h.CompactLabel(), 11, p.Ink)
+							ltr(mono(c, h.CompactLabel(), 11, p.Ink))
 						})
 					})
 				}

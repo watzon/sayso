@@ -27,7 +27,7 @@ func (a *App) recorder(c *mu.Context, p theme.Colors, key, name string, hk *conf
 		}
 	}
 	mu.Row(c).Gap(8).AlignItems(mu.Center).Children(func() {
-		debossed(mu.Row(c).Height(36).Padding(0, 12, 0, 4).Gap(10).Radius(10).AlignItems(mu.Center), p).Children(func() {
+		debossed(mu.Row(c).Height(36).PaddingStart(4).PaddingEnd(12).Gap(10).Radius(10).AlignItems(mu.Center), p).Children(func() {
 			switch {
 			case listening:
 				uiText(c, i18n.T("settings.common.press_keys"), 13, 500, p.Accent).PaddingStart(8)

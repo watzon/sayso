@@ -92,11 +92,11 @@ func (a *App) button(c *mu.Context, p theme.Colors, key, label string, o bopt) b
 	}
 	b.Children(func() {
 		if o.icon != "" {
-			mu.Icon(c, icon(o.icon)).FontSize(14).TextColor(fg)
+			mu.Icon(c, dirIcon(c, o.icon)).FontSize(14).TextColor(fg)
 		}
 		uiText(c, label, fs, weight, fg).SingleLine()
 		if o.trail != "" {
-			mu.Icon(c, icon(o.trail)).FontSize(14).TextColor(fg)
+			mu.Icon(c, dirIcon(c, o.trail)).FontSize(14).TextColor(fg)
 		}
 	})
 	return clicked(c, b)
@@ -111,7 +111,7 @@ func (a *App) link(c *mu.Context, p theme.Colors, key, label string, size float3
 	b.Children(func() {
 		uiText(c, label, size, weight, p.Accent).SingleLine()
 		if trail != "" {
-			mu.Icon(c, icon(trail)).FontSize(12).TextColor(p.Accent)
+			mu.Icon(c, dirIcon(c, trail)).FontSize(12).TextColor(p.Accent)
 		}
 	})
 	return clicked(c, b)
@@ -128,7 +128,7 @@ func (a *App) iconBtnSized(c *mu.Context, p theme.Colors, key, iconName, label s
 	if b.Hovered() {
 		b.Background(p.Deboss.Alpha(0.55))
 	}
-	b.Children(func() { mu.Icon(c, icon(iconName)).FontSize(size).TextColor(p.Graphite) })
+	b.Children(func() { mu.Icon(c, dirIcon(c, iconName)).FontSize(size).TextColor(p.Graphite) })
 	return clicked(c, b)
 }
 
@@ -171,7 +171,7 @@ func (a *App) segmented(c *mu.Context, p theme.Colors, keys, labels []string, ch
 			}
 			s.Children(func() {
 				if i < len(o.icons) {
-					mu.Icon(c, icon(o.icons[i])).FontSize(14).TextColor(fg)
+					mu.Icon(c, dirIcon(c, o.icons[i])).FontSize(14).TextColor(fg)
 				}
 				uiText(c, l, fs, weight, fg).SingleLine()
 			})
@@ -362,7 +362,7 @@ func (a *App) chipBase(c *mu.Context, p theme.Colors, key, label string, on bool
 	b.Children(func() {
 		uiText(c, label, 13, weight, fg).SingleLine()
 		if trail != "" {
-			mu.Icon(c, icon(trail)).FontSize(10).TextColor(fg)
+			mu.Icon(c, dirIcon(c, trail)).FontSize(10).TextColor(fg)
 		}
 	})
 	return b

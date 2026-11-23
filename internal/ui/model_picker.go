@@ -365,7 +365,7 @@ func (a *App) modelPicker(c *mu.Context, p theme.Colors, r pickReq) {
 		})
 	} else {
 		// The inline trigger: "Haiku 4.5 ⌄", its text where the row's text would be.
-		t.Height(22).PaddingX(7).Margin(0, -7, 0, 0).Radius(6).Shrink(0).MaxWidth(260)
+		t.Height(22).PaddingX(7).MarginEnd(-7).Radius(6).Shrink(0).MaxWidth(260)
 		if t.Hovered() || open {
 			t.Background(p.SheetRaised)
 		}
@@ -408,7 +408,7 @@ func (a *App) pickerSheet(c *mu.Context, p theme.Colors, panel mu.Element, r pic
 	}
 
 	var filter mu.Element
-	mu.Row(c).Gap(8).Padding(6, 6, 6, 14).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+	mu.Row(c).Gap(8).Padding(6, 0, 6, 0).PaddingStart(14).PaddingEnd(6).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
 		mu.Icon(c, icon("search")).FontSize(12).TextColor(p.Pencil)
 		before := a.pick.filter
 		filter = mu.TextInputBase(a.k(c, "model_picker.filter"), &a.pick.filter).Label(i18n.T("model_picker.filter")).
@@ -565,16 +565,17 @@ func (a *App) thinkingPanel(c *mu.Context, p theme.Colors, id string) {
 		before := value
 		s := mu.SliderBase(a.k(c, "model_picker.thinking"), &value, 0, float64(len(levels)-1)).Step(1).
 			Label(i18n.T("model_picker.thinking")).Value(name).
-			Width(w).Height(float32(math.Ceil(float64(penLineH*scale)))).
-			Padding(0, (penW-penLastStop)*scale, 0, penFirstStop*scale).Cursor(mu.CursorPointer)
+			Width(w).Height(float32(math.Ceil(float64(penLineH * scale)))).
+			PaddingStart(penFirstStop * scale).PaddingEnd((penW - penLastStop) * scale).Cursor(mu.CursorPointer)
 		stops, marked := len(levels), chosen
-		s.Draw(func(pt *mu.Painter, r mu.Rect) {
+		// SliderBase puts the first stop at the right right to left.
+		s.Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
 			v := float32(1)
 			if stops > 1 {
 				v = float32(value) / float32(stops-1)
 			}
 			paintPenLine(pt, r, v, stops, marked, p)
-		})
+		}))
 		if s.Changed() || value != before {
 			stop := int(math.Round(value))
 			if stop >= 0 && stop < len(levels) && stop != chosen {

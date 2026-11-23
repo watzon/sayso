@@ -217,7 +217,7 @@ func checkDot(c *mu.Context, p theme.Colors, ok bool) {
 		bg, mark, fg = p.DangerWash, "warning", p.Danger
 	}
 	mu.Box(c).Size(16, 16).Shrink(0).Radius(99).Background(bg).Justify(mu.Center).AlignItems(mu.Center).Children(func() {
-		mu.Icon(c, icon(mark)).FontSize(10).TextColor(fg)
+		mu.Icon(c, dirIcon(c, mark)).FontSize(10).TextColor(fg)
 	})
 }
 
@@ -261,7 +261,7 @@ func badge(c *mu.Context, p theme.Colors, label string, tone badgeTone, iconName
 	}
 	mu.Row(c).Height(22).Shrink(0).PaddingX(8).Gap(5).Radius(99).Background(bg).AlignItems(mu.Center).Children(func() {
 		if iconName != "" {
-			mu.Icon(c, icon(iconName)).FontSize(11).TextColor(fg)
+			mu.Icon(c, dirIcon(c, iconName)).FontSize(11).TextColor(fg)
 		}
 		uiText(c, strings.ToUpper(label), 11, 600, fg).SingleLine()
 	})
@@ -290,7 +290,8 @@ func keycaps(c *mu.Context, p theme.Colors, keys []string, small bool) {
 	if small {
 		h, px, size, r, gap = 20, 6, 11, 5, 3
 	}
-	mu.Row(c).Gap(gap).AlignItems(mu.Center).Shrink(0).Children(func() {
+	// A chord reads left to right in every language, as macOS shows it.
+	ltr(mu.Row(c)).Gap(gap).AlignItems(mu.Center).Shrink(0).Children(func() {
 		for _, k := range keys {
 			pad := px
 			if len([]rune(k)) > 2 && !small {
@@ -309,7 +310,7 @@ func keycap(c *mu.Context, p theme.Colors, label string) { keycaps(c, p, []strin
 // miniKey is a hotkey as one small key ("^⌥S", "⌘F").
 func miniKey(c *mu.Context, p theme.Colors, label string, fg mu.Color) {
 	keycapStack(mu.Box(c).Height(20).PaddingX(6).Radius(5).Shrink(0).Justify(mu.Center).AlignItems(mu.Center), p).Children(func() {
-		mono(c, label, 11, fg)
+		ltr(mono(c, label, 11, fg))
 	})
 }
 
