@@ -63,3 +63,26 @@ func TestWordsAndSlips(t *testing.T) {
 		}
 	}
 }
+
+// TestSloppyTypistReplays: a stray tap on the delete key can eat back past
+// the start of the word being typed. That used to panic slicing the text.
+func TestSloppyTypistReplays(t *testing.T) {
+	m, err := lexicon.Open("../../models/en-US.sslm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	sentences, err := LoadSentences("testdata/heldout-en.txt", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := DefaultUser
+	u.NoiseX, u.NoiseY, u.TypoRate = 0.32, 0.30, 0.06
+	r, err := Run(m, sentences, u, Raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Words == 0 {
+		t.Fatal("typed nothing")
+	}
+}

@@ -188,6 +188,8 @@ func Run(m *lexicon.Model, sentences []string, u User, mode Mode) (Result, error
 					case r.Code == touch.CodeBackspace:
 						text = backspace(text, e.Backspace())
 					}
+					// A stray delete can eat back into the last word.
+					start = min(start, len(text))
 				}
 			}
 			typed := text[start:]
