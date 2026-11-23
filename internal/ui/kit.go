@@ -328,14 +328,21 @@ func (a *App) selectBtnDetail(c *mu.Context, p theme.Colors, key, label string, 
 	s.Popup(func(panel mu.Element) {
 		// The highlighted option scrolls into view (SelectBase), and the
 		// popup shows above the trigger where there is no room below.
+		const optionH, listH = 30, 312
 		minW := float32(200)
 		if details != nil {
 			minW = 240
 		}
-		list := a.floatingList(c, p, panel.Margin(4, 0, 0, 0).Padding(4).Radius(10).MinWidth(minW), key+".list", 312)
+		// A list that scrolls shows its bar over the options' end, where
+		// the details are; they keep clear of it.
+		endPad := float32(10)
+		if details != nil && float32(len(options))*optionH > listH {
+			endPad = barGutter
+		}
+		list := a.floatingList(c, p, panel.Margin(4, 0, 0, 0).Padding(4).Radius(10).MinWidth(minW), key+".list", listH)
 		list.Children(func() {
 			for i, o := range options {
-				it := menuLine(s.Item(o).Height(30).PaddingX(10).Gap(8).Radius(7))
+				it := menuLine(s.Item(o).Height(optionH).PaddingStart(10).PaddingEnd(endPad).Gap(8).Radius(7))
 				if it.Highlighted() {
 					it.Background(p.Deboss)
 				}

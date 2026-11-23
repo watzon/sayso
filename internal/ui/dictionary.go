@@ -153,6 +153,12 @@ func (a *App) dictionaryPage(c *mu.Context, p theme.Colors) {
 // their shadows and the add well's focus ring, which its edge would clip.
 const slipRoom = 10
 
+// barGutter is the room past the end of a scrolling list for its scroll
+// bar, which MyGo draws over the list's end edge (the left, right to
+// left): the bar's 12 px track and 4 px to spare, so the thumb never sits
+// on the list's trailing text.
+const barGutter = 16
+
 // wordsSection is the words as slips that wrap, and a dashed slip to add one.
 // In scroll, the slips scroll under the heading.
 func (a *App) wordsSection(c *mu.Context, p theme.Colors, f string, scroll bool) {
@@ -181,9 +187,11 @@ func (a *App) wordsSection(c *mu.Context, p theme.Colors, f string, scroll bool)
 			mu.Column(c).Gap(16).Children(slips)
 			return
 		}
-		// The room for the shadows sits outside the column's edges, so
-		// the slips line up with the heading.
-		mu.Scroll(c.Key("dict.words.scroll")).Grow(1).MinHeight(0).Margin(-slipRoom).Padding(slipRoom).Gap(16).
+		// The room for the shadows, and at the end for the scroll bar,
+		// sits outside the column's edges, so the slips line up with the
+		// heading.
+		mu.Scroll(c.Key("dict.words.scroll")).Grow(1).MinHeight(0).Margin(-slipRoom).Padding(slipRoom).
+			MarginEnd(-barGutter).PaddingEnd(barGutter).Gap(16).
 			Role(mu.RoleGroup).Label(i18n.T("dictionary.words")).TrackScroll(&d.wordsScroll).Children(slips)
 	})
 }
@@ -304,7 +312,10 @@ func (a *App) replacementsLedger(c *mu.Context, p theme.Colors, f string, scroll
 			}
 			if scroll {
 				// As tall as its rows, until the column runs out of room.
-				mu.Scroll(c.Key("dict.replacements.scroll")).Shrink(1).MinHeight(0).TrackScroll(&d.repsScroll).Children(rows)
+				// The bar sits in a gutter past the table's end, in the
+				// page's margin, so the rows line up with the heading.
+				mu.Scroll(c.Key("dict.replacements.scroll")).Shrink(1).MinHeight(0).MarginEnd(-barGutter).PaddingEnd(barGutter).
+					TrackScroll(&d.repsScroll).Children(rows)
 			} else {
 				rows()
 			}

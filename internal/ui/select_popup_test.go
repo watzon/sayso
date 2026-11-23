@@ -184,7 +184,8 @@ func TestInterfaceLanguageShowsNativeNames(t *testing.T) {
 				if gap < 16 {
 					t.Errorf("%q and %q are %.1f px apart", name, native, gap)
 				}
-				if edge < 0 || edge > 12 {
+				// The list scrolls, so the end keeps room for its bar.
+				if edge < 0 || edge > barGutter+0.5 {
 					t.Errorf("%q is %.1f px from the trailing edge of %+v", native, edge, o.Bounds)
 				}
 				if !inside(nb, o.Bounds) || !inside(db, o.Bounds) {
