@@ -113,6 +113,16 @@ func (a *App) sheet(c *mu.Context, p theme.Colors) {
 			case a.page == PageStyles:
 				gap = 26
 			}
+			if a.page == PageDictionary && !a.inSettings && w-sidebarWidth >= 820 {
+				// Words and replacements scroll on their own; the page holds.
+				mu.Column(c).Grow(1).MinHeight(0).Padding(top, px, bottom, px).Gap(gap).Children(func() {
+					if a.flash != "" {
+						uiText(c, a.flash, 13, 400, p.Danger)
+					}
+					a.dictionaryPage(c, p)
+				})
+				return
+			}
 			mu.Scroll(c.Key(pageKey{a.page, a.section})).Grow(1).Padding(top, px, bottom, px).Gap(gap).Children(func() {
 				if a.flash != "" {
 					uiText(c, a.flash, 13, 400, p.Danger)

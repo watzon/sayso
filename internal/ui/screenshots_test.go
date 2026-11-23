@@ -90,6 +90,7 @@ func TestScreenshots(t *testing.T) {
 			return tt
 		}},
 		{"dictionary", hubAt(HubWidth, HubHeight, func(e *testEnv) { e.a.SetPage(PageDictionary) })},
+		{"dictionary-full", hubAt(HubWidth, HubHeight, func(e *testEnv) { fillDictionary(t, e, 40, 30) })},
 		{"models", hubAt(HubWidth, HubHeight, func(e *testEnv) { e.a.SetPage(PageModels) })},
 		{"settings", hubAt(HubWidth, HubHeight, func(e *testEnv) { e.a.OpenSettings(SecGeneral) })},
 		{"settings-language", func(t *testing.T, e *testEnv) *mu.Tester {
@@ -186,7 +187,7 @@ func TestScreenshots(t *testing.T) {
 				}
 				img := tt.Image()
 				if strings.HasPrefix(s.name, "home") || strings.HasPrefix(s.name, "history") || strings.HasPrefix(s.name, "styles") ||
-					strings.HasPrefix(s.name, "settings") || s.name == "dictionary" || s.name == "models" ||
+					strings.HasPrefix(s.name, "settings") || strings.HasPrefix(s.name, "dictionary") || s.name == "models" ||
 					strings.HasPrefix(s.name, "onboarding") || s.name == "permissions" || s.name == "whats-new" {
 					paintTrafficLights(img, 2)
 				}

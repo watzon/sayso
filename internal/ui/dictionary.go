@@ -26,6 +26,9 @@ type dictState struct {
 	editTo  string
 	try     string
 	err     string
+	// wordsScroll and repsScroll are how far the words and the rules
+	// are scrolled, on a wide page where each scrolls on its own.
+	wordsScroll, repsScroll mu.ScrollState
 	// wordField is the add-word input, which the header's Add focuses.
 	wordField mu.Handle
 	// addOpen opens the dashed "+ Add word" slip into a well; removeShown
@@ -119,40 +122,69 @@ func (a *App) dictionaryPage(c *mu.Context, p theme.Colors) {
 	}
 	f := strings.ToLower(strings.TrimSpace(d.filter))
 	w, _ := c.Size()
+	// Wide, the columns fill the page and scroll on their own (the page
+	// does not scroll), with Try a phrase held at the foot of the words.
+	// Narrow, they stack and the page scrolls.
+	wide := w-sidebarWidth >= 820
 	cols := mu.Row(c).Gap(44).AlignItems(mu.Start)
-	if w-sidebarWidth < 820 {
+	if wide {
+		cols.AlignItems(mu.Stretch).Grow(1).MinHeight(0)
+	} else {
 		cols.Column().Gap(32).AlignItems(mu.Stretch)
 	}
 	cols.Children(func() {
 		left := mu.Column(c).Gap(32)
-		if w-sidebarWidth >= 820 {
-			left.Width(380).Shrink(0)
+		if wide {
+			left.Width(380).Shrink(0).MinHeight(0).Gap(24)
 		}
 		left.Children(func() {
-			a.wordsSection(c, p, f)
+			a.wordsSection(c, p, f, wide)
 			a.tryPhrase(c, p)
 		})
-		mu.Column(c).Grow(1).Basis(0).MinWidth(0).Children(func() { a.replacementsLedger(c, p, f) })
+		right := mu.Column(c).Grow(1).Basis(0).MinWidth(0)
+		if wide {
+			right.MinHeight(0)
+		}
+		right.Children(func() { a.replacementsLedger(c, p, f, wide) })
 	})
 }
 
+// slipRoom is the room a scrolling list of slips keeps around them for
+// their shadows and the add well's focus ring, which its edge would clip.
+const slipRoom = 10
+
 // wordsSection is the words as slips that wrap, and a dashed slip to add one.
-func (a *App) wordsSection(c *mu.Context, p theme.Colors, f string) {
+// In scroll, the slips scroll under the heading.
+func (a *App) wordsSection(c *mu.Context, p theme.Colors, f string, scroll bool) {
 	d := &a.dict
-	mu.Column(c).Gap(16).Children(func() {
+	sec := mu.Column(c).Gap(16)
+	if scroll {
+		sec.Grow(1).MinHeight(0)
+	}
+	sec.Children(func() {
 		sectionHead(c, p, i18n.T("dictionary.words"), i18n.T("dictionary.words_note", "total", i18n.Integer(uint64(len(d.words)))))
-		if len(d.words) == 0 {
-			uiText(c, i18n.T("dictionary.words_empty"), 13, 400, p.Graphite).LineHeight(1.4)
-		}
-		mu.Row(c).Gap(8).Wrap().AlignItems(mu.Center).Children(func() {
-			for _, w := range d.words {
-				if f != "" && !strings.Contains(strings.ToLower(w.Text), f) {
-					continue
-				}
-				a.wordSlip(c, p, w)
+		slips := func() {
+			if len(d.words) == 0 {
+				uiText(c, i18n.T("dictionary.words_empty"), 13, 400, p.Graphite).LineHeight(1.4)
 			}
-			a.addWordSlip(c, p)
-		})
+			mu.Row(c).Gap(8).Wrap().AlignItems(mu.Center).Children(func() {
+				for _, w := range d.words {
+					if f != "" && !strings.Contains(strings.ToLower(w.Text), f) {
+						continue
+					}
+					a.wordSlip(c, p, w)
+				}
+				a.addWordSlip(c, p)
+			})
+		}
+		if !scroll {
+			mu.Column(c).Gap(16).Children(slips)
+			return
+		}
+		// The room for the shadows sits outside the column's edges, so
+		// the slips line up with the heading.
+		mu.Scroll(c.Key("dict.words.scroll")).Grow(1).MinHeight(0).Margin(-slipRoom).Padding(slipRoom).Gap(16).
+			Role(mu.RoleGroup).Label(i18n.T("dictionary.words")).TrackScroll(&d.wordsScroll).Children(slips)
 	})
 }
 
@@ -234,29 +266,47 @@ func (a *App) addWordSlip(c *mu.Context, p theme.Colors) {
 // addSlipPad is the padding at each end of the add-word slip.
 const addSlipPad = 12
 
-func (a *App) replacementsLedger(c *mu.Context, p theme.Colors, f string) {
+// replacementsLedger is the table of rules. In scroll, its rows scroll
+// between the heading, which stays, and the row that adds a rule.
+func (a *App) replacementsLedger(c *mu.Context, p theme.Colors, f string, scroll bool) {
 	d := &a.dict
-	mu.Column(c).Gap(0).Children(func() {
+	col := mu.Column(c).Gap(0)
+	if scroll {
+		col.Grow(1).MinHeight(0)
+	}
+	col.Children(func() {
 		sectionHead(c, p, i18n.T("dictionary.replacements"), i18n.TP("dictionary.replacements_note", len(d.reps), nil))
-		mu.Column(c).Role(mu.RoleTable).Children(func() {
-			mu.Row(c).Height(36).Gap(12).AlignItems(mu.Center).Role(mu.RoleRow).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+		table := mu.Column(c).Role(mu.RoleTable)
+		if scroll {
+			table.MinHeight(0)
+		}
+		table.Children(func() {
+			mu.Row(c).Height(36).Shrink(0).Gap(12).AlignItems(mu.Center).Role(mu.RoleRow).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
 				caps(c, p, i18n.T("dictionary.column.from")).Width(150).Shrink(0)
 				mu.Box(c).Width(18).Shrink(0)
 				caps(c, p, i18n.T("dictionary.column.to")).Grow(1).Basis(0)
 				caps(c, p, i18n.T("dictionary.column.used")).Width(usedColumnW(c)).Shrink(0).TextAlign(mu.End)
 			})
-			if len(d.reps) == 0 {
-				uiText(c, i18n.T("dictionary.rules_empty"), 13, 400, p.Graphite).PaddingY(14).LineHeight(1.4)
+			rows := func() {
+				if len(d.reps) == 0 {
+					uiText(c, i18n.T("dictionary.rules_empty"), 13, 400, p.Graphite).PaddingY(14).LineHeight(1.4)
+				}
+				for _, r := range d.reps {
+					if f != "" && !strings.Contains(strings.ToLower(r.From+" "+r.To), f) {
+						continue
+					}
+					if d.editing == r.ID {
+						a.editRuleRow(c, p, r)
+						continue
+					}
+					a.ledgerRow(c, p, r)
+				}
 			}
-			for _, r := range d.reps {
-				if f != "" && !strings.Contains(strings.ToLower(r.From+" "+r.To), f) {
-					continue
-				}
-				if d.editing == r.ID {
-					a.editRuleRow(c, p, r)
-					continue
-				}
-				a.ledgerRow(c, p, r)
+			if scroll {
+				// As tall as its rows, until the column runs out of room.
+				mu.Scroll(c.Key("dict.replacements.scroll")).Shrink(1).MinHeight(0).TrackScroll(&d.repsScroll).Children(rows)
+			} else {
+				rows()
 			}
 			a.addRuleRow(c, p)
 		})
@@ -285,7 +335,7 @@ func showTo(to string) string {
 
 func (a *App) ledgerRow(c *mu.Context, p theme.Colors, r store.Replacement) {
 	d := &a.dict
-	row := mu.Row(c).Height(48).Gap(12).AlignItems(mu.Center).Role(mu.RoleRow).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
+	row := mu.Row(c).Height(48).Shrink(0).Gap(12).AlignItems(mu.Center).Role(mu.RoleRow).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule)
 	row.Children(func() {
 		serif(c, r.From, 15, p.Graphite).Italic().Width(150).Shrink(0).SingleLine().Ellipsis("…")
 		mu.Icon(c, dirIcon(c, "arrow-right")).FontSize(16).TextColor(p.Ink).Width(18)
@@ -320,7 +370,7 @@ func (a *App) ruleInput(c *mu.Context, p theme.Colors, key, label, placeholder s
 
 func (a *App) addRuleRow(c *mu.Context, p theme.Colors) {
 	d := &a.dict
-	mu.Row(c).Height(52).Gap(12).AlignItems(mu.Center).Children(func() {
+	mu.Row(c).Height(52).Shrink(0).Gap(12).AlignItems(mu.Center).Children(func() {
 		a.ruleInput(c, p, "dict.new_from", i18n.T("dictionary.placeholder.from"), i18n.T("dictionary.placeholder.from"), &d.from, true)
 		mu.Icon(c, dirIcon(c, "arrow-right")).FontSize(16).TextColor(p.Pencil).Width(18)
 		to := a.ruleInput(c, p, "dict.new_to", i18n.T("dictionary.placeholder.to"), i18n.T("dictionary.placeholder.to"), &d.to, false)
@@ -333,7 +383,7 @@ func (a *App) addRuleRow(c *mu.Context, p theme.Colors) {
 
 func (a *App) editRuleRow(c *mu.Context, p theme.Colors, r store.Replacement) {
 	d := &a.dict
-	mu.Row(c).Height(52).Gap(12).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
+	mu.Row(c).Height(52).Shrink(0).Gap(12).AlignItems(mu.Center).BorderWidth(0, 0, 1, 0).BorderColor(p.Rule).Children(func() {
 		a.ruleInput(c, p, "dict.edit_from", i18n.T("dictionary.placeholder.from"), "", &d.editFr, true)
 		mu.Icon(c, dirIcon(c, "arrow-right")).FontSize(16).TextColor(p.Pencil).Width(18)
 		a.ruleInput(c, p, "dict.edit_to", i18n.T("dictionary.placeholder.to"), "", &d.editTo, false)
