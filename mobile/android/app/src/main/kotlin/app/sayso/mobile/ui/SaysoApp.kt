@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -18,13 +18,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import app.sayso.mobile.engine.TypingEngine
 import app.sayso.mobile.engine.createVoiceCore
 import app.sayso.mobile.settings.KeyboardSettingsStore
 
 data class KeyboardStatus(val enabled: Boolean, val selected: Boolean)
 
-private val TABS = listOf("Setup", "Dictionary", "History", "Settings")
+private val TABS = listOf("Setup", "Voice", "Dictionary", "History", "Settings")
 
 @Composable
 fun SaysoApp(
@@ -43,15 +44,16 @@ fun SaysoApp(
             // Edge-to-edge windows no longer resize for the keyboard: shrink for it here,
             // less the navigation bar the Scaffold padding already covers.
             Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-                PrimaryTabRow(selectedTabIndex = tab) {
+                PrimaryScrollableTabRow(selectedTabIndex = tab, edgePadding = 8.dp) {
                     TABS.forEachIndexed { i, title ->
                         Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title) })
                     }
                 }
                 when (tab) {
                     0 -> SetupScreen(status, onEnableKeyboard, onSwitchKeyboard)
-                    1 -> DictionaryScreen(engine)
-                    2 -> HistoryScreen(voice)
+                    1 -> VoiceScreen(voice)
+                    2 -> DictionaryScreen(engine)
+                    3 -> HistoryScreen(voice)
                     else -> SettingsScreen(
                         settings = settings,
                         onChange = {
