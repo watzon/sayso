@@ -304,3 +304,11 @@ func TestOnTouchDoesNotAllocate(t *testing.T) {
 		t.Fatalf("%v allocs per tap", allocs)
 	}
 }
+
+func TestVeryLongWordDoesNotBreakTheMirror(t *testing.T) {
+	f := newField(t, "")
+	f.typeText(strings.Repeat("abcdefghij", 40) + " fine ")
+	if !strings.HasSuffix(f.e.Before(), " fine ") {
+		t.Fatalf("mirror %q", f.e.Before())
+	}
+}

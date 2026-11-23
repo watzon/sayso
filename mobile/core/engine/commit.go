@@ -174,7 +174,11 @@ func (e *Engine) candText(c decoder.Cand) string {
 
 // finishCommit updates the mirror, the undo state, and the learner.
 func (e *Engine) finishCommit(typed, output, sep string, corrected bool) {
-	e.before = e.before[:len(e.before)-len(typed)]
+	if strings.HasSuffix(string(e.before), typed) {
+		e.before = e.before[:len(e.before)-len(typed)]
+	} else {
+		e.before = e.before[:0] // the mirror lost the word's start (a very long word): restart it
+	}
 	e.appendBefore(output + sep)
 	e.autoSpace = false
 
