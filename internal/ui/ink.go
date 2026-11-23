@@ -2,6 +2,7 @@ package ui
 
 import (
 	"math"
+	"sync"
 
 	mu "github.com/egoist/mygo/ui"
 )
@@ -39,33 +40,45 @@ func sampleLevel(levels []float32, x float32) float32 {
 	return levels[i]*(1-t) + levels[j]*t
 }
 
+// inkPaths are paths for the ink, reused: a painter flattens a path when it
+// fills it and keeps nothing of it, and the waveform paints in every frame.
+var inkPaths = sync.Pool{New: func() any { return new(mu.Path) }}
+
 func paintInkLayers(pt *mu.Painter, r mu.Rect, levels []float32, phase float32, col mu.Color, layers [3][2]float32) {
 	const n = 28
 	mid, half := r.Y+r.H/2, r.H/2
+	// The shape of the stroke before each layer's scale: the same for the
+	// three layers.
+	var shape [n]float32
+	for i := range shape {
+		x := float32(i) / (n - 1)
+		// Brush taper: thin at both ends, full in the middle.
+		taper := float32(math.Pow(math.Max(math.Sin(float64(x)*math.Pi), 0), 0.8))
+		level := max(0, min(sampleLevel(levels, x), 1))
+		ripple := 0.82 + 0.18*float32(math.Sin(float64(x*13+phase*6))*math.Cos(float64(x*5-phase*2)))
+		// A small floor so silence still shows a hairline of ink.
+		shape[i] = (0.04 + level*0.96) * taper * ripple
+	}
+	path := inkPaths.Get().(*mu.Path)
+	defer inkPaths.Put(path)
+	var top, bottom [n][2]float32
 	for _, layer := range layers {
 		scale, alpha := layer[0], layer[1]
-		top := make([][2]float32, n)
 		for i := range top {
 			x := float32(i) / (n - 1)
-			// Brush taper: thin at both ends, full in the middle.
-			taper := float32(math.Pow(math.Max(math.Sin(float64(x)*math.Pi), 0), 0.8))
-			level := max(0, min(sampleLevel(levels, x), 1))
-			ripple := 0.82 + 0.18*float32(math.Sin(float64(x*13+phase*6))*math.Cos(float64(x*5-phase*2)))
-			// A small floor so silence still shows a hairline of ink.
-			amp := (0.04 + level*0.96) * taper * ripple * scale
+			amp := shape[i] * scale
 			top[i] = [2]float32{r.X + r.W*x, mid - half*amp}
 		}
-		bottom := make([][2]float32, n)
 		for i, p := range top {
 			bottom[n-1-i] = [2]float32{p[0], mid + (mid - p[1])}
 		}
-		var path mu.Path
+		path.Reset()
 		path.MoveTo(top[0][0], top[0][1])
-		smoothThrough(&path, top)
+		smoothThrough(path, top[:])
 		path.LineTo(bottom[0][0], bottom[0][1])
-		smoothThrough(&path, bottom)
+		smoothThrough(path, bottom[:])
 		path.Close()
-		pt.FillPath(&path, col.Alpha(alpha))
+		pt.FillPath(path, col.Alpha(alpha))
 	}
 }
 
