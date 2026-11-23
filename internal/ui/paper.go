@@ -6,9 +6,11 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"unicode"
 
 	mu "github.com/egoist/mygo/ui"
 
+	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/theme"
 )
 
@@ -186,9 +188,49 @@ func serif(c *mu.Context, s string, size float32, col mu.Color) mu.Element {
 	return mu.Text(c, s).Font(serifFont(theme.Display)).FontSize(size).FontWeight(400).TextColor(col)
 }
 
-// mono is IBM Plex Mono Medium.
+// mono is IBM Plex Mono Medium, or the interface face for text in a script
+// mono would break (monoFont).
 func mono(c *mu.Context, s string, size float32, col mu.Color) mu.Element {
-	return mu.Text(c, s).Font(theme.Mono).FontSize(size).FontWeight(500).TextColor(col).SingleLine()
+	return mu.Text(c, s).Font(monoFont(s)).FontSize(size).FontWeight(500).TextColor(col).SingleLine()
+}
+
+// monoFont is the face of mono text s: IBM Plex Mono for digits, sizes and
+// Latin, Greek or Cyrillic words, else the interface face of the locale.
+// Plex Mono has no Arabic or Hebrew, and the fallback set in its fixed
+// advances pulls joined Arabic letters apart ("الإنجليزية", "لم يبدأ"), so
+// translated text in such a script ("1.3 GB · الإنجليزية") reads in sans.
+// A path, an id or a hex color the user types stays mono: use theme.Mono.
+func monoFont(s string) string {
+	if !shaped(s) {
+		return theme.Mono
+	}
+	return theme.UIFor(i18n.CurrentLocale())
+}
+
+// shaped reports whether s has a letter of a script whose glyphs join or
+// combine into clusters (Arabic, Hebrew, Indic, Thai and the like), which
+// neither a monospace face nor letter spacing may set. Latin, Greek,
+// Cyrillic and the CJK scripts set fine either way.
+func shaped(s string) bool {
+	for _, r := range s {
+		if r < 0x0370 || !unicode.IsLetter(r) {
+			continue
+		}
+		if !unicode.In(r, unicode.Latin, unicode.Greek, unicode.Cyrillic, unicode.Han,
+			unicode.Hiragana, unicode.Katakana, unicode.Hangul, unicode.Bopomofo) {
+			return true
+		}
+	}
+	return false
+}
+
+// tracking is letter spacing em×size for s, or none for text in a script
+// whose letters join (shaped): spacing them breaks the joins.
+func tracking(s string, em, size float32) float32 {
+	if shaped(s) {
+		return 0
+	}
+	return em * size
 }
 
 // sectionHead is a 22 px serif title over a rule, with a note at the right.

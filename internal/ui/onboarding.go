@@ -429,7 +429,7 @@ func pressed(c *mu.Context, p theme.Colors, s string, size, line float32, center
 		align = mu.Center
 	}
 	text := func() mu.Element {
-		e := mu.Text(c, s).Font(serifFont(theme.Display)).FontSize(size).FontWeight(600).LetterSpacing(-0.03 * size).
+		e := mu.Text(c, s).Font(serifFont(theme.Display)).FontSize(size).FontWeight(600).LetterSpacing(tracking(s, -0.03, size)).
 			LineHeight(line / size).TextAlign(align)
 		if d := (frauncesLine*size - line) / 2; d > 0 {
 			e.Margin(-d, 0, -d, 0)

@@ -464,7 +464,7 @@ func (a *App) stepper(c *mu.Context, p theme.Colors, key, label, value string) i
 		}
 		step("dec", "−", i18n.T("a11y.decrease"), -1)
 		mu.Row(c).MinWidth(40).PaddingX(4).Justify(mu.Center).Children(func() {
-			mu.Text(c, value).Font(theme.Mono).FontSize(13).FontWeight(500).TextColor(p.Ink).SingleLine()
+			mu.Text(c, value).Font(monoFont(value)).FontSize(13).FontWeight(500).TextColor(p.Ink).SingleLine()
 		})
 		step("inc", "+", i18n.T("a11y.increase"), 1)
 	})

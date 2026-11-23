@@ -209,7 +209,8 @@ func (a *App) onbModel(c *mu.Context, p theme.Colors) {
 				ring(raised(mu.Row(c).Gap(12).Padding(12, 18).Radius(14).AlignItems(mu.Center), p), p).Children(func() {
 					radioDot(c, p, true)
 					cardTitle(c, p, m.Name, 16, 20).SingleLine()
-					mu.Text(c, sizeLabel(m)+" · "+languageLabel(m)).Font(theme.Mono).FontSize(12).TextColor(p.Ink).SingleLine().Grow(1).Basis(0)
+					meta := sizeLabel(m) + " · " + languageLabel(m)
+					mu.Text(c, meta).Font(monoFont(meta)).FontSize(12).TextColor(p.Ink).SingleLine().Grow(1).Basis(0)
 					b := mu.ButtonBase(a.k(c, "onboarding.model.change")).Label(i18n.T("onboarding.model.change_label")).Role(mu.RoleLink).Cursor(mu.CursorPointer)
 					b.Children(func() { uiText(c, i18n.T("onboarding.model.change"), 13, 500, p.Accent) })
 					if clicked(c, b) {
@@ -247,7 +248,8 @@ func (a *App) modelCard(c *mu.Context, p theme.Colors, m models.ModelInfo, recom
 		})
 		cardTitle(c, p, m.Name, 20, 24)
 		uiText(c, modelDescription(m), 13, 400, p.Graphite).FixedLineHeight(19)
-		mu.Text(c, sizeText(m.SizeBytes)+" · "+languageLabel(m)).Font(theme.Mono).FontSize(12).TextColor(p.Ink).Padding(4, 0, 0, 0)
+		meta := sizeText(m.SizeBytes) + " · " + languageLabel(m)
+		mu.Text(c, meta).Font(monoFont(meta)).FontSize(12).TextColor(p.Ink).Padding(4, 0, 0, 0)
 	})
 	if clicked(c, b) {
 		a.chooseModel(m.ID)
@@ -300,7 +302,7 @@ func (a *App) downloadStrip(c *mu.Context, p theme.Colors, id models.ModelID) {
 		well(func() {
 			mu.Row(c).Gap(12).AlignItems(mu.Center).Children(func() {
 				uiText(c, title, 14, 600, p.Ink).Grow(1).Basis(0).SingleLine().Ellipsis("…")
-				mu.Text(c, right).Font(theme.Mono).FontSize(12).TextColor(p.Graphite).SingleLine()
+				mu.Text(c, right).Font(monoFont(right)).FontSize(12).TextColor(p.Graphite).SingleLine()
 			})
 			track(c, p, "onboarding.model.progress", st.Fraction, 8, title)
 			if m.Engine.Kind == models.KindParakeetUnified {
@@ -480,7 +482,8 @@ func (a *App) allModelsRow(c *mu.Context, p theme.Colors, m models.ModelInfo, se
 			uiText(c, details, 12, 400, p.Graphite).FixedLineHeight(16).SingleLine().Ellipsis("…")
 		})
 		mu.Row(c).Width(82).Shrink(0).Children(func() { meter(c, p, int(m.Speed)) })
-		mu.Text(c, sizeLabel(m)).Font(theme.Mono).FontSize(12).TextColor(p.Graphite).Width(64).Shrink(0).TextAlign(mu.End).SingleLine()
+		size := sizeLabel(m)
+		mu.Text(c, size).Font(monoFont(size)).FontSize(12).TextColor(p.Graphite).Width(64).Shrink(0).TextAlign(mu.End).SingleLine()
 	})
 	if clicked(c, b) {
 		a.chooseModel(m.ID)

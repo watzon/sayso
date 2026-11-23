@@ -154,7 +154,8 @@ func (a *App) featuredStyle(c *mu.Context, p theme.Colors, active string) {
 				})
 			}
 			half(i18n.T("styles.featured.you_say"), func() {
-				mu.Text(c, i18n.T("styles.featured.said")).Font(theme.Mono).FontSize(12).FixedLineHeight(18).TextColor(p.Graphite)
+				said := i18n.T("styles.featured.said")
+				mu.Text(c, said).Font(monoFont(said)).FontSize(12).FixedLineHeight(18).TextColor(p.Graphite)
 			})
 			mu.Box(c).Width(1).Background(p.DebossShade)
 			half(i18n.T("styles.featured.sayso_writes"), func() {

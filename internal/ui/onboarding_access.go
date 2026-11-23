@@ -437,7 +437,7 @@ func (a *App) permissionsDownload(c *mu.Context, p theme.Colors) {
 				pt.Fill(mu.Rect{X: r.X, Y: r.Y, W: max(r.H, r.W*f), H: r.H}, p.InkFill, r.H/2)
 			}
 		}))
-		mu.Text(c, label).Font(theme.Mono).FontSize(12).TextColor(p.Graphite).Shrink(0).SingleLine()
+		mu.Text(c, label).Font(monoFont(label)).FontSize(12).TextColor(p.Graphite).Shrink(0).SingleLine()
 	})
 }
 
