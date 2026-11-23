@@ -40,6 +40,10 @@ type Literal struct {
 	Src     uint8
 	Spatial float32 // spatial cost of the letters as typed
 	Total   float32 // Spatial plus its language-model cost (OOVCost if not a word)
+
+	// Capitalized: a spelling of the typed word keeps a capital
+	// mid-sentence ("Jim", "NASA").
+	Capitalized bool
 }
 
 // lmCost is the language-model cost of a word in the current context.
@@ -150,6 +154,9 @@ func (d *Decoder) literal(b Bonus) Literal {
 		lo, n := m.Lookup(d.lit[:d.ntaps])
 		for i := lo; i < lo+lexicon.WordID(n); i++ {
 			if equalFoldASCII(m.Word(i), typed) {
+				if m.Flags(i)&(lexicon.FlagProper|lexicon.FlagAllCaps) != 0 {
+					lit.Capitalized = true
+				}
 				l := d.lmCost(uint8(src), i, b)
 				t := lit.Spatial + d.P.LMWeight*l
 				if !lit.IsWord || t < lit.Total {
@@ -326,6 +333,9 @@ func (d *Decoder) Decide(b Bonus) Decision {
 	}
 	if lit.IsWord {
 		dec.Margin = lit.Total - c.Total - d.P.MarginKnown
+		if d.protected(&lit) {
+			dec.Margin -= d.P.ProtectMargin
+		}
 	} else {
 		second := float32(1e9)
 		for i := best + 1; i < len(cands); i++ {
@@ -339,6 +349,14 @@ func (d *Decoder) Decide(b Bonus) Decision {
 	dec.Margin -= d.P.ExtraMargin
 	dec.Correct = dec.Margin >= 0
 	return dec
+}
+
+// protected reports whether the user marked the typed word's form: an
+// apostrophe, or a capital they typed on a name or an acronym of two or
+// more letters. A typed capital on a common word ("Ill" for "I'll") does
+// not count: people press shift for "I" and land on its neighbours.
+func (d *Decoder) protected(lit *Literal) bool {
+	return d.apos != 0 || (d.userCase && lit.Capitalized && d.ntaps >= 2)
 }
 
 func sameWords(a, b *Cand) bool { return a.Word == b.Word && a.Word2 == b.Word2 && a.Src == b.Src }

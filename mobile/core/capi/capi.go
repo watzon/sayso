@@ -17,12 +17,14 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/watzon/sayso/mobile/core/decoder"
 	"github.com/watzon/sayso/mobile/core/engine"
 	"github.com/watzon/sayso/mobile/core/lexicon"
 	"github.com/watzon/sayso/mobile/core/touch"
+	"github.com/watzon/sayso/mobile/core/voice"
 )
 
 // Version names the core and the model format it reads.
@@ -43,13 +45,16 @@ func init() {
 
 func main() {}
 
-// A session is one engine and the model it maps. Every call holds mu for
-// reading while it uses them; destroy takes it for writing, so it waits for
-// calls in flight before it unmaps the model, and calls that come after see
-// closed. The engine serializes the calls themselves.
+// A session is one engine, the model it maps, and its voice store. Every
+// call holds mu for reading while it uses them; destroy takes it for
+// writing, so it waits for calls in flight before it unmaps the model, and
+// calls that come after see closed. The engine and the store serialize the
+// calls themselves.
 type session struct {
 	e *engine.Engine
 	m *lexicon.Model
+	// v is the voice store; sayso_set_journal_path swaps it.
+	v atomic.Pointer[voice.Store]
 
 	mu     sync.RWMutex
 	closed bool
@@ -89,6 +94,8 @@ func acquire(h C.sayso_engine) *session {
 }
 
 func (s *session) release() { s.mu.RUnlock() }
+
+func (s *session) voice() *voice.Store { return s.v.Load() }
 
 func (s *session) fail(code C.int32_t, err error) C.int32_t {
 	s.errMu.Lock()
@@ -153,10 +160,18 @@ func register(m *lexicon.Model, journal string, out *C.sayso_engine) C.int32_t {
 		m.Close()
 		return failCreate(C.SAYSO_ERR_IO, err)
 	}
+	v, err := voice.OpenStore(voicePath(journal))
+	if err != nil {
+		e.Close()
+		m.Close()
+		return failCreate(C.SAYSO_ERR_IO, err)
+	}
+	s := &session{e: e, m: m}
+	s.v.Store(v)
 	sessionsMu.Lock()
 	id := nextID
 	nextID++
-	sessions[id] = &session{e: e, m: m}
+	sessions[id] = s
 	sessionsMu.Unlock()
 	*out = C.sayso_engine(id)
 	return C.SAYSO_OK
@@ -210,6 +225,7 @@ func sayso_engine_destroy(h C.sayso_engine) {
 	if !s.closed {
 		s.closed = true
 		s.e.Close()
+		s.voice().Close()
 		s.m.Close()
 	}
 }
@@ -256,9 +272,15 @@ func sayso_set_journal_path(h C.sayso_engine, path *C.char, n C.int32_t) C.int32
 	if !ok {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad path"))
 	}
-	if err := s.e.SetJournal(p); err != nil {
+	v, err := voice.OpenStore(voicePath(p))
+	if err != nil {
 		return s.fail(C.SAYSO_ERR_IO, err)
 	}
+	if err := s.e.SetJournal(p); err != nil {
+		v.Close()
+		return s.fail(C.SAYSO_ERR_IO, err)
+	}
+	s.v.Swap(v).Close()
 	return C.SAYSO_OK
 }
 

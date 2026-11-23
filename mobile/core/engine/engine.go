@@ -10,6 +10,7 @@ import (
 	"sync"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 
 	"github.com/watzon/sayso/mobile/core/decoder"
 	"github.com/watzon/sayso/mobile/core/learner"
@@ -292,8 +293,12 @@ func (e *Engine) SetContext(text string) {
 func (e *Engine) ShouldCapitalize() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.flags&FlagAutocap != 0 && len(e.word) == 0 && textrules.SentenceStart(string(e.before))
+	return e.flags&FlagAutocap != 0 && len(e.word) == 0 && textrules.SentenceStart(beforeView(e.before))
 }
+
+// beforeView reads b as a string without copying it, for calls that do not
+// keep it (the tap path must not allocate).
+func beforeView(b []byte) string { return unsafe.String(unsafe.SliceData(b), len(b)) }
 
 func trimFront(s string, n int) string {
 	if len(s) <= n {
@@ -359,6 +364,9 @@ func (e *Engine) addLetter(c byte, upper bool, key int16, synth bool) {
 	if len(e.word) == 0 {
 		e.lastValid = false // typing after a commit: backspace no longer undoes it
 		e.confirmPending()
+		// A capital the field did not ask for is the user's: it protects the
+		// word as typed ("Jim" stays "Jim", not "him").
+		e.dec.SetUserCase(upper && (e.flags&FlagAutocap == 0 || !textrules.SentenceStart(beforeView(e.before))))
 	}
 	e.autoSpace = false
 	e.scratch.Key = key

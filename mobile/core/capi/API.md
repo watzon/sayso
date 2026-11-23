@@ -10,6 +10,7 @@ cd mobile
 ./scripts/build-core-android.sh   # build/jniLibs/{arm64-v8a,x86_64}/libsayso_core.so + build/include/sayso_core.h
 ./scripts/check-ios-core.sh       # build/ios/libsayso_core.a, reports its size
 ./scripts/test-capi.sh            # host archive + C smoke test + on_touch timing through cgo + destroy race
+go test ./core/capi               # the same C tests, plus testdata/voice.c against an httptest server
 ```
 
 ## Rules
@@ -114,6 +115,47 @@ candidates with total, spatial, and language-model scores and edits; the
 autocorrect margin and whether a commit would correct; the last tap's
 resolution.
 
+## Voice
+
+The voice functions turn a transcript from the speech recognizer (which
+runs outside the core) into the text to insert, keep styles and voice
+history, and make the opt-in cloud calls. They use the same engine handle
+as the keyboard.
+
+| Function | Use |
+|---|---|
+| `sayso_post_process_transcript(e, raw, …, before, …, after, …, out, cap)` | the text to insert at the cursor: the user's replacements, personal words in their spelling (`sayso` → `Sayso`; a word with an inner capital or a digit also joins split speech, `git hub` → `GitHub`), spoken punctuation (`comma`, `period`, `new line`, `new paragraph`, `question mark`, …), then case and spaces from the text before and after the cursor. A sentence start gets a capital when the field has `AUTOCAP`; mid-sentence a first word the model spells in lower case is lowered (`The` → `the`; `I`, names and acronyms stay) and the recognizer's closing period goes before more text. Same size rule as `sayso_list_words` |
+| `sayso_list_styles(e, buf, cap)` | the built-in styles (Clean, Polished, Rambling, Message, Email, Notes, Raw: the desktop's, from `mobile/core/styles`), then custom ones: `id`, `name`, `prompt`, `1` or `0` (built in), each ending with a NUL. Same size rule |
+| `sayso_put_style(e, id, …, name, …, prompt, …)` / `sayso_remove_style(e, id, …)` | custom styles. `SAYSO_ERR_ARG` for a built-in id, an id that is not `a-z0-9-` (at most 64), an empty name or one over 128 bytes, a prompt over 4096 bytes, or a 101st style. An empty prompt means text rules only |
+| `sayso_enhance(e, &cloud, style, …, text, …, out, cap, &len, err, err_cap)` | blocking. Rewrites `text` in the style with the cloud style provider: 1 and the styled text, or 0 and `text` unchanged with the reason in `err` (empty when the style has no prompt or the provider is off; else the error or `timed out`) |
+| `sayso_transcribe_cloud(e, &cloud, pcm, samples, out, cap, &len, err, err_cap)` | blocking. Uploads 16 kHz mono PCM as WAV to the cloud ASR provider; the personal words (up to 50) go along as a hint. `SAYSO_OK` and the text, or `SAYSO_ERR_CLOUD` with the reason in `err` (also when the provider is off) |
+| `sayso_history_add(e, ms, duration_ms, engine, …, style, …, raw, …, final, …, sensitive, &id)` | appends an entry and gives its id. Nothing is kept, and the id is 0, when `sensitive` is set or the field has `SAYSO_EDITOR_PRIVACY` |
+| `sayso_history_list(e, limit, buf, cap)` | newest first, up to `limit` (0: all): `id`, `timestamp_ms`, `duration_ms` (decimal), `engine_id`, `style_id`, `raw`, `final`, each ending with a NUL. Same size rule |
+| `sayso_history_delete(e, id)` / `sayso_history_clear(e)` | the text leaves the file at once |
+
+**Cloud calls.** `sayso_cloud` names one provider for one call: `provider`
+(`SAYSO_ASR_*` for transcription: OpenAI Whisper, Groq, OpenAI-compatible;
+`SAYSO_STYLE_*` for enhancement: OpenAI, OpenAI-compatible, Anthropic), the
+API key, the server (empty: the provider's; OpenAI-compatible needs one and
+may have no key), the model (empty: `whisper-1`, `whisper-large-v3-turbo`,
+`gpt-5-mini`, `claude-haiku-4-5`; OpenAI-compatible needs one), and
+`timeout_ms` (0 or less: `SAYSO_DEFAULT_TIMEOUT_MS`, 3000; at most 120000).
+The core never stores or logs the key and cuts it from error text. Output
+buffers hold `SAYSO_VOICE_TEXT_CAP` (64 KiB) bytes. These calls read what
+they need from the engine and let go of it before the network call, so
+the keyboard's calls and `sayso_engine_destroy` never wait on the network;
+run them off the UI thread. TLS uses the system's roots (Android's
+`/system/etc/security/cacerts`, Apple's Security framework: link
+`Security.framework` on iOS).
+
+**Storage.** Custom styles and history live in `voice.journal` in the
+typing journal's folder (the same journal format; memory only when the
+engine has no journal; `sayso_set_journal_path` moves it along). It stays
+bounded: 500 entries (oldest first out), 8 KiB per text, 100 custom styles,
+and a rewrite each time the file doubles. `sayso_reset_learned` leaves it
+alone. Custom styles are not personal data the keyboard learns, so privacy
+mode does not block style edits; it blocks history.
+
 ## Functions
 
 `sayso_version`, `sayso_last_error`, `sayso_engine_create`,
@@ -124,7 +166,11 @@ resolution.
 `sayso_backspace`, `sayso_revert_last_autocorrect`, `sayso_get_suggestions`,
 `sayso_pick_suggestion`, `sayso_add_word`, `sayso_remove_word`,
 `sayso_add_replacement`, `sayso_remove_replacement`, `sayso_reset_learned`,
-`sayso_list_words`, `sayso_list_replacements`, `sayso_get_diagnostics`.
+`sayso_list_words`, `sayso_list_replacements`, `sayso_get_diagnostics`,
+`sayso_post_process_transcript`, `sayso_list_styles`, `sayso_put_style`,
+`sayso_remove_style`, `sayso_enhance`, `sayso_transcribe_cloud`,
+`sayso_history_add`, `sayso_history_list`, `sayso_history_delete`,
+`sayso_history_clear`.
 
 ## Sketch: an Android IME
 

@@ -1,8 +1,10 @@
 // JNI glue between SaysoCore (Kotlin, src/native) and the C ABI of
-// libsayso_core.so (mobile/core/capi/sayso_core.h). Thin on purpose: results
-// go into arrays the Kotlin side owns and reuses, through stack buffers here,
-// so no call creates Java objects except version() and lastError().
+// libsayso_core.so (mobile/core/capi/sayso_core.h). Thin on purpose: the
+// keyboard's results go into arrays the Kotlin side owns and reuses, through
+// stack buffers here, so those calls create no Java objects. version(),
+// lastError() and the voice calls (not on the typing path) return new ones.
 #include <jni.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "sayso_core.h"
@@ -327,4 +329,204 @@ JNIEXPORT jint JNI_FN(diagnostics)(JNIEnv *env, jclass cls, jlong h, jintArray i
     (*env)->SetFloatArrayRegion(env, floats, 0, DIAG_FLOATS, fv);
     if (used > 0) (*env)->SetByteArrayRegion(env, text, 0, used, (const jbyte *)buf);
     return SAYSO_OK;
+}
+
+// ---- Voice ----
+
+// A new byte[] holding n bytes of p, or NULL.
+static jbyteArray new_bytes(JNIEnv *env, const char *p, jsize n) {
+    jbyteArray a = (*env)->NewByteArray(env, n);
+    if (a && n > 0) (*env)->SetByteArrayRegion(env, a, 0, n, (const jbyte *)p);
+    return a;
+}
+
+JNIEXPORT jbyteArray JNI_FN(postProcess)(JNIEnv *env, jclass cls, jlong h, jbyteArray raw, jbyteArray before, jbyteArray after) {
+    (void)cls;
+    bytes r, b, a;
+    if (!bytes_get(env, raw, &r)) return NULL;
+    if (!bytes_get(env, before, &b)) {
+        bytes_release(env, &r);
+        return NULL;
+    }
+    if (!bytes_get(env, after, &a)) {
+        bytes_release(env, &b);
+        bytes_release(env, &r);
+        return NULL;
+    }
+    char stack[4096];
+    char *buf = stack;
+    int32_t cap = sizeof stack;
+    int32_t n = sayso_post_process_transcript((sayso_engine)h, (const char *)r.p, r.n, (const char *)b.p, b.n, (const char *)a.p, a.n, buf, cap);
+    if (n > cap && (buf = malloc(n)) != NULL) {
+        cap = n;
+        n = sayso_post_process_transcript((sayso_engine)h, (const char *)r.p, r.n, (const char *)b.p, b.n, (const char *)a.p, a.n, buf, cap);
+    }
+    bytes_release(env, &a);
+    bytes_release(env, &b);
+    bytes_release(env, &r);
+    jbyteArray out = (buf != NULL && n >= 0 && n <= cap) ? new_bytes(env, buf, n) : NULL;
+    if (buf != stack) free(buf);
+    return out;
+}
+
+static int32_t list_styles(sayso_engine e, uint32_t which, char *buf, int32_t cap) {
+    (void)which;
+    return sayso_list_styles(e, buf, cap);
+}
+
+JNIEXPORT jint JNI_FN(listStyles)(JNIEnv *env, jclass cls, jlong h, jbyteArray out) {
+    (void)cls;
+    return list_into(env, out, list_styles, (sayso_engine)h, 0);
+}
+
+JNIEXPORT jint JNI_FN(putStyle)(JNIEnv *env, jclass cls, jlong h, jbyteArray id, jbyteArray name, jbyteArray prompt) {
+    (void)cls;
+    bytes i, n, p;
+    if (!bytes_get(env, id, &i)) return SAYSO_ERR_ARG;
+    if (!bytes_get(env, name, &n)) {
+        bytes_release(env, &i);
+        return SAYSO_ERR_ARG;
+    }
+    if (!bytes_get(env, prompt, &p)) {
+        bytes_release(env, &n);
+        bytes_release(env, &i);
+        return SAYSO_ERR_ARG;
+    }
+    int32_t rc = sayso_put_style((sayso_engine)h, (const char *)i.p, i.n, (const char *)n.p, n.n, (const char *)p.p, p.n);
+    bytes_release(env, &p);
+    bytes_release(env, &n);
+    bytes_release(env, &i);
+    return rc;
+}
+
+JNIEXPORT jint JNI_FN(removeStyle)(JNIEnv *env, jclass cls, jlong h, jbyteArray id) {
+    (void)cls;
+    return with_text(env, h, id, sayso_remove_style);
+}
+
+// The parts of a sayso_cloud, held for one call.
+typedef struct {
+    bytes key, base, model;
+    sayso_cloud c;
+} cloud_args;
+
+static int cloud_get(JNIEnv *env, jint provider, jbyteArray key, jbyteArray base, jbyteArray model, jint timeout_ms, cloud_args *a) {
+    memset(a, 0, sizeof *a);
+    if (!bytes_get(env, key, &a->key)) return 0;
+    if (!bytes_get(env, base, &a->base)) {
+        bytes_release(env, &a->key);
+        return 0;
+    }
+    if (!bytes_get(env, model, &a->model)) {
+        bytes_release(env, &a->base);
+        bytes_release(env, &a->key);
+        return 0;
+    }
+    a->c = (sayso_cloud){provider, (const char *)a->key.p, a->key.n, (const char *)a->base.p, a->base.n,
+                         (const char *)a->model.p, a->model.n, timeout_ms};
+    return 1;
+}
+
+static void cloud_release(JNIEnv *env, cloud_args *a) {
+    bytes_release(env, &a->model);
+    bytes_release(env, &a->base);
+    bytes_release(env, &a->key);
+}
+
+// result[0] = the text, result[1] = the error (null when empty).
+static void voice_result(JNIEnv *env, jobjectArray result, const char *text, int32_t len, const char *err) {
+    if (!result || (*env)->GetArrayLength(env, result) < 2) return;
+    (*env)->SetObjectArrayElement(env, result, 0, text ? new_bytes(env, text, len) : NULL);
+    size_t n = err ? strlen(err) : 0;
+    (*env)->SetObjectArrayElement(env, result, 1, n > 0 ? new_bytes(env, err, (jsize)n) : NULL);
+}
+
+JNIEXPORT jint JNI_FN(enhance)(JNIEnv *env, jclass cls, jlong h, jint provider, jbyteArray key, jbyteArray base, jbyteArray model,
+                               jint timeout_ms, jbyteArray style, jbyteArray text, jobjectArray result) {
+    (void)cls;
+    cloud_args a;
+    if (!cloud_get(env, provider, key, base, model, timeout_ms, &a)) return SAYSO_ERR_ARG;
+    bytes s, t;
+    if (!bytes_get(env, style, &s)) {
+        cloud_release(env, &a);
+        return SAYSO_ERR_ARG;
+    }
+    if (!bytes_get(env, text, &t)) {
+        bytes_release(env, &s);
+        cloud_release(env, &a);
+        return SAYSO_ERR_ARG;
+    }
+    char *out = malloc(SAYSO_VOICE_TEXT_CAP);
+    char err[512] = {0};
+    int32_t len = 0, rc = SAYSO_ERR_ARG;
+    if (out) {
+        rc = sayso_enhance((sayso_engine)h, &a.c, (const char *)s.p, s.n, (const char *)t.p, t.n, out, SAYSO_VOICE_TEXT_CAP, &len, err, sizeof err - 1);
+    }
+    bytes_release(env, &t);
+    bytes_release(env, &s);
+    cloud_release(env, &a);
+    if (rc >= 0) voice_result(env, result, out, len, err);
+    free(out);
+    return rc;
+}
+
+JNIEXPORT jint JNI_FN(transcribeCloud)(JNIEnv *env, jclass cls, jlong h, jint provider, jbyteArray key, jbyteArray base, jbyteArray model,
+                                       jint timeout_ms, jshortArray pcm, jobjectArray result) {
+    (void)cls;
+    cloud_args a;
+    if (!cloud_get(env, provider, key, base, model, timeout_ms, &a)) return SAYSO_ERR_ARG;
+    jsize n = pcm ? (*env)->GetArrayLength(env, pcm) : 0;
+    jshort *samples = n > 0 ? (*env)->GetShortArrayElements(env, pcm, NULL) : NULL;
+    char *out = malloc(SAYSO_VOICE_TEXT_CAP);
+    char err[512] = {0};
+    int32_t len = 0, rc = SAYSO_ERR_ARG;
+    if (out && (n == 0 || samples)) {
+        rc = sayso_transcribe_cloud((sayso_engine)h, &a.c, (const int16_t *)samples, n, out, SAYSO_VOICE_TEXT_CAP, &len, err, sizeof err - 1);
+    }
+    if (samples) (*env)->ReleaseShortArrayElements(env, pcm, samples, JNI_ABORT);
+    cloud_release(env, &a);
+    if (rc == SAYSO_OK) voice_result(env, result, out, len, NULL);
+    if (rc == SAYSO_ERR_CLOUD) voice_result(env, result, NULL, 0, err);
+    free(out);
+    return rc;
+}
+
+JNIEXPORT jlong JNI_FN(historyAdd)(JNIEnv *env, jclass cls, jlong h, jlong timestamp_ms, jlong duration_ms, jbyteArray engine_id,
+                                   jbyteArray style_id, jbyteArray raw, jbyteArray final_text, jboolean sensitive) {
+    (void)cls;
+    bytes f[4];
+    jbyteArray arrays[4] = {engine_id, style_id, raw, final_text};
+    int got = 0;
+    for (; got < 4; got++) {
+        if (!bytes_get(env, arrays[got], &f[got])) break;
+    }
+    int64_t id = 0;
+    int32_t rc = SAYSO_ERR_ARG;
+    if (got == 4) {
+        rc = sayso_history_add((sayso_engine)h, timestamp_ms, duration_ms, (const char *)f[0].p, f[0].n, (const char *)f[1].p, f[1].n,
+                               (const char *)f[2].p, f[2].n, (const char *)f[3].p, f[3].n, sensitive ? 1 : 0, &id);
+    }
+    while (got-- > 0) bytes_release(env, &f[got]);
+    return rc == SAYSO_OK ? (jlong)id : rc;
+}
+
+static int32_t history_list(sayso_engine e, uint32_t limit, char *buf, int32_t cap) {
+    return sayso_history_list(e, (int32_t)limit, buf, cap);
+}
+
+JNIEXPORT jint JNI_FN(historyList)(JNIEnv *env, jclass cls, jlong h, jint limit, jbyteArray out) {
+    (void)cls;
+    return list_into(env, out, history_list, (sayso_engine)h, limit > 0 ? (uint32_t)limit : 0);
+}
+
+JNIEXPORT jint JNI_FN(historyDelete)(JNIEnv *env, jclass cls, jlong h, jlong id) {
+    (void)env;
+    (void)cls;
+    return sayso_history_delete((sayso_engine)h, id);
+}
+
+JNIEXPORT jint JNI_FN(historyClear)(JNIEnv *env, jclass cls, jlong h) {
+    (void)env;
+    (void)cls;
+    return sayso_history_clear((sayso_engine)h);
 }

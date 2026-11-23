@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/watzon/sayso/internal/store"
+	"github.com/watzon/sayso/mobile/core/styles"
 )
 
 // Request is one enhancement of a transcript.
@@ -112,7 +113,7 @@ func OutputSchema() map[string]any {
 }
 
 // UserMessage wraps the transcript as data.
-func UserMessage(transcript string) string { return "<transcript>\n" + transcript + "\n</transcript>" }
+func UserMessage(transcript string) string { return styles.UserMessage(transcript) }
 
 // ParseOutput reads {"text": ...} from a reply, also inside a ``` fence.
 func ParseOutput(raw string) (string, error) {

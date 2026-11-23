@@ -13,6 +13,8 @@ internal object SaysoCore {
     }
 
     const val OK = 0
+    const val ERR_ARG = -1
+    const val ERR_CLOUD = -5
     const val TEXT_CAP = 1024
 
     const val EDITOR_PRIVACY = 1
@@ -109,4 +111,47 @@ internal object SaysoCore {
     @JvmStatic external fun listReplacements(handle: Long, out: ByteArray?): Int
 
     @JvmStatic external fun diagnostics(handle: Long, ints: IntArray, floats: FloatArray, text: ByteArray, keyCap: Int, candCap: Int): Int
+
+    // ---- Voice (see the Voice section of API.md) ----
+
+    /** The text to insert for a transcript at the cursor, or null on an error. */
+    @JvmStatic external fun postProcess(handle: Long, raw: ByteArray, before: ByteArray, after: ByteArray): ByteArray?
+
+    /** id, name, prompt, "1"/"0" (built in) per style; the bytes the list needs, written to [out] only when they fit. */
+    @JvmStatic external fun listStyles(handle: Long, out: ByteArray?): Int
+
+    @JvmStatic external fun putStyle(handle: Long, id: ByteArray, name: ByteArray, prompt: ByteArray): Int
+
+    @JvmStatic external fun removeStyle(handle: Long, id: ByteArray): Int
+
+    /**
+     * Blocks on the network. 1: enhanced; 0: [text] given back; negative: an
+     * error code. result[0] gets the text, result[1] the reason (null when none).
+     */
+    @JvmStatic external fun enhance(
+        handle: Long, provider: Int, apiKey: ByteArray, baseUrl: ByteArray, model: ByteArray, timeoutMs: Int,
+        styleId: ByteArray, text: ByteArray, result: Array<ByteArray?>,
+    ): Int
+
+    /**
+     * Blocks on the network. OK with result[0] the transcript, ERR_CLOUD with
+     * result[1] the reason, or another error code.
+     */
+    @JvmStatic external fun transcribeCloud(
+        handle: Long, provider: Int, apiKey: ByteArray, baseUrl: ByteArray, model: ByteArray, timeoutMs: Int,
+        pcm: ShortArray, result: Array<ByteArray?>,
+    ): Int
+
+    /** The new entry's id, 0 when it was not kept (sensitive or privacy mode), or a negative error code. */
+    @JvmStatic external fun historyAdd(
+        handle: Long, timestampMs: Long, durationMs: Long, engineId: ByteArray, styleId: ByteArray,
+        raw: ByteArray, finalText: ByteArray, sensitive: Boolean,
+    ): Long
+
+    /** 7 fields per entry, newest first; the bytes the list needs, written to [out] only when they fit. */
+    @JvmStatic external fun historyList(handle: Long, limit: Int, out: ByteArray?): Int
+
+    @JvmStatic external fun historyDelete(handle: Long, id: Long): Int
+
+    @JvmStatic external fun historyClear(handle: Long): Int
 }
