@@ -57,7 +57,7 @@ func (e *Engine) Diagnostics(maxCands int) Diagnostics {
 	}
 	if len(e.word) > 0 && !e.raw {
 		dec := e.dec.Decide(&e.bonus)
-		d.Margin, d.Correct = dec.Margin, dec.Correct
+		d.Margin, d.Correct = dec.Margin, dec.Correct && !e.correctionsOff()
 		d.LiteralIsWord, d.LiteralTotal = dec.Literal.IsWord, dec.Literal.Total
 		cands, _ := e.dec.Score(&e.bonus)
 		for i, c := range cands {

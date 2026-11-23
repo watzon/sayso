@@ -26,6 +26,20 @@ const (
 	FlagNoSuggest                        // no suggestions (passwords)
 )
 
+// AutocorrectLevel is how eagerly a commit corrects the word (a user
+// setting, unlike the per-field FlagNoAutocorrect).
+type AutocorrectLevel int32
+
+const (
+	AutocorrectOff    AutocorrectLevel = iota // suggest only; replacements still expand
+	AutocorrectNormal                         // the default
+	AutocorrectStrict                         // a correction must clear a higher bar
+)
+
+// strictMargin is how much more a correction must win by in strict mode,
+// in nats.
+const strictMargin = 2
+
 // ActionKind is what the app must do to the text.
 type ActionKind int32
 
@@ -89,6 +103,9 @@ type Engine struct {
 	learn  *learner.Learner
 	flags  uint32
 
+	autocorrect AutocorrectLevel
+	predictions bool
+
 	before []byte // text before the cursor, as the engine believes it
 	word   []tapRec
 	raw    bool // the word has a character the decoder cannot search
@@ -135,6 +152,7 @@ func New(m *lexicon.Model, journal string) (*Engine, error) {
 	e.layout = l
 	e.tm = touch.NewModel(l, touch.DefaultParams)
 	e.dec = decoder.New(m, e.tm, decoder.DefaultParams)
+	e.autocorrect, e.predictions = AutocorrectNormal, true
 	e.bonus.m = m
 	e.applyOffsets()
 	e.refreshPersonal()
@@ -216,6 +234,32 @@ func (e *Engine) SetFlags(f uint32) {
 	if f&FlagPrivacy != 0 {
 		e.pending = nil
 	}
+}
+
+// SetPreferences sets the user's autocorrect level and whether next words
+// are predicted before any tap.
+func (e *Engine) SetPreferences(level AutocorrectLevel, predictions bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.autocorrect, e.predictions = level, predictions
+	e.dec.P.ExtraMargin = 0
+	if level == AutocorrectStrict {
+		e.dec.P.ExtraMargin = strictMargin
+	}
+	e.nsugs = 0
+}
+
+// correctionsOff reports whether a commit keeps the word as typed whatever
+// the decoder thinks (replacements aside).
+func (e *Engine) correctionsOff() bool {
+	return e.noFix || e.flags&FlagNoAutocorrect != 0 || e.autocorrect == AutocorrectOff
+}
+
+// CurrentWord is the word being typed, as typed.
+func (e *Engine) CurrentWord() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return string(e.typed)
 }
 
 // Flags are the editor flags.

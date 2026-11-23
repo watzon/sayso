@@ -9,22 +9,51 @@ package id `app.sayso.mobile`.
 - `keyboard/`: logic with no Android UI, covered by unit tests: layouts, the
   shift state machine, the EditorInfo mapping, and `EditorSession`, which
   applies engine edits to the editor.
-- `engine/`: the `TypingEngine` interface and `FakeTypingEngine`.
+- `engine/`: the `TypingEngine` interface and `FakeTypingEngine`. The native
+  engine, `NativeTypingEngine` with its JNI bindings `SaysoCore`, is in
+  `app/src/native/kotlin/`; the JNI glue is `app/src/main/cpp/sayso_jni.c`.
 - `ui/` and `MainActivity`: the companion app in Jetpack Compose (setup,
-  personal dictionary and replacements, settings).
+  personal dictionary and replacements, settings, and the acknowledgements
+  for the typing model's data).
 - `settings/`: settings the app writes and the keyboard reads when it opens.
 
 ## Build
 
-Needs JDK 21 and the Android SDK (platform 37.1). Point Gradle at the SDK with
-`ANDROID_HOME` or a `local.properties` file holding `sdk.dir=...`.
+Needs Go, JDK 21, and the Android SDK (platform 37.1) with NDK 27.1.12297006
+and CMake 3.22.1. One script builds everything from a clean checkout:
 
 ```sh
-cd mobile/android
+mobile/scripts/build-android.sh
+```
+
+It builds `libsayso_core.so` for arm64-v8a and x86_64, checks
+`mobile/models/en-US.sslm` against the sha256 in
+`mobile/tools/sslmgen/DATA_SOURCES.md`, builds the core and the JNI glue for
+this computer so the JVM tests run the real engine, writes `local.properties`
+if it is missing, runs `./gradlew testDebugUnitTest assembleDebug` with the
+native engine, checks the APK, and prints its path and size. The APK is
+`app/build/outputs/apk/debug/app-debug.apk`.
+
+By hand, from `mobile/android` (point Gradle at the SDK with `ANDROID_HOME` or
+a `local.properties` file holding `sdk.dir=...`):
+
+```sh
+../scripts/build-core-android.sh   # once, and after core changes
 ./gradlew testDebugUnitTest assembleDebug
 ```
 
-The APK is `app/build/outputs/apk/debug/app-debug.apk`.
+The engine is picked at build time:
+
+- **Native** (the default when `mobile/build/jniLibs/<abi>/libsayso_core.so`
+  exists for both ABIs): `src/native/kotlin`, the CMake build of `sayso_jni`,
+  both libraries for arm64-v8a and x86_64, and `mobile/models/` as assets.
+- **Fake** (the default otherwise; needs no NDK): `src/fake/kotlin`, the
+  Kotlin `FakeTypingEngine`, no native code and no model.
+
+`-PsaysoNative=true` or `false` forces one. `-PsaysoCoreDir=<dir>` reads the
+core from `<dir>/<abi>/libsayso_core.so` instead. `-PsaysoHostLibDir=<dir>`
+(set by the script) points the JVM tests at a host build of the core and the
+JNI glue; without it, `NativeTypingEngineTest` is skipped.
 
 ## Install and turn on the keyboard
 
@@ -64,38 +93,46 @@ diagnostics overlay all go through the same interface. See
 
 `SaysoEngine.get(context)` holds one engine for the process, shared by the
 keyboard and the companion app. It calls `createTypingEngine(context)`, which
-is defined once per engine:
+is defined once per engine: `src/fake/kotlin/.../CreateTypingEngine.kt`
+returns `FakeTypingEngine` (nearest key with a learned offset, a short English
+word list), `src/native/kotlin/.../CreateTypingEngine.kt` returns
+`NativeTypingEngine.create(context)`.
 
-- `app/src/fake/kotlin/.../CreateTypingEngine.kt` returns `FakeTypingEngine`
-  (nearest key with a learned offset, a short English word list). This is the
-  default build.
-- `app/src/native/kotlin/.../CreateTypingEngine.kt` returns
-  `NativeTypingEngine`, which does not exist yet.
+### The native engine
 
-### Plugging in the native core
+`NativeTypingEngine` maps the `TypingEngine` calls onto the C ABI of
+`mobile/core/capi` (see `API.md` there) through `SaysoCore`, whose `external`
+functions are implemented in `sayso_jni.c`:
 
-1. Build `libsayso_core.so` from `mobile/core` for `arm64-v8a` and `x86_64`,
-   into `<dir>/<abi>/libsayso_core.so`.
-2. Add `NativeTypingEngine.kt` (implements `TypingEngine`, declares `external`
-   functions, loads `sayso_jni`) to `app/src/native/kotlin/app/sayso/mobile/engine/`.
-3. Fill in `app/src/main/cpp/sayso_jni.c` with the JNI functions that call the
-   C ABI. `app/src/main/cpp/CMakeLists.txt` already links it against
-   `libsayso_core.so`.
-4. Build with the flag:
+- **Model.** `en-US.sslm` is an APK asset stored uncompressed
+  (`androidResources.noCompress`), opened with `AssetFileDescriptor` and
+  `sayso_engine_create_fd`, so the core maps it in place. If that fails, it is
+  copied to `noBackupFilesDir` once and opened from there.
+- **Learning** goes to `filesDir/typing.journal`. Private fields (passwords,
+  incognito, no-personalized-learning) set `SAYSO_EDITOR_PRIVACY`: nothing is
+  learned or written. Dictionary edits from the companion app lift it for the
+  edit, so they are kept even if the last field was private.
+- **No allocation per touch.** `onTouch` passes primitives both ways. The other
+  calls fill arrays the engine owns and reuses; only the returned Strings and
+  lists are new.
+- **Edits** use UTF-16 lengths (`delete_utf16`), as `deleteSurroundingText`
+  counts.
+- **Settings** reach the core through `sayso_set_preferences` (autocorrect
+  off, normal, strict; next-word prediction) each time the keyboard opens.
+  Reset learned data clears the journal and adds back the personal words and
+  replacements the user added; words the core learned by itself go.
+- **Diagnostics** show each key's expansion for the next touch and its learned
+  offset, and each candidate's total, spatial, and language-model scores and
+  edits. The margin is measured from the autocorrect bar (threshold 0).
 
-   ```sh
-   ./gradlew assembleDebug -PsaysoNative=true -PsaysoCoreDir=/path/to/dir
-   ```
-
-   `saysoCoreDir` defaults to `mobile/core/build/android`. The flag swaps the
-   source folder, turns on the CMake build, and packages `libsayso_core.so`.
-   It needs CMake 3.22.1 or later from the SDK manager. The unit tests
-   in `FakeTypingEngineTest` describe the behavior the keyboard expects from
-   any engine.
+The unit tests in `FakeTypingEngineTest` describe the behavior the keyboard
+expects from any engine; `NativeTypingEngineTest` runs the native engine
+through the real JNI glue on the JVM.
 
 ## Developer Diagnostics
 
 Turn on **Developer diagnostics** in the Settings tab. The keyboard then
 outlines each letter's effective hit area, draws the learned touch offset as
 an arrow from the key center, and shows the candidate scores and the
-autocorrect margin above the suggestion strip.
+autocorrect margin above the suggestion strip. With the native engine a
+candidate reads `text total=spatial+lm eEdits` (lower is better, in nats).

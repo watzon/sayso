@@ -35,6 +35,15 @@ typedef uintptr_t sayso_engine;
 #define SAYSO_EDITOR_NO_AUTOCORRECT 4u /* never replace what is typed */
 #define SAYSO_EDITOR_NO_SUGGEST 8u     /* no suggestions (passwords) */
 
+/* Autocorrect levels (sayso_set_preferences). */
+#define SAYSO_AUTOCORRECT_OFF 0    /* suggest only; replacements still expand */
+#define SAYSO_AUTOCORRECT_NORMAL 1 /* the default */
+#define SAYSO_AUTOCORRECT_STRICT 2 /* correct only clear winners */
+
+/* Parts of the personal lexicon (sayso_list_words). */
+#define SAYSO_WORDS_ADDED 1u   /* added with sayso_add_word */
+#define SAYSO_WORDS_LEARNED 2u /* learned by keeping a word the model lacks */
+
 /* Function key codes in sayso_key.code; letters, space and marks use their
  * Unicode code point. */
 #define SAYSO_KEY_SHIFT (-1)
@@ -137,12 +146,18 @@ void sayso_engine_destroy(sayso_engine e);
 int32_t sayso_set_layout(sayso_engine e, const sayso_key *keys, int32_t count);
 int32_t sayso_set_editor_flags(sayso_engine e, uint32_t flags);
 int32_t sayso_set_journal_path(sayso_engine e, const char *path, int32_t len);
+/* The user's settings: a SAYSO_AUTOCORRECT_* level, and whether next words
+ * are predicted before any tap (0 or 1). Defaults: NORMAL, 1. */
+int32_t sayso_set_preferences(sayso_engine e, int32_t autocorrect, int32_t predictions);
 
 /* The text before the cursor, when the cursor moved somewhere the engine
  * did not put it. Repeating the text the engine has is a no-op. */
 int32_t sayso_set_context(sayso_engine e, const char *text, int32_t len);
 /* 1 when the next letter should be a capital, else 0 (or an error). */
 int32_t sayso_should_capitalize(sayso_engine e);
+/* The word being typed, as typed. Writes up to cap bytes; returns its full
+ * length in bytes. */
+int32_t sayso_current_word(sayso_engine e, char *buf, int32_t cap);
 
 /* A tap. Letters join the word and come back in out->code with
  * SAYSO_TOUCH_LETTER: insert them. Anything else is only resolved: pass
@@ -169,6 +184,13 @@ int32_t sayso_add_replacement(sayso_engine e, const char *from, int32_t from_len
                               const char *to, int32_t to_len, int32_t case_sensitive);
 int32_t sayso_remove_replacement(sayso_engine e, const char *from, int32_t from_len);
 int32_t sayso_reset_learned(sayso_engine e);
+/* The personal lexicon parts in which (SAYSO_WORDS_*): each word followed by
+ * a NUL, added words first, each part sorted. Returns the bytes the list
+ * needs; writes it only when that fits in cap (buf may be NULL with cap 0). */
+int32_t sayso_list_words(sayso_engine e, uint32_t which, char *buf, int32_t cap);
+/* The text replacements, sorted: for each, from NUL to NUL then '1' (case
+ * sensitive) or '0' and NUL. Same size rule as sayso_list_words. */
+int32_t sayso_list_replacements(sayso_engine e, char *buf, int32_t cap);
 
 /* For the developer overlay. keys/cands/text may be NULL with 0 caps. */
 int32_t sayso_get_diagnostics(sayso_engine e, sayso_diag *out,

@@ -133,6 +133,15 @@ class FakeTypingEngineTest {
     }
 
     @Test
+    fun backspaceRightAfterAnAutocorrectBringsBackTheTypedWord() {
+        type("teh")
+        engine.onSpaceOrPunct(' ')
+        assertEquals(CommitAction(4, "teh"), engine.onBackspace())
+        assertFalse(engine.onSpaceOrPunct(' ').wasAutocorrect)
+        assertNull(engine.onBackspace())
+    }
+
+    @Test
     fun personalDataSurvivesARestartAndResetKeepsIt() {
         val file = temp.newFile("personal.tsv")
         FakeTypingEngine(file).apply {
