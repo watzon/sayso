@@ -181,8 +181,10 @@ class VoiceBarView(
         }
         text.color = color
         text.textAlign = Paint.Align.CENTER
-        // The newest words matter: cut from the start.
-        val shown = TextUtils.ellipsize(line, text, width - dp(32f), TextUtils.TruncateAt.START)
+        // In live text the newest words matter, so cut from the start; a notice reads from its start.
+        val isNotice = state is VoiceState.Listening && state.partial.isEmpty() && state.notice != null
+        val cut = if (isNotice) TextUtils.TruncateAt.END else TextUtils.TruncateAt.START
+        val shown = TextUtils.ellipsize(line, text, width - dp(32f), cut)
         canvas.drawText(shown, 0, shown.length, width / 2f, y, text)
     }
 
