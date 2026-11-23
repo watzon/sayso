@@ -990,11 +990,7 @@ func (c *Controller) providerFor(style *enhance.Style) (config.Provider, bool) {
 	if !cfg.AI.Enabled || style == nil {
 		return config.Provider{}, false
 	}
-	id := ""
-	if style.Provider != nil {
-		id = *style.Provider
-	}
-	return cfg.AI.Provider(id)
+	return cfg.AI.StyleProvider(style.Provider)
 }
 
 func (c *Controller) styleName(st *enhance.Style) string {

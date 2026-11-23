@@ -428,11 +428,7 @@ func PlanEnhance(cfg *config.Config, styles *enhance.StyleLibrary, req *Enhance,
 		}
 		provider = p
 	} else {
-		id := ""
-		if style.Provider != nil {
-			id = *style.Provider
-		}
-		p, ok := cfg.AI.Provider(id)
+		p, ok := cfg.AI.StyleProvider(style.Provider)
 		if !ok {
 			return nil, config.Provider{}, refuse(CodeUnavailable, "no AI provider is set up for the style %s", style.ID)
 		}

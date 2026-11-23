@@ -225,6 +225,38 @@ func (a AI) Provider(id string) (Provider, bool) {
 	return Provider{}, false
 }
 
+// StyleProvider is the provider that a style runs on: the one it names, else
+// the default provider. It is the one rule for dictation, the Host API, and
+// every page that shows where a style runs. A provider that is gone, or no
+// default, is no provider: it never falls back to another provider, which
+// could send the text somewhere the user did not choose.
+func (a AI) StyleProvider(own *string) (Provider, bool) {
+	id := ""
+	if own != nil {
+		id = *own
+	}
+	return a.Provider(id)
+}
+
+// dropDanglingDefault clears a default provider that names no provider, so
+// the next provider the user adds becomes the default. Validate reports it
+// first. An id of an entry this version does not know stays for the
+// version that wrote it.
+func (a *AI) dropDanglingDefault() {
+	if a.DefaultProvider == nil {
+		return
+	}
+	if _, ok := a.Provider(*a.DefaultProvider); ok {
+		return
+	}
+	for _, u := range a.UnknownProviders {
+		if id, _ := u["id"].(string); id == *a.DefaultProvider {
+			return
+		}
+	}
+	a.DefaultProvider = nil
+}
+
 // migrateProvider turns a codex_cli entry into a chat_gpt entry with the same
 // model and thinking level; the user signs in once more.
 func migrateProvider(m map[string]any) map[string]any {

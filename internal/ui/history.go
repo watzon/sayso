@@ -574,7 +574,8 @@ func (a *App) transcribeAgain(e store.HistoryEntry) {
 	}()
 }
 
-// reEnhance runs the default style on the transcript again.
+// reEnhance runs the default style on the transcript again, on the provider
+// that dictation would use for it.
 func (a *App) reEnhance(e store.HistoryEntry) {
 	if a.d.Store == nil || a.d.Styler == nil {
 		return
@@ -583,7 +584,7 @@ func (a *App) reEnhance(e store.HistoryEntry) {
 	if !ok {
 		return
 	}
-	prov, _ := a.defaultProvider()
+	prov, _ := a.cfg.AI.StyleProvider(st.Provider)
 	a.hist.busy = i18n.T("history.status_enhancing")
 	job := dictation.StyleJob{Style: st, Provider: prov, Text: e.Transcript, Language: a.cfg.Dictation.Language,
 		SpeechModel: models.ModelID(e.Model), BasePrompt: a.styles.BasePrompt()}

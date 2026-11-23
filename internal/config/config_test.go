@@ -403,3 +403,26 @@ func TestStyleHotkeys(t *testing.T) {
 		t.Fatal("round trip")
 	}
 }
+
+// A default provider that names no provider is reported and cleared on load,
+// so the next provider the user adds becomes the default. An id of an entry
+// this version does not know stays.
+func TestDanglingDefaultProviderIsClearedOnLoad(t *testing.T) {
+	l := Parse("[ai]\ndefault_provider = \"gone\"\n\n[[ai.providers]]\nid = \"o\"\nname = \"O\"\nkind = \"open_ai_compatible\"\nbase_url = \"http://localhost:1/v1\"\n")
+	if len(l.Issues) != 1 || l.Issues[0].Field != "ai.default_provider" || l.Issues[0].Problem.Kind != ProblemUnknownProvider {
+		t.Fatal(l.Issues)
+	}
+	if l.Config.AI.DefaultProvider != nil {
+		t.Fatalf("default provider %q, want none", *l.Config.AI.DefaultProvider)
+	}
+	if _, ok := l.Config.AI.StyleProvider(nil); ok {
+		t.Fatal("a style with no provider found one")
+	}
+	if p, ok := l.Config.AI.StyleProvider(new("o")); !ok || p.ID != "o" {
+		t.Fatal(p, ok)
+	}
+	newer := Parse("[ai]\ndefault_provider = \"f\"\n\n[[ai.providers]]\nid = \"f\"\nname = \"F\"\nkind = \"quantum\"\n")
+	if d := newer.Config.AI.DefaultProvider; d == nil || *d != "f" {
+		t.Fatal("dropped the default of an unknown entry")
+	}
+}
