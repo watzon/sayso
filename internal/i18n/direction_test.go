@@ -51,6 +51,13 @@ func TestInterpolationIsolatesValuesRightToLeftOnly(t *testing.T) {
 			t.Errorf("isolateArg(%q) = %q, want it bare", v, got)
 		}
 	}
+	// A sign before or after a number would move to its other side right
+	// to left ("+5" shown as "5+").
+	for _, v := range []string{"+5", "-3", "−2", "+1.5%", "5-10"} {
+		if got := isolateArg(v); got != fsi+v+pdi {
+			t.Errorf("isolateArg(%q) = %q, want it isolated", v, got)
+		}
+	}
 	for _, v := range []string{"⌥", "⌥ Space", "parakeet-tdt-v3", "~/Library", "Safari", "0.16.0 (beta)"} {
 		if got := isolateArg(v); got != fsi+v+pdi {
 			t.Errorf("isolateArg(%q) = %q, want it isolated", v, got)

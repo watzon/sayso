@@ -78,13 +78,14 @@ func isolateArg(v string) string {
 }
 
 // needsIsolate reports whether v has a letter that reads left to right or a
-// symbol whose order the bidi algorithm could flip (⌘, ⌥, brackets).
+// symbol whose order the bidi algorithm could flip (⌘, ⌥, brackets, and a
+// plus or minus sign, which would go to the other side of its number).
 func needsIsolate(v string) bool {
 	for _, r := range v {
 		switch {
 		case unicode.IsDigit(r), unicode.IsSpace(r), unicode.Is(unicode.Mn, r):
 		case unicode.In(r, unicode.Arabic, unicode.Hebrew, unicode.Syriac, unicode.Thaana, unicode.Nko):
-		case strings.ContainsRune(".,:%+-،٫٬٪", r):
+		case strings.ContainsRune(".,:%،٫٬٪", r):
 		default:
 			return true
 		}
