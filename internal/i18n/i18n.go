@@ -119,6 +119,33 @@ func LanguageName(code string) string {
 	return code
 }
 
+// MenuName is how the Language menu shows the setting value code: its name
+// in the interface language ("French" in English) and, after it, its name
+// in that language ("Français"). native is empty where it would repeat
+// name and for System and the pseudo-locale, which have no language of
+// their own. The interface language is its native name alone: a catalog
+// can name it more loosely ("Português" for pt-BR).
+func MenuName(code string) (name, native string) {
+	switch code {
+	case System:
+		return T("settings.general.language_system"), ""
+	case Pseudo:
+		return "Pseudo (en-XA)", ""
+	}
+	l, ok := Find(code)
+	if !ok {
+		return code, ""
+	}
+	if l.Code == CurrentLocale() {
+		return l.Name, ""
+	}
+	name = T("language." + l.Code)
+	if name == l.Name {
+		return name, ""
+	}
+	return name, l.Name
+}
+
 var (
 	catalogsOnce sync.Once
 	catalogs     map[string]map[string]string

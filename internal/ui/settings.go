@@ -179,13 +179,20 @@ func osName() string {
 }
 
 func (a *App) languageSelect(c *mu.Context, key string) {
-	options := []string{i18n.T("settings.general.language_system")}
 	codes := []string{i18n.System}
 	for _, l := range i18n.Available() {
-		options, codes = append(options, l.Name), append(codes, l.Code)
+		codes = append(codes, l.Code)
 	}
 	if i18n.HasPseudo {
-		options, codes = append(options, "Pseudo (en-XA)"), append(codes, i18n.Pseudo)
+		codes = append(codes, i18n.Pseudo)
+	}
+	// Each language by its name in the interface language, then in gray
+	// by its own name, in the face of its own script.
+	options := make([]string, len(codes))
+	details := make([]selectDetail, len(codes))
+	for i, code := range codes {
+		name, native := i18n.MenuName(code)
+		options[i], details[i] = name, selectDetail{text: native, font: theme.UIFor(code)}
 	}
 	sel := options[0]
 	for i, code := range codes {
@@ -193,7 +200,7 @@ func (a *App) languageSelect(c *mu.Context, key string) {
 			sel = options[i]
 		}
 	}
-	a.selectBtn(c, a.colors(c), key, i18n.T("settings.general.interface_language"), &sel, options, 0).OnChange(func() {
+	a.selectBtnDetail(c, a.colors(c), key, i18n.T("settings.general.interface_language"), &sel, options, details, 0).OnChange(func() {
 		for i, o := range options {
 			if o == sel {
 				a.SetLanguage(codes[i])

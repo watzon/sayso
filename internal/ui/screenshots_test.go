@@ -92,6 +92,13 @@ func TestScreenshots(t *testing.T) {
 		{"dictionary", hubAt(HubWidth, HubHeight, func(e *testEnv) { e.a.SetPage(PageDictionary) })},
 		{"models", hubAt(HubWidth, HubHeight, func(e *testEnv) { e.a.SetPage(PageModels) })},
 		{"settings", hubAt(HubWidth, HubHeight, func(e *testEnv) { e.a.OpenSettings(SecGeneral) })},
+		{"settings-language", func(t *testing.T, e *testEnv) *mu.Tester {
+			e.a.OpenSettings(SecGeneral)
+			tt := hubAt(HubWidth, HubHeight, nil)(t, e)
+			tt.Frame()
+			press(t, tt, i18n.T("settings.general.interface_language"))
+			return tt
+		}},
 		{"settings-ai", hubAt(HubWidth, HubHeight, func(e *testEnv) { e.a.OpenSettings(SecProviders) })},
 		{"popover", func(t *testing.T, e *testEnv) *mu.Tester { return mu.NewTester(e.a.PopoverView, PopoverW, PopoverH) }},
 		{"overlay-compact", func(t *testing.T, e *testEnv) *mu.Tester {

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	mu "github.com/egoist/mygo/ui"
@@ -96,5 +97,118 @@ func TestSelectInterfaceLanguageFits(t *testing.T) {
 	tt.Frame()
 	if n := openSelectFits(t, tt, i18n.T("settings.general.interface_language")); n < 10 {
 		t.Errorf("%d options", n)
+	}
+}
+
+// languageOption finds the open option of the interface language select
+// named name, alone or followed by its native name, and the texts inside it.
+func languageOption(tt *mu.Tester, name string) (opt mu.AccessInfo, texts []mu.AccessInfo, ok bool) {
+	all := tt.AccessAll()
+	for _, a := range all {
+		if a.Role == mu.RoleOption && (a.Name == name || strings.HasPrefix(a.Name, name+" ")) {
+			opt, ok = a, true
+			break
+		}
+	}
+	if !ok {
+		return opt, nil, false
+	}
+	for _, a := range all {
+		if a.Role == mu.RoleText && inside(a.Bounds, opt.Bounds) {
+			texts = append(texts, a)
+		}
+	}
+	return opt, texts, true
+}
+
+// Each interface language shows its name in the interface language and,
+// in gray at the trailing edge, its own name; the interface language and
+// System show one name. Chris's request, 2026-11-22.
+func TestInterfaceLanguageShowsNativeNames(t *testing.T) {
+	for _, tc := range []struct {
+		locale   string
+		rtl      bool
+		pairs    [][2]string // name, native, in menu order
+		single   []string
+		pick     string
+		pickCode string
+	}{
+		{"en", false, [][2]string{{"Spanish", "Español"}, {"Japanese", "日本語"}, {"French", "Français"}, {"Korean", "한국어"}, {"Arabic", "العربية"}},
+			[]string{"System", "English"}, "German", "de"},
+		{"ar", true, [][2]string{{"الإنجليزية", "English"}, {"اليابانية", "日本語"}, {"الفرنسية", "Français"}, {"الكورية", "한국어"}},
+			[]string{"لغة النظام", "العربية"}, "الإنجليزية", "en"},
+	} {
+		t.Run(tc.locale, func(t *testing.T) {
+			e := newEnv(t)
+			i18n.SetLocale(tc.locale)
+			e.a.cfg.General.Language = tc.locale
+			e.a.OpenSettings(SecGeneral)
+			tt := e.hub(t)
+			tt.Frame()
+			trigger := i18n.T("settings.general.interface_language")
+			if n := openSelectFits(t, tt, trigger); n < 12 {
+				t.Fatalf("%d options", n)
+			}
+			// The trigger shows the name alone.
+			if b, ok := controlBounds(tt, trigger); !ok || b.W > 160 {
+				t.Errorf("the trigger is %+v", b)
+			}
+			for _, pair := range tc.pairs {
+				name, native := pair[0], pair[1]
+				tt.Key(0, mu.KeyHome)
+				tt.Frame()
+				o, texts, ok := languageOption(tt, name)
+				for ok && o.Offscreen {
+					tt.Key(0, mu.KeyDown)
+					tt.Frame()
+					o, texts, ok = languageOption(tt, name)
+				}
+				if !ok {
+					t.Errorf("no option %q", name)
+					continue
+				}
+				if len(texts) != 2 || texts[0].Name != name || texts[1].Name != native {
+					var got []string
+					for _, a := range texts {
+						got = append(got, a.Name)
+					}
+					t.Errorf("row %q shows %q, want %q then %q", name, got, name, native)
+					continue
+				}
+				nb, db := texts[0].Bounds, texts[1].Bounds
+				// The native name sits at the trailing edge, clear of the name.
+				gap, edge := db.X-(nb.X+nb.W), (o.Bounds.X+o.Bounds.W)-(db.X+db.W)
+				if tc.rtl {
+					gap, edge = nb.X-(db.X+db.W), db.X-o.Bounds.X
+				}
+				if gap < 16 {
+					t.Errorf("%q and %q are %.1f px apart", name, native, gap)
+				}
+				if edge < 0 || edge > 12 {
+					t.Errorf("%q is %.1f px from the trailing edge of %+v", native, edge, o.Bounds)
+				}
+				if !inside(nb, o.Bounds) || !inside(db, o.Bounds) {
+					t.Errorf("%q overflows its row %+v: %+v %+v", name, o.Bounds, nb, db)
+				}
+			}
+			for _, name := range tc.single {
+				tt.Key(0, mu.KeyHome)
+				tt.Frame()
+				if o, texts, ok := languageOption(tt, name); !ok || o.Name != name || len(texts) != 1 {
+					t.Errorf("row %q: %q with %d texts, want the name alone", name, o.Name, len(texts))
+				}
+			}
+			tt.Key(0, mu.KeyHome)
+			tt.Frame()
+			o, _, ok := languageOption(tt, tc.pick)
+			if !ok {
+				t.Fatalf("no option %q", tc.pick)
+			}
+			tt.ClickAt(o.Bounds.X+o.Bounds.W/2, o.Bounds.Y+o.Bounds.H/2)
+			tt.Frame()
+			if got := e.a.cfg.General.Language; got != tc.pickCode {
+				t.Errorf("picking %q set %q, want %q", tc.pick, got, tc.pickCode)
+			}
+		})
 	}
 }

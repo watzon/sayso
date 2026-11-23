@@ -295,6 +295,19 @@ func (a *App) searchWell(c *mu.Context, p theme.Colors, key, placeholder string,
 // selectBtn is a drop-down drawn as a secondary button with a chevron;
 // its menu is a floating list. It returns the trigger, for OnChange.
 func (a *App) selectBtn(c *mu.Context, p theme.Colors, key, label string, sel *string, options []string, w float32) mu.Element {
+	return a.selectBtnDetail(c, p, key, label, sel, options, nil, w)
+}
+
+// selectDetail is gray text at the trailing edge of a select's option, in
+// its own face: a language's name in that language.
+type selectDetail struct {
+	text, font string
+}
+
+// selectBtnDetail is selectBtn whose options have a detail each (details
+// parallel to options; an empty text shows none). The trigger shows the
+// option alone.
+func (a *App) selectBtnDetail(c *mu.Context, p theme.Colors, key, label string, sel *string, options []string, details []selectDetail, w float32) mu.Element {
 	s := mu.SelectBase(a.k(c, key), sel)
 	t := s.Trigger.Label(label).Height(32).PaddingX(14).Gap(8).Radius(8).Shrink(0).AlignItems(mu.Center).Cursor(mu.CursorPointer)
 	if w > 0 {
@@ -315,9 +328,13 @@ func (a *App) selectBtn(c *mu.Context, p theme.Colors, key, label string, sel *s
 	s.Popup(func(panel mu.Element) {
 		// The highlighted option scrolls into view (SelectBase), and the
 		// popup shows above the trigger where there is no room below.
-		list := a.floatingList(c, p, panel.Margin(4, 0, 0, 0).Padding(4).Radius(10).MinWidth(200), key+".list", 312)
+		minW := float32(200)
+		if details != nil {
+			minW = 240
+		}
+		list := a.floatingList(c, p, panel.Margin(4, 0, 0, 0).Padding(4).Radius(10).MinWidth(minW), key+".list", 312)
 		list.Children(func() {
-			for _, o := range options {
+			for i, o := range options {
 				it := menuLine(s.Item(o).Height(30).PaddingX(10).Gap(8).Radius(7))
 				if it.Highlighted() {
 					it.Background(p.Deboss)
@@ -328,7 +345,16 @@ func (a *App) selectBtn(c *mu.Context, p theme.Colors, key, label string, sel *s
 							mu.Icon(c, icon("check")).FontSize(12).TextColor(p.Ink)
 						}
 					})
-					uiText(c, o, 13, 500, p.Ink).SingleLine()
+					if details == nil {
+						uiText(c, o, 13, 500, p.Ink).SingleLine()
+						return
+					}
+					// The name grows, which puts the detail at the
+					// trailing edge, 16 px or more from it (gap 8 + 8).
+					uiText(c, o, 13, 500, p.Ink).SingleLine().Grow(1).MarginEnd(8)
+					if d := details[i]; d.text != "" {
+						uiText(c, d.text, 13, 400, p.Graphite).Font(d.font).SingleLine().Shrink(0)
+					}
 				})
 			}
 		})
