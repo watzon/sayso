@@ -161,7 +161,7 @@ fun VoiceScreen(voice: VoiceCore) {
             ).padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f).padding(end = 16.dp)) {
                 Text("Hands-free", style = MaterialTheme.typography.titleMedium)
                 Text(
                     "Done also sends the message and starts listening again.",
@@ -365,6 +365,7 @@ private fun <P> CloudCard(
                     onValueChange = { onChange(apiKey, it.trim(), model) },
                     label = { Text(if (hints.needsBaseUrl) "Server URL" else "Server URL (optional)") },
                     placeholder = { Text(hints.baseUrl, color = MaterialTheme.colorScheme.outline) },
+                    supportingText = if (hints.needsBaseUrl) null else ({ Text("Empty: ${hints.baseUrl}") }),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth(),
@@ -374,6 +375,7 @@ private fun <P> CloudCard(
                     onValueChange = { onChange(apiKey, baseUrl, it.trim()) },
                     label = { Text(if (hints.needsModel) "Model" else "Model (optional)") },
                     placeholder = { Text(hints.model, color = MaterialTheme.colorScheme.outline) },
+                    supportingText = if (hints.needsModel) null else ({ Text("Empty: ${hints.model}") }),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(autoCorrectEnabled = false),
                     modifier = Modifier.fillMaxWidth(),
