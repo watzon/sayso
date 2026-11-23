@@ -49,7 +49,12 @@ data class VoiceSettings(
     )
 
     val cloudAsrConfigured: Boolean
-        get() = cloud.asrProvider != CloudAsrProvider.OFF && cloud.asrApiKey.isNotBlank()
+        get() = when (cloud.asrProvider) {
+            CloudAsrProvider.OFF -> false
+            // A self-hosted server may need no key, but the core needs its URL and model.
+            CloudAsrProvider.OPENAI_COMPATIBLE -> cloud.asrBaseUrl.isNotBlank() && cloud.asrModel.isNotBlank()
+            else -> cloud.asrApiKey.isNotBlank()
+        }
 
     companion object {
         /** The desktop's first built-in style. The keyboard uses the first of VoiceCore.styles() when an id is unknown. */

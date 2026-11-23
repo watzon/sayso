@@ -67,6 +67,13 @@ class VoiceSettingsTest {
     }
 
     @Test
+    fun compatibleServerNeedsUrlAndModelButNoKey() {
+        val compat = CloudConfig(asrProvider = CloudAsrProvider.OPENAI_COMPATIBLE)
+        assertFalse(VoiceSettings(cloud = compat.copy(asrBaseUrl = "http://h:8000/v1")).cloudAsrConfigured)
+        assertTrue(VoiceSettings(cloud = compat.copy(asrBaseUrl = "http://h:8000/v1", asrModel = "whisper")).cloudAsrConfigured)
+    }
+
+    @Test
     fun activeModelsByKind() {
         val s = VoiceSettings()
             .withActiveModel(ModelCatalog.PARAKEET_V3)
