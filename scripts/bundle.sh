@@ -67,7 +67,7 @@ if [[ "$profile" == debug && "${SAYSO_BUNDLE_FULL:-}" != 1 && -x "$app/Contents/
   -d "$app/Contents/Frameworks/llama" &&
   "$(cat build/bundle.stamp 2>/dev/null)" == "$(bundle_stamp)" ]]; then
   echo "==> app (go, debug), the rest of $app is unchanged"
-  go build -o build/sayso ./cmd/sayso
+  go build -ldflags="-X github.com/watzon/sayso/internal/update.Version=$version" -o build/sayso ./cmd/sayso
   # A new file, not new bytes in the old one: a running Sayso keeps its copy.
   rm -f "$app/Contents/MacOS/Sayso"
   cp build/sayso "$app/Contents/MacOS/Sayso"
@@ -97,11 +97,14 @@ echo "==> app and cleanup runtime (go, $profile)"
 # libffi binding would write to the user cache (library validation refuses
 # that copy): -tags ffi_no_embed and the file name in -X.
 ffi_flag=$("$tool" ldflags -os darwin)
+# The app reports the version of the bundle (Info.plist), which the updater
+# compares with the newest release.
+version_flag="-X github.com/watzon/sayso/internal/update.Version=$version"
 if [[ "$profile" == release ]]; then
-  go build -tags mygo_noinspector -ldflags="-s -w" -o build/sayso ./cmd/sayso &
+  go build -tags mygo_noinspector -ldflags="-s -w $version_flag" -o build/sayso ./cmd/sayso &
   go build -tags ffi_no_embed -ldflags="-s -w $ffi_flag" -o build/sayso-cleanup ./cmd/sayso-cleanup
 else
-  go build -o build/sayso ./cmd/sayso &
+  go build -ldflags="$version_flag" -o build/sayso ./cmd/sayso &
   go build -tags ffi_no_embed -ldflags="$ffi_flag" -o build/sayso-cleanup ./cmd/sayso-cleanup
 fi
 wait $!
