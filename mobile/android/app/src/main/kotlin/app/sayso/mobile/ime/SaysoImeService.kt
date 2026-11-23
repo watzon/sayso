@@ -113,7 +113,8 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         override fun requestMicPermission() {
             startActivity(
                 Intent(this@SaysoImeService, MainActivity::class.java)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    // SINGLE_TOP: an open app gets the extra in onNewIntent instead of only coming to the front.
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                     .putExtra(MainActivity.EXTRA_REQUEST_MIC, true),
             )
         }
