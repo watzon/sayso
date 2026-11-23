@@ -491,7 +491,9 @@ func sayso_add_replacement(h C.sayso_engine, from *C.char, fromLen C.int32_t, to
 	if !ok1 || !ok2 || f == "" {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad replacement"))
 	}
-	s.e.AddReplacement(f, t, caseSensitive != 0)
+	if err := s.e.AddReplacement(f, t, caseSensitive != 0); err != nil {
+		return s.fail(C.SAYSO_ERR_ARG, err)
+	}
 	return C.SAYSO_OK
 }
 

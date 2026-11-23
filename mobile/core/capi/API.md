@@ -82,7 +82,7 @@ autocorrection.
 | Function | Use |
 |---|---|
 | `sayso_add_word` / `sayso_remove_word` | the personal lexicon (seed it from Sayso's dictionary) |
-| `sayso_add_replacement(e, from, …, to, …, case_sensitive)` / `sayso_remove_replacement` | text replacements from Sayso's dictionary: typing `from` as a word writes `to` (`\n` is a line break) |
+| `sayso_add_replacement(e, from, …, to, …, case_sensitive)` / `sayso_remove_replacement` | text replacements from Sayso's dictionary: typing `from` as a word writes `to` (`\n` is a line break). `SAYSO_ERR_ARG`, changing nothing, when `from` is empty or over 128 bytes or `to` is over 512 |
 | `sayso_reset_learned(e)` | forget everything learned, personal words and replacements included, and empty the journal |
 | `sayso_list_words(e, which, buf, cap)` | the personal lexicon for a dictionary screen: `SAYSO_WORDS_ADDED`, `SAYSO_WORDS_LEARNED`, or both; each word ends with a NUL, added words first. Returns the bytes needed and writes only when they fit (call with `NULL, 0` to size the buffer) |
 | `sayso_list_replacements(e, buf, cap)` | the replacements, sorted: `from`, `to`, then `1` (case sensitive) or `0`, each ending with a NUL. Same size rule |
