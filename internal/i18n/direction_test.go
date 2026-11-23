@@ -43,8 +43,18 @@ func TestInterpolationIsolatesValuesRightToLeftOnly(t *testing.T) {
 		t.Errorf("left to right: %q", got)
 	}
 	OverrideDirection("rtl")
-	if got, want := interpolate("Press %{hotkey} (%{count})", vars), "Press \u2068⌘F\u2069 (\u20683\u2069)"; got != want {
+	if got, want := interpolate("Press %{hotkey} (%{count})", vars), "Press \u2068⌘F\u2069 (3)"; got != want {
 		t.Errorf("right to left: %q, want %q", got, want)
+	}
+	for _, v := range []string{"3", "1,234.5", "سبتمبر", "28 سبتمبر"} {
+		if got := isolateArg(v); got != v {
+			t.Errorf("isolateArg(%q) = %q, want it bare", v, got)
+		}
+	}
+	for _, v := range []string{"⌥", "⌥ Space", "parakeet-tdt-v3", "~/Library", "Safari", "0.16.0 (beta)"} {
+		if got := isolateArg(v); got != fsi+v+pdi {
+			t.Errorf("isolateArg(%q) = %q, want it isolated", v, got)
+		}
 	}
 	if got := Isolate("~/Library"); got != "\u2066~/Library\u2069" {
 		t.Errorf("Isolate: %q", got)

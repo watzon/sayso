@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"sync/atomic"
+	"unicode"
 )
 
 // rtlLanguages are the languages of Sayso's locales, present or planned,
@@ -64,13 +65,31 @@ const (
 
 // isolateArg is a value put into a text that reads right to left, in a
 // first strong isolate: a hotkey, a path, a model name, a version or a
-// number keeps its own order, and the punctuation around it stays in the
-// sentence. interpolate uses it right to left only.
+// symbol keeps its own order, and the punctuation around it stays in the
+// sentence. interpolate uses it right to left only. A value of only digits,
+// number punctuation and right-to-left letters ("3", "1,234.5", "سبتمبر")
+// already sits in an Arabic sentence correctly, so it stays bare: no stray
+// control characters in copied or spoken text.
 func isolateArg(v string) string {
-	if v == "" {
+	if v == "" || !needsIsolate(v) {
 		return v
 	}
 	return fsi + v + pdi
+}
+
+// needsIsolate reports whether v has a letter that reads left to right or a
+// symbol whose order the bidi algorithm could flip (⌘, ⌥, brackets).
+func needsIsolate(v string) bool {
+	for _, r := range v {
+		switch {
+		case unicode.IsDigit(r), unicode.IsSpace(r), unicode.Is(unicode.Mn, r):
+		case unicode.In(r, unicode.Arabic, unicode.Hebrew, unicode.Syriac, unicode.Thaana, unicode.Nko):
+		case strings.ContainsRune(".,:%+-،٫٬٪", r):
+		default:
+			return true
+		}
+	}
+	return false
 }
 
 // Isolate keeps s, a token that reads left to right whatever the language
