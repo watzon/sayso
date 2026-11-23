@@ -20,6 +20,7 @@ class DiagnosticsPanelView(context: Context) : View(context) {
 
     private var lines: List<String> = emptyList()
 
+    private val wash = Paint()
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         typeface = Typeface.MONOSPACE
         textSize = 11f * density
@@ -44,7 +45,8 @@ class DiagnosticsPanelView(context: Context) : View(context) {
     }
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawColor(palette.accentWash)
+        wash.color = palette.accentWash
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), wash)
         text.color = palette.ink
         lines.forEachIndexed { i, line ->
             canvas.drawText(line, 8 * density, (i + 1) * 16 * density, text)
