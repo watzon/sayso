@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	mu "github.com/egoist/mygo/ui"
 
 	"github.com/watzon/sayso/internal/i18n"
+	"github.com/watzon/sayso/internal/theme"
 )
 
 var chipWords = []string{"Watzon", "Sayso", "MyGo", "Kubernetes", "Fraunces", "WhisperKit", "Parakeet", "Tailscale", "Roost", "Postgres", "Grafana"}
@@ -135,5 +137,30 @@ func TestDictionaryAddSlipEasesIntoAWell(t *testing.T) {
 	}
 	if n := strictlyBetween(open, in.W, full); n < 5 {
 		t.Errorf("the slip opened in %d frames: %v", n, open[:12])
+	}
+}
+
+// The Used heading of the replacements ledger shows whole in every
+// language, not cut to its column ("مرات الاستخدام", "ПРИМЕНЕНО").
+func TestDictionaryUsedHeadingFits(t *testing.T) {
+	for _, locale := range []string{"en", "ar", "ru", "fr"} {
+		t.Run(locale, func(t *testing.T) {
+			e := newEnv(t)
+			i18n.SetLocale(locale)
+			e.a.SetPage(PageDictionary)
+			tt := e.hub(t)
+			head := strings.ToUpper(i18n.T("dictionary.column.used"))
+			var need float32
+			mu.NewTester(func(c *mu.Context) {
+				need, _ = c.MeasureText(0, mu.Span{Text: head, Font: theme.UIFor(locale), Size: 12, Weight: 500})
+			}, 100, 100)
+			r, ok := tt.Find(head)
+			if !ok {
+				t.Fatalf("no heading %q: %q", head, tt.Texts())
+			}
+			if r.W < need {
+				t.Errorf("heading %q is %v wide for text %v wide", head, r.W, need)
+			}
+		})
 	}
 }

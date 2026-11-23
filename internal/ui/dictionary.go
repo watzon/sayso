@@ -243,7 +243,7 @@ func (a *App) replacementsLedger(c *mu.Context, p theme.Colors, f string) {
 				caps(c, p, i18n.T("dictionary.column.from")).Width(150).Shrink(0)
 				mu.Box(c).Width(18).Shrink(0)
 				caps(c, p, i18n.T("dictionary.column.to")).Grow(1).Basis(0)
-				caps(c, p, i18n.T("dictionary.column.used")).Width(56).Shrink(0).TextAlign(mu.End)
+				caps(c, p, i18n.T("dictionary.column.used")).Width(usedColumnW(c)).Shrink(0).TextAlign(mu.End)
 			})
 			if len(d.reps) == 0 {
 				uiText(c, i18n.T("dictionary.rules_empty"), 13, 400, p.Graphite).PaddingY(14).LineHeight(1.4)
@@ -261,6 +261,15 @@ func (a *App) replacementsLedger(c *mu.Context, p theme.Colors, f string) {
 			a.addRuleRow(c, p)
 		})
 	})
+}
+
+// usedColumnW is the width of the ledger's Used column: 56 DIPs, the room
+// of the edit and remove buttons, or its heading's when a translation is
+// wider ("مرات الاستخدام", "ПРИМЕНЕНО").
+func usedColumnW(c *mu.Context) float32 {
+	head := strings.ToUpper(i18n.T("dictionary.column.used"))
+	w, _ := c.MeasureText(0, mu.Span{Text: head, Font: theme.UIFor(i18n.CurrentLocale()), Size: 12, Weight: 500})
+	return max(56, float32(math.Ceil(float64(w))))
 }
 
 // showTo shows line breaks in a rule's text.
@@ -281,7 +290,7 @@ func (a *App) ledgerRow(c *mu.Context, p theme.Colors, r store.Replacement) {
 		serif(c, r.From, 15, p.Graphite).Italic().Width(150).Shrink(0).SingleLine().Ellipsis("…")
 		mu.Icon(c, dirIcon(c, "arrow-right")).FontSize(16).TextColor(p.Ink).Width(18)
 		serif(c, showTo(r.To), 15, p.Ink).Grow(1).Basis(0).SingleLine().Ellipsis("…")
-		mu.Row(c).Width(56).Shrink(0).Gap(2).Justify(mu.End).AlignItems(mu.Center).Children(func() {
+		mu.Row(c).Width(usedColumnW(c)).Shrink(0).Gap(2).Justify(mu.End).AlignItems(mu.Center).Children(func() {
 			if row.Hovered() || row.FocusWithin() {
 				if a.iconBtnSized(c, p, fmt.Sprintf("dict.edit_rule.%d", r.ID), "settings", i18n.T("dictionary.edit_rule", "from", r.From, "to", r.To), 26, 14) {
 					d.editing, d.editFr, d.editTo = r.ID, r.From, r.To
