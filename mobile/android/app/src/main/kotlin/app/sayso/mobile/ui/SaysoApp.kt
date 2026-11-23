@@ -1,7 +1,9 @@
 package app.sayso.mobile.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
@@ -34,7 +36,9 @@ fun SaysoApp(
     var tab by rememberSaveable { mutableIntStateOf(0) }
     SaysoTheme(settings.theme) {
         Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
-            Column(Modifier.padding(padding)) {
+            // Edge-to-edge windows no longer resize for the keyboard: shrink for it here,
+            // less the navigation bar the Scaffold padding already covers.
+            Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                 PrimaryTabRow(selectedTabIndex = tab) {
                     TABS.forEachIndexed { i, title ->
                         Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title) })

@@ -10,7 +10,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.doOnAttach
 import app.sayso.mobile.R
 import app.sayso.mobile.engine.EditorFlags
 import app.sayso.mobile.engine.InputKind
@@ -99,9 +100,11 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
             addView(keys)
         }
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
-            v.setPadding(0, 0, 0, insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom)
+            val safe = keyboardSafeArea(insets)
+            v.setPadding(safe.left, 0, safe.right, safe.bottom)
             insets
         }
+        root.doOnAttach { ViewCompat.requestApplyInsets(it) }
         return root
     }
 
@@ -153,6 +156,8 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         diagnosticsPanel.palette = palette
         emojiPanel.palette = palette
         (keyboardView.parent?.parent as? View)?.setBackgroundColor(palette.ground)
+        // The system draws the keyboard's navigation buttons over that ground.
+        window?.window?.let { WindowCompat.getInsetsController(it, it.decorView).isAppearanceLightNavigationBars = !palette.dark }
     }
 
     // KeyboardActionListener
