@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Voice: the keyboard records while it is on screen. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Model downloads, and cloud transcription and Styles when the user turns them on. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- SpeechRecognizer looks up the device's recognition service. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -30,5 +42,12 @@
                 android:name="android.view.im"
                 android:resource="@xml/method" />
         </service>
+
+        <!-- Local speech recognition, in its own process so a crash or an
+             out-of-memory kill there never takes the keyboard down. -->
+        <service
+            android:name=".asr.AsrService"
+            android:exported="false"
+            android:process=":asr" />
     </application>
 </manifest>
