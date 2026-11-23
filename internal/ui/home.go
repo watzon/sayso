@@ -500,26 +500,94 @@ func (a *App) checkRow(c *mu.Context, p theme.Colors, it checkItem) {
 	})
 }
 
-// styleRoute is where a style runs, as one line.
-func (a *App) styleRoute(st interface{ UsesAI() bool }) string {
-	if !st.UsesAI() {
-		return i18n.T("styles.route.no_ai", "computer", computer())
+// routeKind is where a style's text goes (Rust ext.rs StyleRoute).
+type routeKind int
+
+const (
+	routeNoAI             routeKind = iota // Raw, or a style with no prompt
+	routeNeedsProvider                     // AI is off, or the style's provider is not set up
+	routeNeedsModel                        // the provider has no model chosen yet
+	routeLocal                             // on this computer
+	routeCloud                             // off this computer
+	routeCleanupCannotRun                  // a cleanup model that cannot run the style cleans up with its defaults
+)
+
+// route is where a style runs: the provider's name (or the cleanup
+// model's) and the model's, "" for none.
+type route struct {
+	kind            routeKind
+	provider, model string
+}
+
+// line is the route as one line: "Cloud · Claude Code · sonnet".
+func (r route) line() string {
+	switch r.kind {
+	case routeNeedsProvider:
+		return i18n.T("styles.route.needs_provider")
+	case routeNeedsModel:
+		return i18n.T("styles.route.needs_model", "provider", r.provider)
+	case routeLocal, routeCloud:
+		key := "styles.route.local"
+		if r.kind == routeCloud {
+			key = "styles.route.cloud"
+		}
+		if r.model == "" {
+			return i18n.T(key+"_no_model", "provider", r.provider)
+		}
+		return i18n.T(key, "provider", r.provider, "model", r.model)
+	case routeCleanupCannotRun:
+		return i18n.T("styles.route.cleanup_cannot_run", "model", r.model)
+	}
+	return i18n.T("styles.route.no_ai", "computer", computer())
+}
+
+// styleRoute is where st runs (Rust ext.rs style_route): on its own
+// provider, or on the default one, with its own model or the provider's.
+// A provider that is gone does not fall back to the default.
+func (a *App) styleRoute(st *enhance.Style) route {
+	if st.IsRaw() {
+		return route{kind: routeNoAI}
 	}
 	if !a.cfg.AI.Enabled {
-		return i18n.T("styles.route.needs_provider")
+		return route{kind: routeNeedsProvider}
 	}
 	prov, ok := a.defaultProvider()
+	if st.Provider != nil {
+		prov, ok = a.cfg.AI.Provider(*st.Provider)
+	}
 	if !ok {
-		return i18n.T("styles.route.needs_provider")
+		return route{kind: routeNeedsProvider}
 	}
-	if prov.NeedsModel() {
-		return i18n.T("styles.route.needs_model", "provider", prov.Name)
+	// A cleanup model has no prompt and no model to choose; it cleans up
+	// on this computer, also a style that it cannot run.
+	if prov.Kind == config.KindCleanupModel {
+		info, known := enhance.FindCleanupModel(prov.ModelName())
+		switch plan := st.RunPlanOn(prov); {
+		case plan.Kind == enhance.PlanCleanup:
+			return route{kind: routeLocal, provider: info.Name}
+		case plan.Kind == enhance.PlanCleanupOnly:
+			return route{kind: routeCleanupCannotRun, model: info.Name}
+		case known:
+			return route{kind: routeNoAI}
+		}
 	}
-	key := "styles.route.local"
+	if !st.UsesAI() {
+		return route{kind: routeNoAI}
+	}
+	model := ""
+	switch {
+	case st.Model != nil && *st.Model != "":
+		model = a.modelLabel(prov.ID, *st.Model)
+	case prov.ModelName() != "":
+		model = a.modelLabel(prov.ID, prov.ModelName())
+	case prov.NeedsModel():
+		return route{kind: routeNeedsModel, provider: prov.Name}
+	}
+	kind := routeLocal
 	if prov.IsCloud() {
-		key = "styles.route.cloud"
+		kind = routeCloud
 	}
-	return i18n.T(key, "provider", prov.Name, "model", prov.ModelName())
+	return route{kind: kind, provider: prov.Name, model: model}
 }
 
 func (a *App) defaultProvider() (config.Provider, bool) {
