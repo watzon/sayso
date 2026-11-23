@@ -52,7 +52,8 @@ data class VoiceSettings(
         get() = cloud.asrProvider != CloudAsrProvider.OFF && cloud.asrApiKey.isNotBlank()
 
     companion object {
-        const val DEFAULT_STYLE = "default"
+        /** The desktop's first built-in style. The keyboard uses the first of VoiceCore.styles() when an id is unknown. */
+        const val DEFAULT_STYLE = "clean"
     }
 }
 
