@@ -2,10 +2,12 @@ package ui
 
 import (
 	"image"
+	"strings"
 	"testing"
 
 	mu "github.com/egoist/mygo/ui"
 
+	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/engine"
 	"github.com/watzon/sayso/internal/i18n"
 )
@@ -297,5 +299,49 @@ func TestMirrorSVGWrapsTheIconInAFlip(t *testing.T) {
 	want := `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18"><g transform="matrix(-1 0 0 1 18 0)"><path d="M3 9 H14"/></g></svg>`
 	if got := string(mirrorSVG(in)); got != want {
 		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}
+
+// A path shown right to left keeps its slashes and tilde on its own side:
+// it is a left-to-right isolate in the text, not a run the sentence
+// reorders ("models/ · لم يُنزَّل" with the slash at the wrong end).
+func TestPathsAreIsolatedRightToLeft(t *testing.T) {
+	forceDirection(t, "rtl")
+	isolated := func(s string) string { return "⁦" + s + "⁩" }
+	hasIn := func(tt *mu.Tester, want string) bool {
+		for _, s := range tt.Texts() {
+			if strings.Contains(s, want) {
+				return true
+			}
+		}
+		return false
+	}
+	e := newEnv(t)
+	e.a.SetPage(PageModels)
+	tt := e.hub(t)
+	if want := isolated(tildePath(e.a.d.Paths.ModelsDir())); !hasIn(tt, want) {
+		t.Errorf("models folder: want %q in %q", want, tt.Texts())
+	}
+
+	e = newEnv(t)
+	e.a.OpenSettings(SecGeneral)
+	tt = e.hub(t)
+	if want := isolated(tildePath(e.a.d.ConfigPath)); !hasIn(tt, want) {
+		t.Errorf("config file: want %q in %q", want, tt.Texts())
+	}
+
+	e.a.OpenSettings(SecAdvanced)
+	tt.Frame()
+	if want := isolated(e.a.d.Paths.CacheDir); !hasIn(tt, want) {
+		t.Errorf("cache folder: want %q in %q", want, tt.Texts())
+	}
+
+	e = newEnv(t)
+	e.a.cfg.AI.Providers = []config.Provider{{ID: "claude-code", Name: "Claude Code", Kind: config.KindClaudeCLI, Model: ptr("sonnet"), Path: ptr("/usr/local/bin/claude")}}
+	e.a.cfg.AI.DefaultProvider = ptr("claude-code")
+	e.a.OpenSettings(SecProviders)
+	tt = e.hub(t)
+	if want := isolated("/usr/local/bin/claude"); !hasIn(tt, want) {
+		t.Errorf("provider path: want %q in %q", want, tt.Texts())
 	}
 }

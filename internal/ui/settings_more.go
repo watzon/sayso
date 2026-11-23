@@ -438,7 +438,7 @@ func (a *App) providerDetail(c *mu.Context, p theme.Colors, i int) {
 		if pr.Path != nil {
 			where = *pr.Path
 		}
-		mono(c, where, 12, p.Graphite).Grow(1).Basis(0).Ellipsis("…")
+		mono(c, i18n.Isolate(where), 12, p.Graphite).Grow(1).Basis(0).Ellipsis("…")
 		if a.button(c, p, "providers.remove."+pr.ID, i18n.T("settings.providers.remove_named", "name", pr.Name), bopt{kind: btnDanger}) {
 			a.removeProvider(pr.ID)
 		}

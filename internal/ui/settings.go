@@ -160,7 +160,7 @@ func (a *App) generalSection(c *mu.Context, p theme.Colors) {
 				a.importPindrop()
 			}
 		})
-		a.row(c, p, i18n.T("settings.general.config_file"), tildePath(a.d.ConfigPath), func() {
+		a.row(c, p, i18n.T("settings.general.config_file"), i18n.Isolate(tildePath(a.d.ConfigPath)), func() {
 			if a.btn(c, p, "general.open_config", i18n.T("settings.general.open_config_file"), btnGhost) {
 				a.openPath(a.d.ConfigPath)
 			}
@@ -929,7 +929,7 @@ func (a *App) advancedSection(c *mu.Context, p theme.Colors) {
 	})
 	a.group(c, p, i18n.T("settings.advanced.folders"), func() {
 		folder := func(key, label, path string) {
-			a.row(c, p, label, path, func() {
+			a.row(c, p, label, i18n.Isolate(path), func() {
 				if a.btn(c, p, key, i18n.T("settings.common.reveal"), btnGhost) {
 					a.openPath(path)
 				}

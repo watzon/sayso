@@ -112,7 +112,7 @@ func (a *App) modelsPage(c *mu.Context, p theme.Colors) {
 		}
 		b := mu.ButtonBase(a.k(c, "models.folder")).Label(i18n.TOS("settings.history.show", nil)).Cursor(mu.CursorPointer)
 		b.Children(func() {
-			uiText(c, line+" · "+tildePath(a.d.Paths.ModelsDir()), 13, 400, p.Graphite).SingleLine()
+			uiText(c, line+" · "+i18n.Isolate(tildePath(a.d.Paths.ModelsDir())), 13, 400, p.Graphite).SingleLine()
 		})
 		if clicked(c, b) {
 			a.openPath(a.d.Paths.ModelsDir())
