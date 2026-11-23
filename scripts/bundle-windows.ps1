@@ -41,11 +41,14 @@ $env:CGO_ENABLED = '0'
 
 $buildDir = Join-Path $root 'build'
 New-Item -ItemType Directory -Force $buildDir | Out-Null
+# The app reports the version of the installer, which the updater compares
+# with the newest release.
+$versionFlag = "-X github.com/watzon/sayso/internal/update.Version=$version"
 if ($Debug) {
-    Invoke-Checked 'app (go, debug)' { go build -o build\sayso.exe .\cmd\sayso }
+    Invoke-Checked 'app (go, debug)' { go build "-ldflags=$versionFlag" -o build\sayso.exe .\cmd\sayso }
 } else {
     # -H=windowsgui makes a GUI program with no console window.
-    Invoke-Checked 'app (go, release)' { go build -tags mygo_noinspector -ldflags='-s -w -H=windowsgui' -o build\sayso.exe .\cmd\sayso }
+    Invoke-Checked 'app (go, release)' { go build -tags mygo_noinspector "-ldflags=-s -w -H=windowsgui $versionFlag" -o build\sayso.exe .\cmd\sayso }
 }
 Invoke-Checked 'engine (go, release)' { go build -ldflags='-s -w' -o build\sayso-engine.exe .\cmd\sayso-engine }
 # The cleanup runtime loads llama.cpp with yzma through libffi. ffi_no_embed:

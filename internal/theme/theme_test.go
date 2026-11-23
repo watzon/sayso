@@ -36,7 +36,8 @@ func TestPalettesMatchRust(t *testing.T) {
 	}
 	inks := goldenInks()
 	palettes, contrasts := 0, 0
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	// A checkout made before .gitattributes kept this file LF has CRLF.
+	for _, line := range strings.Split(strings.TrimSpace(strings.ReplaceAll(string(data), "\r\n", "\n")), "\n") {
 		name, rest, _ := strings.Cut(line, " ")
 		ink, ok := inks[name]
 		if !ok {

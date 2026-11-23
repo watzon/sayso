@@ -580,15 +580,22 @@ func onnxCatalog(s System) []ModelInfo {
 	return list
 }
 
+// The catalogs are built once per system and shared: callers only read
+// them. Their capacity is their length, so an append copies.
 var (
-	catalogMu sync.Mutex
-	catalogs  = map[System][]ModelInfo{}
+	catalogMu      sync.Mutex
+	catalogs       = map[System][]ModelInfo{}
+	speechCatalogs = map[System][]ModelInfo{}
 )
 
 // LocalModelsFor is every local model of a system: speech, VAD, and diarization.
 func LocalModelsFor(s System) []ModelInfo {
 	catalogMu.Lock()
 	defer catalogMu.Unlock()
+	return localModelsLocked(s)
+}
+
+func localModelsLocked(s System) []ModelInfo {
 	if c, ok := catalogs[s]; ok {
 		return c
 	}
@@ -598,6 +605,7 @@ func LocalModelsFor(s System) []ModelInfo {
 	} else {
 		c = onnxCatalog(s)
 	}
+	c = c[:len(c):len(c)]
 	catalogs[s] = c
 	return c
 }
@@ -605,14 +613,22 @@ func LocalModelsFor(s System) []ModelInfo {
 // LocalModels is LocalModelsFor the current system.
 func LocalModels() []ModelInfo { return LocalModelsFor(CurrentSystem()) }
 
-// CatalogFor is the speech models only.
+// CatalogFor is the speech models only. The overlay and the controller ask
+// for it many times a second (Find), so it is built once.
 func CatalogFor(s System) []ModelInfo {
+	catalogMu.Lock()
+	defer catalogMu.Unlock()
+	if c, ok := speechCatalogs[s]; ok {
+		return c
+	}
 	var out []ModelInfo
-	for _, m := range LocalModelsFor(s) {
+	for _, m := range localModelsLocked(s) {
 		if m.Task() == TaskSpeech {
 			out = append(out, m)
 		}
 	}
+	out = out[:len(out):len(out)]
+	speechCatalogs[s] = out
 	return out
 }
 
@@ -632,9 +648,10 @@ func ModelsFor(task ModelTask) []ModelInfo {
 
 // FindLocal finds any local model (speech, VAD, diarization).
 func FindLocal(id ModelID) (ModelInfo, bool) {
-	for _, m := range LocalModels() {
-		if m.ID == id {
-			return m, true
+	all := LocalModels()
+	for i := range all {
+		if all[i].ID == id {
+			return all[i], true
 		}
 	}
 	return ModelInfo{}, false
@@ -642,9 +659,10 @@ func FindLocal(id ModelID) (ModelInfo, bool) {
 
 // Find finds a local speech model.
 func Find(id ModelID) (ModelInfo, bool) {
-	for _, m := range Catalog() {
-		if m.ID == id {
-			return m, true
+	cat := Catalog()
+	for i := range cat {
+		if cat[i].ID == id {
+			return cat[i], true
 		}
 	}
 	return ModelInfo{}, false

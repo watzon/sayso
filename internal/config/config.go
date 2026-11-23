@@ -557,7 +557,9 @@ func Parse(text string) Loaded {
 	}
 	var issues []Issue
 	cfg := fromSections(doc, &issues)
-	return Loaded{Config: cfg, Issues: append(issues, cfg.Validate()...)}
+	issues = append(issues, cfg.Validate()...)
+	cfg.AI.dropDanglingDefault()
+	return Loaded{Config: cfg, Issues: issues}
 }
 
 func fromSections(doc map[string]any, issues *[]Issue) Config {

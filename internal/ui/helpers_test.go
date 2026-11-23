@@ -129,7 +129,7 @@ type testEnv struct {
 // fixedNow is a Wednesday afternoon.
 var fixedNow = time.Date(2026, 11, 18, 15, 4, 0, 0, time.Local)
 
-func newEnv(t *testing.T) *testEnv {
+func newEnv(t testing.TB) *testEnv {
 	t.Helper()
 	i18n.SetLocale("en")
 	t.Cleanup(func() { i18n.SetLocale("en") })

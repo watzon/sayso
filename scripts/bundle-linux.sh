@@ -20,7 +20,10 @@ case "$arch" in
   *) echo "no llama.cpp build for $arch" >&2; exit 1 ;;
 esac
 export CGO_ENABLED=0
-if [[ "$profile" == release ]]; then ldflags=(-ldflags="-s -w" -tags mygo_noinspector); else ldflags=(); fi
+# The app reports the version of the tarball, which the updater compares
+# with the newest release.
+version_flag="-X github.com/watzon/sayso/internal/update.Version=$version"
+if [[ "$profile" == release ]]; then ldflags=(-ldflags="-s -w $version_flag" -tags mygo_noinspector); else ldflags=(-ldflags="$version_flag"); fi
 
 echo "==> app, engine, and cleanup runtime (go, $profile)"
 mkdir -p build/go

@@ -137,7 +137,7 @@ func run(o options, smoke bool) error {
 	}
 	apps := bridge.NewAppsFile(p.AppsFile())
 	a := ui.New(ui.Deps{
-		Paths: p, ConfigPath: p.ConfigFile(), Config: cfg, Issues: cfg.Validate(), Store: db, Platform: plat,
+		Paths: p, ConfigPath: p.ConfigFile(), Config: cfg, Issues: loaded.Issues, Store: db, Platform: plat,
 		Secrets: secrets, Apps: apps, Version: update.Version, ReleaseNotes: releaseNotes,
 	})
 	if o.pseudo {

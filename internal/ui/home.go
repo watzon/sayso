@@ -364,7 +364,7 @@ func (a *App) defaultStyleCard(c *mu.Context, p theme.Colors) {
 			mu.Row(c).Height(22).AlignItems(mu.Center).Children(func() {
 				caps(c, p, i18n.T("home.style.default")).Grow(1)
 				if st != nil && st.UsesAI() && a.cfg.AI.Enabled {
-					if prov, ok := a.defaultProvider(); ok {
+					if prov, ok := a.cfg.AI.StyleProvider(st.Provider); ok {
 						if prov.IsCloud() {
 							badge(c, p, i18n.T("hub.place.cloud"), toneAccent, "cloud")
 						} else {
@@ -403,7 +403,7 @@ func (a *App) styleDetail(st *enhance.Style) string {
 	case !a.cfg.AI.Enabled:
 		where = i18n.T("home.style.detail_needs_provider")
 	default:
-		prov, ok := a.defaultProvider()
+		prov, ok := a.cfg.AI.StyleProvider(st.Provider)
 		switch {
 		case !ok:
 			where = i18n.T("home.style.detail_needs_provider")
@@ -551,10 +551,7 @@ func (a *App) styleRoute(st *enhance.Style) route {
 	if !a.cfg.AI.Enabled {
 		return route{kind: routeNeedsProvider}
 	}
-	prov, ok := a.defaultProvider()
-	if st.Provider != nil {
-		prov, ok = a.cfg.AI.Provider(*st.Provider)
-	}
+	prov, ok := a.cfg.AI.StyleProvider(st.Provider)
 	if !ok {
 		return route{kind: routeNeedsProvider}
 	}
@@ -590,14 +587,8 @@ func (a *App) styleRoute(st *enhance.Style) route {
 	return route{kind: kind, provider: prov.Name, model: model}
 }
 
+// defaultProvider is the provider of a style that names none, by the rule
+// dictation uses (config.AI.StyleProvider).
 func (a *App) defaultProvider() (config.Provider, bool) {
-	if a.cfg.AI.DefaultProvider != nil {
-		if pr, ok := a.cfg.AI.Provider(*a.cfg.AI.DefaultProvider); ok {
-			return pr, true
-		}
-	}
-	if len(a.cfg.AI.Providers) > 0 {
-		return a.cfg.AI.Providers[0], true
-	}
-	return config.Provider{}, false
+	return a.cfg.AI.StyleProvider(nil)
 }

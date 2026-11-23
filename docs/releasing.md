@@ -158,7 +158,7 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    To see the window, run `scripts/dev.sh --whats-new`. It shows the first entry of the file.
 
-2. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and set the same version in `engineVersion` in `native/macos/SaysoEngine/Sources/SaysoEngine/Protocol.swift`. The Swift engine cannot read `Cargo.toml`, and its `hello` reply must have the version of the release. The test `the_swift_engine_reports_the_sayso_version` in `sayso-core` (step 3) fails when the two differ. Then write the version into the npm packages:
+2. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and set the same version in `engineVersion` in `native/macos/SaysoEngine/Sources/SaysoEngine/Protocol.swift`. Set it in `Version` in `internal/update/version.go` too: the bundle scripts give the app the version of `Cargo.toml`, but `go run` and `go install` builds use that file, and `TestVersionMatchesCargoToml` fails when the two differ. The Swift engine cannot read `Cargo.toml`, and its `hello` reply must have the version of the release. The test `the_swift_engine_reports_the_sayso_version` in `sayso-core` (step 3) fails when the two differ. Then write the version into the npm packages:
 
    ```sh
    python3 scripts/npm-packages.py set-version --version 0.3.0
