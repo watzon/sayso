@@ -55,8 +55,8 @@ var DefaultParams = Params{
 	LookWeight:  0.6,
 	LMWeight:    1,
 	OOVCost:     15,
-	MarginKnown: 6,
-	MarginGap:   1.5,
+	MarginKnown: 4,
+	MarginGap:   1.0,
 	MaxCandCost: 40,
 	LongWord:    6,
 }

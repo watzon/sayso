@@ -70,6 +70,7 @@ type Learner struct {
 	fixes        map[pair]int
 	promoted     map[string]string // typed (lower) → target
 	ngrams       map[[2]string]*ngram
+	following    map[string]map[string]*ngram // the same bigrams by first word
 	offsets      Offsets
 	applied      [MaxOffsetKeys][2]float32 // offsets in use, moved at most MaxStep per update
 	rowOf        [MaxOffsetKeys]uint8      // each key's row in the current layout
@@ -96,6 +97,7 @@ func (l *Learner) clear() {
 	l.fixes = map[pair]int{}
 	l.promoted = map[string]string{}
 	l.ngrams = map[[2]string]*ngram{}
+	l.following = map[string]map[string]*ngram{}
 	l.offsets = Offsets{}
 	l.applied = [MaxOffsetKeys][2]float32{}
 	l.confirmed = 0
@@ -275,6 +277,12 @@ func (l *Learner) bump(k [2]string, t int64) {
 		}
 		g = &ngram{}
 		l.ngrams[k] = g
+		f := l.following[k[0]]
+		if f == nil {
+			f = map[string]*ngram{}
+			l.following[k[0]] = f
+		}
+		f[k[1]] = g
 	}
 	g.count = decayed(g.count, g.last, t) + 1
 	g.last = t
@@ -308,6 +316,12 @@ func (l *Learner) evict(now int64) {
 	})
 	for _, x := range all[:len(all)/10+1] {
 		delete(l.ngrams, x.k)
+		if f := l.following[x.k[0]]; f != nil {
+			delete(f, x.k[1])
+			if len(f) == 0 {
+				delete(l.following, x.k[0])
+			}
+		}
 	}
 }
 
@@ -587,6 +601,15 @@ func (l *Learner) Bigram(prev, w string) float64 {
 		return 0
 	}
 	return decayed(g.count, g.last, l.now().Unix())
+}
+
+// Following calls fn for each word the user wrote after prev, with the
+// faded count.
+func (l *Learner) Following(prev string, fn func(w string, count float64)) {
+	now := l.now().Unix()
+	for w, g := range l.following[norm(prev)] {
+		fn(w, decayed(g.count, g.last, now))
+	}
 }
 
 // Bigrams calls fn for each personal bigram with its faded count.

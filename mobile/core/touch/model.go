@@ -22,7 +22,7 @@ type Params struct {
 }
 
 // DefaultParams are the tuned defaults (see the replay benchmark).
-var DefaultParams = Params{SigmaFrac: 0.30, CoreFrac: 0.5, MaxBorrow: 0.22, Tau: 3}
+var DefaultParams = Params{SigmaFrac: 0.28, CoreFrac: 0.5, MaxBorrow: 0.22, Tau: 3}
 
 // NoPrior marks a key the language model has no opinion on.
 var NoPrior = float32(math.Inf(-1))

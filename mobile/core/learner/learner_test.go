@@ -220,3 +220,15 @@ func TestCompaction(t *testing.T) {
 		t.Fatal("compaction lost state")
 	}
 }
+
+func TestFollowing(t *testing.T) {
+	l := New()
+	l.Committed("Good", "night")
+	l.Committed("good", "morning")
+	l.Committed("bad", "night")
+	got := map[string]float64{}
+	l.Following("GOOD", func(w string, c float64) { got[w] = c })
+	if len(got) != 2 || got["night"] != 1 || got["morning"] != 1 {
+		t.Fatal(got)
+	}
+}
