@@ -98,6 +98,11 @@ class AsrClient(context: Context, private val listener: Listener) {
         idle()
     }
 
+    /** Drops whatever session is running, if any. */
+    fun cancelCurrent() {
+        if (session != 0) cancel(session)
+    }
+
     /** The dictation is over: unbind after a while unless another one starts. */
     fun idle() {
         session = 0

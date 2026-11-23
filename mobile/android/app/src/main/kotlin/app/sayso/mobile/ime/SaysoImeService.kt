@@ -1,5 +1,6 @@
 package app.sayso.mobile.ime
 
+import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.view.KeyEvent
 import android.view.View
@@ -8,11 +9,11 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.Toast
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.doOnAttach
-import app.sayso.mobile.R
+import app.sayso.mobile.MainActivity
+import app.sayso.mobile.engine.CommitAction
 import app.sayso.mobile.engine.EditorFlags
 import app.sayso.mobile.engine.InputKind
 import app.sayso.mobile.engine.SaysoEngine
@@ -30,6 +31,9 @@ import app.sayso.mobile.keyboard.imeActionFor
 import app.sayso.mobile.keyboard.isMultiLine
 import app.sayso.mobile.settings.KeyboardSettings
 import app.sayso.mobile.settings.KeyboardSettingsStore
+import app.sayso.mobile.voice.VoiceController
+import app.sayso.mobile.voice.VoiceHost
+import app.sayso.mobile.voice.VoiceState
 
 class SaysoImeService : InputMethodService(), KeyboardActionListener {
     private lateinit var engine: TypingEngine
@@ -40,6 +44,8 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     private lateinit var strip: SuggestionStripView
     private lateinit var diagnosticsPanel: DiagnosticsPanelView
     private lateinit var emojiPanel: EmojiPanelView
+    private lateinit var voice: VoiceController
+    private var voiceBar: VoiceBarView? = null
 
     private val shift = ShiftState()
     private var session: EditorSession? = null
@@ -76,22 +82,68 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         super.onCreate()
         engine = SaysoEngine.get(this)
         settingsStore = KeyboardSettingsStore(this)
+        voice = VoiceController(this, voiceHost)
+    }
+
+    override fun onDestroy() {
+        voice.destroy()
+        super.onDestroy()
+    }
+
+    private val voiceHost = object : VoiceHost {
+        override fun textBeforeCursor(length: Int) = editor.textBeforeCursor(length)
+
+        override fun textAfterCursor(length: Int): String =
+            currentInputConnection?.getTextAfterCursor(length, 0)?.toString().orEmpty()
+
+        override fun insertDictation(text: String) {
+            session?.insert(text)
+            engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
+            revertWord = null
+            afterEdit()
+        }
+
+        override fun deleteBeforeCursor(length: Int) {
+            session?.apply(CommitAction(length, ""))
+            engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
+        }
+
+        override fun performEditorAction() = onEnter()
+
+        override fun requestMicPermission() {
+            startActivity(
+                Intent(this@SaysoImeService, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    .putExtra(MainActivity.EXTRA_REQUEST_MIC, true),
+            )
+        }
+
+        override fun onVoiceChanged() = showVoice()
     }
 
     override fun onCreateInputView(): View {
         keyboardView = KeyboardView(this, this)
-        strip = SuggestionStripView(this, onPick = ::pick, onRevert = ::revert, onMic = {
-            Toast.makeText(this, R.string.voice_coming_soon, Toast.LENGTH_SHORT).show()
-        })
+        strip = SuggestionStripView(this, onPick = ::pick, onRevert = ::revert, onMic = { voice.micTapped(flags, imeAction) })
         diagnosticsPanel = DiagnosticsPanelView(this)
         emojiPanel = EmojiPanelView(this, onEmoji = ::onText, onBackspace = ::onBackspace, onLetters = { showEmoji(false) })
+        val bar = VoiceBarView(
+            this,
+            voice,
+            onCancel = voice::cancel,
+            onDone = voice::done,
+            onRetry = { voice.micTapped(flags, imeAction) },
+            onHandsFree = voice::toggleHandsFree,
+        )
+        voiceBar = bar
 
         val keys = FrameLayout(this).apply {
             clipChildren = false
             addView(keyboardView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(emojiPanel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
+            addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
         }
         emojiPanel.visibility = View.GONE
+        bar.visibility = View.GONE
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
@@ -110,8 +162,17 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
+    // The keyboard may record only while it is on screen.
+    override fun onFinishInputView(finishingInput: Boolean) {
+        voice.cancel()
+        super.onFinishInputView(finishingInput)
+    }
+
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // A dictation belongs to the field it started in.
+        if (!restarting) voice.cancel()
+        voice.undo.clear()
         settings = settingsStore.load()
         inputType = info.inputType
         flags = editorFlagsFor(info.inputType, info.imeOptions)
@@ -142,6 +203,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         s.resetCursor(newSelStart)
         engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
         revertWord = null
+        voice.undo.clear()
         afterEdit()
     }
 
@@ -155,6 +217,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         strip.palette = palette
         diagnosticsPanel.palette = palette
         emojiPanel.palette = palette
+        voiceBar?.palette = palette
         (keyboardView.parent?.parent as? View)?.setBackgroundColor(palette.ground)
         // The system draws the keyboard's navigation buttons over that ground.
         window?.window?.let { WindowCompat.getInsetsController(it, it.decorView).isAppearanceLightNavigationBars = !palette.dark }
@@ -169,6 +232,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         session?.insert((if (shift.isUpperCase) char.uppercaseChar() else char).toString())
         shift.onLetter()
         revertWord = null
+        voice.undo.clear()
         afterEdit()
     }
 
@@ -180,6 +244,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         session?.apply(engine.onText(text))
         if (text.any { it.isLetter() }) shift.onLetter()
         revertWord = null
+        voice.undo.clear()
         afterEdit()
     }
 
@@ -204,6 +269,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
             }
         }
         revertWord = null
+        voice.undo.clear()
         afterEdit()
     }
 
@@ -211,6 +277,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         session?.deleteWordBefore()
         engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
         revertWord = null
+        voice.undo.clear()
         afterEdit()
     }
 
@@ -254,20 +321,44 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         val action = engine.onSpaceOrPunct(char)
         session?.apply(action)
         revertWord = if (action.wasAutocorrect) action.original else null
+        voice.undo.clear()
         afterEdit()
     }
 
     private fun pick(index: Int) {
         session?.apply(engine.pickSuggestion(index))
         revertWord = null
+        voice.undo.clear()
         afterEdit()
     }
 
     private fun revert() {
+        if (voice.undoLast()) {
+            afterEdit()
+            return
+        }
         val action = engine.revertLastAutocorrect() ?: return
         session?.apply(action)
         revertWord = null
         afterEdit()
+    }
+
+    /** Shows the voice bar in place of the keys while a dictation runs or its error shows. */
+    private fun showVoice() {
+        val bar = voiceBar ?: return
+        val show = voice.machine.state != VoiceState.Idle
+        if (show && bar.visibility != View.VISIBLE) {
+            showEmoji(false)
+            bar.layoutParams = bar.layoutParams.apply { height = keyboardView.height }
+            bar.visibility = View.VISIBLE
+            keyboardView.visibility = View.INVISIBLE
+        } else if (!show && bar.visibility == View.VISIBLE) {
+            bar.visibility = View.GONE
+            keyboardView.visibility = View.VISIBLE
+        }
+        bar.invalidate()
+        strip.micActive = voice.machine.active
+        refreshStrip()
     }
 
     private fun showEmoji(show: Boolean) {
@@ -286,7 +377,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     private fun refreshStrip() {
-        strip.show(engine.suggestions(), revertWord)
+        strip.show(engine.suggestions(), if (voice.undo.inserted != null) "Undo" else revertWord)
         if (settings.diagnostics) {
             val d = engine.diagnostics()
             keyboardView.diagnostics = d

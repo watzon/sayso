@@ -127,6 +127,13 @@ class VoiceMachine {
         return true
     }
 
+    /** No engine can start: shows [message] instead of listening. Ignored while a dictation runs. */
+    fun refuse(message: String): Boolean {
+        if (active) return false
+        state = VoiceState.Failed(message)
+        return true
+    }
+
     /** Cancel, or close the bar after a failure. Everything still running for the old session is ignored from now on. */
     fun cancel() {
         state = VoiceState.Idle

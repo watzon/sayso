@@ -102,6 +102,15 @@ class VoiceMachineTest {
     }
 
     @Test
+    fun refuseShowsWhyNothingStartsButNeverInterruptsADictation() {
+        assertTrue(m.refuse("No recognizer"))
+        assertEquals(VoiceState.Failed("No recognizer"), m.state)
+        val s = m.start(VoiceEngine.LOCAL, 0)!!
+        assertFalse(m.refuse("No recognizer"))
+        assertEquals(VoiceState.Listening(s, VoiceEngine.LOCAL, 0), m.state)
+    }
+
+    @Test
     fun longRecordingsStopByThemselves() {
         m.start(VoiceEngine.LOCAL, 1_000)
         assertFalse(m.shouldAutoStop(1_000 + VoiceMachine.MAX_RECORDING_MS - 1))

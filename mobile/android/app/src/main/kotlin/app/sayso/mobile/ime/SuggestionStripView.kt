@@ -13,8 +13,9 @@ import android.view.View
 import app.sayso.mobile.engine.Suggestion
 
 /**
- * Three candidates, a revert chip after an autocorrect, and the microphone.
- * The candidate that space will commit is drawn in the accent color and underlined.
+ * Three candidates, a revert chip (after an autocorrect, or Undo after a
+ * dictation), and the microphone. The candidate that space will commit is
+ * drawn in the accent color and underlined.
  */
 @SuppressLint("ViewConstructor")
 class SuggestionStripView(
@@ -28,6 +29,10 @@ class SuggestionStripView(
 
     var palette: KeyboardPalette = KeyboardPalette.LIGHT
         set(value) { field = value; invalidate() }
+
+    /** A dictation is running: the microphone is drawn on an accent disc. */
+    var micActive = false
+        set(value) { if (field != value) { field = value; invalidate() } }
 
     private var suggestions: List<Suggestion> = emptyList()
     private var revertWord: String? = null
@@ -127,10 +132,12 @@ class SuggestionStripView(
         drawMic(canvas, width - micWidth / 2, cy)
     }
 
-    /** The microphone is drawn dimmed: voice typing is not built yet, and a tap says so. */
     private fun drawMic(canvas: Canvas, cx: Float, cy: Float) {
-        paint.color = palette.graphite
-        paint.alpha = 110
+        if (micActive) {
+            paint.color = palette.accent
+            canvas.drawCircle(cx, cy, dp(17f), paint)
+        }
+        paint.color = if (micActive) palette.onAccent else palette.graphite
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = dp(1.6f)
         paint.strokeCap = Paint.Cap.ROUND
@@ -140,7 +147,6 @@ class SuggestionStripView(
         canvas.drawArc(rect, 0f, 180f, false, paint)
         canvas.drawLine(cx, cy + dp(6.5f), cx, cy + dp(10f), paint)
         paint.style = Paint.Style.FILL
-        paint.alpha = 255
     }
 
     private companion object {
