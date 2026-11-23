@@ -24,7 +24,7 @@ onboarding:
     why_ax_text_mac: "لا يسمح macOS لتطبيق بإرسال Command+V إلى التطبيقات الأخرى إلا بإذن «تسهيلات الاستخدام». يستخدمه Sayso للصق كلماتك، ولا يقرأ شاشتك."
     why_ax_text_other: "يرسل Sayso مفتاح اللصق إلى التطبيق الذي تستخدمه. على Wayland يطلب منك سطح المكتب السماح بذلك مرة واحدة. لا يقرأ Sayso شاشتك."
     model_ready: "جاهز"
-    model_optimizing: "جارٍ التحسين"
+    model_optimizing: "جار التحسين"
     model_downloaded: "تم التنزيل"
     model_not_started: "لم يبدأ"
     model_stopped: "متوقف"

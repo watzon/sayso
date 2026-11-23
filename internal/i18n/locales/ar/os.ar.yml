@@ -12,9 +12,9 @@ os:
   sound_settings_mac: "إعدادات النظام › الصوت"
   sound_settings_windows: "الإعدادات › النظام › الصوت"
   sound_settings_other: "إعدادات الصوت"
-  optimizing_mac: "جارٍ التحسين لجهاز Mac"
-  optimizing_windows: "جارٍ تحميل النموذج"
-  optimizing_other: "جارٍ تجهيز النموذج"
+  optimizing_mac: "جار التحسين لجهاز Mac"
+  optimizing_windows: "جار تحميل النموذج"
+  optimizing_other: "جار تجهيز النموذج"
   permission:
     microphone: "الميكروفون"
     accessibility_mac: "تسهيلات الاستخدام"

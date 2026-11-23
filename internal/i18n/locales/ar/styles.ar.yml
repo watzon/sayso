@@ -47,7 +47,7 @@ styles:
     delete_style: "حذف النمط"
     delete: "حذف"
     name: "الاسم"
-    name_placeholder: "مثلًا: Slack"
+    name_placeholder: "مثلا: Slack"
     description: "الوصف"
     description_placeholder: "سطر واحد عمّا يفعله النمط"
     ink: "الحبر"

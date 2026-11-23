@@ -57,7 +57,7 @@ settings:
     updates: "التحديثات"
     no_self_update: "هذا الإصدار لا يحدّث نفسه"
     no_self_update_detail: "الإصدار %{version}، مبني من الشيفرة المصدرية."
-    checking: "جارٍ التحقق…"
+    checking: "جار التحقق…"
     restart_after_dictation: "أنهِ الإملاء أولًا. بعدها يُغلق Sayso ويُفتح مرة أخرى."
     whats_new: "عرض ما الجديد"
     check_updates: "التحقق من التحديثات"

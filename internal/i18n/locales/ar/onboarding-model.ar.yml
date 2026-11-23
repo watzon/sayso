@@ -40,7 +40,7 @@ onboarding:
     filter_placeholder: "التصفية حسب الاسم أو اللغة"
     filter_label: "تصفية النماذج"
     close: "إغلاق"
-    downloading: "جارٍ التنزيل"
+    downloading: "جار التنزيل"
     downloaded: "تم التنزيل"
     no_match: "لا يوجد نموذج يطابق عامل التصفية. جرّب اسمًا أو لغة أخرى."
     speed: "السرعة"
