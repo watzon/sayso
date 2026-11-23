@@ -1,0 +1,9 @@
+_version: 1
+
+# The window chrome. The release notes themselves are not translated.
+whats_new:
+  window_title: "ما الجديد في Sayso"
+  heading: "الجديد في SAYSO %{version}"
+  all_changes: "عرض كل التغييرات على GitHub"
+  done: "تم"
+  list_label: "الميزات الجديدة"

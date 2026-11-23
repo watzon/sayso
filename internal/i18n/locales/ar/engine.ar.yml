@@ -1,0 +1,18 @@
+_version: 1
+
+engine:
+  incomplete_download: "انتهى التنزيل، لكن بعض ملفات النموذج مفقودة. أعد محاولة التنزيل."
+  download_failed: "لم يكتمل التنزيل: %{detail}."
+  load_failed: "تعذّر على Sayso تحميل النموذج: %{detail}."
+  no_gpu: "يحتاج هذا النموذج إلى بطاقة رسومات مستقلة مع برنامج تشغيل Vulkan، ولم يعثر Sayso على أي منهما. اختر في «النماذج» نموذجًا يعمل على المعالج المركزي."
+  format_changed: "يقرأ هذا الإصدار من Sayso ملفات مختلفة لهذا النموذج. نزّل النموذج مرة أخرى."
+  unsupported_cpu: "لا يستطيع معالج هذا الكمبيوتر تشغيل هذا النموذج في هذا الإصدار من Sayso. اختر نموذجًا آخر في «النماذج»، أو حدّث Sayso."
+  device_not_eligible: "لا يدعم جهاز Mac هذا Apple Intelligence."
+  intelligence_off: "Apple Intelligence متوقف. شغّله من «إعدادات النظام»."
+  model_not_ready: "ما زال macOS ينزّل نموذج Apple Intelligence. حاول مرة أخرى بعد بضع دقائق."
+  needs_macos_26: "يتطلب Apple Intelligence نظام macOS 26 أو أحدث."
+  unavailable: "Apple Intelligence غير متاح على جهاز Mac هذا."
+  timeout: "لم يستجب النموذج اللغوي في الوقت المحدد."
+  refused: "رفض النموذج اللغوي هذا النص."
+  failed: "فشل النموذج اللغوي: %{detail}."
+  general: "حدث خطأ ما: %{detail}."

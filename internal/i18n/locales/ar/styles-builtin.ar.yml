@@ -1,0 +1,27 @@
+_version: 1
+
+# The names and descriptions of the built-in styles. The interface shows them
+# while the user has not changed them.
+styles:
+  builtin:
+    clean:
+      name: "نظيف"
+      description: "يحذف كلمات الحشو ويصحّح علامات الترقيم، مع الإبقاء على صياغتك."
+    polished:
+      name: "مصقول"
+      description: "يصحّح القواعد وتدفق الكلام، مع الإبقاء على اختياراتك للكلمات."
+    rambling:
+      name: "استرسال"
+      description: "للتفكير بصوت عالٍ. يدمج التكرار والجمل المتداخلة في نص واضح."
+    message:
+      name: "رسالة"
+      description: "للمحادثات، بكلماتك أنت. بلا تحية ولا خاتمة."
+    email:
+      name: "بريد إلكتروني"
+      description: "يضيف تحية وفقرات وخاتمة حول كلماتك."
+    notes:
+      name: "ملاحظات"
+      description: "يحوّل الكلام إلى نقاط قصيرة بكلماتك أنت. فكرة واحدة في كل سطر."
+    raw:
+      name: "خام"
+      description: "بلا ذكاء اصطناعي. تُطبَّق استبدالات قاموسك فقط."

@@ -1,0 +1,53 @@
+_version: 1
+
+hub:
+  nav:
+    home: "الرئيسية"
+    history: "السجل"
+    dictionary: "القاموس"
+    styles: "الأنماط"
+    models: "النماذج"
+    settings: "الإعدادات"
+  settings_nav:
+    general: "عام"
+    dictation: "الإملاء"
+    providers: "المزوّدون"
+    overlay: "المؤشر العائم"
+    audio: "الصوت"
+    appearance: "المظهر"
+    history_privacy: "السجل والخصوصية"
+    permissions: "الأذونات"
+    connected_apps: "التطبيقات المتصلة"
+    advanced: "متقدم"
+  sidebar:
+    expand: "توسيع الشريط الجانبي"
+    collapse: "طي الشريط الجانبي"
+    # The three theme labels share the bottom of the sidebar with an icon
+    # each. Keep each one to about 6 characters ("Auto", not "Automatic").
+    theme_auto: "تلقائي"
+    theme_light: "فاتح"
+    theme_dark: "داكن"
+    back: "رجوع"
+    main_nav: "الصفحات"
+    settings_sections: "أقسام الإعدادات"
+    theme: "السمة"
+    open_config_file: "فتح ملف الإعدادات"
+    open_config_file_path: "فتح ملف الإعدادات: %{path}"
+    engine_status: "%{status}. %{detail}"
+  provider:
+    cloud_zero_retention: "سحابي · عدم الاحتفاظ بالبيانات مفعّل"
+    cloud_host: "سحابي · %{host}"
+    local_host: "محلي · %{host}"
+    claude_cli: "سحابي · حسابك في Claude"
+    chatgpt: "سحابي · اشتراكك في ChatGPT"
+    apple_intelligence: "محلي · يعمل على جهاز Mac هذا"
+  duration:
+    seconds: "%{seconds} ث"
+    minutes_seconds: "%{minutes} د %{seconds} ث"
+  window:
+    minimize: "تصغير"
+    maximize: "تكبير"
+    close: "إغلاق"
+  place:
+    cloud: "سحابي"
+    local: "محلي"

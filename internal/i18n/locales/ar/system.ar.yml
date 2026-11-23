@@ -1,0 +1,16 @@
+_version: 1
+
+# Text in files that the system shows, outside the app: the macOS prompt for
+# the microphone, the Linux desktop entry, and the Linux app store entry.
+# scripts/i18n-system-files.py writes these files from this catalog.
+system:
+  microphone_usage: "لا يستمع Sayso إلى الميكروفون إلا أثناء الإملاء. يُفرَّغ الكلام على جهاز Mac هذا."
+  system_audio_usage: "يسجّل Sayso صوت التطبيقات الأخرى والمكالمات فقط لتطبيق سمحت له، وما دام ذلك التطبيق يسجّل."
+  generic_name: "إملاء صوتي"
+  comment: "تحدّث، ويكتب Sayso النص في التطبيق الذي تستخدمه"
+  # Search words, separated by ";", with a ";" at the end. Keep "whisper"
+  # and "parakeet" (model names) and add words people use in the language.
+  keywords: "إملاء;إملاء صوتي;كلام;صوت;تفريغ;تحويل الكلام إلى نص;التعرف على الكلام;كتابة صوتية;dictation;whisper;parakeet;"
+  toggle_action: "بدء الإملاء أو إيقافه"
+  summary: "إملاء صوتي محلي في أي تطبيق"
+  description: "اضغط مفتاحًا وتحدّث، ويكتب Sayso النص في التطبيق الذي تستخدمه. يعمل التعرّف على الكلام على جهازك، ولا يغادره أي شيء ما لم تختر نموذجًا سحابيًا أو نمط ذكاء اصطناعي لدى مزوّد سحابي."

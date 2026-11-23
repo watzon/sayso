@@ -1,0 +1,19 @@
+_version: 1
+
+# Text that more than one settings page shares.
+settings:
+  common:
+    change: "تغيير"
+    clear: "مسح"
+    record_key: "تسجيل مفتاح"
+    press_keys: "اضغط المفاتيح لتسجيلها…"
+    press_keys_here: "اضغط المفاتيح في هذه النافذة…"
+    allowed: "مسموح"
+    blocked: "محظور"
+    waiting: "في الانتظار"
+    reveal: "إظهار"
+    change_hotkey: "%{name}: %{keys}. تغيير"
+    clear_hotkey: "مسح %{name}"
+    record_hotkey: "تسجيل %{name}"
+    volume: "مستوى الصوت"
+    reveal_named: "إظهار %{name}"

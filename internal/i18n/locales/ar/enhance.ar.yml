@@ -1,0 +1,11 @@
+_version: 1
+
+# Text from sayso-enhance that the interface shows.
+enhance:
+  # The note under Apple Intelligence in the model list of a style provider.
+  runs_on_this_mac: "يعمل على جهاز Mac هذا"
+  # The page of the browser at the end of the ChatGPT sign-in.
+  sign_in_done_title: "تم تسجيل دخولك"
+  sign_in_done_body: "يمكن لـSayso الآن استخدام اشتراكك في ChatGPT. يمكنك إغلاق هذه الصفحة."
+  sign_in_failed_title: "لم يكتمل تسجيل الدخول"
+  sign_in_failed_body: "عُد إلى Sayso وحاول مرة أخرى."

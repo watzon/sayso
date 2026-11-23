@@ -1,6 +1,7 @@
 package i18n
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
@@ -9,8 +10,8 @@ import (
 
 // Leaf counts per locale, counted independently with Ruby's YAML parser.
 var wantLeaves = map[string]int{
-	"en": 1878, "es": 1906, "pt-BR": 1906, "zh-CN": 1850, "ja": 1850,
-	"de": 1878, "fr": 1906, "it": 1906, "ko": 1850, "ru": 1934,
+	"en": 1879, "es": 1907, "pt-BR": 1907, "zh-CN": 1851, "ja": 1851,
+	"de": 1879, "fr": 1907, "it": 1907, "ko": 1851, "ru": 1935, "ar": 1991,
 }
 
 func use(t *testing.T, code string) {
@@ -21,8 +22,8 @@ func use(t *testing.T, code string) {
 }
 
 func TestAllLocalesLoadWithLeafCounts(t *testing.T) {
-	if len(Locales) != 10 || len(SupportedLocales()) != 10 {
-		t.Fatalf("want 10 locales, got %d", len(Locales))
+	if len(Locales) != 11 || len(SupportedLocales()) != 11 {
+		t.Fatalf("want 11 locales, got %d", len(Locales))
 	}
 	for _, l := range Locales {
 		m := Messages(l.Code)
@@ -309,7 +310,7 @@ func TestSettings(t *testing.T) {
 	if IsValidSetting("xx") {
 		t.Error("xx should be invalid")
 	}
-	if len(Available()) != 10 {
+	if len(Available()) != 11 {
 		t.Errorf("available = %d", len(Available()))
 	}
 	use(t, "en")
@@ -318,7 +319,7 @@ func TestSettings(t *testing.T) {
 	}
 }
 
-var allCodes = []string{"en", "es", "pt-BR", "zh-CN", "ja", "de", "fr", "it", "ko", "ru"}
+var allCodes = []string{"en", "es", "pt-BR", "zh-CN", "ja", "de", "fr", "it", "ko", "ru", "ar"}
 
 func r(setting string, system ...string) string { return resolveIn(setting, system, allCodes) }
 
@@ -341,6 +342,11 @@ func TestResolve(t *testing.T) {
 	eq(r("system", "it-CH"), "it")
 	eq(r("system", "ko-KR"), "ko")
 	eq(r("system", "ru-UA"), "ru")
+	eq(r("system", "ar-SA"), "ar")
+	eq(r("system", "ar-EG"), "ar")
+	eq(r("system", "ar_AE.UTF-8"), "ar")
+	eq(r("system", "ar"), "ar")
+	eq(r("AR", "en"), "ar")
 	eq(r("system", "pt-PT"), "pt-BR")
 	eq(r("system", "pt_BR.UTF-8"), "pt-BR")
 	eq(r("system", "zh-Hans-CN"), "zh-CN")
@@ -360,7 +366,8 @@ func TestResolve(t *testing.T) {
 }
 
 func TestNumbers(t *testing.T) {
-	for _, loc := range []string{"en", "ja", "zh-CN", "ko"} {
+	// Arabic uses Western digits with the English separators.
+	for _, loc := range []string{"en", "ja", "zh-CN", "ko", "ar", "ar-EG"} {
 		for n, want := range map[uint64]string{999: "999", 1234: "1,234", 1_234_567: "1,234,567"} {
 			if got := IntegerIn(loc, n); got != want {
 				t.Errorf("%s %d = %q", loc, n, got)
@@ -456,4 +463,119 @@ func TestArabicPluralCategories(t *testing.T) {
 			t.Errorf("ar-EG %d = %s, want %s", n, got, want)
 		}
 	}
+}
+
+func TestArabicTP(t *testing.T) {
+	use(t, "ar")
+	for n, want := range map[int]string{
+		0: "0 كلمة", 1: "كلمة واحدة", 2: "كلمتان", 3: "3 كلمات", 11: "11 كلمةً", 100: "100 كلمة",
+	} {
+		if got := TP("home.checklist.words", n, nil); got != want {
+			t.Errorf("ar %d = %q, want %q", n, got, want)
+		}
+	}
+}
+
+// A key with only English one and other still resolves in Arabic for every
+// category, through other.
+func TestArabicTPFallsBackToOther(t *testing.T) {
+	use(t, "ar")
+	catalog("en")["x.test.one"] = "%{count} thing"
+	catalog("en")["x.test.other"] = "%{count} things"
+	defer delete(catalog("en"), "x.test.one")
+	defer delete(catalog("en"), "x.test.other")
+	for _, n := range []int{0, 2, 3, 11, 100} {
+		if got, want := TP("x.test", n, nil), fmt.Sprintf("%d things", n); got != want {
+			t.Errorf("ar %d = %q, want %q", n, got, want)
+		}
+	}
+	catalog("ar")["x.test.other"] = "%{count} أشياء"
+	defer delete(catalog("ar"), "x.test.other")
+	if got := TP("x.test", 3, nil); got != "3 أشياء" {
+		t.Errorf("ar other = %q", got)
+	}
+}
+
+func TestArabicDates(t *testing.T) {
+	d := time.Date(2026, time.September, 28, 12, 0, 0, 0, time.UTC)
+	use(t, "ar")
+	for got, want := range map[string]string{
+		DayMonth(d): "28 سبتمبر", WeekdayDayMonth(d): "الاثنين، 28 سبتمبر",
+		DayMonthYear(d): "28 سبتمبر 2026", Today(): "اليوم",
+	} {
+		if got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestArabicIsAvailable(t *testing.T) {
+	l, ok := Find("ar")
+	if !ok || l.Name != "العربية" || l.Draft {
+		t.Fatalf("ar = %+v, %v", l, ok)
+	}
+	if !IsValidSetting("ar") || !IsValidSetting("AR") {
+		t.Error("ar should be a valid setting")
+	}
+	if got := Resolve("system", []string{"ar-SA", "en-US"}); got != "ar" {
+		t.Errorf("ar-SA resolves to %q", got)
+	}
+}
+
+// Every locale has the arguments of the English text. A plural form may
+// leave out an argument (Arabic writes "كلمتان", two words, without the
+// number), but it must not add one.
+func TestPlaceholdersMatchEnglish(t *testing.T) {
+	en := Messages("en")
+	args := func(s string) map[string]bool {
+		out := map[string]bool{}
+		for {
+			i := strings.Index(s, "%{")
+			if i < 0 {
+				return out
+			}
+			j := strings.IndexByte(s[i:], '}')
+			if j < 0 {
+				return out
+			}
+			out[s[i+2:i+j]] = true
+			s = s[i+j+1:]
+		}
+	}
+	for _, l := range Locales {
+		for k, v := range Messages(l.Code) {
+			got := args(v)
+			if isPluralKey(k) {
+				base := k[:strings.LastIndexByte(k, '.')]
+				want := args(en[base+".other"])
+				want["count"] = true
+				for a := range got {
+					if !want[a] {
+						t.Errorf("%s %s: %%{%s} is not in the English text", l.Code, k, a)
+					}
+				}
+				continue
+			}
+			want, ok := en[k]
+			if !ok {
+				t.Errorf("%s %s: English has no such key", l.Code, k)
+				continue
+			}
+			if w := args(want); !sameSet(got, w) {
+				t.Errorf("%s %s: arguments %v, English has %v", l.Code, k, got, w)
+			}
+		}
+	}
+}
+
+func sameSet(a, b map[string]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k := range a {
+		if !b[k] {
+			return false
+		}
+	}
+	return true
 }

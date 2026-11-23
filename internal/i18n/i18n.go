@@ -49,6 +49,7 @@ var Locales = []Locale{
 	{Code: "it", Name: "Italiano"},
 	{Code: "ko", Name: "한국어"},
 	{Code: "ru", Name: "Русский"},
+	{Code: "ar", Name: "العربية"},
 }
 
 const (

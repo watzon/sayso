@@ -1,0 +1,29 @@
+_version: 1
+
+popover:
+  cloud: "سحابي"
+  title: "Sayso"
+  system_default: "الافتراضي في النظام"
+  no_model_downloaded: "لم يُنزَّل أي نموذج بعد."
+  no_microphone: "لم يُعثر على ميكروفون."
+  last: "الأخير · %{app} · %{time}"
+  incognito: "الوضع الخفي"
+  history_off: "السجل متوقف"
+  # %{number} is the count with a thousands separator.
+  words_today:
+    zero: "%{number} كلمة اليوم"
+    one: "كلمة واحدة اليوم"
+    two: "كلمتان اليوم"
+    few: "%{number} كلمات اليوم"
+    many: "%{number} كلمةً اليوم"
+    other: "%{number} كلمة اليوم"
+  stop_dictation: "إيقاف الإملاء"
+  start_dictation: "بدء الإملاء"
+  copy: "نسخ"
+  style: "النمط"
+  model: "النموذج"
+  microphone: "الميكروفون"
+  manage_models: "إدارة النماذج…"
+  not_saved: "لا يُحفظ في السجل"
+  open_sayso: "فتح Sayso"
+  quit: "إنهاء"

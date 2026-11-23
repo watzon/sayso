@@ -1,0 +1,63 @@
+_version: 1
+
+# Text of the app shell. Shown only on a system that has no backend yet.
+app:
+  hotkeys_not_built: "الاختصارات غير متاحة على هذا النظام بعد."
+  insertion_not_built: "إدراج النص غير متاح على هذا النظام بعد."
+  sign_in:
+    start_failed: "تعذّر على Sayso بدء تسجيل الدخول: %{error}"
+    not_finished: "لم يكتمل تسجيل الدخول. اختر «تسجيل الدخول» للمحاولة مرة أخرى."
+    code_failed: "تعذّر على Sayso إرسال الرمز: %{error}"
+  # The status line at the foot of the Hub sidebar.
+  engine:
+    ready: "جاهز"
+    no_model: "لا يوجد نموذج"
+    choose_model: "افتح «النماذج» لاختيار نموذج"
+    download_model: "افتح «النماذج» للتنزيل"
+    stopped: "توقف المحرك"
+    restarting: "جارٍ إعادة التشغيل…"
+    optimizing: "جارٍ التحسين"
+    downloading: "جارٍ التنزيل"
+    loading: "جارٍ التحميل"
+    model_error: "خطأ في النموذج"
+    detail_cloud: "%{model} · سحابي"
+    detail_downloading: "%{model} · %{percent}%"
+    detail_not_in_memory: "%{model} · غير محمّل في الذاكرة"
+  # The import from Pindrop. %{number} is the count with a thousands separator.
+  pindrop:
+    idle: "ينسخ إملاءاتك وقاموسك وقوالب التعليمات من Pindrop إلى Sayso. يبقى Pindrop وبياناته كما هي."
+    running: "جارٍ الاستيراد من Pindrop…"
+    dictations:
+      zero: "%{number} إملاء"
+      one: "إملاء واحد"
+      two: "إملاءان"
+      few: "%{number} إملاءات"
+      many: "%{number} إملاءً"
+      other: "%{number} إملاء"
+    words:
+      zero: "%{number} كلمة"
+      one: "كلمة واحدة"
+      two: "كلمتان"
+      few: "%{number} كلمات"
+      many: "%{number} كلمةً"
+      other: "%{number} كلمة"
+    replacements:
+      zero: "%{number} استبدال"
+      one: "استبدال واحد"
+      two: "استبدالان"
+      few: "%{number} استبدالات"
+      many: "%{number} استبدالًا"
+      other: "%{number} استبدال"
+    styles:
+      zero: "%{number} نمط"
+      one: "نمط واحد"
+      two: "نمطان"
+      few: "%{number} أنماط"
+      many: "%{number} نمطًا"
+      other: "%{number} نمط"
+    added: "تمت إضافة %{items}."
+    list_separator: "، "
+    list_end: "%{first} و%{last}"
+    nothing_new: "كل ما في Pindrop موجود في Sayso بالفعل."
+    failed: "لم يكتمل الاستيراد، ولم تُضف أي بيانات: %{reason}. حاول مرة أخرى."
+    style_description: "مستورد من Pindrop."

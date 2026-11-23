@@ -1,0 +1,28 @@
+_version: 1
+
+settings:
+  audio:
+    title: "الصوت"
+    subtitle: "الميكروفون والمدة التي يسجّلها Sayso."
+    input: "الإدخال"
+    system_default: "الافتراضي في النظام"
+    follows_mac: "يتبع الإدخال المحدد في إعدادات النظام › الصوت."
+    follows_other: "يتبع الإدخال الافتراضي للنظام."
+    follows_now_mac: "حاليًا %{name}. يتبع الإدخال المحدد في إعدادات النظام › الصوت."
+    follows_now_other: "حاليًا %{name}. يتبع الإدخال الافتراضي للنظام."
+    no_microphone: "لم يعثر Sayso على أي ميكروفون. وصّل ميكروفونًا، أو تحقق من %{settings}."
+    allow_to_test: "اسمح بالوصول إلى الميكروفون لاختباره هنا."
+    allow_microphone: "السماح بالميكروفون"
+    meter_failed: "لم يبدأ الميكروفون: %{error}. اختر إدخالًا آخر، أو تحقق من %{settings}."
+    test_paused: "يتوقف الاختبار مؤقتًا أثناء الإملاء."
+    say_something: "قل شيئًا. يتحرك الحبر مع صوتك."
+    recording: "التسجيل"
+    live_preview: "المعاينة المباشرة"
+    live_preview_detail: "يعرض كلماتك في المؤشر العائم أثناء حديثك. يستهلك طاقة أكثر بقليل."
+    live_preview_unavailable: "لا يوفّر نموذجك معاينة مباشرة بهذه اللغة. نزّل من «النماذج» نموذجًا يوفّرها، مثل Parakeet EOU للإنجليزية."
+    pause_media: "إيقاف الوسائط مؤقتًا"
+    pause_media_detail: "يوقف الموسيقى والفيديو مؤقتًا أثناء الإملاء، ويستأنف تشغيلها عند التوقف."
+    max_length: "المدة القصوى"
+    max_length_detail: "يتوقف التسجيل تلقائيًا بعد هذه المدة."
+    length_seconds: "%{seconds} ث"
+    length_minutes: "%{minutes} د"

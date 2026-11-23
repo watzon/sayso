@@ -69,7 +69,7 @@ func u32p(v uint32) *uint32 { return &v }
 const SystemLanguage = "system"
 
 // InterfaceLocales are the locale codes of the interface (crates/sayso-i18n).
-var InterfaceLocales = []string{"en", "es", "pt-BR", "zh-CN", "ja", "de", "fr", "it", "ko", "ru"}
+var InterfaceLocales = []string{"en", "es", "pt-BR", "zh-CN", "ja", "de", "fr", "it", "ko", "ru", "ar"}
 
 // IsValidInterfaceLanguage is true for "system" or a locale (letter case ignored).
 func IsValidInterfaceLanguage(v string) bool {

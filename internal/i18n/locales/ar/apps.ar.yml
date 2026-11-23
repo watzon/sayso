@@ -1,0 +1,68 @@
+_version: 1
+
+# The question that an app asks before it downloads a model.
+apps:
+  download_ask:
+    window_title: "تنزيل نموذج"
+    title: "يريد %{app} تنزيل نموذج"
+    body: "إذا وافقت، فسينزّل Sayso النموذج %{model} (%{size}) على هذا الكمبيوتر."
+    reason_label: "السبب الذي قدّمه %{app}"
+    download: "تنزيل"
+    cancel: "إلغاء"
+  # The question before Sayso quits while an app records or transcribes.
+  quit_ask:
+    window_title: "إنهاء Sayso"
+    recording: "يسجّل %{app} الآن. هل تريد الإنهاء على أي حال؟"
+    transcribing: "يفرّغ %{app} ملفًا الآن. هل تريد الإنهاء على أي حال؟"
+    body: "إذا أنهيت Sayso، فسيتوقف هذا العمل ولن يتمكن التطبيق من إكماله."
+    others_label: "تطبيقات أخرى تعمل الآن"
+    cancel: "إلغاء"
+    quit: "إنهاء"
+  # The approval question: an app asks to use Sayso.
+  approval:
+    window_title: "السماح لتطبيق"
+    title: "يريد %{app} استخدام Sayso"
+    title_more: "يطلب %{app} صلاحيات إضافية"
+    body: "يمكنه استخدام نماذج الكلام لديك والتسجيل عبر Sayso ما دام Sayso يعمل. لا تسمح إلا للتطبيقات التي تثق بها."
+    body_more: "سبق أن سمحت لهذا التطبيق. إذا رفضت، فسيحتفظ بما لديه الآن فقط."
+    signed_by: "موقّع من %{org}"
+    signed: "موقّع"
+    not_signed: "غير موقّع"
+    interpreter: "هذا مفسّر نصوص برمجية. إذا سمحت له، فسيحصل كل نص برمجي يشغّله على الصلاحيات نفسها."
+    claimed: "يقدّم التطبيق نفسه باسم «%{name}»."
+    asks_to: "يطلب ما يلي"
+    allow: "سماح"
+    dont_allow: "عدم السماح"
+  # What an app can do, in plain words.
+  capability:
+    models_read: "عرض قائمة نماذج الكلام لديك"
+    audio_mic: "التسجيل من الميكروفون"
+    audio_system: "تسجيل صوت التطبيقات الأخرى والمكالمات"
+    transcribe_file: "تفريغ الملفات"
+    session_live: "تحويل الصوت المباشر إلى نص"
+    models_download: "طلب تنزيل نماذج الكلام"
+    ai_enhance: "تحسين النص باستخدام مزوّد الذكاء الاصطناعي لديك"
+    dictation_observe: "رؤية كل إملاء بعد إدراجه"
+  # Settings, Connected apps.
+  settings:
+    title: "التطبيقات المتصلة"
+    subtitle: "تطبيقات تستخدم نماذج الكلام والميكروفون في Sayso. استأذنك كلٌّ منها أولًا."
+    empty: "لا توجد تطبيقات بعد. يظهر التطبيق هنا بعد أن يطلب استخدام Sayso."
+    recording: "جارٍ التسجيل"
+    remove: "إزالة"
+    not_allowed: "غير مسموح"
+    allow: "سماح"
+    forget: "نسيان"
+    said_no: "رفضت في %{date}"
+    said_no_undated: "رفضت"
+    no_capabilities: "لم يطلب هذا التطبيق أي شيء آخر. يمكنه رؤية قائمة نماذج الكلام لديك."
+    broken: "يتعذّر على Sayso قراءة %{path}، لذا لا يمكن لأي تطبيق الاتصال. صحّح الملف أو احذفه، ثم أعد توصيل التطبيق."
+    save_failed: "تعذّر على Sayso حفظ هذا التغيير في %{path}. تأكد من أن Sayso يمكنه الكتابة في المجلد، ثم حاول مرة أخرى."
+    show_app: "إظهار %{app}"
+  # The menu bar and the popover while an app records.
+  recording:
+    row: "يسجّل %{app} الآن"
+    mic: "الميكروفون"
+    system: "صوت النظام"
+    both: "الميكروفون وصوت النظام"
+    stop: "إيقاف"

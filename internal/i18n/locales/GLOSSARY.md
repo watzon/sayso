@@ -151,3 +151,86 @@ These columns came with the first translations on 2026-10-17.
 | menu bar | Menüleiste | barre des menus | barra dei menu | 메뉴 막대 | строка меню |
 | Keychain | Schlüsselbund | trousseau | Portachiavi | 키체인 | связка ключей |
 | Applications folder | Ordner „Programme“ | dossier Applications | cartella Applicazioni | 응용 프로그램 폴더 | папка «Программы» |
+
+## ar
+
+These columns came with the first Arabic translation on 2026-11-22. Modern
+Standard Arabic, as in Apple's and Microsoft's Arabic interfaces.
+
+### Voice and form
+
+| | ar |
+|---|---|
+| Address the user | أنت, masculine singular imperative ("اختر", "اضغط"), as system software does |
+| Buttons and menu items | Verbal noun: "حفظ", "إلغاء", "تنزيل" |
+| Titles | No end mark |
+| Progress | جارٍ + verbal noun: "جارٍ التنزيل…" |
+| Punctuation | Arabic comma ، question mark ؟ semicolon ؛ |
+| Ellipsis | … |
+| Quotes | «» |
+| Digits | Western digits 0-9, with the English separators ("1,234.5"). Units in the text are Arabic abbreviations: ث (seconds), د (minutes), مللي ث (ms). GB and MB stay Latin. |
+| Latin words | Product, model, and key names stay in Latin script inside the Arabic sentence. The prefix لـ/بـ joins a Latin name without a space: "لـSayso". |
+| Plurals | All six CLDR forms. one and two name the count in words ("كلمة واحدة", "كلمتان") and leave out %{count}; few takes the plural, many the accusative singular ("11 كلمةً"), zero and other the singular. |
+
+### Terms
+
+| English | ar |
+|---|---|
+| dictation (one recording) | إملاء (plural إملاءات) |
+| dictate | أملى, "تملي" |
+| transcript | النص المفرَّغ |
+| transcribe | تفريغ |
+| hotkey | اختصار |
+| push to talk | اضغط مع الاستمرار للتحدث |
+| model | نموذج |
+| local model | نموذج محلي |
+| cloud model | نموذج سحابي |
+| speech provider | مزوّد خدمة الكلام |
+| AI provider | مزوّد الذكاء الاصطناعي |
+| engine | محرك الكلام |
+| live preview | المعاينة المباشرة |
+| final pass | التمرير النهائي |
+| streaming model | نموذج بثّ |
+| dictation language | لغة الإملاء |
+| interface language | لغة الواجهة |
+| dictionary | القاموس |
+| word (in the dictionary) | كلمة |
+| replacement | استبدال |
+| style | نمط |
+| default style | النمط الافتراضي |
+| prompt | التعليمات |
+| spoken punctuation | علامات الترقيم المنطوقة |
+| thinking level | مستوى التفكير |
+| overlay | المؤشر العائم |
+| pill | الكبسولة |
+| notch | النتوء |
+| history | السجل |
+| history entry | عنصر |
+| incognito | الوضع الخفي |
+| insert (text into an app) | إدراج |
+| paste | لصق |
+| microphone | الميكروفون |
+| permission | إذن |
+| update (noun) | تحديث |
+| What is new (window) | ما الجديد |
+| ink (color of the theme) | الحبر |
+| paper texture | ملمس الورق |
+| Settings (Sayso's) | الإعدادات |
+| download | تنزيل |
+| API key | مفتاح API |
+| agent | وكيل |
+
+### System words
+
+| English | ar |
+|---|---|
+| System Settings | إعدادات النظام |
+| Privacy & Security | الخصوصية والأمن |
+| Accessibility | تسهيلات الاستخدام |
+| Input Monitoring | مراقبة الإدخال |
+| Login Items | عناصر تسجيل الدخول |
+| menu bar | شريط القائمة |
+| Keychain | سلسلة المفاتيح |
+| Applications folder | مجلد التطبيقات |
+| Windows Credential Manager | إدارة بيانات الاعتماد |
+| File Explorer | المستكشف |

@@ -1,0 +1,22 @@
+_version: 1
+
+model_picker:
+  filter: "تصفية النماذج"
+  trigger_label: "النموذج: %{model}"
+  models_label: "النماذج"
+  title: "اختر نموذجًا"
+  default: "الافتراضي"
+  thinking: "تفكير"
+  loading: "جارٍ تحميل النماذج…"
+  load_failed: "تعذّر على Sayso تحميل النماذج: %{error}. تحقق من المزوّد، ثم حدّث القائمة."
+  no_models: "لا يعرض هذا المزوّد أي نماذج."
+  no_match: "لا يوجد نموذج يطابق عامل التصفية."
+  refresh: "تحديث"
+  use_typed: "استخدام «%{model}»"
+  count:
+    zero: "%{count} نموذج"
+    one: "نموذج واحد"
+    two: "نموذجان"
+    few: "%{count} نماذج"
+    many: "%{count} نموذجًا"
+    other: "%{count} نموذج"
