@@ -14,6 +14,7 @@
   <summary xml:lang="it">Dettatura vocale locale in qualsiasi app</summary>
   <summary xml:lang="ko">모든 앱에서 쓰는 로컬 음성 받아쓰기</summary>
   <summary xml:lang="ru">Локальная голосовая диктовка в любое приложение</summary>
+  <summary xml:lang="ar">إملاء صوتي محلي في أي تطبيق</summary>
   <description>
     <p>Press a key, speak, and Sayso writes the text into the app you use. Speech recognition runs on your computer. Nothing leaves it unless you choose a cloud model or an AI style with a cloud provider.</p>
     <p xml:lang="es">Pulsa una tecla, habla y Sayso escribe el texto en la app que usas. El reconocimiento de voz se ejecuta en tu equipo. Nada sale de él, salvo que elijas un modelo en la nube o un estilo de IA con un proveedor en la nube.</p>
@@ -25,6 +26,7 @@
     <p xml:lang="it">Premi un tasto, parla e Sayso scrive il testo nell'app che usi. Il riconoscimento vocale funziona sul tuo computer. Nulla lo lascia, a meno che tu scelga un modello cloud o uno stile IA con un provider cloud.</p>
     <p xml:lang="ko">키를 누르고 말하면 Sayso가 사용 중인 앱에 텍스트를 써 줘요. 음성 인식은 내 컴퓨터에서 실행돼요. 클라우드 모델이나 클라우드 제공업체의 AI 스타일을 직접 선택하지 않는 한 어떤 데이터도 밖으로 나가지 않아요.</p>
     <p xml:lang="ru">Нажмите клавишу, говорите, и Sayso напишет текст в приложении, которым вы пользуетесь. Распознавание речи работает на вашем компьютере. Ничто не покидает его, если вы не выберете облачную модель или стиль с ИИ у облачного провайдера.</p>
+    <p xml:lang="ar">اضغط مفتاحًا وتحدّث، ويكتب Sayso النص في التطبيق الذي تستخدمه. يعمل التعرّف على الكلام على جهازك، ولا يغادره أي شيء ما لم تختر نموذجًا سحابيًا أو نمط ذكاء اصطناعي لدى مزوّد سحابي.</p>
   </description>
   <launchable type="desktop-id">dev.sayso.Sayso.desktop</launchable>
   <url type="homepage">https://justsayso.app</url>
