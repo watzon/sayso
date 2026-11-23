@@ -203,7 +203,7 @@ func TestCompaction(t *testing.T) {
 	if err := l.Open(path); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; l.j.size <= compactAt; i++ {
+	for i := 0; l.j.Size() <= compactAt; i++ {
 		l.Committed("the", "end")
 		l.AddWord("w" + strings.Repeat("x", i%50))
 	}
