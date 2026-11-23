@@ -172,8 +172,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
             commitSeparator(text[0])
             return
         }
-        engine.onText(text)
-        session?.insert(text)
+        session?.apply(engine.onText(text))
         if (text.any { it.isLetter() }) shift.onLetter()
         revertWord = null
         afterEdit()
@@ -187,23 +186,19 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
 
     override fun onBackspace() {
         val s = session ?: return
-        if (revertWord != null) {
-            // Backspace right after an autocorrect restores what was typed, without the separator.
-            revert()
-            s.deleteCharBefore()
-            engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
-            afterEdit()
-            return
-        }
         val selected = currentInputConnection?.getSelectedText(0)
-        when {
-            !selected.isNullOrEmpty() -> {
-                currentInputConnection?.commitText("", 1)
-                engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
+        if (!selected.isNullOrEmpty()) {
+            currentInputConnection?.commitText("", 1)
+            engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
+        } else {
+            // Right after an autocorrect the engine restores what was typed, without the separator.
+            val action = engine.onBackspace()
+            when {
+                action != null -> s.apply(action)
+                !s.deleteCharBefore() -> sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
             }
-            s.deleteCharBefore() -> engine.onBackspace()
-            else -> sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
         }
+        revertWord = null
         afterEdit()
     }
 

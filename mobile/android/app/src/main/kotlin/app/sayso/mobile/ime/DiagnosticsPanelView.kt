@@ -8,7 +8,10 @@ import android.view.View
 import app.sayso.mobile.engine.Diagnostics
 import java.util.Locale
 
-/** Developer Diagnostics: candidate scores and the autocorrect margin, one line each. */
+/**
+ * Developer Diagnostics: candidate scores and the autocorrect margin, one line
+ * each. With the native engine a candidate reads "text total=spatial+lm eEdits".
+ */
 class DiagnosticsPanelView(context: Context) : View(context) {
     private val density = resources.displayMetrics.density
 
@@ -25,10 +28,12 @@ class DiagnosticsPanelView(context: Context) : View(context) {
     fun show(d: Diagnostics) {
         val margin = String.format(Locale.US, "margin %.3f  threshold %.3f  %s", d.autocorrectMargin, d.autocorrectThreshold,
             if (d.candidates.any { it.isAutoCommit }) "→ autocorrect" else "no autocorrect")
-        val candidates = if (d.candidates.isEmpty()) {
-            "no candidates"
-        } else {
-            d.candidates.joinToString("  ") { String.format(Locale.US, "%s%s %.3f", if (it.isAutoCommit) "*" else "", it.text, it.score) }
+        val candidates = when {
+            d.candidates.isEmpty() -> "no candidates"
+            d.details.isNotEmpty() -> d.details.zip(d.candidates).joinToString("  ") { (c, s) ->
+                String.format(Locale.US, "%s%s %.1f=%.1f+%.1f e%d", if (s.isAutoCommit) "*" else "", c.text, c.total, c.spatial, c.languageModel, c.edits)
+            }
+            else -> d.candidates.joinToString("  ") { String.format(Locale.US, "%s%s %.3f", if (it.isAutoCommit) "*" else "", it.text, it.score) }
         }
         lines = listOf(candidates, margin)
         invalidate()

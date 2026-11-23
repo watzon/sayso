@@ -32,11 +32,20 @@ interface TypingEngine {
      */
     fun onTouch(x: Float, y: Float, timeMs: Long, shifted: Boolean): Int
 
-    /** A character that did not come from a letter touch and does not end a word: digits, accents, apostrophes. */
-    fun onText(text: String)
+    /**
+     * Text that did not come from a letter touch and is not a space or
+     * punctuation: digits, accents, apostrophes, emoji. Returns what to write,
+     * usually `CommitAction(0, text)`; an engine may change the word before it.
+     */
+    fun onText(text: String): CommitAction
 
-    /** One character before the cursor was deleted. */
-    fun onBackspace()
+    /**
+     * The delete key, before anything is deleted. Null: delete one character
+     * before the cursor. Otherwise apply the action instead: right after an
+     * autocorrect it brings back the typed word, without its separator, as the
+     * word being typed.
+     */
+    fun onBackspace(): CommitAction?
 
     /** A space or punctuation ends the current word. The UI applies the returned action. */
     fun onSpaceOrPunct(char: Char): CommitAction
@@ -46,7 +55,11 @@ interface TypingEngine {
 
     fun pickSuggestion(index: Int): CommitAction
 
-    /** Undo the last autocorrect, or null when there is nothing to undo. */
+    /**
+     * Undo the last autocorrect from the suggestion strip: the typed word and
+     * its separator come back, and the word is not corrected again. Null when
+     * there is nothing to undo.
+     */
     fun revertLastAutocorrect(): CommitAction?
 
     fun personalWords(): List<String>
@@ -57,7 +70,7 @@ interface TypingEngine {
     fun putReplacement(replacement: Replacement)
     fun removeReplacement(shortcut: String)
 
-    /** Forget learned touch offsets and word history. Personal words and replacements stay. */
+    /** Forget learned touch offsets and word history. Personal words and replacements added by hand stay. */
     fun resetLearnedData()
 
     fun diagnostics(): Diagnostics
@@ -112,7 +125,13 @@ data class CommitAction(
     val text: String,
     val wasAutocorrect: Boolean = false,
     val original: String = "",
-)
+) {
+    /** This action followed by [next], as one action that is not an autocorrect. */
+    fun then(next: CommitAction): CommitAction {
+        val fromText = minOf(next.deleteBefore, text.length)
+        return CommitAction(deleteBefore + next.deleteBefore - fromText, text.dropLast(fromText) + next.text)
+    }
+}
 
 data class Suggestion(val text: String, val score: Float, val isAutoCommit: Boolean)
 
@@ -126,6 +145,19 @@ data class KeyDiagnostics(
     val bottom: Float,
     val learnedDx: Float,
     val learnedDy: Float,
+    /** How far the key reaches into its neighbors for the next touch, when the engine reports it. */
+    val expansion: Float = 0f,
+    /** Confirmed touches that taught the offset, when the engine counts them. */
+    val samples: Int = 0,
+)
+
+/** One scored candidate for the word being typed (lower scores are better, in nats). */
+data class CandidateDiagnostics(
+    val text: String,
+    val total: Float,
+    val spatial: Float,
+    val languageModel: Float,
+    val edits: Int,
 )
 
 data class Diagnostics(
@@ -135,6 +167,8 @@ data class Diagnostics(
     /** Score gap between the best candidate and the next. Autocorrect fires only above its threshold. */
     val autocorrectMargin: Float,
     val autocorrectThreshold: Float,
+    /** The scores behind [candidates], when the engine reports them. */
+    val details: List<CandidateDiagnostics> = emptyList(),
 )
 
 /** Characters that belong to a word, for both the UI and the engine. */

@@ -71,14 +71,24 @@ class FakeTypingEngine(private val storage: File? = null) : TypingEngine {
         return key.code
     }
 
-    override fun onText(text: String) {
+    override fun onText(text: String): CommitAction {
         lastAutocorrect = null
         if (text.all(::isWordChar)) word.append(text) else word.clear()
+        return CommitAction(0, text)
     }
 
-    override fun onBackspace() {
+    override fun onBackspace(): CommitAction? {
+        val last = lastAutocorrect
         lastAutocorrect = null
+        if (last != null) {
+            // Undo the autocorrect: the typed word comes back as the current word.
+            rejected += last.original.lowercase()
+            word.clear()
+            word.append(last.original)
+            return CommitAction(last.corrected.length + last.separator.length, last.original)
+        }
         if (word.isNotEmpty()) word.setLength(word.length - 1)
+        return null
     }
 
     override fun onSpaceOrPunct(char: Char): CommitAction {
