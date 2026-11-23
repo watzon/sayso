@@ -76,6 +76,8 @@ fun SettingsScreen(settings: KeyboardSettings, onChange: (KeyboardSettings) -> U
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
             ) { Text("Reset learned data") }
         }
+
+        Acknowledgements()
     }
 
     if (confirmReset) {
