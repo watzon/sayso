@@ -189,8 +189,6 @@ func (a *macAudio) Start(ctx context.Context, deviceID string, onChunk func(Audi
 		}
 		ready <- nil
 		cfRunLoopRun()
-		audioQueueStop(c.queue, true)
-		audioQueueDispose(c.queue, true)
 		c.framer.close()
 	}()
 	if err := <-ready; err != nil {
@@ -203,6 +201,10 @@ func (a *macAudio) Start(ctx context.Context, deviceID string, onChunk func(Audi
 	a.cur = c
 	go func() {
 		<-runCtx.Done()
+		// A synchronous stop or dispose waits for the queue's run loop; once
+		// that loop has ended, each one waited out a 500 ms timeout.
+		audioQueueStop(c.queue, true)
+		audioQueueDispose(c.queue, true)
 		stopRunLoop(c.runLoop, c.done)
 		forget()
 		a.mu.Lock()

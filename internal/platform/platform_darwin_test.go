@@ -368,6 +368,33 @@ func TestMacLiveCapture(t *testing.T) {
 	_ = a.Stop()
 }
 
+// TestMacCaptureStopsAtOnce: the overlay and the stop sound wait for Stop.
+// It took 500 ms, sometimes 1 s, when the queue was stopped and disposed
+// after its run loop had ended. Same gate as TestMacLiveCapture.
+func TestMacCaptureStopsAtOnce(t *testing.T) {
+	if os.Getenv("SAYSO_LIVE_AUDIO") != "1" || microphoneAuthorization() != micAuthorized {
+		t.Skip("set SAYSO_LIVE_AUDIO=1 with a granted microphone")
+	}
+	a := &macAudio{}
+	for i := range 5 {
+		chunks := make(chan AudioChunk, 256)
+		if err := a.Start(context.Background(), "", func(c AudioChunk) { chunks <- c }); err != nil {
+			t.Fatal(err)
+		}
+		time.Sleep(200 * time.Millisecond)
+		start := time.Now()
+		if err := a.Stop(); err != nil {
+			t.Fatal(err)
+		}
+		if took := time.Since(start); took > 100*time.Millisecond {
+			t.Errorf("stop %d took %v", i, took)
+		}
+		if len(chunks) < 5 {
+			t.Errorf("stop %d: %d chunks in 200 ms", i, len(chunks))
+		}
+	}
+}
+
 // silentWAV makes a 16 kHz mono 16-bit WAV of n zero samples.
 func silentWAV(n int) []byte {
 	var b bytes.Buffer
