@@ -32,9 +32,10 @@ class SuggestionStripView(
     private var suggestions: List<Suggestion> = emptyList()
     private var revertWord: String? = null
 
-    private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.CENTER
-        textSize = 17f * density * resources.configuration.fontScale
+    // Not inside apply: there `density` is TextPaint's own field (1.0), which made the text 17 px.
+    private val text = TextPaint(Paint.ANTI_ALIAS_FLAG).also {
+        it.textAlign = Paint.Align.CENTER
+        it.textSize = dp(17f) * resources.configuration.fontScale
     }
     private val regular = Typeface.create("sans-serif", Typeface.NORMAL)
     private val bold = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -85,7 +86,8 @@ class SuggestionStripView(
     }
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawColor(palette.ground)
+        paint.color = palette.ground
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         val cy = height / 2f
         val baseline = cy - (text.ascent() + text.descent()) / 2f
 

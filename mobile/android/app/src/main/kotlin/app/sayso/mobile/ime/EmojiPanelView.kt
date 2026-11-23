@@ -75,6 +75,7 @@ class EmojiPanelView(
     }
 
     private inner class Bar : View(context) {
+        private val face = Paint()
         private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             textAlign = Paint.Align.CENTER
             textSize = 15 * density
@@ -83,7 +84,8 @@ class EmojiPanelView(
         private val buttonWidth get() = 72 * density
 
         override fun onDraw(canvas: Canvas) {
-            canvas.drawColor(palette.modifierKey)
+            face.color = palette.modifierKey
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), face)
             text.color = palette.ink
             val baseline = height / 2f - (text.ascent() + text.descent()) / 2f
             canvas.drawText("ABC", buttonWidth / 2, baseline, text)

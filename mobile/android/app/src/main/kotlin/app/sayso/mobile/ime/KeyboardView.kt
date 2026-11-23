@@ -258,7 +258,9 @@ class KeyboardView(context: Context, private val listener: KeyboardActionListene
 
     override fun onDraw(canvas: Canvas) {
         val board = keyboard ?: return
-        canvas.drawColor(palette.ground)
+        // Not drawColor: the parents do not clip children, so it would paint over the strip above.
+        fill.color = palette.ground
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), fill)
         val pressed = pointers.values.filter { it.phase != Phase.DONE }.map { it.key }.toSet()
         for (key in board.keys) drawKey(canvas, key, key in pressed)
         diagnostics?.let { drawDiagnostics(canvas, it) }
