@@ -31,6 +31,8 @@ fun DictionaryScreen(engine: TypingEngine) {
     var newWord by rememberSaveable { mutableStateOf("") }
     var shortcut by rememberSaveable { mutableStateOf("") }
     var expansion by rememberSaveable { mutableStateOf("") }
+    var refused by remember { mutableStateOf<String?>(null) }
+    val errors = validateReplacement(shortcut, expansion)
 
     LazyColumn(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item { SectionTitle("Personal words", "Words the keyboard always accepts and suggests, like names.") }
@@ -58,21 +60,49 @@ fun DictionaryScreen(engine: TypingEngine) {
         item { SectionTitle("Replacements", "Type the shortcut and a space to get the full text.") }
         item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(shortcut, { shortcut = it }, Modifier.weight(0.8f), label = { Text("Shortcut") }, singleLine = true)
-                OutlinedTextField(expansion, { expansion = it }, Modifier.weight(1.2f), label = { Text("Text") }, singleLine = true)
+                OutlinedTextField(
+                    shortcut,
+                    {
+                        shortcut = it
+                        refused = null
+                    },
+                    Modifier.weight(0.8f),
+                    label = { Text("Shortcut") },
+                    singleLine = true,
+                    isError = errors.shortcut != null,
+                )
+                OutlinedTextField(
+                    expansion,
+                    {
+                        expansion = it
+                        refused = null
+                    },
+                    Modifier.weight(1.2f),
+                    label = { Text("Text") },
+                    singleLine = true,
+                    isError = errors.text != null,
+                )
             }
         }
+        // Shown under both fields, not as each field's supportingText, so a long message gets the full width.
+        errors.shortcut?.let { item { ErrorLine("Shortcut: $it") } }
+        errors.text?.let { item { ErrorLine("Text: $it") } }
         item {
             Button(
                 onClick = {
                     engine.putReplacement(Replacement(shortcut, expansion))
                     replacements = engine.replacements()
-                    shortcut = ""
-                    expansion = ""
+                    if (replacementKept(replacements, shortcut, expansion)) {
+                        shortcut = ""
+                        expansion = ""
+                    } else {
+                        refused = "The keyboard did not save this replacement. Check its length and try again."
+                    }
                 },
-                enabled = shortcut.isNotBlank() && expansion.isNotBlank(),
+                enabled = shortcut.isNotBlank() && expansion.isNotBlank() && !errors.any,
             ) { Text("Add replacement") }
         }
+        refused?.let { item { ErrorLine(it) } }
         if (replacements.isEmpty()) item { EmptyLine("No replacements yet.") }
         items(replacements, key = { "r:${it.shortcut}" }) { r ->
             EntryRow("${r.shortcut}  →  ${r.expansion}") {
@@ -92,6 +122,11 @@ private fun SectionTitle(title: String, hint: String) {
 @Composable
 private fun EmptyLine(text: String) {
     Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 8.dp))
+}
+
+@Composable
+private fun ErrorLine(text: String) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
 }
 
 @Composable
