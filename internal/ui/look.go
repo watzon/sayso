@@ -14,16 +14,23 @@ import (
 
 // themeCache keeps the built theme of each ink on each paper.
 type themeCache struct {
-	built map[string]*theme.Theme
+	built map[themeKey]*theme.Theme
+}
+
+// themeKey is a value, not a string: every window looks up its theme in
+// every build.
+type themeKey struct {
+	ink  config.Ink
+	dark bool
 }
 
 func (t *themeCache) get(ink config.Ink, dark bool) *theme.Theme {
-	k := fmt.Sprint(ink.String(), dark)
+	k := themeKey{ink, dark}
 	if th, ok := t.built[k]; ok {
 		return th
 	}
 	if t.built == nil {
-		t.built = map[string]*theme.Theme{}
+		t.built = map[themeKey]*theme.Theme{}
 	}
 	custom := ""
 	if ink.IsCustom {

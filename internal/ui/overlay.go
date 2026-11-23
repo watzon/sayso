@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"math"
 	"time"
 
@@ -70,12 +69,12 @@ type overlayState struct {
 	slipPreview bool
 	// phase names the state the card shows; phaseAt is the frame time it
 	// began, from which its content fades in.
-	phase   string
+	phase   overlayPhaseKey
 	phaseAt time.Time
 	fade    float32
 	// layout names what the card shows. A change asks for one more frame,
 	// in which the motions measure the new content.
-	layout string
+	layout overlayLayoutKey
 	// probe logs frame gaps (a dev option); nil does nothing.
 	probe *frameProbe
 }
@@ -191,16 +190,42 @@ func (a *App) OverlayView(c *mu.Context) {
 	}
 }
 
+// overlayLayoutKey names what the card shows. It is a value, not a string,
+// because OverlayView makes one in every frame. set tells the first key
+// from the zero value, as the first frame differs from no frame.
+type overlayLayoutKey struct {
+	set           bool
+	kind          dictation.StateKind
+	stage         dictation.Stage
+	notice        dictation.NoticeKind
+	styleName     string
+	hovered       bool
+	lastNotice    string
+	noticeShowing bool
+	incognito     bool
+	size          config.OverlaySize
+	style         config.OverlayStyle
+}
+
 // overlayLayout names what the card shows, for OverlayView.
-func (a *App) overlayLayout() string {
-	return fmt.Sprint(a.state.Kind, a.state.Stage, a.state.Notice.Kind, a.state.Notice.StyleName, a.ov.hovered, a.lastNotice,
-		a.noticeShowing(), a.incognito, a.cfg.Overlay.Size, a.cfg.Overlay.Style)
+func (a *App) overlayLayout() overlayLayoutKey {
+	return overlayLayoutKey{true, a.state.Kind, a.state.Stage, a.state.Notice.Kind, a.state.Notice.StyleName, a.ov.hovered, a.lastNotice,
+		a.noticeShowing(), a.incognito, a.cfg.Overlay.Size, a.cfg.Overlay.Style}
+}
+
+// overlayPhaseKey names the state the card shows.
+type overlayPhaseKey struct {
+	set           bool
+	kind          dictation.StateKind
+	stage         dictation.Stage
+	notice        dictation.NoticeKind
+	noticeShowing bool
 }
 
 // overlayPhase notes when the card began to show its state, and how far
 // its content has faded in (Rust FADE_IN).
 func (a *App) overlayPhase(c *mu.Context) {
-	key := fmt.Sprint(a.state.Kind, a.state.Stage, a.state.Notice.Kind, a.noticeShowing())
+	key := overlayPhaseKey{true, a.state.Kind, a.state.Stage, a.state.Notice.Kind, a.noticeShowing()}
 	if key != a.ov.phase {
 		a.ov.phase, a.ov.phaseAt = key, c.Now()
 	}
