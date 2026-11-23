@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The wave of favicon.svg (32 x 32) scaled into the 66 dp safe zone of the 108 dp adaptive icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2.0625"
+        android:scaleY="2.0625"
+        android:translateX="21"
+        android:translateY="24">
+        <path
+            android:pathData="M5,16 C9,16 10.3,11 13,11 C15.7,11 15.7,21 18.4,21 C21.1,21 21.1,8 23.8,8 C26.5,8 26.5,16 27,16"
+            android:strokeWidth="2.8"
+            android:strokeColor="@color/icon_ink"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

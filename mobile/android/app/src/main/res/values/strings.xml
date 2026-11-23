@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sayso</string>
+    <string name="keyboard_name">Sayso Keyboard</string>
+    <string name="subtype_en_us">English (US)</string>
+    <string name="voice_coming_soon">Voice typing is coming soon</string>
+</resources>
