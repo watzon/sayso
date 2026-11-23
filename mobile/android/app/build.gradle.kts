@@ -16,6 +16,26 @@ val saysoNative = providers.gradleProperty("saysoNative").map { it.toBoolean() }
 val saysoHostLibDir = providers.gradleProperty("saysoHostLibDir").orNull
 val modelsDir = file("../../models")
 
+// Local speech recognition in the :asr process: the sherpa-onnx Android AAR that
+// mobile/scripts/fetch-sherpa-onnx.sh downloads and checks. Without it the build
+// has no local engine (src/nosherpa) and voice uses the system recognizer.
+// -PsaysoSherpaAar points at another copy.
+val sherpaAar = file(providers.gradleProperty("saysoSherpaAar").getOrElse("../../build/sherpa-onnx/sherpa-onnx-2.0.3.aar"))
+val saysoSherpa = sherpaAar.exists()
+// -PsaysoAsrTestDir=<dir>: lib/ with the sherpa-onnx JNI library for this computer and
+// models/<id>/ with catalog models; SherpaLocalAsrTest then decodes real speech.
+val saysoAsrTestDir = providers.gradleProperty("saysoAsrTestDir").orNull
+
+// The license texts of sherpa-onnx and ONNX Runtime, shown in the acknowledgements
+// when the APK carries them; the same files ship with the desktop app.
+val speechLicenses = layout.buildDirectory.dir("generated/speechLicenses")
+val copySpeechLicenses = tasks.register<Sync>("copySpeechLicenses") {
+    from(file("../../../packaging/licenses")) {
+        include("sherpa-onnx.txt", "onnxruntime.txt")
+    }
+    into(speechLicenses.map { it.dir("licenses") })
+}
+
 android {
     namespace = "app.sayso.mobile"
     compileSdk {
@@ -29,8 +49,9 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+        // sherpa-onnx ships four ABIs; the app supports these two.
+        ndk { abiFilters += coreAbis }
         if (saysoNative) {
-            ndk { abiFilters += coreAbis }
             externalNativeBuild {
                 cmake {
                     arguments += "-DSAYSO_CORE_DIR=${saysoCoreDir.absolutePath}"
@@ -49,6 +70,8 @@ android {
     sourceSets {
         getByName("main") {
             kotlin.directories.add(if (saysoNative) "src/native/kotlin" else "src/fake/kotlin")
+            kotlin.directories.add(if (saysoSherpa) "src/sherpa/kotlin" else "src/nosherpa/kotlin")
+            if (saysoSherpa) assets.directories.add(speechLicenses.get().asFile.absolutePath)
             if (saysoNative) {
                 jniLibs.directories.add(saysoCoreDir.absolutePath)
                 // en-US.sslm, and SCOWL-Copyright.txt for the acknowledgements.
@@ -56,11 +79,19 @@ android {
             }
         }
         if (saysoNative) getByName("test").kotlin.directories.add("src/testNative/kotlin")
+        if (saysoSherpa) getByName("test").kotlin.directories.add("src/testSherpa/kotlin")
     }
 
     // The core maps the model straight out of the APK, which needs it stored uncompressed.
     androidResources {
         noCompress += "sslm"
+    }
+
+    // Compress native libraries in the APK: sherpa-onnx's library is about 25 MB
+    // per ABI and shrinks to about 10 MB. Assets are not affected, so the .sslm
+    // model stays stored uncompressed.
+    packaging {
+        jniLibs { useLegacyPackaging = true }
     }
 
     buildTypes {
@@ -82,13 +113,18 @@ android {
         unitTests.isReturnDefaultValues = true
         unitTests.all { test ->
             test.systemProperty("sayso.model", File(modelsDir, "en-US.sslm").absolutePath)
-            if (saysoHostLibDir != null) {
-                test.systemProperty("java.library.path", file(saysoHostLibDir).absolutePath)
-                test.systemProperty("sayso.hostLibs", "true")
-            }
+            val libPath = listOfNotNull(
+                saysoHostLibDir?.let { file(it).absolutePath },
+                saysoAsrTestDir?.let { File(file(it), "lib").absolutePath },
+            )
+            if (libPath.isNotEmpty()) test.systemProperty("java.library.path", libPath.joinToString(File.pathSeparator))
+            if (saysoHostLibDir != null) test.systemProperty("sayso.hostLibs", "true")
+            if (saysoAsrTestDir != null) test.systemProperty("sayso.asrTestDir", file(saysoAsrTestDir).absolutePath)
         }
     }
 }
+
+if (saysoSherpa) tasks.named("preBuild") { dependsOn(copySpeechLicenses) }
 
 dependencies {
     implementation(libs.androidx.core.ktx)
@@ -97,5 +133,6 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
+    if (saysoSherpa) implementation(files(sherpaAar))
     testImplementation(libs.junit)
 }

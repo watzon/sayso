@@ -5,10 +5,13 @@
 #   1. libsayso_core.so for arm64-v8a and x86_64 (build-core-android.sh)
 #   2. checks models/en-US.sslm against the sha256 in DATA_SOURCES.md and opens it
 #   3. the core and the JNI glue for this computer, so the JVM tests drive the real core
-#   4. android/local.properties, if missing
-#   5. ./gradlew testDebugUnitTest assembleDebug with the native engine
-#   6. checks the APK holds both ABIs, the JNI library, and the model stored
-#      uncompressed, and prints its path and size
+#   4. the sherpa-onnx Android AAR for local speech recognition, checked against
+#      its pinned sha256 (fetch-sherpa-onnx.sh)
+#   5. android/local.properties, if missing
+#   6. ./gradlew testDebugUnitTest assembleDebug with the native engine
+#   7. checks the APK holds both ABIs and no others, the JNI library, sherpa-onnx,
+#      the model stored uncompressed, and no speech model weights, and prints its
+#      path and size
 #
 #   ANDROID_HOME      SDK (default ~/Library/Android/sdk, then ~/Android/Sdk)
 #   ANDROID_NDK_HOME  NDK (default: the version app/build.gradle.kts pins, under the SDK)
@@ -70,24 +73,31 @@ cc -shared -fPIC -O2 -Wall -Wextra -Werror -I core/capi -I "$JAVA_HOME/include" 
   android/app/src/main/cpp/sayso_jni.c -L "$host" -lsayso_core "$jni_ld" -o "$host/libsayso_jni.$ext"
 ls -l "$host"/libsayso_*."$ext"
 
+step "sherpa-onnx for Android"
+sherpa_aar="$(./scripts/fetch-sherpa-onnx.sh)"
+echo "$sherpa_aar (sha256 matches the pin)"
+
 step "gradle"
 cd android
 if [[ ! -f local.properties ]]; then
   echo "sdk.dir=$sdk" > local.properties
   echo "wrote android/local.properties (sdk.dir=$sdk)"
 fi
-./gradlew testDebugUnitTest assembleDebug -PsaysoNative=true -PsaysoHostLibDir="$host"
+./gradlew testDebugUnitTest assembleDebug -PsaysoNative=true -PsaysoHostLibDir="$host" -PsaysoSherpaAar="$sherpa_aar"
 
 step "APK"
 apk="$PWD/app/build/outputs/apk/debug/app-debug.apk"
 [[ -f "$apk" ]] || die "no APK at $apk"
 listing="$(unzip -v "$apk")"
-for f in lib/arm64-v8a/libsayso_core.so lib/x86_64/libsayso_core.so lib/arm64-v8a/libsayso_jni.so lib/x86_64/libsayso_jni.so; do
+for f in lib/arm64-v8a/libsayso_core.so lib/x86_64/libsayso_core.so lib/arm64-v8a/libsayso_jni.so lib/x86_64/libsayso_jni.so \
+  lib/arm64-v8a/libsherpa-onnx-jni.so lib/x86_64/libsherpa-onnx-jni.so; do
   grep -q " $f\$" <<<"$listing" || die "APK lacks $f"
 done
+if grep -E ' lib/' <<<"$listing" | grep -vE ' lib/(arm64-v8a|x86_64)/'; then die "APK holds an ABI other than arm64-v8a and x86_64"; fi
+if grep -E '\.(onnx|ort|gguf)$' <<<"$listing"; then die "APK holds model weights; speech models are downloaded, not bundled"; fi
 model_line="$(grep ' assets/en-US.sslm$' <<<"$listing")" || die "APK lacks assets/en-US.sslm"
 awk '{ if ($2 != "Stored") exit 1 }' <<<"$model_line" || die "assets/en-US.sslm is compressed in the APK"
-grep -E ' (lib/.*/libsayso_(core|jni)\.so|assets/en-US\.sslm)$' <<<"$listing"
+grep -E ' (lib/.*/libsayso_(core|jni)\.so|lib/.*/libsherpa-onnx-jni\.so|assets/en-US\.sslm)$' <<<"$listing"
 tests="$(find app/build/test-results/testDebugUnitTest -name '*.xml' -exec grep -ho 'tests="[0-9]*"' {} + | tr -dc '0-9\n' | paste -sd+ - | bc)"
 native_tests="$(grep -o 'tests="[0-9]*" skipped="[0-9]*"' app/build/test-results/testDebugUnitTest/TEST-app.sayso.mobile.engine.NativeTypingEngineTest.xml)"
 echo "JVM tests: $tests (NativeTypingEngineTest: $native_tests)"
