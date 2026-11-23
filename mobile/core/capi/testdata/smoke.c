@@ -162,6 +162,29 @@ int main(int argc, char **argv) {
     type_text(e, "sayso omw ");
     CHECK(strcmp(field, "Sayso on my way ") == 0, "personal: %s", field);
 
+    /* Listing them, for the companion app's dictionary screen. */
+    char list[256];
+    int32_t need = sayso_list_words(e, SAYSO_WORDS_ADDED | SAYSO_WORDS_LEARNED, NULL, 0);
+    CHECK(need == 11, "list words size %d", need); /* "dont" was kept twice above: undone, then kept */
+    CHECK(sayso_list_words(e, SAYSO_WORDS_ADDED | SAYSO_WORDS_LEARNED, list, 10) == 11, "list words too small");
+    CHECK(sayso_list_words(e, SAYSO_WORDS_ADDED, list, sizeof list) == 6 && memcmp(list, "Sayso\0", 6) == 0, "added words");
+    CHECK(sayso_list_words(e, SAYSO_WORDS_LEARNED, list, sizeof list) == 5 && memcmp(list, "dont\0", 5) == 0, "learned words");
+    need = sayso_list_replacements(e, list, 4);
+    CHECK(need == 16, "list replacements size %d", need);
+    CHECK(sayso_list_replacements(e, list, sizeof list) == 16 && memcmp(list, "omw\0on my way\0" "0", 15) == 0 && list[15] == 0,
+          "list replacements");
+
+    /* Preferences: autocorrect off keeps the typo; predictions off empties the strip. */
+    CHECK(sayso_set_preferences(e, 3, 1) == SAYSO_ERR_ARG, "bad autocorrect level");
+    CHECK(sayso_set_preferences(e, SAYSO_AUTOCORRECT_OFF, 0) == SAYSO_OK, "preferences");
+    type_text(e, "teh");
+    char cur[16];
+    CHECK(sayso_current_word(e, cur, sizeof cur) == 3 && strcmp(cur, "teh") == 0, "current word");
+    type_text(e, " ");
+    CHECK(strcmp(field, "Sayso on my way teh ") == 0, "autocorrect off: %s", field);
+    CHECK(sayso_get_suggestions(e, sugs, 5, text, sizeof text) == 0, "predictions off");
+    CHECK(sayso_set_preferences(e, SAYSO_AUTOCORRECT_NORMAL, 1) == SAYSO_OK, "preferences back");
+
     /* Diagnostics. */
     type_text(e, "th");
     sayso_diag d;

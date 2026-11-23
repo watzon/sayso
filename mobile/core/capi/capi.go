@@ -229,6 +229,19 @@ func sayso_set_journal_path(h C.sayso_engine, path *C.char, n C.int32_t) C.int32
 	return C.SAYSO_OK
 }
 
+//export sayso_set_preferences
+func sayso_set_preferences(h C.sayso_engine, autocorrect, predictions C.int32_t) C.int32_t {
+	s := lookup(h)
+	if s == nil {
+		return C.SAYSO_ERR_HANDLE
+	}
+	if autocorrect < C.SAYSO_AUTOCORRECT_OFF || autocorrect > C.SAYSO_AUTOCORRECT_STRICT {
+		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad autocorrect level"))
+	}
+	s.e.SetPreferences(engine.AutocorrectLevel(autocorrect), predictions != 0)
+	return C.SAYSO_OK
+}
+
 //export sayso_set_context
 func sayso_set_context(h C.sayso_engine, text *C.char, n C.int32_t) C.int32_t {
 	s := lookup(h)
@@ -253,6 +266,17 @@ func sayso_should_capitalize(h C.sayso_engine) C.int32_t {
 		return 1
 	}
 	return 0
+}
+
+//export sayso_current_word
+func sayso_current_word(h C.sayso_engine, buf *C.char, cap C.int32_t) C.int32_t {
+	s := lookup(h)
+	if s == nil {
+		return C.SAYSO_ERR_HANDLE
+	}
+	w := s.e.CurrentWord()
+	writeText(buf, cap, w)
+	return C.int32_t(len(w))
 }
 
 //export sayso_on_touch
@@ -443,6 +467,57 @@ func sayso_reset_learned(h C.sayso_engine) C.int32_t {
 	return C.SAYSO_OK
 }
 
+// writeList writes NUL-terminated fields into a caller buffer, but only
+// when all of them fit, and returns the bytes they need.
+func writeList(buf *C.char, cap C.int32_t, fields []string) C.int32_t {
+	n := 0
+	for _, f := range fields {
+		n += len(f) + 1
+	}
+	if buf != nil && n <= int(cap) {
+		dst := unsafe.Slice((*byte)(unsafe.Pointer(buf)), n)
+		off := 0
+		for _, f := range fields {
+			off += copy(dst[off:], f)
+			dst[off] = 0
+			off++
+		}
+	}
+	return C.int32_t(n)
+}
+
+//export sayso_list_words
+func sayso_list_words(h C.sayso_engine, which C.uint32_t, buf *C.char, cap C.int32_t) C.int32_t {
+	s := lookup(h)
+	if s == nil {
+		return C.SAYSO_ERR_HANDLE
+	}
+	if cap < 0 || (buf == nil && cap > 0) {
+		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad buffer"))
+	}
+	return writeList(buf, cap, s.e.PersonalWords(which&C.SAYSO_WORDS_ADDED != 0, which&C.SAYSO_WORDS_LEARNED != 0))
+}
+
+//export sayso_list_replacements
+func sayso_list_replacements(h C.sayso_engine, buf *C.char, cap C.int32_t) C.int32_t {
+	s := lookup(h)
+	if s == nil {
+		return C.SAYSO_ERR_HANDLE
+	}
+	if cap < 0 || (buf == nil && cap > 0) {
+		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad buffer"))
+	}
+	var fields []string
+	for _, r := range s.e.Replacements() {
+		cs := "0"
+		if r.CaseSensitive {
+			cs = "1"
+		}
+		fields = append(fields, r.From, r.To, cs)
+	}
+	return writeList(buf, cap, fields)
+}
+
 //export sayso_get_diagnostics
 func sayso_get_diagnostics(h C.sayso_engine, out *C.sayso_diag, keys *C.sayso_key_diag, keyCap C.int32_t,
 	cands *C.sayso_cand_diag, candCap C.int32_t, text *C.char, textCap C.int32_t) C.int32_t {
@@ -501,6 +576,8 @@ func boolC(b bool) C.int32_t {
 // The flag values must agree with the engine and decoder.
 var _ = [1]struct{}{}[uint32(C.SAYSO_EDITOR_PRIVACY)^engine.FlagPrivacy|uint32(C.SAYSO_EDITOR_AUTOCAP)^engine.FlagAutocap|
 	uint32(C.SAYSO_EDITOR_NO_AUTOCORRECT)^engine.FlagNoAutocorrect|uint32(C.SAYSO_EDITOR_NO_SUGGEST)^engine.FlagNoSuggest]
+var _ = [1]struct{}{}[int32(C.SAYSO_AUTOCORRECT_OFF)^int32(engine.AutocorrectOff)|int32(C.SAYSO_AUTOCORRECT_NORMAL)^int32(engine.AutocorrectNormal)|
+	int32(C.SAYSO_AUTOCORRECT_STRICT)^int32(engine.AutocorrectStrict)]
 var _ = [1]struct{}{}[uint32(C.SAYSO_SUG_LITERAL)^uint32(decoder.SugLiteral)|uint32(C.SAYSO_SUG_AUTOCORRECT)^uint32(decoder.SugAutocorrect)|
 	uint32(C.SAYSO_SUG_COMPLETION)^uint32(decoder.SugCompletion)|uint32(C.SAYSO_SUG_PREDICTION)^uint32(decoder.SugPrediction)|
 	uint32(C.SAYSO_SUG_PERSONAL)^uint32(decoder.SugPersonal)]
