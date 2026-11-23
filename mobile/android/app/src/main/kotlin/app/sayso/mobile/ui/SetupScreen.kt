@@ -1,5 +1,15 @@
 package app.sayso.mobile.ui
 
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,22 +32,40 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun SetupScreen(status: KeyboardStatus, onEnableKeyboard: () -> Unit, onSwitchKeyboard: () -> Unit) {
     var playground by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
+    var micGranted by remember { mutableStateOf(hasMic(context)) }
+    // Survives rotation, not process death: after a restart one more tap asks Android again,
+    // which answers at once when the denial is permanent.
+    var micAsked by rememberSaveable { mutableStateOf(false) }
+    var micRationale by remember { mutableStateOf(false) }
+    val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        micGranted = granted
+        micAsked = true
+        micRationale = context.findActivity()?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == true
+    }
+    OnResume {
+        micGranted = hasMic(context)
+        micRationale = context.findActivity()?.shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) == true
+    }
+    val mic = micStep(micGranted, micAsked, micRationale)
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Sayso Keyboard", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Set it up in three steps.",
+            "Set it up in four steps.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -58,9 +86,28 @@ fun SetupScreen(status: KeyboardStatus, onEnableKeyboard: () -> Unit, onSwitchKe
             onAction = onSwitchKeyboard,
             enabled = status.enabled,
         )
+        Step(
+            number = 3,
+            title = "Allow the microphone",
+            body = when (mic) {
+                MicStep.BLOCKED -> "Microphone access is turned off for Sayso. Open its app settings, choose Permissions, and allow the microphone."
+                else -> "Sayso needs the microphone for voice dictation from the keyboard. Speech is recognized on this phone unless you turn on a cloud engine."
+            },
+            done = mic == MicStep.GRANTED,
+            action = if (mic == MicStep.BLOCKED) "Open app settings" else "Allow microphone",
+            onAction = {
+                if (mic == MicStep.BLOCKED) {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)),
+                    )
+                } else {
+                    micLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                }
+            },
+        )
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                StepTitle(3, "Typing playground", done = false)
+                StepTitle(4, "Typing playground", done = false)
                 OutlinedTextField(
                     value = playground,
                     onValueChange = { playground = it },
@@ -100,4 +147,33 @@ private fun StepTitle(number: Int, title: String, done: Boolean) {
         Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
         if (done) Text("Done", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
     }
+}
+
+enum class MicStep {
+    GRANTED,
+
+    /** Not granted, and asking shows Android's prompt. */
+    ASK,
+
+    /** Denied for good: Android shows no prompt any more, only app settings can grant it. */
+    BLOCKED,
+}
+
+/**
+ * Before the first request Android reports no rationale, the same as after a
+ * permanent denial, so only a denial seen in this session counts as blocked.
+ */
+fun micStep(granted: Boolean, askedBefore: Boolean, showRationale: Boolean): MicStep = when {
+    granted -> MicStep.GRANTED
+    askedBefore && !showRationale -> MicStep.BLOCKED
+    else -> MicStep.ASK
+}
+
+private fun hasMic(context: Context) =
+    context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
