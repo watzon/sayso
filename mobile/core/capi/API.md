@@ -126,6 +126,9 @@ resolution.
 
 ## Sketch: an Android IME
 
+The keyboard's real binding is `NativeTypingEngine` and `sayso_jni.c` under
+`mobile/android/app/src/`; in outline:
+
 ```kotlin
 // onCreate: map the bundled model, keep the journal in app storage.
 val afd = assets.openFd("en-US.sslm")

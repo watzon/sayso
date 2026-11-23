@@ -3,10 +3,18 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// -PsaysoNative=true swaps the fake engine for the JNI bridge to libsayso_core.so.
-// -PsaysoCoreDir points at a folder with one subfolder per ABI holding libsayso_core.so.
-val saysoNative = providers.gradleProperty("saysoNative").map { it.toBoolean() }.getOrElse(false)
-val saysoCoreDir = providers.gradleProperty("saysoCoreDir").getOrElse("../../core/build/android")
+// The engine: the native core (JNI to libsayso_core.so) when it has been built for
+// both ABIs (mobile/scripts/build-core-android.sh), else the Kotlin fake.
+// -PsaysoNative=true|false forces one. -PsaysoCoreDir points at a folder with one
+// subfolder per ABI holding libsayso_core.so (default mobile/build/jniLibs).
+// -PsaysoHostLibDir: a folder with the core and the JNI library built for this
+// computer (build-android.sh makes it); the JVM tests then drive the real core.
+val coreAbis = listOf("arm64-v8a", "x86_64")
+val saysoCoreDir = file(providers.gradleProperty("saysoCoreDir").getOrElse("../../build/jniLibs"))
+val coreBuilt = coreAbis.all { File(saysoCoreDir, "$it/libsayso_core.so").exists() }
+val saysoNative = providers.gradleProperty("saysoNative").map { it.toBoolean() }.getOrElse(coreBuilt)
+val saysoHostLibDir = providers.gradleProperty("saysoHostLibDir").orNull
+val modelsDir = file("../../models")
 
 android {
     namespace = "app.sayso.mobile"
@@ -22,9 +30,12 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         if (saysoNative) {
-            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+            ndk { abiFilters += coreAbis }
             externalNativeBuild {
-                cmake { arguments += "-DSAYSO_CORE_DIR=${file(saysoCoreDir).absolutePath}" }
+                cmake {
+                    arguments += "-DSAYSO_CORE_DIR=${saysoCoreDir.absolutePath}"
+                    arguments += "-DSAYSO_CORE_INCLUDE=${file("../../core/capi").absolutePath}"
+                }
             }
         }
     }
@@ -38,8 +49,18 @@ android {
     sourceSets {
         getByName("main") {
             kotlin.directories.add(if (saysoNative) "src/native/kotlin" else "src/fake/kotlin")
-            if (saysoNative) jniLibs.directories.add(file(saysoCoreDir).absolutePath)
+            if (saysoNative) {
+                jniLibs.directories.add(saysoCoreDir.absolutePath)
+                // en-US.sslm, and SCOWL-Copyright.txt for the acknowledgements.
+                assets.directories.add(modelsDir.absolutePath)
+            }
         }
+        if (saysoNative) getByName("test").kotlin.directories.add("src/testNative/kotlin")
+    }
+
+    // The core maps the model straight out of the APK, which needs it stored uncompressed.
+    androidResources {
+        noCompress += "sslm"
     }
 
     buildTypes {
@@ -59,6 +80,13 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.all { test ->
+            test.systemProperty("sayso.model", File(modelsDir, "en-US.sslm").absolutePath)
+            if (saysoHostLibDir != null) {
+                test.systemProperty("java.library.path", file(saysoHostLibDir).absolutePath)
+                test.systemProperty("sayso.hostLibs", "true")
+            }
+        }
     }
 }
 
