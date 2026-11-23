@@ -17,12 +17,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import app.sayso.mobile.engine.TypingEngine
+import app.sayso.mobile.engine.createVoiceCore
 import app.sayso.mobile.settings.KeyboardSettingsStore
 
 data class KeyboardStatus(val enabled: Boolean, val selected: Boolean)
 
-private val TABS = listOf("Setup", "Dictionary", "Settings")
+private val TABS = listOf("Setup", "Dictionary", "History", "Settings")
 
 @Composable
 fun SaysoApp(
@@ -32,7 +34,9 @@ fun SaysoApp(
     onEnableKeyboard: () -> Unit,
     onSwitchKeyboard: () -> Unit,
 ) {
+    val context = LocalContext.current
     var settings by remember { mutableStateOf(store.load()) }
+    val voice = remember { createVoiceCore(context) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     SaysoTheme(settings.theme) {
         Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
@@ -47,6 +51,7 @@ fun SaysoApp(
                 when (tab) {
                     0 -> SetupScreen(status, onEnableKeyboard, onSwitchKeyboard)
                     1 -> DictionaryScreen(engine)
+                    2 -> HistoryScreen(voice)
                     else -> SettingsScreen(
                         settings = settings,
                         onChange = {
