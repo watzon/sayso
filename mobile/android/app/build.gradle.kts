@@ -16,6 +16,13 @@ val saysoNative = providers.gradleProperty("saysoNative").map { it.toBoolean() }
 val saysoHostLibDir = providers.gradleProperty("saysoHostLibDir").orNull
 val modelsDir = file("../../models")
 
+// Local speech recognition in the :asr process: the sherpa-onnx Android AAR that
+// mobile/scripts/fetch-sherpa-onnx.sh downloads and checks. Without it the build
+// has no local engine (src/nosherpa) and voice uses the system recognizer.
+// -PsaysoSherpaAar points at another copy.
+val sherpaAar = file(providers.gradleProperty("saysoSherpaAar").getOrElse("../../build/sherpa-onnx/sherpa-onnx-2.0.3.aar"))
+val saysoSherpa = sherpaAar.exists()
+
 android {
     namespace = "app.sayso.mobile"
     compileSdk {
@@ -29,8 +36,9 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0"
+        // sherpa-onnx ships four ABIs; the app supports these two.
+        ndk { abiFilters += coreAbis }
         if (saysoNative) {
-            ndk { abiFilters += coreAbis }
             externalNativeBuild {
                 cmake {
                     arguments += "-DSAYSO_CORE_DIR=${saysoCoreDir.absolutePath}"
@@ -49,6 +57,7 @@ android {
     sourceSets {
         getByName("main") {
             kotlin.directories.add(if (saysoNative) "src/native/kotlin" else "src/fake/kotlin")
+            kotlin.directories.add(if (saysoSherpa) "src/sherpa/kotlin" else "src/nosherpa/kotlin")
             if (saysoNative) {
                 jniLibs.directories.add(saysoCoreDir.absolutePath)
                 // en-US.sslm, and SCOWL-Copyright.txt for the acknowledgements.
@@ -61,6 +70,13 @@ android {
     // The core maps the model straight out of the APK, which needs it stored uncompressed.
     androidResources {
         noCompress += "sslm"
+    }
+
+    // Compress native libraries in the APK: sherpa-onnx's library is about 25 MB
+    // per ABI and shrinks to about 10 MB. Assets are not affected, so the .sslm
+    // model stays stored uncompressed.
+    packaging {
+        jniLibs { useLegacyPackaging = true }
     }
 
     buildTypes {
@@ -97,5 +113,6 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
+    if (saysoSherpa) implementation(files(sherpaAar))
     testImplementation(libs.junit)
 }
