@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -724,4 +725,85 @@ func TestATooLongRecordingStops(t *testing.T) {
 	r.obs.waitFor(t, "recording")
 	r.audio.speak(16000)
 	r.obs.waitFor(t, "done")
+}
+
+// slowAudio is a microphone that opens or closes only when its channel
+// closes: a USB microphone takes 75 to 120 ms to start.
+type slowAudio struct {
+	*fakeAudio
+	start, stop chan struct{}
+}
+
+func (a slowAudio) Start(ctx context.Context, device string, f func(platform.AudioChunk)) error {
+	if a.start != nil {
+		<-a.start
+	}
+	return a.fakeAudio.Start(ctx, device, f)
+}
+
+func (a slowAudio) Stop() error {
+	if a.stop != nil {
+		<-a.stop
+	}
+	return a.fakeAudio.Stop()
+}
+
+func (s *fakeSounds) waitFor(t *testing.T, cue platform.SoundCue) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		s.mu.Lock()
+		played := slices.Contains(s.cues, cue)
+		s.mu.Unlock()
+		if played {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("no %s cue", cue)
+}
+
+// The start cue plays as the hotkey is pressed, not once the microphone
+// has opened.
+func TestTheStartCueDoesNotWaitForTheMicrophone(t *testing.T) {
+	r := newRig(t, nil)
+	open := make(chan struct{})
+	free := sync.OnceFunc(func() { close(open) })
+	t.Cleanup(free) // before the rig closes, so a held controller can stop
+	r.c.d.Platform.Audio = slowAudio{fakeAudio: r.audio, start: open}
+	r.c.Toggle()
+	r.obs.waitFor(t, "recording")
+	r.sounds.waitFor(t, platform.CueStart)
+	free()
+	r.c.do(func() {}) // the start has run
+	r.audio.speak(16000)
+	r.c.Toggle()
+	r.obs.waitFor(t, "done")
+}
+
+// A stop and a cancel show at once: the overlay does not wait for the
+// microphone to close.
+func TestStopAndCancelShowBeforeTheMicrophoneCloses(t *testing.T) {
+	for _, tc := range []struct {
+		name, phase, after string
+		end                func(*Controller)
+	}{
+		{"stop", "processing", "done", (*Controller).Toggle},
+		{"cancel", "cancelled", "cancelled", (*Controller).Cancel},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRig(t, nil)
+			closed := make(chan struct{})
+			free := sync.OnceFunc(func() { close(closed) })
+			t.Cleanup(free)
+			r.c.d.Platform.Audio = slowAudio{fakeAudio: r.audio, stop: closed}
+			r.c.Toggle()
+			r.obs.waitFor(t, "recording")
+			r.audio.speak(16000)
+			tc.end(r.c)
+			r.obs.waitFor(t, tc.phase)
+			free()
+			r.obs.waitFor(t, tc.after)
+		})
+	}
 }

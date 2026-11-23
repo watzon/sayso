@@ -421,22 +421,16 @@ func (c *Controller) dispatch(e Event) {
 	}
 	wasRecording := c.machine.IsRecording()
 	effects := c.machine.Handle(e, c.nowMs())
-	st := c.machine.State
-	recording := c.machine.IsRecording()
-	if recording && !wasRecording {
-		// The overlay shows the recording at once: the effects of a start
-		// (the focused app, the microphone) can take a while, and a
-		// failure comes as an event of its own.
-		c.track(st, recording, wasRecording)
-		c.publish(st)
-	}
+	// The overlay shows the new state at once: the effects can take a while
+	// (the focused app, opening or closing the microphone), and a failure
+	// comes as an event of its own.
+	c.track(c.machine.State, c.machine.IsRecording(), wasRecording)
+	c.publish(c.machine.State)
 	for _, fx := range effects {
 		c.run(fx)
 	}
-	st = c.machine.State
-	recording = c.machine.IsRecording()
-	c.track(st, recording, wasRecording)
-	c.publish(st)
+	c.track(c.machine.State, c.machine.IsRecording(), wasRecording)
+	c.publish(c.machine.State)
 }
 
 // track holds the dictation gate while a dictation runs, and tells the

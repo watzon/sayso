@@ -320,7 +320,8 @@ func (m *Machine) start(t Trigger, nowMs uint64, fx *[]Effect) {
 	session := m.next
 	m.next++
 	m.State = State{Kind: StateRecording, Session: session, Trigger: t, StartedMs: nowMs}
-	*fx = append(*fx, Effect{Kind: FxStartCapture, Session: session}, Effect{Kind: FxPlaySound, Sound: SoundStart})
+	// The cue first: a USB microphone takes 75 to 120 ms to open.
+	*fx = append(*fx, Effect{Kind: FxPlaySound, Sound: SoundStart}, Effect{Kind: FxStartCapture, Session: session})
 }
 
 func (m *Machine) finish(session SessionID, startedMs, nowMs uint64, fx *[]Effect) {
