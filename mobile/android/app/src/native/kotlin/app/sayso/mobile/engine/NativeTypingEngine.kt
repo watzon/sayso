@@ -12,7 +12,7 @@ import java.io.IOException
  * from the main thread; the reused result arrays are not shared across
  * threads.
  */
-class NativeTypingEngine internal constructor(private val handle: Long) : TypingEngine {
+class NativeTypingEngine internal constructor(internal val handle: Long) : TypingEngine {
     private val action = IntArray(SaysoCore.ACTION_INTS)
     private val text = ByteArray(SaysoCore.TEXT_CAP)
     private val sugInts = IntArray(3 * MAX_SUGGESTIONS)
