@@ -37,6 +37,9 @@ type Params struct {
 	// MarginGap is how much better the best candidate must score than the
 	// second, when what was typed is not a word, to replace it.
 	MarginGap float32
+	// ExtraMargin is one more bar every correction must clear, on top of
+	// the margins above (the user's strict setting).
+	ExtraMargin float32
 	// MaxCandCost: a candidate that scores worse than this is never put in.
 	MaxCandCost float32
 	// LongWord is the key length from which two edits are allowed.

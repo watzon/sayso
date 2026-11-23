@@ -336,6 +336,7 @@ func (d *Decoder) Decide(b Bonus) Decision {
 		}
 		dec.Margin = min(second-c.Total-d.P.MarginGap, lit.Total-c.Total)
 	}
+	dec.Margin -= d.P.ExtraMargin
 	dec.Correct = dec.Margin >= 0
 	return dec
 }

@@ -594,6 +594,10 @@ func (l *Learner) PersonalWords() map[string]int {
 	return out
 }
 
+// AddedWords is the words added to the personal lexicon by hand (AddWord),
+// sorted. PersonalWords also holds the learned ones.
+func (l *Learner) AddedWords() []string { return sortedKeys(l.words) }
+
 // Bigram is the faded count of the user's bigram (prev, w).
 func (l *Learner) Bigram(prev, w string) float64 {
 	g := l.ngrams[[2]string{norm(prev), norm(w)}]

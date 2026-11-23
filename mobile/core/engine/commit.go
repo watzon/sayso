@@ -2,6 +2,7 @@ package engine
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -113,10 +114,13 @@ func utf16Len(s string) int {
 // decideOutput is what the typed word becomes on commit, and whether that
 // is a correction the user may undo.
 func (e *Engine) decideOutput(typed string) (string, bool) {
+	if e.noFix {
+		return typed, false // reverted: commit it as typed, replacements included
+	}
 	if r, ok := e.learn.Replacement(typed); ok {
 		return strings.ReplaceAll(r.To, `\n`, "\n"), true
 	}
-	if e.noFix || e.raw || e.flags&FlagNoAutocorrect != 0 || e.dec.Overflow() {
+	if e.raw || e.correctionsOff() || e.dec.Overflow() {
 		return typed, false
 	}
 	if t, ok := e.learn.Promoted(typed); ok && !e.learn.Suppressed(typed, t) {
@@ -456,12 +460,17 @@ func (e *Engine) Suggestions(n int) []Suggestion {
 }
 
 func (e *Engine) suggestions(n int) []Suggestion {
-	if e.flags&FlagNoSuggest != 0 || e.raw {
+	if e.flags&FlagNoSuggest != 0 || e.raw || (len(e.word) == 0 && !e.predictions) {
 		e.nsugs = 0
 		return nil
 	}
 	n = min(n, maxSuggestions)
 	e.nsugs = e.dec.Suggest(&e.bonus, e.sugs[:n])
+	if e.correctionsOff() {
+		for i := range e.sugs[:e.nsugs] {
+			e.sugs[i].Flags &^= decoder.SugAutocorrect // a commit will not write it
+		}
+	}
 	out := make([]Suggestion, 0, e.nsugs)
 	for _, s := range e.sugs[:e.nsugs] {
 		out = append(out, Suggestion{Text: e.sugText(s), Score: s.Total, Flags: s.Flags})
@@ -648,6 +657,36 @@ func (e *Engine) RemoveReplacement(from string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.learn.RemoveReplacement(from)
+}
+
+// PersonalWords lists the personal lexicon, each part sorted: the words
+// added by hand, then the words learned by keeping them.
+func (e *Engine) PersonalWords(added, learned bool) []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	byHand := e.learn.AddedWords()
+	var out []string
+	if added {
+		out = append(out, byHand...)
+	}
+	if learned {
+		var kept []string
+		for w := range e.learn.PersonalWords() {
+			if !slices.Contains(byHand, w) {
+				kept = append(kept, w)
+			}
+		}
+		slices.Sort(kept)
+		out = append(out, kept...)
+	}
+	return out
+}
+
+// Replacements lists the text replacements, sorted by what is typed.
+func (e *Engine) Replacements() []learner.Replacement {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.learn.Replacements()
 }
 
 // ResetLearned forgets everything learned and empties the journal.

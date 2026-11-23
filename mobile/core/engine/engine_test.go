@@ -3,6 +3,7 @@ package engine
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -310,5 +311,89 @@ func TestVeryLongWordDoesNotBreakTheMirror(t *testing.T) {
 	f.typeText(strings.Repeat("abcdefghij", 40) + " fine ")
 	if !strings.HasSuffix(f.e.Before(), " fine ") {
 		t.Fatalf("mirror %q", f.e.Before())
+	}
+}
+
+func TestUndoneReplacementCommitsAsTyped(t *testing.T) {
+	f := newField(t, "")
+	f.e.AddReplacement("omw", "on my way", false)
+	f.typeText("omw ")
+	f.check("on my way ")
+	f.backspace()
+	f.check("omw")
+	f.typeText(" ")
+	f.check("omw ")
+}
+
+func TestAutocorrectLevels(t *testing.T) {
+	f := newField(t, "")
+	f.e.SetPreferences(AutocorrectOff, true)
+	f.typeText("I want teh")
+	for _, s := range f.e.Suggestions(5) {
+		if s.Flags&decoder.SugAutocorrect != 0 {
+			t.Fatalf("autocorrect flag with autocorrect off: %+v", s)
+		}
+	}
+	if f.e.Diagnostics(3).Correct {
+		t.Fatal("diagnostics say a commit corrects with autocorrect off")
+	}
+	f.typeText(" ")
+	f.check("I want teh ")
+
+	// After "I want", "cna" clears the normal bar by a fraction of a nat
+	// and "teh" by several.
+	for _, c := range []struct {
+		level AutocorrectLevel
+		want  string
+	}{{AutocorrectNormal, "I want can "}, {AutocorrectStrict, "I want cna "}} {
+		g := newField(t, "")
+		g.e.SetPreferences(c.level, true)
+		g.typeText("I want cna")
+		if m := g.e.Diagnostics(1).Margin; c.level == AutocorrectNormal && (m < 0 || m >= strictMargin) {
+			t.Fatalf("\"cna\" margin %.2f: pick another word for this test", m)
+		}
+		g.typeText(" ")
+		g.check(c.want)
+		g.typeText("teh ")
+		g.check(c.want + "the ")
+	}
+}
+
+func TestPredictionsCanBeTurnedOff(t *testing.T) {
+	f := newField(t, "")
+	f.e.SetContext("Thank ")
+	if len(f.e.Suggestions(3)) == 0 {
+		t.Fatal("no prediction after \"Thank \"")
+	}
+	f.e.SetPreferences(AutocorrectNormal, false)
+	if s := f.e.Suggestions(3); len(s) != 0 {
+		t.Fatalf("predictions while turned off: %+v", s)
+	}
+	f.text = "Thank "
+	f.typeText("yo")
+	if len(f.e.Suggestions(3)) == 0 {
+		t.Fatal("no suggestions for a word being typed")
+	}
+	if f.e.CurrentWord() != "yo" {
+		t.Fatalf("current word %q", f.e.CurrentWord())
+	}
+}
+
+func TestPersonalWordListsAddedAndLearnedApart(t *testing.T) {
+	f := newField(t, "")
+	f.e.AddWord("Zorblax")
+	f.e.AddReplacement("brb", "be right back", false)
+	f.typeText("flurbo is here. flurbo is here. ")
+	if got := f.e.PersonalWords(true, false); !slices.Equal(got, []string{"Zorblax"}) {
+		t.Fatalf("added %q", got)
+	}
+	if got := f.e.PersonalWords(false, true); !slices.Equal(got, []string{"flurbo"}) {
+		t.Fatalf("learned %q", got)
+	}
+	if got := f.e.PersonalWords(true, true); !slices.Equal(got, []string{"Zorblax", "flurbo"}) {
+		t.Fatalf("all %q", got)
+	}
+	if r := f.e.Replacements(); len(r) != 1 || r[0].From != "brb" || r[0].To != "be right back" {
+		t.Fatalf("replacements %+v", r)
 	}
 }
