@@ -53,3 +53,32 @@ func IsRTL() bool {
 	}
 	return IsRTLTag(CurrentLocale())
 }
+
+// The Unicode isolates (UAX #9): what is between an opening one and PDI
+// takes its own direction and leaves its neighbors' alone.
+const (
+	lri = "\u2066" // left-to-right isolate
+	fsi = "\u2068" // first strong isolate: the direction of its first letter
+	pdi = "\u2069" // pop directional isolate
+)
+
+// isolateArg is a value put into a text that reads right to left, in a
+// first strong isolate: a hotkey, a path, a model name, a version or a
+// number keeps its own order, and the punctuation around it stays in the
+// sentence. interpolate uses it right to left only.
+func isolateArg(v string) string {
+	if v == "" {
+		return v
+	}
+	return fsi + v + pdi
+}
+
+// Isolate keeps s, a token that reads left to right whatever the language
+// ("⌘F", "~/Library/…", "parakeet-tdt-v3", "#2F3E9E"), in its order inside
+// a text that reads right to left. Left to right it is s.
+func Isolate(s string) string {
+	if s == "" || !IsRTL() {
+		return s
+	}
+	return lri + s + pdi
+}

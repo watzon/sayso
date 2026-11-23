@@ -350,8 +350,13 @@ func interpolate(text string, vars map[string]any) string {
 		names = append(names, k)
 	}
 	sort.Strings(names)
+	rtl := IsRTL()
 	for _, name := range names {
-		text = strings.ReplaceAll(text, "%{"+name+"}", fmt.Sprint(vars[name]))
+		v := fmt.Sprint(vars[name])
+		if rtl {
+			v = isolateArg(v)
+		}
+		text = strings.ReplaceAll(text, "%{"+name+"}", v)
 	}
 	return text
 }
