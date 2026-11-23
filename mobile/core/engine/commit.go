@@ -645,11 +645,12 @@ func (e *Engine) RemoveWord(w string) {
 }
 
 // AddReplacement adds a text replacement (Sayso's dictionary): typing from
-// as a word writes to.
-func (e *Engine) AddReplacement(from, to string, caseSensitive bool) {
+// as a word writes to. It fails when either is too long (see
+// learner.AddReplacement).
+func (e *Engine) AddReplacement(from, to string, caseSensitive bool) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.learn.AddReplacement(learner.Replacement{From: from, To: to, CaseSensitive: caseSensitive})
+	return e.learn.AddReplacement(learner.Replacement{From: from, To: to, CaseSensitive: caseSensitive})
 }
 
 // RemoveReplacement removes the replacement of from.

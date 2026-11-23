@@ -81,6 +81,22 @@ func TestSpatial(t *testing.T) {
 	if d.Cost['f'-'a'] >= d.Cost['p'-'a'] {
 		t.Fatal("a neighbour should cost less than a far key")
 	}
+	// Far is in key sizes and, unlike Cost, keeps growing past the cap.
+	near := func(c byte, want float64) {
+		t.Helper()
+		if got := float64(d.Far[c-'a']); math.Abs(got-want) > 0.01 {
+			t.Errorf("Far[%c] = %.3f, want %.3f", c, got, want)
+		}
+	}
+	near('g', 0)
+	near('f', 1)
+	near('h', 1)
+	near('t', math.Hypot(0.5, 1)) // the row above, half a key over
+	near('a', 4)
+	near('p', math.Hypot(4.5, 1))
+	if d.Cost['a'-'a'] != d.Cost['p'-'a'] {
+		t.Fatal("expected far keys to share the capped cost; Far is what tells them apart")
+	}
 }
 
 // Every key keeps its core: no prior, however extreme, moves a tap there.

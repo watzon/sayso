@@ -7,6 +7,7 @@
 package learner
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -32,6 +33,8 @@ const (
 	maxNgrams = 20000
 	// maxWordLen bounds stored words and replacement texts.
 	maxWordLen = 128
+	// maxReplacementLen is the longest replacement text, in bytes.
+	maxReplacementLen = maxWordLen * 4
 	// snapshotEvery: offsets go to the journal every this many confirmed words.
 	snapshotEvery = 25
 )
@@ -346,20 +349,28 @@ func (l *Learner) RemoveWord(w string) {
 	l.record("w", w)
 }
 
-// AddReplacement adds or changes a text replacement.
-func (l *Learner) AddReplacement(r Replacement) {
+// AddReplacement adds or changes a text replacement. It fails, changing
+// nothing, when from is blank or longer than 128 bytes or to is longer than
+// 512.
+func (l *Learner) AddReplacement(r Replacement) error {
 	from := strings.TrimSpace(r.From)
-	if from == "" || len(from) > maxWordLen || len(r.To) > maxWordLen*4 {
-		return
+	switch {
+	case from == "":
+		return errors.New("replacement: empty shortcut")
+	case len(from) > maxWordLen:
+		return fmt.Errorf("replacement: shortcut is %d bytes, at most %d", len(from), maxWordLen)
+	case len(r.To) > maxReplacementLen:
+		return fmt.Errorf("replacement: text is %d bytes, at most %d", len(r.To), maxReplacementLen)
 	}
 	if old, ok := l.replacements[norm(from)]; ok && old.To == r.To && old.CaseSensitive == r.CaseSensitive {
-		return
+		return nil
 	}
 	cs := "0"
 	if r.CaseSensitive {
 		cs = "1"
 	}
 	l.record("R", from, r.To, cs)
+	return nil
 }
 
 // RemoveReplacement removes the replacement of from.

@@ -157,6 +157,10 @@ int main(int argc, char **argv) {
     /* Personal words and replacements. */
     CHECK(sayso_add_word(e, "Sayso", 5) == SAYSO_OK, "add word");
     CHECK(sayso_add_replacement(e, "omw", 3, "on my way", 9, 0) == SAYSO_OK, "add replacement");
+    static char long_text[600];
+    memset(long_text, 'x', sizeof long_text);
+    CHECK(sayso_add_replacement(e, "sig", 3, long_text, 513, 0) == SAYSO_ERR_ARG, "a replacement over 512 bytes is refused");
+    CHECK(sayso_last_error(e, NULL, 0) > 0, "and says why");
     sayso_set_context(e, "", 0);
     field[0] = 0;
     type_text(e, "sayso omw ");

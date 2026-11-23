@@ -97,6 +97,9 @@ func TestAutocorrect(t *testing.T) {
 		{[]string{"I", "would"}, "liek", "like"},
 		{[]string{"it", "is"}, "ofthe", "of the"},
 		{[]string{"I"}, "wanr", "want"}, // a far substitution
+		// s for a is one key over; w for i ("isn't") is six.
+		{nil, "wsnt", "want"},
+		{[]string{"I"}, "wsnt", "want"},
 		{[]string{"this", "is"}, "beautifl", "beautiful"},
 		{[]string{"I"}, "think", ""}, // a word stays
 		{[]string{"the"}, "cat", ""},

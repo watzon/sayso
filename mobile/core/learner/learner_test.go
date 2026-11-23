@@ -232,3 +232,22 @@ func TestFollowing(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestAddReplacementRefusesWhatItCannotKeep(t *testing.T) {
+	l := New()
+	if err := l.AddReplacement(Replacement{From: "sig", To: strings.Repeat("x", maxReplacementLen)}); err != nil {
+		t.Fatalf("512 bytes fit: %v", err)
+	}
+	for _, r := range []Replacement{
+		{From: "sig2", To: strings.Repeat("x", maxReplacementLen+1)},
+		{From: strings.Repeat("a", maxWordLen+1), To: "x"},
+		{From: "  ", To: "x"},
+	} {
+		if err := l.AddReplacement(r); err == nil {
+			t.Errorf("%d-byte shortcut, %d-byte text: accepted", len(r.From), len(r.To))
+		}
+	}
+	if got := len(l.Replacements()); got != 1 {
+		t.Fatalf("%d replacements kept, want 1", got)
+	}
+}

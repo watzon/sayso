@@ -180,6 +180,8 @@ int32_t sayso_pick_suggestion(sayso_engine e, int32_t index, sayso_action *out, 
 
 int32_t sayso_add_word(sayso_engine e, const char *word, int32_t len);
 int32_t sayso_remove_word(sayso_engine e, const char *word, int32_t len);
+/* SAYSO_ERR_ARG, changing nothing, when from is empty or over 128 bytes or
+ * to is over 512 bytes. */
 int32_t sayso_add_replacement(sayso_engine e, const char *from, int32_t from_len,
                               const char *to, int32_t to_len, int32_t case_sensitive);
 int32_t sayso_remove_replacement(sayso_engine e, const char *from, int32_t from_len);

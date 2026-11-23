@@ -43,9 +43,16 @@ func init() {
 
 func main() {}
 
+// A session is one engine and the model it maps. Every call holds mu for
+// reading while it uses them; destroy takes it for writing, so it waits for
+// calls in flight before it unmaps the model, and calls that come after see
+// closed. The engine serializes the calls themselves.
 type session struct {
 	e *engine.Engine
 	m *lexicon.Model
+
+	mu     sync.RWMutex
+	closed bool
 
 	errMu   sync.Mutex
 	lastErr string
@@ -65,6 +72,23 @@ func lookup(h C.sayso_engine) *session {
 	sessionsMu.RUnlock()
 	return s
 }
+
+// acquire returns the live session for h, held until release, or nil when
+// h is unknown or destroyed.
+func acquire(h C.sayso_engine) *session {
+	s := lookup(h)
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	if s.closed {
+		s.mu.RUnlock()
+		return nil
+	}
+	return s
+}
+
+func (s *session) release() { s.mu.RUnlock() }
 
 func (s *session) fail(code C.int32_t, err error) C.int32_t {
 	s.errMu.Lock()
@@ -178,7 +202,13 @@ func sayso_engine_destroy(h C.sayso_engine) {
 	s := sessions[uintptr(h)]
 	delete(sessions, uintptr(h))
 	sessionsMu.Unlock()
-	if s != nil {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.closed {
+		s.closed = true
 		s.e.Close()
 		s.m.Close()
 	}
@@ -186,10 +216,11 @@ func sayso_engine_destroy(h C.sayso_engine) {
 
 //export sayso_set_layout
 func sayso_set_layout(h C.sayso_engine, keys *C.sayso_key, count C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if keys == nil || count <= 0 || count > touch.MaxKeys {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad key count"))
 	}
@@ -205,20 +236,22 @@ func sayso_set_layout(h C.sayso_engine, keys *C.sayso_key, count C.int32_t) C.in
 
 //export sayso_set_editor_flags
 func sayso_set_editor_flags(h C.sayso_engine, flags C.uint32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	s.e.SetFlags(uint32(flags))
 	return C.SAYSO_OK
 }
 
 //export sayso_set_journal_path
 func sayso_set_journal_path(h C.sayso_engine, path *C.char, n C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	p, ok := goString(path, n)
 	if !ok {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad path"))
@@ -231,10 +264,11 @@ func sayso_set_journal_path(h C.sayso_engine, path *C.char, n C.int32_t) C.int32
 
 //export sayso_set_preferences
 func sayso_set_preferences(h C.sayso_engine, autocorrect, predictions C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if autocorrect < C.SAYSO_AUTOCORRECT_OFF || autocorrect > C.SAYSO_AUTOCORRECT_STRICT {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad autocorrect level"))
 	}
@@ -244,10 +278,11 @@ func sayso_set_preferences(h C.sayso_engine, autocorrect, predictions C.int32_t)
 
 //export sayso_set_context
 func sayso_set_context(h C.sayso_engine, text *C.char, n C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	t, ok := goString(text, n)
 	if !ok {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad text"))
@@ -258,10 +293,11 @@ func sayso_set_context(h C.sayso_engine, text *C.char, n C.int32_t) C.int32_t {
 
 //export sayso_should_capitalize
 func sayso_should_capitalize(h C.sayso_engine) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if s.e.ShouldCapitalize() {
 		return 1
 	}
@@ -270,10 +306,11 @@ func sayso_should_capitalize(h C.sayso_engine) C.int32_t {
 
 //export sayso_current_word
 func sayso_current_word(h C.sayso_engine, buf *C.char, cap C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	w := s.e.CurrentWord()
 	writeText(buf, cap, w)
 	return C.int32_t(len(w))
@@ -281,10 +318,11 @@ func sayso_current_word(h C.sayso_engine, buf *C.char, cap C.int32_t) C.int32_t 
 
 //export sayso_on_touch
 func sayso_on_touch(h C.sayso_engine, x, y C.float, timeMS C.int64_t, shifted C.int32_t, out *C.sayso_touch_result) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	fx, fy := float32(x), float32(y)
 	if out == nil || fx != fx || fy != fy || fx > 1e9 || fx < -1e9 || fy > 1e9 || fy < -1e9 {
 		return C.SAYSO_ERR_ARG // NaN or out of any screen
@@ -331,10 +369,11 @@ func actionArgs(s *session, out *C.sayso_action, text *C.char, cap C.int32_t) C.
 
 //export sayso_type_char
 func sayso_type_char(h C.sayso_engine, cp C.int32_t, out *C.sayso_action, text *C.char, cap C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if rc := actionArgs(s, out, text, cap); rc != C.SAYSO_OK {
 		return rc
 	}
@@ -347,10 +386,11 @@ func sayso_type_char(h C.sayso_engine, cp C.int32_t, out *C.sayso_action, text *
 
 //export sayso_backspace
 func sayso_backspace(h C.sayso_engine, out *C.sayso_action, text *C.char, cap C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if rc := actionArgs(s, out, text, cap); rc != C.SAYSO_OK {
 		return rc
 	}
@@ -360,10 +400,11 @@ func sayso_backspace(h C.sayso_engine, out *C.sayso_action, text *C.char, cap C.
 
 //export sayso_revert_last_autocorrect
 func sayso_revert_last_autocorrect(h C.sayso_engine, out *C.sayso_action, text *C.char, cap C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if rc := actionArgs(s, out, text, cap); rc != C.SAYSO_OK {
 		return rc
 	}
@@ -373,10 +414,11 @@ func sayso_revert_last_autocorrect(h C.sayso_engine, out *C.sayso_action, text *
 
 //export sayso_get_suggestions
 func sayso_get_suggestions(h C.sayso_engine, out *C.sayso_suggestion, max C.int32_t, text *C.char, cap C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if max <= 0 || out == nil || text == nil || cap <= 0 {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad buffers"))
 	}
@@ -401,10 +443,11 @@ func sayso_get_suggestions(h C.sayso_engine, out *C.sayso_suggestion, max C.int3
 
 //export sayso_pick_suggestion
 func sayso_pick_suggestion(h C.sayso_engine, index C.int32_t, out *C.sayso_action, text *C.char, cap C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if rc := actionArgs(s, out, text, cap); rc != C.SAYSO_OK {
 		return rc
 	}
@@ -413,10 +456,11 @@ func sayso_pick_suggestion(h C.sayso_engine, index C.int32_t, out *C.sayso_actio
 }
 
 func wordCall(h C.sayso_engine, w *C.char, n C.int32_t, fn func(*engine.Engine, string)) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	word, ok := goString(w, n)
 	if !ok || word == "" {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad word"))
@@ -437,16 +481,19 @@ func sayso_remove_word(h C.sayso_engine, w *C.char, n C.int32_t) C.int32_t {
 
 //export sayso_add_replacement
 func sayso_add_replacement(h C.sayso_engine, from *C.char, fromLen C.int32_t, to *C.char, toLen C.int32_t, caseSensitive C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	f, ok1 := goString(from, fromLen)
 	t, ok2 := goString(to, toLen)
 	if !ok1 || !ok2 || f == "" {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad replacement"))
 	}
-	s.e.AddReplacement(f, t, caseSensitive != 0)
+	if err := s.e.AddReplacement(f, t, caseSensitive != 0); err != nil {
+		return s.fail(C.SAYSO_ERR_ARG, err)
+	}
 	return C.SAYSO_OK
 }
 
@@ -457,10 +504,11 @@ func sayso_remove_replacement(h C.sayso_engine, from *C.char, n C.int32_t) C.int
 
 //export sayso_reset_learned
 func sayso_reset_learned(h C.sayso_engine) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if err := s.e.ResetLearned(); err != nil {
 		return s.fail(C.SAYSO_ERR_IO, err)
 	}
@@ -488,10 +536,11 @@ func writeList(buf *C.char, cap C.int32_t, fields []string) C.int32_t {
 
 //export sayso_list_words
 func sayso_list_words(h C.sayso_engine, which C.uint32_t, buf *C.char, cap C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if cap < 0 || (buf == nil && cap > 0) {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad buffer"))
 	}
@@ -500,10 +549,11 @@ func sayso_list_words(h C.sayso_engine, which C.uint32_t, buf *C.char, cap C.int
 
 //export sayso_list_replacements
 func sayso_list_replacements(h C.sayso_engine, buf *C.char, cap C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if cap < 0 || (buf == nil && cap > 0) {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad buffer"))
 	}
@@ -521,10 +571,11 @@ func sayso_list_replacements(h C.sayso_engine, buf *C.char, cap C.int32_t) C.int
 //export sayso_get_diagnostics
 func sayso_get_diagnostics(h C.sayso_engine, out *C.sayso_diag, keys *C.sayso_key_diag, keyCap C.int32_t,
 	cands *C.sayso_cand_diag, candCap C.int32_t, text *C.char, textCap C.int32_t) C.int32_t {
-	s := lookup(h)
+	s := acquire(h)
 	if s == nil {
 		return C.SAYSO_ERR_HANDLE
 	}
+	defer s.release()
 	if out == nil || keyCap < 0 || candCap < 0 || textCap < 0 {
 		return s.fail(C.SAYSO_ERR_ARG, errors.New("bad buffers"))
 	}
