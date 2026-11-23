@@ -51,6 +51,21 @@ func pluralCategory(locale string, n uint64) string {
 			return "few"
 		}
 		return "many"
+	case "ar":
+		m100 := n % 100
+		switch {
+		case n == 0:
+			return "zero"
+		case n == 1:
+			return "one"
+		case n == 2:
+			return "two"
+		case m100 >= 3 && m100 <= 10:
+			return "few"
+		case m100 >= 11:
+			return "many"
+		}
+		return "other"
 	}
 	if n == 1 {
 		return "one"
@@ -67,6 +82,8 @@ func PluralCategories(locale string) []string {
 		return []string{"one", "many", "other"}
 	case "ru":
 		return []string{"one", "few", "many", "other"}
+	case "ar":
+		return []string{"zero", "one", "two", "few", "many", "other"}
 	}
 	return []string{"one", "other"}
 }
