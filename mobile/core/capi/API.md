@@ -9,7 +9,7 @@ flat C ABI: [`sayso_core.h`](sayso_core.h). Android loads it as
 cd mobile
 ./scripts/build-core-android.sh   # build/jniLibs/{arm64-v8a,x86_64}/libsayso_core.so + build/include/sayso_core.h
 ./scripts/check-ios-core.sh       # build/ios/libsayso_core.a, reports its size
-./scripts/test-capi.sh            # host archive + C smoke test + on_touch timing through cgo
+./scripts/test-capi.sh            # host archive + C smoke test + on_touch timing through cgo + destroy race
 ```
 
 ## Rules
@@ -17,7 +17,9 @@ cd mobile
 - **Handles.** An engine is an opaque `sayso_engine` (`uintptr_t`); 0 is never
   live. A destroyed or unknown handle gives `SAYSO_ERR_HANDLE`.
 - **Threads.** Any thread may call any function. Calls on one engine are
-  serialized inside the core. The core starts no threads of its own beyond
+  serialized inside the core. `sayso_engine_destroy` may race other calls on
+  the same engine: it waits for calls in flight, and later calls get
+  `SAYSO_ERR_HANDLE`. The core starts no threads of its own beyond
   the Go runtime's (`GOMAXPROCS=2`, a 24 MiB soft heap limit unless the
   `GOMEMLIMIT` environment variable is set).
 - **Memory.** No Go pointer crosses the ABI. Strings in are UTF-8 with a byte
