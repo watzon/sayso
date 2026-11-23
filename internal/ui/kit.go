@@ -394,6 +394,15 @@ func card(c *mu.Context, p theme.Colors) mu.Element {
 	return raised(mu.Column(c).Padding(18, 20).Gap(12).Radius(12), p)
 }
 
+// menuItemBase is a 30 px line of a menu or a pick list (Rust kit.rs
+// menu_items), its content from the leading edge: ButtonBase centers its
+// children, which in a menu as wide as its longest line puts a short
+// label in the middle.
+func (a *App) menuItemBase(c *mu.Context, key, label string) mu.Element {
+	return mu.ButtonBase(a.k(c, key)).Label(label).Height(30).PaddingX(10).Gap(8).Radius(7).
+		AlignItems(mu.Center).Justify(mu.Start).Cursor(mu.CursorPointer)
+}
+
 // clicked reports a click on el and asks for another frame, so that what
 // the click changed shows at once in the elements built before it.
 func clicked(c *mu.Context, el mu.Element) bool {

@@ -567,8 +567,7 @@ func (a *App) ollamaList(c *mu.Context, p theme.Colors) {
 		Label(i18n.T("onboarding.ai.ollama_model")).Children(func() {
 		for i, name := range f.found.ollama {
 			on := name == current
-			it := mu.ButtonBase(a.k(c, "onboarding.ai.ollama."+name)).Label(name).Role(mu.RoleRadio).Checked(on).PositionInSet(i+1, len(f.found.ollama)).
-				Height(30).PaddingX(10).Gap(8).Radius(7).AlignItems(mu.Center).Cursor(mu.CursorPointer)
+			it := a.menuItemBase(c, "onboarding.ai.ollama."+name, name).Role(mu.RoleRadio).Checked(on).PositionInSet(i+1, len(f.found.ollama))
 			if it.Hovered() {
 				it.Background(p.SheetRaised)
 			}
