@@ -29,13 +29,16 @@ type User struct {
 	// TypoRate is the chance per word of a slip of the finger: a letter
 	// left out, doubled, or two letters swapped.
 	TypoRate float64
+	// SubRate is the chance per word of aiming one letter at the wrong key:
+	// mostly a neighbour of the right one, sometimes any letter.
+	SubRate float64
 	// SkipApostrophe is the chance of typing "dont" for "don't".
 	SkipApostrophe float64
 	Seed           uint64
 }
 
 // DefaultUser is the typist of the gate.
-var DefaultUser = User{NoiseX: 0.24, NoiseY: 0.22, BiasX: 0.06, BiasY: 0.2, TypoRate: 0.03, SkipApostrophe: 0.5, Seed: 7}
+var DefaultUser = User{NoiseX: 0.24, NoiseY: 0.22, BiasX: 0.06, BiasY: 0.2, TypoRate: 0.03, SubRate: 0.02, SkipApostrophe: 0.5, Seed: 7}
 
 // Mode is what the engine is allowed to do.
 type Mode int
@@ -164,7 +167,7 @@ func Run(m *lexicon.Model, sentences []string, u User, mode Mode) (Result, error
 		e.SetContext("")
 		text := ""
 		for _, truth := range ws {
-			aim := slip(truth, u, rng)
+			aim := slip(truth, u, layout, rng)
 			start := len(text)
 			for i, c := range aim {
 				if c == '\'' {
@@ -225,9 +228,12 @@ func Run(m *lexicon.Model, sentences []string, u User, mode Mode) (Result, error
 
 // slip is what the user aims to type: the word, sometimes with a slip of
 // the finger, sometimes without its apostrophe.
-func slip(w string, u User, rng *rand.Rand) string {
+func slip(w string, u User, layout *touch.Layout, rng *rand.Rand) string {
 	if strings.Contains(w, "'") && rng.Float64() < u.SkipApostrophe {
 		w = strings.ReplaceAll(w, "'", "")
+	}
+	if u.SubRate > 0 && rng.Float64() < u.SubRate {
+		w = substitute(w, layout, rng)
 	}
 	if len(w) < 3 || rng.Float64() >= u.TypoRate {
 		return w
@@ -243,6 +249,35 @@ func slip(w string, u User, rng *rand.Rand) string {
 		b[i-1], b[i] = b[i], b[i-1]
 	}
 	return strings.Trim(string(b), "'")
+}
+
+// substitute aims one letter of w at another key: one of its neighbours
+// 85% of the time, else any letter.
+func substitute(w string, layout *touch.Layout, rng *rand.Rand) string {
+	b := []byte(w)
+	i := rng.IntN(len(b))
+	c := b[i]
+	lower := c | 0x20
+	if lower < 'a' || lower > 'z' {
+		return w
+	}
+	to := byte('a' + rng.IntN(26))
+	if rng.Float64() < 0.85 {
+		var near []byte
+		for _, k := range layout.Neighbours(layout.LetterKey(lower)) {
+			if layout.Kind(int(k)) == touch.KindLetter {
+				near = append(near, byte(layout.Keys[k].Code))
+			}
+		}
+		if len(near) > 0 {
+			to = near[rng.IntN(len(near))]
+		}
+	}
+	if c != lower {
+		to -= 'a' - 'A'
+	}
+	b[i] = to
+	return string(b)
 }
 
 func apply(text string, a engine.Action, fallback string) string {

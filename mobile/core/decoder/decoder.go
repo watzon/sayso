@@ -23,7 +23,8 @@ const MaxBeam = 64
 type Params struct {
 	BeamWidth  int
 	EditThresh float32 // a letter whose spatial cost is above this is an edit
-	SubCost    float32 // cost of a substituted letter
+	SubCost    float32 // cost of a substituted letter one key from the tap
+	SubSlope   float32 // added cost of a substitution per key size farther
 	InsCost    float32 // cost of an extra tap
 	DelCost    float32 // cost of a missed letter
 	TransCost  float32 // cost of two swapped letters
@@ -50,7 +51,8 @@ type Params struct {
 var DefaultParams = Params{
 	BeamWidth:   48,
 	EditThresh:  5.5,
-	SubCost:     7,
+	SubCost:     5.5,
+	SubSlope:    1.5,
 	InsCost:     7,
 	DelCost:     7,
 	TransCost:   5,
@@ -320,7 +322,8 @@ func (d *Decoder) step(t *touch.Dist) {
 			case sc <= d.P.EditThresh:
 				d.push(h.src, c, h.cost+sc, h.edits, h.depth+1)
 			case wide:
-				d.push(h.src, c, h.cost+d.P.SubCost, h.edits+1, h.depth+1)
+				sub := d.P.SubCost + d.P.SubSlope*max(0, t.Far[ch-'a']-1)
+				d.push(h.src, c, h.cost+sub, h.edits+1, h.depth+1)
 			}
 			if wide {
 				// A missed letter ch, then this tap types a letter after it.

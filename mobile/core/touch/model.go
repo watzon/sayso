@@ -90,7 +90,12 @@ const MaxSpatialCost = 14
 // Dist is one tap seen by the decoder: the cost of each letter and of the
 // space bar, -ln P(key | tap), normalized over letters and space.
 type Dist struct {
-	Cost  [26]float32
+	Cost [26]float32
+	// Far is how far each letter's key is from the tap, in key sizes (x
+	// over the key's width, y over its height): about 1 for a neighbour.
+	// Unlike Cost it is not capped, so the decoder can price a slip onto
+	// a key by how far away that key is.
+	Far   [26]float32
 	Space float32
 	X, Y  float32
 	Key   int16 // the key the tap typed
@@ -102,8 +107,10 @@ func (m *Model) Spatial(x, y float32, d *Dist) {
 	best := float32(math.Inf(-1))
 	for c := 0; c < 26; c++ {
 		ll[c] = float32(math.Inf(-1))
+		d.Far[c] = farAbsent
 		if k := m.L.letter[c]; k >= 0 {
 			ll[c] = m.LogLik(int(k), x, y)
+			d.Far[c] = m.far(int(k), x, y)
 		}
 		best = max(best, ll[c])
 	}
@@ -122,6 +129,19 @@ func (m *Model) Spatial(x, y float32, d *Dist) {
 	}
 	d.Space = min(lse-ll[26], MaxSpatialCost)
 	d.X, d.Y = x, y
+}
+
+// farAbsent is Dist.Far of a letter the layout lacks: finite, so that
+// weighting it by zero stays zero.
+const farAbsent = 100
+
+// far is the distance from a tap to key i's target, in key sizes.
+func (m *Model) far(i int, x, y float32) float32 {
+	k := &m.L.Keys[i]
+	cx, cy := m.L.Center(i)
+	zx := (x - cx - m.off[i][0]) / k.W
+	zy := (y - cy - m.off[i][1]) / k.H
+	return float32(math.Sqrt(float64(zx*zx + zy*zy)))
 }
 
 // gap is how far the tap is outside key i's rectangle shifted by its

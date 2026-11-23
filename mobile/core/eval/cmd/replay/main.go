@@ -18,7 +18,13 @@ func main() {
 	text := flag.String("text", "core/eval/testdata/heldout-en.txt", "held-out sentences")
 	n := flag.Int("n", 0, "sentences to type (0: all)")
 	examples := flag.Bool("examples", false, "print false corrections")
+	u := eval.DefaultUser
+	flag.Uint64Var(&u.Seed, "seed", u.Seed, "typist seed")
+	noise := flag.Float64("noise", float64(u.NoiseX), "tap spread in key pitches (y is 0.02 less)")
+	flag.Float64Var(&u.TypoRate, "typos", u.TypoRate, "chance per word of a missed, doubled, or swapped letter")
+	flag.Float64Var(&u.SubRate, "subs", u.SubRate, "chance per word of a letter aimed at the wrong key")
 	flag.Parse()
+	u.NoiseX, u.NoiseY = float32(*noise), float32(*noise)-0.02
 	m, err := lexicon.Open(*modelPath)
 	if err != nil {
 		log.Fatal(err)
@@ -27,7 +33,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	results, table, err := eval.Report(m, sentences, eval.DefaultUser)
+	results, table, err := eval.Report(m, sentences, u)
 	if err != nil {
 		log.Fatal(err)
 	}
