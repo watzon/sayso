@@ -1,12 +1,18 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 var (
@@ -85,5 +91,49 @@ func TestCDestroyRace(t *testing.T) {
 			t.Fatalf("run %d: %v\n%s", run, err, out)
 		}
 		t.Logf("run %d: %s", run, out)
+	}
+}
+
+// TestCVoice runs testdata/voice.c: post-processing, styles and history
+// from C, and the cloud calls against an httptest server standing in for
+// the providers.
+func TestCVoice(t *testing.T) {
+	bin := buildC(t, "voice")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ok/chat/completions":
+			var req struct {
+				Messages []struct{ Role, Content string }
+			}
+			json.NewDecoder(r.Body).Decode(&req)
+			if len(req.Messages) != 2 || !strings.Contains(req.Messages[0].Content, "Fix every grammar mistake") ||
+				req.Messages[1].Content != "<transcript>\nwe was late\n</transcript>" {
+				t.Errorf("enhance request: %+v", req)
+			}
+			w.Write([]byte(`{"choices":[{"message":{"content":"We were late."}}]}`))
+		case "/ok/audio/transcriptions":
+			if r.ParseMultipartForm(1<<20) != nil || r.FormValue("prompt") != "GitHub" {
+				t.Errorf("transcribe request: prompt %q", r.FormValue("prompt"))
+			}
+			w.Write([]byte(`{"text":"hello there"}`))
+		case "/slow/chat/completions":
+			io.Copy(io.Discard, r.Body) // lets the server see the client go away
+			select {
+			case <-r.Context().Done():
+			case <-time.After(5 * time.Second):
+			}
+		case "/fail/chat/completions":
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":{"message":"Incorrect API key provided: sk-test"}}`))
+		default:
+			t.Errorf("unexpected %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	out, err := exec.Command(bin, "../../models/en-US.sslm", t.TempDir(), srv.URL).CombinedOutput()
+	t.Logf("\n%s", out)
+	if err != nil {
+		t.Fatal(err)
 	}
 }

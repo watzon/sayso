@@ -41,6 +41,10 @@ type Params struct {
 	// ExtraMargin is one more bar every correction must clear, on top of
 	// the margins above (the user's strict setting).
 	ExtraMargin float32
+	// ProtectMargin is added to MarginKnown when the typed word is a word
+	// and the user marked its form: a capital they typed themselves, or an
+	// apostrophe ("Jim" against "him", "we'll" against "well").
+	ProtectMargin float32
 	// MaxCandCost: a candidate that scores worse than this is never put in.
 	MaxCandCost float32
 	// LongWord is the key length from which two edits are allowed.
@@ -64,6 +68,8 @@ var DefaultParams = Params{
 	MarginGap:   1.0,
 	MaxCandCost: 40,
 	LongWord:    6,
+
+	ProtectMargin: 8,
 }
 
 // hyp is one path through a trie: the node reached, the spatial and edit
@@ -97,6 +103,8 @@ type Decoder struct {
 	ntaps int
 	over  bool   // more taps than MaxTaps: keep what was typed
 	apos  uint64 // bit i: an apostrophe was typed after letter i (bit 0: before the first)
+	// userCase: the user typed the word's capital themselves (see SetUserCase).
+	userCase bool
 
 	beam, next []hyp
 	dedupe     [dedupeSize]struct {
@@ -163,6 +171,7 @@ func (d *Decoder) Reset() {
 	d.ntaps = 0
 	d.over = false
 	d.apos = 0
+	d.userCase = false
 	d.beam = d.beam[:0]
 	for src, m := range d.models {
 		if m != nil {
@@ -208,6 +217,14 @@ func (d *Decoder) AddApostrophe() {
 	}
 }
 
+// SetUserCase records that the word's capital came from the user, not from
+// automatic capitalization: a correction of a word typed that way must clear
+// ProtectMargin as well. Reset clears it.
+func (d *Decoder) SetUserCase(on bool) {
+	d.userCase = on
+	d.scored = false
+}
+
 // RemoveLast drops the last thing typed, an apostrophe or a tap, and
 // searches the rest again.
 func (d *Decoder) RemoveLast() {
@@ -241,13 +258,13 @@ func (d *Decoder) Typed(dst []byte) []byte {
 }
 
 func (d *Decoder) rebuild() {
-	n, over, apos := d.ntaps, d.over, d.apos
+	n, over, apos, userCase := d.ntaps, d.over, d.apos, d.userCase
 	d.Reset()
 	for i := 0; i < n; i++ {
 		d.ntaps = i + 1
 		d.step(&d.taps[i])
 	}
-	d.ntaps, d.over, d.apos = n, over, apos
+	d.ntaps, d.over, d.apos, d.userCase = n, over, apos, userCase
 	d.scored = false
 }
 

@@ -22,6 +22,7 @@ extern "C" {
 #define SAYSO_ERR_IO (-2)     /* a file could not be read or written */
 #define SAYSO_ERR_MODEL (-3)  /* the model file is not a valid .sslm */
 #define SAYSO_ERR_HANDLE (-4) /* the engine handle is not live */
+#define SAYSO_ERR_CLOUD (-5)  /* a cloud call failed, timed out, or is off; the reason is in err */
 
 /* Action text buffers must hold at least this many bytes. */
 #define SAYSO_TEXT_CAP 1024
@@ -122,6 +123,36 @@ typedef struct {
     sayso_touch_result last_touch;
 } sayso_diag;
 
+/* Voice: cloud providers (sayso_cloud.provider). The ASR values are for
+ * sayso_transcribe_cloud, the STYLE values for sayso_enhance. */
+#define SAYSO_ASR_OFF 0
+#define SAYSO_ASR_OPENAI_WHISPER 1
+#define SAYSO_ASR_GROQ 2
+#define SAYSO_ASR_OPENAI_COMPATIBLE 3 /* base_url required, api_key optional */
+#define SAYSO_STYLE_OFF 0
+#define SAYSO_STYLE_OPENAI 1
+#define SAYSO_STYLE_OPENAI_COMPATIBLE 2 /* base_url required, api_key optional */
+#define SAYSO_STYLE_ANTHROPIC 3
+
+/* A cloud call's timeout when sayso_cloud.timeout_ms is 0 or less. */
+#define SAYSO_DEFAULT_TIMEOUT_MS 3000
+/* Text buffers of sayso_transcribe_cloud and sayso_enhance must hold at
+ * least this many bytes; longer text is cut on a character boundary. */
+#define SAYSO_VOICE_TEXT_CAP 65536
+
+/* One cloud provider for one call. The core keeps none of it: the key is
+ * never stored or logged. Empty base_url or model: the provider's default. */
+typedef struct {
+    int32_t provider;
+    const char *api_key;
+    int32_t api_key_len;
+    const char *base_url;
+    int32_t base_url_len;
+    const char *model;
+    int32_t model_len;
+    int32_t timeout_ms; /* <= 0: SAYSO_DEFAULT_TIMEOUT_MS; at most 120000 */
+} sayso_cloud;
+
 #ifndef SAYSO_CORE_NO_PROTOTYPES /* the Go side defines the functions itself */
 
 /* The core's version, a static NUL-terminated string. */
@@ -199,6 +230,65 @@ int32_t sayso_get_diagnostics(sayso_engine e, sayso_diag *out,
                               sayso_key_diag *keys, int32_t key_cap,
                               sayso_cand_diag *cands, int32_t cand_cap,
                               char *text, int32_t text_cap);
+
+/* ---- Voice ---- */
+
+/* The text to insert for a raw transcript at the cursor: replacements,
+ * personal word spellings, spoken punctuation, then case and spaces from
+ * the text before and after the cursor. Same size rule as
+ * sayso_list_words: returns the bytes needed, writes only when they fit. */
+int32_t sayso_post_process_transcript(sayso_engine e, const char *raw, int32_t raw_len,
+                                      const char *before, int32_t before_len,
+                                      const char *after, int32_t after_len,
+                                      char *out, int32_t cap);
+
+/* The styles, built-in first: for each, id NUL name NUL prompt NUL then
+ * '1' (built in) or '0' and NUL. Same size rule as sayso_list_words. */
+int32_t sayso_list_styles(sayso_engine e, char *buf, int32_t cap);
+/* Add or replace a custom style. SAYSO_ERR_ARG for a built-in id, an id
+ * that is not a-z, 0-9 and - (at most 64), an empty name or one over 128
+ * bytes, a prompt over 4096 bytes, or more than 100 custom styles. */
+int32_t sayso_put_style(sayso_engine e, const char *id, int32_t id_len,
+                        const char *name, int32_t name_len,
+                        const char *prompt, int32_t prompt_len);
+/* Remove a custom style; SAYSO_ERR_ARG for a built-in id. */
+int32_t sayso_remove_style(sayso_engine e, const char *id, int32_t id_len);
+
+/* Blocking: call off the UI thread. Transcribes samples of 16 kHz mono
+ * PCM with the cloud ASR provider. SAYSO_OK with the text in out
+ * (*out_len bytes), or SAYSO_ERR_CLOUD with the reason in err. out must
+ * hold SAYSO_VOICE_TEXT_CAP bytes; err may be NULL. */
+int32_t sayso_transcribe_cloud(sayso_engine e, const sayso_cloud *cloud,
+                               const int16_t *pcm, int32_t samples,
+                               char *out, int32_t cap, int32_t *out_len,
+                               char *err, int32_t err_cap);
+/* Blocking: call off the UI thread. Rewrites text in the style style_id
+ * with the cloud style provider. Returns 1 with the styled text in out, or
+ * 0 with text unchanged in out and the reason in err: empty for a style
+ * with no prompt or the provider off, else an error or "timed out".
+ * Negative: SAYSO_ERR_ARG or SAYSO_ERR_HANDLE. out must hold
+ * SAYSO_VOICE_TEXT_CAP bytes; err may be NULL. */
+int32_t sayso_enhance(sayso_engine e, const sayso_cloud *cloud,
+                      const char *style_id, int32_t style_id_len,
+                      const char *text, int32_t text_len,
+                      char *out, int32_t cap, int32_t *out_len,
+                      char *err, int32_t err_cap);
+
+/* Append a voice history entry and set *out_id to its id. Nothing is kept,
+ * and *out_id is 0, when sensitive is not 0 or the field has
+ * SAYSO_EDITOR_PRIVACY. */
+int32_t sayso_history_add(sayso_engine e, int64_t timestamp_ms, int64_t duration_ms,
+                          const char *engine_id, int32_t engine_id_len,
+                          const char *style_id, int32_t style_id_len,
+                          const char *raw, int32_t raw_len,
+                          const char *final_text, int32_t final_len,
+                          int32_t sensitive, int64_t *out_id);
+/* Up to limit entries (0 or less: all), newest first: for each, id,
+ * timestamp_ms and duration_ms in decimal, engine_id, style_id, raw, final,
+ * each followed by a NUL. Same size rule as sayso_list_words. */
+int32_t sayso_history_list(sayso_engine e, int32_t limit, char *buf, int32_t cap);
+int32_t sayso_history_delete(sayso_engine e, int64_t id);
+int32_t sayso_history_clear(sayso_engine e);
 
 #endif /* SAYSO_CORE_NO_PROTOTYPES */
 

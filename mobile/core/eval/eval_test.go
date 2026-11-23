@@ -86,3 +86,33 @@ func TestSloppyTypistReplays(t *testing.T) {
 		t.Fatal("typed nothing")
 	}
 }
+
+// TestProtectedFormsGate types names with a capital mid-sentence and
+// contractions with their apostrophe, after words that make a common word
+// more likely ("I told Jim", "I feel we'll"). The typist aims right, so
+// every change the engine makes to such a word is a false correction.
+// Before the decoder protected these forms, 6% to 8% of them were changed
+// ("Jim → Him", "Mike → Like", "we'll → well").
+func TestProtectedFormsGate(t *testing.T) {
+	m, err := lexicon.Open("../../models/en-US.sslm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	sentences, err := LoadSentences("testdata/protect-en.txt", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := DefaultUser
+	u.SkipApostrophe, u.TypoRate, u.SubRate = 0, 0, 0
+	results, table, err := Report(m, sentences, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("\n%s", table)
+	for _, r := range results[1:] {
+		if r.FalseRate() >= 0.01 {
+			t.Errorf("%s: false autocorrect rate %.2f%% on protected forms (limit 1%%): %v", r.Mode, 100*r.FalseRate(), r.FalseExamples)
+		}
+	}
+}

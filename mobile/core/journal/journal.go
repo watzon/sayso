@@ -1,4 +1,9 @@
-package learner
+// Package journal is the append-only text file the mobile core keeps its
+// state in: the learner's typing journal and the voice store. One record
+// per line, fields separated by tabs, with \ escaping tab, newline, and
+// itself. The first field names the record; what records mean is up to the
+// owner, who also decides when to compact (Rewrite) the file.
+package journal
 
 import (
 	"bufio"
@@ -8,18 +13,11 @@ import (
 	"strings"
 )
 
-// The journal is an append-only text file: one record per line, fields
-// separated by tabs, with \ escaping tab, newline, and itself. The first
-// field names the record (see apply in learner.go). A reset record "Z"
-// discards everything before it. When the file grows past compactAt, the
-// learner rewrites it as the records of its current state.
+// header is the first record of every journal.
+const header = "V\t1"
 
-const (
-	journalHeader = "V\t1"
-	compactAt     = 512 << 10
-)
-
-type journal struct {
+// File is an open journal, appended to from the end.
+type File struct {
 	path string
 	f    *os.File
 	size int64
@@ -58,17 +56,18 @@ func unescape(s string) string {
 	return b.String()
 }
 
-func encodeRecord(fields ...string) string {
+// Record encodes one record as a line. It escapes fields in place.
+func Record(fields ...string) string {
 	for i, f := range fields {
 		fields[i] = escape(f)
 	}
 	return strings.Join(fields, "\t") + "\n"
 }
 
-// readJournal calls fn for each record of the file at path, in order. A
-// missing file has no records; a torn last line (a crash mid-write) is
-// skipped.
-func readJournal(path string, fn func(fields []string)) error {
+// Read calls fn for each record of the file at path, in order, the header
+// included. A missing file has no records; a torn last line (a crash
+// mid-write) is skipped.
+func Read(path string, fn func(fields []string)) error {
 	f, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -98,7 +97,9 @@ func readJournal(path string, fn func(fields []string)) error {
 	}
 }
 
-func openJournal(path string) (*journal, error) {
+// Open opens the journal at path for appending, creating it with its
+// header when it is missing.
+func Open(path string) (*File, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, err
@@ -108,9 +109,9 @@ func openJournal(path string) (*journal, error) {
 		f.Close()
 		return nil, err
 	}
-	j := &journal{path: path, f: f, size: st.Size()}
+	j := &File{path: path, f: f, size: st.Size()}
 	if j.size == 0 {
-		if err := j.append(journalHeader + "\n"); err != nil {
+		if err := j.Append(header + "\n"); err != nil {
 			f.Close()
 			return nil, err
 		}
@@ -118,21 +119,22 @@ func openJournal(path string) (*journal, error) {
 	return j, nil
 }
 
-func (j *journal) append(line string) error {
+// Append writes one encoded record (see Record).
+func (j *File) Append(line string) error {
 	n, err := j.f.WriteString(line)
 	j.size += int64(n)
 	return err
 }
 
-// rewrite replaces the file with lines, atomically.
-func (j *journal) rewrite(lines []string) error {
+// Rewrite replaces the file with the header and lines, atomically.
+func (j *File) Rewrite(lines []string) error {
 	tmp := j.path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
 	w := bufio.NewWriter(f)
-	w.WriteString(journalHeader + "\n")
+	w.WriteString(header + "\n")
 	for _, l := range lines {
 		w.WriteString(l)
 	}
@@ -164,4 +166,8 @@ func (j *journal) rewrite(lines []string) error {
 	return nil
 }
 
-func (j *journal) close() error { return j.f.Close() }
+// Size is the file's length in bytes.
+func (j *File) Size() int64 { return j.size }
+
+// Close closes the file.
+func (j *File) Close() error { return j.f.Close() }

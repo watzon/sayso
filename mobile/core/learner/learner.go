@@ -14,7 +14,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/watzon/sayso/mobile/core/journal"
 )
+
+// The learner's journal (package journal) holds one record per change (see
+// apply). A reset record "Z" discards everything before it. When the file
+// grows past compactAt, the learner rewrites it as the records of its
+// current state.
+const compactAt = 512 << 10
 
 // Thresholds.
 const (
@@ -62,7 +70,7 @@ type ngram struct {
 type Learner struct {
 	privacy bool
 	now     func() time.Time
-	j       *journal
+	j       *journal.File
 	err     error // the first journal write error
 
 	words        map[string]bool  // explicit personal words
@@ -114,23 +122,23 @@ func (l *Learner) SetClock(now func() time.Time) { l.now = now }
 // journal that has grown large is compacted.
 func (l *Learner) Open(path string) error {
 	if l.j != nil {
-		l.j.close()
+		l.j.Close()
 		l.j = nil
 	}
 	l.clear()
 	if path == "" {
 		return nil
 	}
-	if err := readJournal(path, l.apply); err != nil {
+	if err := journal.Read(path, l.apply); err != nil {
 		return err
 	}
 	l.jumpApplied()
-	j, err := openJournal(path)
+	j, err := journal.Open(path)
 	if err != nil {
 		return err
 	}
 	l.j = j
-	if j.size > compactAt {
+	if j.Size() > compactAt {
 		return l.compact()
 	}
 	return nil
@@ -141,7 +149,7 @@ func (l *Learner) Close() error {
 	if l.j == nil {
 		return nil
 	}
-	err := l.j.close()
+	err := l.j.Close()
 	l.j = nil
 	return err
 }
@@ -169,7 +177,7 @@ func (l *Learner) record(fields ...string) {
 	}
 	l.apply(fields)
 	if l.j != nil {
-		if err := l.j.append(encodeRecord(fields...)); err != nil && l.err == nil {
+		if err := l.j.Append(journal.Record(fields...)); err != nil && l.err == nil {
 			l.err = err
 		}
 	}
@@ -452,7 +460,7 @@ func (l *Learner) snapshotOffsets() {
 		return
 	}
 	for _, line := range l.offsetLines() {
-		if err := l.j.append(line); err != nil && l.err == nil {
+		if err := l.j.Append(line); err != nil && l.err == nil {
 			l.err = err
 		}
 	}
@@ -461,7 +469,7 @@ func (l *Learner) snapshotOffsets() {
 func (l *Learner) offsetLines() []string {
 	f := func(v float64) string { return strconv.FormatFloat(v, 'f', 4, 64) }
 	line := func(level string, i int, e estimate) string {
-		return encodeRecord("O", level, strconv.Itoa(i), f(e.X), f(e.Y), f(e.N))
+		return journal.Record("O", level, strconv.Itoa(i), f(e.X), f(e.Y), f(e.N))
 	}
 	var out []string
 	if l.offsets.Board.N > 0 {
@@ -487,19 +495,19 @@ func (l *Learner) Reset() error {
 	if l.j == nil {
 		return nil
 	}
-	return l.j.rewrite(nil)
+	return l.j.Rewrite(nil)
 }
 
 // compact rewrites the journal as the records of the current state.
 func (l *Learner) compact() error {
 	var lines []string
 	for _, w := range sortedKeys(l.words) {
-		lines = append(lines, encodeRecord("W", w))
+		lines = append(lines, journal.Record("W", w))
 	}
 	for _, w := range sortedKeys(l.keeps) {
 		k := l.keeps[w]
 		for range min(k.n, KeepsToLearn) {
-			lines = append(lines, encodeRecord("K", k.display))
+			lines = append(lines, journal.Record("K", k.display))
 		}
 	}
 	for _, k := range sortedKeys(l.replacements) {
@@ -508,11 +516,11 @@ func (l *Learner) compact() error {
 		if r.CaseSensitive {
 			cs = "1"
 		}
-		lines = append(lines, encodeRecord("R", r.From, r.To, cs))
+		lines = append(lines, journal.Record("R", r.From, r.To, cs))
 	}
 	for _, p := range sortedPairs(l.reverts) {
 		for range min(l.reverts[p], RevertsToSuppress) {
-			lines = append(lines, encodeRecord("X", p.typed, p.target))
+			lines = append(lines, journal.Record("X", p.typed, p.target))
 		}
 	}
 	for _, p := range sortedPairs(l.fixes) {
@@ -521,7 +529,7 @@ func (l *Learner) compact() error {
 			target = t
 		}
 		for range min(l.fixes[p], FixesToPromote) {
-			lines = append(lines, encodeRecord("F", p.typed, target))
+			lines = append(lines, journal.Record("F", p.typed, target))
 		}
 	}
 	now := l.now().Unix()
@@ -533,11 +541,11 @@ func (l *Learner) compact() error {
 	for _, k := range keys {
 		g := l.ngrams[k]
 		if c := decayed(g.count, g.last, now); c >= 0.05 {
-			lines = append(lines, encodeRecord("G", k[0], k[1], strconv.FormatFloat(c, 'f', 3, 64), strconv.FormatInt(now, 10)))
+			lines = append(lines, journal.Record("G", k[0], k[1], strconv.FormatFloat(c, 'f', 3, 64), strconv.FormatInt(now, 10)))
 		}
 	}
 	lines = append(lines, l.offsetLines()...)
-	return l.j.rewrite(lines)
+	return l.j.Rewrite(lines)
 }
 
 func sortedKeys[V any](m map[string]V) []string {
