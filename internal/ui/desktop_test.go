@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo"
 )
 
 // layerLog records the calls a fake layer gets, in order: "hub.Show",
@@ -18,6 +20,7 @@ type fakeWin struct {
 	name    string
 	log     *layerLog
 	visible bool
+	at      mygo.Point // where SetPosition last put it
 }
 
 func (w *fakeWin) Show()             { w.log.add(w.name + ".Show"); w.visible = true }
@@ -25,6 +28,10 @@ func (w *fakeWin) Focus()            { w.log.add(w.name + ".Focus"); w.visible =
 func (w *fakeWin) Hide()             { w.log.add(w.name + ".Hide"); w.visible = false }
 func (w *fakeWin) IsVisible() bool   { return w.visible }
 func (w *fakeWin) IsDestroyed() bool { return false }
+func (w *fakeWin) SetPosition(x, y int) {
+	w.log.add(w.name + ".SetPosition")
+	w.at = mygo.Point{X: x, Y: y}
+}
 
 // fakeLayer is the window system of a desktop with a tray item, whose hub
 // is open behind another app.
@@ -35,6 +42,11 @@ type fakeLayer struct {
 	made     bool
 	noTray   bool
 	gaveBack []time.Duration
+	// cursor, trayAt and displays are the popover's anchor; with no
+	// displays it is not placed.
+	cursor   mygo.Point
+	trayAt   mygo.Rectangle
+	displays []mygo.Display
 }
 
 func newFakeLayer() *fakeLayer {
@@ -56,6 +68,9 @@ func (l *fakeLayer) popover(make bool) layerWindow {
 	return l.pop
 }
 func (l *fakeLayer) showInDock() { l.log.add("dock") }
+func (l *fakeLayer) popoverAnchor() (mygo.Point, mygo.Rectangle, []mygo.Display) {
+	return l.cursor, l.trayAt, l.displays
+}
 func (l *fakeLayer) giveBack(d time.Duration) {
 	l.log.add("giveBack")
 	l.gaveBack = append(l.gaveBack, d)

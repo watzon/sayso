@@ -247,13 +247,21 @@ func (d *Desktop) ShowWindow(which Window, show bool) {
 // showPopover shows the tray popover, making it on first use. It calls Show
 // alone: the popover is a nonactivating flyout that takes the keyboard as
 // it shows (popoverOptions). Focus, or activating the app, would bring the
-// hub in front of the app the user is in.
+// hub in front of the app the user is in. Each time it opens it is placed
+// on the display the pointer is on (placePopover): MyGo places a tray
+// flyout only as it is made.
 func (d *Desktop) showPopover() {
 	w := d.layer.popover(true)
 	if w == nil {
 		return
 	}
 	d.popoverClosing = false
+	if !w.IsVisible() {
+		cursor, tray, displays := d.layer.popoverAnchor()
+		if at, ok := placePopover(cursor, tray, displays, PopoverW, PopoverH); ok {
+			w.SetPosition(at.X, at.Y)
+		}
+	}
 	w.Show()
 }
 
