@@ -202,8 +202,7 @@ func (a *App) popoverRow(c *mu.Context, p theme.Colors, key, iconName, label, va
 
 // popoverChoice is one 30 px choice under an open row.
 func (a *App) popoverChoice(c *mu.Context, p theme.Colors, key, label string, on bool, pick func()) {
-	b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleMenuItemRadio).Checked(on).Height(30).PaddingX(10).Gap(8).Radius(7).
-		AlignItems(mu.Center).Cursor(mu.CursorPointer)
+	b := a.menuItemBase(c, key, label).Role(mu.RoleMenuItemRadio).Checked(on)
 	if b.Hovered() {
 		b.Background(p.Deboss)
 	}

@@ -313,21 +313,25 @@ func (a *App) selectBtn(c *mu.Context, p theme.Colors, key, label string, sel *s
 		mu.Icon(c, icon("chevron-down")).FontSize(14).TextColor(p.Ink)
 	})
 	s.Popup(func(panel mu.Element) {
-		floating(panel.Margin(4, 0, 0, 0).Padding(4).Radius(10).MinWidth(200).MaxHeight(320), p)
-		for _, o := range options {
-			it := s.Item(o).Height(30).PaddingX(10).Gap(8).Radius(7).AlignItems(mu.Center)
-			if it.Highlighted() {
-				it.Background(p.Deboss)
-			}
-			it.Children(func() {
-				mu.Box(c).Width(14).Shrink(0).Children(func() {
-					if o == *sel {
-						mu.Icon(c, icon("check")).FontSize(12).TextColor(p.Ink)
-					}
+		// The highlighted option scrolls into view (SelectBase), and the
+		// popup shows above the trigger where there is no room below.
+		list := a.floatingList(c, p, panel.Margin(4, 0, 0, 0).Padding(4).Radius(10).MinWidth(200), key+".list", 312)
+		list.Children(func() {
+			for _, o := range options {
+				it := menuLine(s.Item(o).Height(30).PaddingX(10).Gap(8).Radius(7))
+				if it.Highlighted() {
+					it.Background(p.Deboss)
+				}
+				it.Children(func() {
+					mu.Box(c).Width(14).Shrink(0).Children(func() {
+						if o == *sel {
+							mu.Icon(c, icon("check")).FontSize(12).TextColor(p.Ink)
+						}
+					})
+					uiText(c, o, 13, 500, p.Ink).SingleLine()
 				})
-				uiText(c, o, 13, 500, p.Ink).SingleLine()
-			})
-		}
+			}
+		})
 	})
 	return t
 }
@@ -392,6 +396,29 @@ func rule(c *mu.Context, p theme.Colors) {
 // card is a raised sheet with no border.
 func card(c *mu.Context, p theme.Colors) mu.Element {
 	return raised(mu.Column(c).Padding(18, 20).Gap(12).Radius(12), p)
+}
+
+// menuLine lays out a line of a menu, a select or a pick list: its content
+// from the leading edge, centered across. ButtonBase centers its children,
+// which in a list as wide as its longest line puts a short label in the
+// middle. The line keeps its height in a list that scrolls.
+func menuLine(e mu.Element) mu.Element {
+	return e.AlignItems(mu.Center).Justify(mu.Start).Shrink(0).Cursor(mu.CursorPointer)
+}
+
+// menuItemBase is a 30 px line of a menu or a pick list (Rust kit.rs
+// menu_items).
+func (a *App) menuItemBase(c *mu.Context, key, label string) mu.Element {
+	return menuLine(mu.ButtonBase(a.k(c, key)).Label(label).Height(30).PaddingX(10).Gap(8).Radius(7))
+}
+
+// floatingList gives panel, a menu's, a select's or a pick list's, the
+// floating look and clips it, and returns the list for its lines, which
+// scrolls past maxH: without it, a long list draws past the panel's
+// bottom over the page. Give the list its lines with Children.
+func (a *App) floatingList(c *mu.Context, p theme.Colors, panel mu.Element, key string, maxH float32) mu.Element {
+	floating(panel.Clip(), p)
+	return mu.Scroll(a.k(c, key)).MaxHeight(maxH)
 }
 
 // clicked reports a click on el and asks for another frame, so that what

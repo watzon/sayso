@@ -30,6 +30,7 @@ type historyState struct {
 	filter    int
 	app       string // bundle id, "" for all apps
 	appsOpen  bool
+	appQuery  string // the filter field of the app picker
 	apps      []store.AppCount
 	entries   []store.HistoryEntry
 	total     int
@@ -167,37 +168,89 @@ func (a *App) historyToolbar(c *mu.Context, p theme.Colors) {
 					appLabel = ac.Name
 				}
 			}
-			if a.chipT(c, p, "history.filter.app", appLabel, a.hist.app != "", "chevron-down") {
+			chip := a.chipBase(c, p, "history.filter.app", appLabel, a.hist.app != "", "chevron-down", mu.RoleButton).
+				HasPopup(mu.PopupListBox).Expanded(a.hist.appsOpen)
+			if clicked(c, chip) {
 				a.hist.appsOpen = !a.hist.appsOpen
+				a.hist.appQuery = ""
 			}
+			// Floating under the chip (Rust history.rs app_picker), so
+			// the list below stays where it is.
+			mu.PopoverBase(c, chip, &a.hist.appsOpen, func(panel mu.Element) { a.appPicker(c, p, panel) })
 		})
-		if a.hist.appsOpen {
-			a.appPicker(c, p)
-		}
 	})
 }
 
-func (a *App) appPicker(c *mu.Context, p theme.Colors) {
-	floating(mu.Column(c).Padding(4).Radius(10).MaxHeight(320), p).Role(mu.RoleList).
-		Label(i18n.T("history.a11y.app_list")).Children(func() {
-		pick := func(key, label, bundle string) {
-			b := mu.ButtonBase(a.k(c, key)).Label(label).Height(30).PaddingX(10).Gap(8).Radius(7).AlignItems(mu.Center).Cursor(mu.CursorPointer)
-			if b.Hovered() || a.hist.app == bundle {
-				b.Background(p.Deboss)
+// appRows are the lines of the app picker: "All apps" (nil), then the
+// apps. With a query, only the apps whose name has it (Rust app_rows).
+func appRows(apps []store.AppCount, query string) []*store.AppCount {
+	query = strings.ToLower(strings.TrimSpace(query))
+	var rows []*store.AppCount
+	if query == "" {
+		rows = append(rows, nil)
+	}
+	for i := range apps {
+		if query == "" || strings.Contains(strings.ToLower(apps[i].Name), query) {
+			rows = append(rows, &apps[i])
+		}
+	}
+	return rows
+}
+
+// appPicker is the sheet of the App filter: a filter field, then "All
+// apps" and each app with its icon and its number of dictations, in a
+// list that scrolls.
+func (a *App) appPicker(c *mu.Context, p theme.Colors, panel mu.Element) {
+	mu.Column(c).Children(func() {
+		mu.Column(c).Padding(6).Children(func() {
+			a.searchWell(c, p, "history.app_filter", i18n.T("history.app_filter_placeholder"), &a.hist.appQuery, 32, 0, "").AutoFocus()
+		})
+		list := a.floatingList(c, p, panel.Margin(6, 0, 0, 0).Width(272).Radius(12), "history.apps", 298)
+		list.Padding(0, 5, 5, 5).Gap(1).Role(mu.RoleListBox).Label(i18n.T("history.a11y.app_list")).Children(func() {
+			rows := appRows(a.hist.apps, a.hist.appQuery)
+			if len(rows) == 0 {
+				uiText(c, i18n.T("history.app_none"), 13, 400, p.Graphite).Padding(8, 9)
 			}
-			b.Children(func() { uiText(c, label, 13, 500, p.Ink).SingleLine() })
-			if clicked(c, b) {
-				a.hist.app, a.hist.appsOpen, a.hist.loaded = bundle, false, false
+			for _, r := range rows {
+				a.appRow(c, p, r)
 			}
-		}
-		pick("history.app.all", i18n.T("history.all_apps"), "")
-		if len(a.hist.apps) == 0 {
-			uiText(c, i18n.T("history.app_none"), 13, 400, p.Graphite).Padding(6, 10)
-		}
-		for i, ac := range a.hist.apps {
-			pick(fmt.Sprintf("history.app.%d", i), i18n.T("history.a11y.app_option", "app", ac.Name, "count", ac.Count), ac.BundleID)
-		}
+		})
 	})
+}
+
+// appRow is one line of the app picker; r is nil for "All apps".
+func (a *App) appRow(c *mu.Context, p theme.Colors, r *store.AppCount) {
+	key, name, bundle, count := "history.app.all", i18n.T("history.all_apps"), "", a.hist.total
+	if r != nil {
+		key, name, bundle, count = "history.app."+r.BundleID, r.Name, r.BundleID, r.Count
+	}
+	sel := a.hist.app == bundle
+	b := menuLine(mu.ButtonBase(a.k(c, key)).Label(i18n.T("history.a11y.app_option", "app", name, "count", formatCount(count))).
+		Role(mu.RoleOption).Checked(sel).Height(32).PaddingX(9).Gap(9).Radius(8))
+	if b.Hovered() || sel {
+		b.Background(p.Deboss)
+	}
+	b.Children(func() {
+		if r != nil {
+			a.appBadge(c, name, bundle, 18)
+		} else {
+			mu.Box(c).Size(18, 18).Shrink(0).Justify(mu.Center).AlignItems(mu.Center).Children(func() {
+				mu.Icon(c, icon("history")).FontSize(14).TextColor(p.Graphite)
+			})
+		}
+		weight := 400
+		if sel {
+			weight = 600
+		}
+		uiText(c, name, 13, weight, p.Ink).SingleLine().Ellipsis("…").Grow(1).Basis(0).MinWidth(0)
+		if sel {
+			mu.Icon(c, icon("check")).FontSize(12).TextColor(p.Ink)
+		}
+		mono(c, formatCount(count), 12, p.Graphite).Shrink(0)
+	})
+	if clicked(c, b) {
+		a.hist.app, a.hist.appsOpen, a.hist.loaded = bundle, false, false
+	}
 }
 
 func (a *App) historyList(c *mu.Context, p theme.Colors) {
@@ -280,7 +333,25 @@ func (a *App) historyRow(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 	if clicked(c, r) && !sel {
 		a.selectEntry(e.ID)
 	}
+	// A right-click opens the actions of this entry, whichever is
+	// selected; each row keeps whether its menu shows.
+	open := mu.Local(r, rowMenuKey{}, func() bool { return false })
+	was := *open
+	m := mu.ContextMenuBase(c, r, open)
+	if *open && !was {
+		a.hist.menuOpen = false // one menu at a time: close ⋯
+	}
+	m.Popup(func(panel mu.Element) {
+		list := a.floatingList(c, p, panel.MinWidth(184).Padding(5).Radius(12).Label(entryApp(e)), "history.row_menu", 312)
+		list.Gap(1).Children(func() {
+			a.historyActionItems(c, p, a.historyActions(c, e), func(act historyAction) mu.Element {
+				return m.Item().Label(act.label)
+			}, func() {})
+		})
+	})
 }
+
+type rowMenuKey struct{}
 
 func (a *App) selectEntry(id int64) {
 	h := &a.hist
@@ -351,36 +422,74 @@ func durationLabel(ms uint64) string {
 	return i18n.T("hub.duration.minutes_seconds", "minutes", s/60, "seconds", s%60)
 }
 
-// historyMenu is the 3-dot menu, drawn under its button.
-func (a *App) historyMenu(c *mu.Context, p theme.Colors, panel mu.Element, e store.HistoryEntry) {
-	item := func(key, label string, danger bool, fn func()) {
-		b := mu.ButtonBase(a.k(c, key)).Label(label).Role(mu.RoleMenuItem).Height(32).PaddingX(10).Radius(7).AlignItems(mu.Center).Cursor(mu.CursorPointer)
-		if b.Hovered() {
-			b.Background(p.Deboss)
-		}
-		fg := p.Ink
-		if danger {
-			fg = p.Danger
-		}
-		b.Children(func() { uiText(c, label, 13, 500, fg).SingleLine() })
-		if clicked(c, b) {
-			a.hist.menuOpen = false
-			fn()
-		}
-	}
+// historyAction is one line of the actions on an entry.
+type historyAction struct {
+	key, icon, label string
+	danger           bool // in red, below a rule
+	run              func()
+}
+
+// historyActions are the actions on e, for its ⋯ menu and its row's
+// context menu. Delete selects e and asks first.
+func (a *App) historyActions(c *mu.Context, e store.HistoryEntry) []historyAction {
 	enhanceLabel := i18n.T("history.menu.enhance")
 	if e.Enhance.Result == store.EnhanceApplied {
 		enhanceLabel = i18n.T("history.menu.re_enhance")
 	}
-	floating(panel.Margin(6, 0, 0, 0).MinWidth(184).Padding(5).Radius(12).Role(mu.RoleMenu), p)
-	mu.Column(c).Children(func() {
-		item("history.copy", i18n.T("history.menu.copy"), false, func() { c.WriteClipboard(e.FinalText); a.hist.busy = i18n.T("history.status_copied") })
-		item("history.copy_meta", i18n.T("history.menu.copy_metadata"), false, func() { c.WriteClipboard(e.MetadataJSON()) })
-		item("history.enhance", enhanceLabel, false, func() { a.reEnhance(e) })
-		if e.AudioFile != "" {
-			item("history.transcribe", i18n.T("history.menu.transcribe_again"), false, func() { a.transcribeAgain(e) })
+	acts := []historyAction{
+		{"history.copy", "copy", i18n.T("history.menu.copy"), false, func() {
+			c.WriteClipboard(e.FinalText)
+			a.hist.busy = i18n.T("history.status_copied")
+		}},
+		{"history.copy_meta", "code", i18n.T("history.menu.copy_metadata"), false, func() { c.WriteClipboard(e.MetadataJSON()) }},
+		{"history.enhance", "sparkle", enhanceLabel, false, func() { a.reEnhance(e) }},
+	}
+	if e.AudioFile != "" {
+		acts = append(acts, historyAction{"history.transcribe", "undo", i18n.T("history.menu.transcribe_again"), false, func() { a.transcribeAgain(e) }})
+	}
+	return append(acts, historyAction{"history.delete", "trash", i18n.T("history.delete"), true, func() {
+		if a.hist.selected != e.ID {
+			a.selectEntry(e.ID)
 		}
-		item("history.delete", i18n.T("history.delete"), true, func() { a.hist.confirm = true })
+		a.hist.confirm = true
+	}})
+}
+
+// historyActionItems draws acts as the lines of a menu (Rust kit.rs
+// action_menu): an icon and a label from the leading edge. item makes the
+// line of an action, a button of the ⋯ menu or an item of a context menu;
+// done runs before the chosen action.
+func (a *App) historyActionItems(c *mu.Context, p theme.Colors, acts []historyAction, item func(historyAction) mu.Element, done func()) {
+	for i, act := range acts {
+		if act.danger && i > 0 {
+			mu.Box(c).Height(1).Shrink(0).Margin(4, 6).Background(p.Rule)
+		}
+		b := menuLine(item(act).Height(32).Padding(0, 14, 0, 10).Gap(10).Radius(8))
+		fg, iconFg, hover := p.Ink, p.Graphite, p.Deboss
+		if act.danger {
+			fg, iconFg, hover = p.Danger, p.Danger, p.DangerWash
+		}
+		if b.Hovered() || b.Highlighted() {
+			b.Background(hover)
+		}
+		b.Children(func() {
+			mu.Icon(c, icon(act.icon)).FontSize(14).TextColor(iconFg)
+			uiText(c, act.label, 13, 500, fg).SingleLine()
+		})
+		if clicked(c, b) {
+			done()
+			act.run()
+		}
+	}
+}
+
+// historyMenu is the 3-dot menu, drawn under its button.
+func (a *App) historyMenu(c *mu.Context, p theme.Colors, panel mu.Element, e store.HistoryEntry) {
+	list := a.floatingList(c, p, panel.Margin(6, 0, 0, 0).MinWidth(184).Padding(5).Radius(12).Role(mu.RoleMenu), "history.menu", 312)
+	list.Gap(1).Children(func() {
+		a.historyActionItems(c, p, a.historyActions(c, e), func(act historyAction) mu.Element {
+			return mu.ButtonBase(a.k(c, act.key)).Label(act.label).Role(mu.RoleMenuItem)
+		}, func() { a.hist.menuOpen = false })
 	})
 }
 

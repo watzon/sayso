@@ -223,26 +223,38 @@ func (a *App) targetLine(id string) string {
 	return i18n.T("styles.targets.names_many", "one", all[0], "two", all[1], "more", len(all)-2)
 }
 
-// styleRowDetail is the detail column of a style row and its color.
+// styleRowDetail is the detail column of a style row and its color, and
+// whether it is the style's apps and sites (Rust styles.rs row_detail).
+// Its text and its color come from one route. A cleanup model that cannot
+// run the style comes first: the style does not run as the user wants,
+// whatever its rules say. A route that is the default provider's shows
+// nothing; the line under the rows names it.
 func (a *App) styleRowDetail(st *enhance.Style, p theme.Colors) (string, mu.Color, bool) {
+	r := a.styleRoute(st)
+	if r.kind == routeCleanupCannotRun {
+		return r.line(), p.Danger, false
+	}
 	if line := a.targetLine(st.ID); line != "" {
 		return line, p.Ink, true
 	}
-	if !st.UsesAI() {
-		return i18n.T("styles.route.no_ai", "computer", computer()), p.Graphite, false
+	switch r.kind {
+	case routeNoAI:
+		return r.line(), p.Graphite, false
+	case routeNeedsModel:
+		return r.line(), p.Danger, false
 	}
-	if st.Provider == nil && st.Model == nil {
-		return "", p.Graphite, false // the footer names the default provider
+	plain := *st
+	plain.Provider, plain.Model = nil, nil
+	if r == a.styleRoute(&plain) {
+		return "", p.Graphite, false
 	}
-	line := a.styleRoute(st)
-	col := p.Pencil
-	if pr, ok := a.cfg.AI.Provider(derefOr(st.Provider, "")); ok {
-		col = p.Success
-		if pr.IsCloud() {
-			col = p.Accent
-		}
+	switch r.kind {
+	case routeCloud:
+		return r.line(), p.Accent, false
+	case routeLocal:
+		return r.line(), p.Success, false
 	}
-	return line, col, false
+	return r.line(), p.Pencil, false
 }
 
 func (a *App) styleRow(c *mu.Context, p theme.Colors, e *enhance.StyleEntry, active string, last bool) {
