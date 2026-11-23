@@ -201,13 +201,12 @@ func appRows(apps []store.AppCount, query string) []*store.AppCount {
 // apps" and each app with its icon and its number of dictations, in a
 // list that scrolls.
 func (a *App) appPicker(c *mu.Context, p theme.Colors, panel mu.Element) {
-	floating(panel.Margin(6, 0, 0, 0).Width(272).Radius(12), p)
 	mu.Column(c).Children(func() {
 		mu.Column(c).Padding(6).Children(func() {
 			a.searchWell(c, p, "history.app_filter", i18n.T("history.app_filter_placeholder"), &a.hist.appQuery, 32, 0, "").AutoFocus()
 		})
-		mu.Scroll(c.Key("history.apps")).MaxHeight(298).Padding(0, 5, 5, 5).Gap(1).Role(mu.RoleListBox).
-			Label(i18n.T("history.a11y.app_list")).Children(func() {
+		list := a.floatingList(c, p, panel.Margin(6, 0, 0, 0).Width(272).Radius(12), "history.apps", 298)
+		list.Padding(0, 5, 5, 5).Gap(1).Role(mu.RoleListBox).Label(i18n.T("history.a11y.app_list")).Children(func() {
 			rows := appRows(a.hist.apps, a.hist.appQuery)
 			if len(rows) == 0 {
 				uiText(c, i18n.T("history.app_none"), 13, 400, p.Graphite).Padding(8, 9)
@@ -226,9 +225,8 @@ func (a *App) appRow(c *mu.Context, p theme.Colors, r *store.AppCount) {
 		key, name, bundle, count = "history.app."+r.BundleID, r.Name, r.BundleID, r.Count
 	}
 	sel := a.hist.app == bundle
-	b := mu.ButtonBase(a.k(c, key)).Label(i18n.T("history.a11y.app_option", "app", name, "count", formatCount(count))).
-		Role(mu.RoleOption).Checked(sel).Height(32).PaddingX(9).Gap(9).Radius(8).
-		AlignItems(mu.Center).Justify(mu.Start).Cursor(mu.CursorPointer)
+	b := menuLine(mu.ButtonBase(a.k(c, key)).Label(i18n.T("history.a11y.app_option", "app", name, "count", formatCount(count))).
+		Role(mu.RoleOption).Checked(sel).Height(32).PaddingX(9).Gap(9).Radius(8))
 	if b.Hovered() || sel {
 		b.Background(p.Deboss)
 	}
@@ -340,10 +338,12 @@ func (a *App) historyRow(c *mu.Context, p theme.Colors, e store.HistoryEntry) {
 	open := mu.Local(r, rowMenuKey{}, func() bool { return false })
 	m := mu.ContextMenuBase(c, r, open)
 	m.Popup(func(panel mu.Element) {
-		floating(panel.MinWidth(184).Padding(5).Gap(1).Radius(12).Label(entryApp(e)), p)
-		a.historyActionItems(c, p, a.historyActions(c, e), func(act historyAction) mu.Element {
-			return m.Item().Label(act.label)
-		}, func() {})
+		list := a.floatingList(c, p, panel.MinWidth(184).Padding(5).Radius(12).Label(entryApp(e)), "history.row_menu", 312)
+		list.Gap(1).Children(func() {
+			a.historyActionItems(c, p, a.historyActions(c, e), func(act historyAction) mu.Element {
+				return m.Item().Label(act.label)
+			}, func() {})
+		})
 	})
 }
 
@@ -460,8 +460,7 @@ func (a *App) historyActionItems(c *mu.Context, p theme.Colors, acts []historyAc
 		if act.danger && i > 0 {
 			mu.Box(c).Height(1).Shrink(0).Margin(4, 6).Background(p.Rule)
 		}
-		b := item(act).Height(32).Padding(0, 14, 0, 10).Gap(10).Radius(8).
-			AlignItems(mu.Center).Justify(mu.Start).Cursor(mu.CursorPointer)
+		b := menuLine(item(act).Height(32).Padding(0, 14, 0, 10).Gap(10).Radius(8))
 		fg, iconFg, hover := p.Ink, p.Graphite, p.Deboss
 		if act.danger {
 			fg, iconFg, hover = p.Danger, p.Danger, p.DangerWash
@@ -482,8 +481,8 @@ func (a *App) historyActionItems(c *mu.Context, p theme.Colors, acts []historyAc
 
 // historyMenu is the 3-dot menu, drawn under its button.
 func (a *App) historyMenu(c *mu.Context, p theme.Colors, panel mu.Element, e store.HistoryEntry) {
-	floating(panel.Margin(6, 0, 0, 0).MinWidth(184).Padding(5).Radius(12).Role(mu.RoleMenu), p)
-	mu.Column(c).Gap(1).Children(func() {
+	list := a.floatingList(c, p, panel.Margin(6, 0, 0, 0).MinWidth(184).Padding(5).Radius(12).Role(mu.RoleMenu), "history.menu", 312)
+	list.Gap(1).Children(func() {
 		a.historyActionItems(c, p, a.historyActions(c, e), func(act historyAction) mu.Element {
 			return mu.ButtonBase(a.k(c, act.key)).Label(act.label).Role(mu.RoleMenuItem)
 		}, func() { a.hist.menuOpen = false })

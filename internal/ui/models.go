@@ -167,8 +167,7 @@ func (a *App) sortMenu(c *mu.Context, p theme.Colors) {
 		a.mdl.sortOpen = !a.mdl.sortOpen
 	}
 	mu.PopoverBase(c, b, &a.mdl.sortOpen, func(panel mu.Element) {
-		floating(panel.Margin(4, 0, 0, 0).MinWidth(200).Padding(4).Radius(10).Role(mu.RoleMenu), p)
-		mu.Column(c).Children(func() {
+		a.floatingList(c, p, panel.Margin(4, 0, 0, 0).MinWidth(200).Padding(4).Radius(10).Role(mu.RoleMenu), "models.sort.list", 312).Children(func() {
 			for i, l := range labels {
 				it := a.menuItemBase(c, keys[i], l).Role(mu.RoleMenuItemRadio).Checked(i == a.mdl.sort)
 				if it.Hovered() {
