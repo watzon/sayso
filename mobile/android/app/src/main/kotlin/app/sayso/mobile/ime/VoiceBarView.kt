@@ -124,7 +124,8 @@ class VoiceBarView(
 
     private fun drawHeader(canvas: Canvas, state: VoiceState, now: Long) {
         val pill = when (state) {
-            is VoiceState.Listening, is VoiceState.Finishing -> "${voice.engineLabel} · ${voice.styleLabel}"
+            is VoiceState.Listening, is VoiceState.Finishing ->
+                listOf(voice.engineLabel, voice.styleLabel).filter { it.isNotEmpty() }.joinToString(" · ")
             else -> null
         }
         if (pill != null) {

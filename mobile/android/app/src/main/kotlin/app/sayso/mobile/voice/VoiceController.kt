@@ -17,6 +17,7 @@ import app.sayso.mobile.engine.CloudStyleProvider
 import app.sayso.mobile.engine.EditorFlags
 import app.sayso.mobile.engine.VoiceCore
 import app.sayso.mobile.engine.VoiceHistoryEntry
+import app.sayso.mobile.engine.VoiceStyle
 import app.sayso.mobile.engine.createVoiceCore
 import app.sayso.mobile.keyboard.ImeAction
 import app.sayso.mobile.settings.VoiceSettings
@@ -124,7 +125,13 @@ class VoiceController(context: Context, private val host: VoiceHost) {
         }
 
     val styleLabel: String
-        get() = core.styles().firstOrNull { it.id == settings.styleId }?.name ?: "Default"
+        get() = activeStyle()?.name.orEmpty()
+
+    /** The style in the settings, or the first style when that one is gone (or the core has another set). */
+    private fun activeStyle(): VoiceStyle? {
+        val styles = core.styles()
+        return styles.firstOrNull { it.id == settings.styleId } ?: styles.firstOrNull()
+    }
 
     /** Done sends: hands-free is on and the field has an action. */
     val doneSends: Boolean get() = handsFree && handsFreeSends(imeAction)
@@ -309,15 +316,15 @@ class VoiceController(context: Context, private val host: VoiceHost) {
         if (!machine.transcribed(session, now())) return
         val stoppedAt = (machine.state as VoiceState.Finishing).stoppedAtMs
         val text = core.postProcess(raw, host.textBeforeCursor(CONTEXT), host.textAfterCursor(CONTEXT))
+        val style = activeStyle()
         val record = VoiceHistoryEntry(
             timestampMs = System.currentTimeMillis(),
             durationMs = stoppedAt - startedAt,
             engineId = engine.id,
-            styleId = settings.styleId,
+            styleId = style?.id.orEmpty(),
             rawText = raw,
             finalText = text,
         )
-        val style = core.styles().firstOrNull { it.id == settings.styleId }
         val cloud = policy.cloudConfig(settings)
         host.onVoiceChanged()
         if (style == null || style.prompt.isBlank() || cloud.styleProvider == CloudStyleProvider.OFF) {
