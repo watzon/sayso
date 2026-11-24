@@ -189,7 +189,7 @@ without one no style can rewrite text, and the strip names none.
 mic tap ─▶ VoiceController ── planEngines(choice, availability, field) ─▶ first engine
              │
              ├─ A local:  AudioRecord 16 kHz mono ─▶ AsrClient ═Messenger═▶ AsrService (:asr)
-             │                                                     sherpa-onnx: Parakeet → final text
+             │                                                     sherpa-onnx: the active model → final text
              ├─ B system: SpeechRecognizer (on-device when available; records itself)
              └─ C cloud:  AudioRecord ─▶ VoiceCore.transcribeCloud (background)
                           (also streams to :asr when a local model is active, as the fallback)
@@ -227,17 +227,29 @@ Stop ─▶ final text ─▶ VoiceCore.postProcess(raw, before, after)
   APK. `ModelManager` downloads one file at a time into `noBackupFilesDir`,
   resumes with HTTP Range, checks each file's size and sha256 before it gets
   its name, deletes, and sets the active model (`VoiceSettings.modelId`).
+  Deleting the active model makes the first other downloaded one active.
   Every model decodes the whole recording when the dictation ends; there is no
-  streaming model. `deleteRetired` removes the folders of models that left
+  streaming model. Whisper and Moonshine get the recording in pieces of at
+  most 25 s, cut at the quietest moment in the last 5 s before each limit:
+  sherpa-onnx drops what Whisper hears after 30 s, and Moonshine repeats
+  itself on a 40 s recording. `deleteRetired` removes the folders of models that left
   the catalog (the Voice tab runs it). Its `download` blocks
   and reports progress, for the companion app to run on a background thread.
   `ramAdvisory` warns when the device has less RAM than a model wants.
 
 | Model | Role | Download | sha256 (per file in `ModelCatalog.kt`) | License |
 |---|---|---|---|---|
-| Parakeet TDT 0.6B v3 int8 | Final text, 25 European languages | 670.6 MB | encoder `1afbe69c…2c479` | CC BY 4.0 |
+| Moonshine Tiny int8 | Fastest, English | 124.0 MB | encoder `8774dfba…71acb` | MIT |
+| Whisper base.en int8 | Fast Whisper, English | 160.6 MB | encoder `ef6b936f…edb823` | MIT |
+| Whisper small.en int8 | Accurate Whisper, English | 375.5 MB | encoder `8bdac288…e462f` | MIT |
+| Parakeet TDT 0.6B Ultra int8 | Best accuracy, 25 European languages | 670.6 MB | encoder `b43072e1…780a3` | CC BY 4.0 |
+| Parakeet TDT 0.6B v3 int8 | 25 European languages | 670.6 MB | encoder `1afbe69c…2c479` | CC BY 4.0 |
 
-Parakeet wants a phone with 6 GB of RAM: loading it and decoding a 17 s clip
+sherpa-onnx's `modelType` is `nemo_transducer` for Parakeet and `whisper` for
+Whisper, and empty for Moonshine, as in its Android examples. All five decode
+LibriSpeech 1089-134686-0000 correctly in `SherpaLocalAsrTest` on a Mac.
+
+Parakeet (both) wants a phone with 6 GB of RAM: loading it and decoding a 17 s clip
 peaked at about 2 GB on a Mac (sherpa-onnx 2.0.3, int8, 4 threads; not yet
 measured on a phone). Below 6 GB the app shows a memory warning on its card.
 

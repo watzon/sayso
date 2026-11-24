@@ -59,6 +59,7 @@ class ModelManagerTest {
     private fun model(encSha: String = sha(big), id: String = "m") = AsrModel(
         id = id,
         name = "M",
+        summary = "test",
         languages = listOf("en"),
         license = "test",
         files = listOf(
@@ -212,6 +213,35 @@ class ModelManagerTest {
     }
 
     @Test
+    fun deletingTheActiveModelActivatesAnotherInstalledOne() {
+        val first = model(id = "first")
+        val second = model(id = "second")
+        val third = model(id = "third")
+        val mm = manager(first, second, third)
+        mm.download(first)
+        mm.download(third)
+        mm.setActive(third)
+        mm.delete(third)
+        assertEquals(first, mm.activeModel())
+        mm.delete(first)
+        assertNull(settings.value.modelId)
+        assertNull(mm.activeModel())
+    }
+
+    @Test
+    fun deletingAnotherModelKeepsTheActiveOne() {
+        val first = model(id = "first")
+        val second = model(id = "second")
+        val mm = manager(first, second)
+        mm.download(first)
+        mm.download(second)
+        mm.setActive(second)
+        mm.delete(first)
+        assertEquals(second, mm.activeModel())
+        assertTrue(mm.isInstalled(second))
+    }
+
+    @Test
     fun anActiveModelWhoseFilesAreGoneIsNotActive() {
         val m = model()
         val mm = manager(m)
@@ -247,8 +277,48 @@ class ModelCatalogTest {
                 assertTrue(f.sizeBytes > 0)
             }
             val names = m.files.map { it.name }.toSet()
-            with(m.layout) { listOf(encoder, decoder, joiner, tokens).forEach { assertTrue("${m.id} lacks $it", it in names) } }
+            m.layout.paths.forEach { assertTrue("${m.id} lacks $it", it in names) }
         }
+    }
+
+    @Test
+    fun theCuratedModelsAreSmallestFirstAndUnder1Gb() {
+        assertEquals(
+            listOf(
+                "moonshine-tiny-en-int8",
+                "whisper-base-en-int8",
+                "whisper-small-en-int8",
+                "parakeet-tdt-0.6b-ultra-int8",
+                "parakeet-tdt-0.6b-v3-int8",
+            ),
+            ModelCatalog.ALL.map { it.id },
+        )
+        assertEquals(
+            listOf(123_967_539L, 160_626_066L, 375_501_079L, 670_576_835L, 670_576_784L),
+            ModelCatalog.ALL.map { it.downloadBytes },
+        )
+        assertTrue(ModelCatalog.ALL.all { it.downloadBytes < 1_000_000_000 })
+        assertTrue(ModelCatalog.ALL.all { it.summary.isNotBlank() && it.license.isNotBlank() })
+        assertTrue(ModelCatalog.ALL.zipWithNext().all { (a, b) -> a.downloadBytes <= b.downloadBytes + 100 })
+    }
+
+    @Test
+    fun eachArchitectureHasItsLayout() {
+        assertTrue(ModelCatalog.MOONSHINE_TINY.layout is MoonshineLayout)
+        for (w in listOf(ModelCatalog.WHISPER_BASE_EN, ModelCatalog.WHISPER_SMALL_EN)) {
+            val l = w.layout as WhisperLayout
+            assertEquals("en" to "transcribe", l.language to l.task)
+            assertEquals(-1, l.tailPaddings)
+            assertTrue(l.maxSegmentSeconds in 1..29)
+        }
+        assertTrue(ModelCatalog.MOONSHINE_TINY.layout.maxSegmentSeconds in 1..29)
+        for (p in listOf(ModelCatalog.PARAKEET_ULTRA, ModelCatalog.PARAKEET_V3)) {
+            assertEquals("nemo_transducer", (p.layout as TransducerLayout).modelType)
+            assertEquals(0, p.layout.maxSegmentSeconds)
+            assertEquals(6L shl 30, p.recommendedRamBytes)
+            assertEquals(25, p.languages.size)
+        }
+        assertTrue(listOf(ModelCatalog.MOONSHINE_TINY, ModelCatalog.WHISPER_BASE_EN, ModelCatalog.WHISPER_SMALL_EN).all { it.languages == listOf("en") && it.recommendedRamBytes == 0L })
     }
 
     @Test
@@ -256,6 +326,6 @@ class ModelCatalogTest {
         assertEquals(6L shl 30, ModelCatalog.PARAKEET_V3.recommendedRamBytes)
         assertTrue(ModelCatalog.PARAKEET_V3 in ModelCatalog.ALL)
         assertNull(ModelCatalog.byId("zipformer-en-streaming-2023-06-26"))
-        assertTrue(ModelCatalog.ALL.none { it.id.contains("streaming") || it.layout.modelType == "zipformer2" })
+        assertTrue(ModelCatalog.ALL.none { it.id.contains("streaming") || (it.layout as? TransducerLayout)?.modelType == "zipformer2" })
     }
 }

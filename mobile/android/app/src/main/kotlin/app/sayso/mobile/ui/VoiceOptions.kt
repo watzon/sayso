@@ -2,6 +2,7 @@ package app.sayso.mobile.ui
 
 import app.sayso.mobile.asr.AsrModel
 import app.sayso.mobile.asr.ModelState
+import app.sayso.mobile.asr.RamAdvisory
 import app.sayso.mobile.engine.CloudAsrProvider
 import app.sayso.mobile.engine.CloudStyleProvider
 import app.sayso.mobile.engine.VoiceStyle
@@ -45,6 +46,11 @@ fun formatBytes(bytes: Long): String = when {
     else -> String.format(Locale.US, "%d KB", (bytes + 999) / 1000)
 }
 
+/** A model's size at a glance, in whole decimal megabytes. */
+fun formatSize(bytes: Long): String =
+    if (bytes >= 1_000_000_000) String.format(Locale.US, "%.1f GB", bytes / 1e9)
+    else "${Math.round(bytes / 1e6)} MB"
+
 /** Device RAM in binary GB, the way phones advertise it. */
 fun formatRam(bytes: Long): String = String.format(Locale.US, "%.1f GB", bytes / (1L shl 30).toDouble())
 
@@ -52,6 +58,22 @@ fun formatRam(bytes: Long): String = String.format(Locale.US, "%.1f GB", bytes /
 fun modelLanguages(model: AsrModel): String =
     if (model.languages.size == 1) Locale.forLanguageTag(model.languages[0]).getDisplayLanguage(Locale.US)
     else "${model.languages.size} languages"
+
+/** What a model card says about memory; [warning] when this phone has too little. */
+data class RamNote(val text: String, val warning: Boolean)
+
+/** Nothing for a model with no memory need, a plain note when the phone has enough, else a warning. */
+fun ramNote(model: AsrModel, advisory: RamAdvisory?): RamNote? = when {
+    model.recommendedRamBytes <= 0 -> null
+    advisory != null -> RamNote(
+        "This phone has ${formatRam(advisory.deviceRamBytes)} of memory; this model wants ${formatRam(model.recommendedRamBytes)}. It may be slow or stop.",
+        warning = true,
+    )
+    else -> RamNote("Wants ${formatRam(model.recommendedRamBytes)} of memory.", warning = false)
+}
+
+/** The line under a model's name: what it is good at, then its languages. */
+fun modelLine(model: AsrModel): String = "${model.summary} · ${modelLanguages(model)}"
 
 /** The style the keyboard will use: [id] when it exists, else the first, as the keyboard resolves it. */
 fun effectiveStyleId(styles: List<VoiceStyle>, id: String): String? =

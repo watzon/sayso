@@ -155,12 +155,17 @@ class ModelManager(
         if (!part.renameTo(target)) throw IOException("cannot rename $part")
     }
 
-    /** Deletes the model's files, finished or partial, and drops it from the active models. */
+    /**
+     * Deletes the model's files, finished or partial. When it was the active
+     * model, the first other installed model in the catalog becomes active,
+     * or none.
+     */
     fun delete(model: AsrModel) {
         modelDir(model).deleteRecursively()
         val s = settings.load()
-        val updated = s.withoutModel(model.id)
-        if (updated != s) settings.save(updated)
+        if (s.modelId != model.id) return
+        val next = catalog.firstOrNull { it.id != model.id && isInstalled(it) }
+        settings.save(if (next != null) s.withActiveModel(next) else s.withoutModel(model.id))
     }
 
     /** Makes an installed [model] the active model. False when it is not installed. */

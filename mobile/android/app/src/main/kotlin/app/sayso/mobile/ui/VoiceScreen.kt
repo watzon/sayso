@@ -113,7 +113,7 @@ fun VoiceScreen(voice: VoiceCore) {
         }
 
         if (LOCAL_ASR_BUILT) {
-            Section("Models", "Downloaded once over the internet, then run on this phone.")
+            Section("Models", "Downloaded once over the internet, then run on this phone. Smaller models are faster; larger ones are more accurate.")
             val active = remember(settings, diskTick) { manager.activeModel() }
             for (model in manager.catalog) {
                 val download = ModelDownloads.status[model.id]
@@ -123,9 +123,7 @@ fun VoiceScreen(voice: VoiceCore) {
                     state = state,
                     download = download,
                     active = model == active,
-                    ramWarning = manager.ramAdvisory(model, deviceRam)?.let {
-                        "This phone has ${formatRam(it.deviceRamBytes)} of memory; this model wants ${formatRam(model.recommendedRamBytes)}. It may be slow or stop."
-                    },
+                    ramNote = ramNote(model, manager.ramAdvisory(model, deviceRam)),
                     onDownload = {
                         ModelDownloads.start(manager, model) {
                             // The first model downloaded becomes the active one.
@@ -237,7 +235,7 @@ private fun ModelCard(
     state: ModelState,
     download: DownloadStatus?,
     active: Boolean,
-    ramWarning: String?,
+    ramNote: RamNote?,
     onDownload: () -> Unit,
     onCancel: () -> Unit,
     onDelete: () -> Unit,
@@ -247,17 +245,27 @@ private fun ModelCard(
     var confirmDelete by remember { mutableStateOf(false) }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(model.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Badge(badge)
+            val installed = state == ModelState.Installed
+            Row(
+                if (installed) Modifier.selectable(selected = active, role = Role.RadioButton, onClick = onSetActive) else Modifier,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (installed) RadioButton(selected = active, onClick = null, modifier = Modifier.padding(end = 12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(model.name, style = MaterialTheme.typography.titleMedium)
+                    Text(modelLine(model), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Badge(badge)
+                    Text(formatSize(model.downloadBytes), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Text(
-                "${modelLanguages(model)} · ${formatBytes(model.downloadBytes)}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                listOfNotNull("License: ${model.license}", ramNote?.takeUnless { it.warning }?.text).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
             )
-            Text("License: ${model.license}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-            if (ramWarning != null) Text(ramWarning, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            if (ramNote?.warning == true) Text(ramNote.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             when {
                 download is DownloadStatus.Running -> {
                     val pct = downloadPercent(download.downloadedBytes, download.totalBytes)
@@ -286,8 +294,7 @@ private fun ModelCard(
                     ModelBadge.PAUSED, ModelBadge.FAILED -> Button(onClick = onDownload) {
                         Text(if (state is ModelState.Partial) "Resume" else "Try again")
                     }
-                    ModelBadge.DOWNLOADED -> Button(onClick = onSetActive) { Text("Set active") }
-                    ModelBadge.ACTIVE -> {}
+                    ModelBadge.DOWNLOADED, ModelBadge.ACTIVE -> {}
                 }
                 if (badge != ModelBadge.DOWNLOADING && state != ModelState.NotInstalled) {
                     TextButton(onClick = { confirmDelete = true }) { Text("Delete") }

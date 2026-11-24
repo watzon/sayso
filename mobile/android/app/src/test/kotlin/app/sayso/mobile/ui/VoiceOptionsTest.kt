@@ -2,6 +2,7 @@ package app.sayso.mobile.ui
 
 import app.sayso.mobile.asr.ModelCatalog
 import app.sayso.mobile.asr.ModelState
+import app.sayso.mobile.asr.RamAdvisory
 import app.sayso.mobile.engine.CloudAsrProvider
 import app.sayso.mobile.engine.CloudStyleProvider
 import app.sayso.mobile.engine.VoiceStyle
@@ -52,6 +53,29 @@ class VoiceOptionsTest {
         assertEquals("1.50 GB", formatBytes(1_500_000_000))
         assertEquals("6 KB", formatBytes(5_048))
         assertEquals("6.0 GB", formatRam(6L shl 30))
+    }
+
+    @Test
+    fun ramNoteOnlyForModelsThatNeedMemory() {
+        assertNull(ramNote(ModelCatalog.MOONSHINE_TINY, null))
+        assertEquals(RamNote("Wants 6.0 GB of memory.", warning = false), ramNote(ModelCatalog.PARAKEET_ULTRA, null))
+        val low = ramNote(ModelCatalog.PARAKEET_ULTRA, RamAdvisory(ModelCatalog.PARAKEET_ULTRA, 4L shl 30))!!
+        assertTrue(low.warning)
+        assertEquals("This phone has 4.0 GB of memory; this model wants 6.0 GB. It may be slow or stop.", low.text)
+    }
+
+    @Test
+    fun modelSizesAtAGlance() {
+        assertEquals(listOf("124 MB", "161 MB", "376 MB", "671 MB", "671 MB"), ModelCatalog.ALL.map { formatSize(it.downloadBytes) })
+        assertEquals("1.5 GB", formatSize(1_500_000_000))
+    }
+
+    @Test
+    fun modelLinesReadAsTierAndLanguages() {
+        assertEquals(
+            listOf("Fastest, compact · English", "Fast Whisper · English", "Accurate Whisper · English", "Best accuracy · 25 languages", "Multilingual · 25 languages"),
+            ModelCatalog.ALL.map(::modelLine),
+        )
     }
 
     @Test

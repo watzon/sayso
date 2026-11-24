@@ -81,10 +81,26 @@ fun Acknowledgements() {
                 "the Apache License 2.0, with ONNX Runtime by Microsoft, licensed under the MIT License.",
             style = body,
         )
+        Text("The downloadable speech models, each in the ONNX conversion by the sherpa-onnx project:", style = body)
+        Text(
+            "Moonshine Tiny by Useful Sensors (https://github.com/moonshine-ai/moonshine), licensed under " +
+                "the MIT License.",
+            style = body,
+        )
+        Text(
+            "Whisper base.en and small.en by OpenAI (https://github.com/openai/whisper), licensed under " +
+                "the MIT License.",
+            style = body,
+        )
+        Text(
+            "Parakeet TDT 0.6B Ultra by Moondream (https://huggingface.co/moondream/parakeet-ultra), " +
+                "post-trained from NVIDIA's Parakeet TDT 0.6B v3, licensed under CC BY 4.0 " +
+                "(https://creativecommons.org/licenses/by/4.0/).",
+            style = body,
+        )
         Text(
             "Parakeet TDT 0.6B v3 by NVIDIA (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), licensed " +
-                "under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/), in the ONNX conversion by " +
-                "the sherpa-onnx project.",
+                "under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/).",
             style = body,
         )
         if (speechLicenses != null) {
