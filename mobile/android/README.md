@@ -105,6 +105,22 @@ Long-press the space bar to switch keyboards later.
 | Double-tap space after a word | Types ". " (Settings › Double-space period, on by default; text fields only) |
 | Backspace right after a double-space period | Puts the single space back |
 
+## Emoji
+
+The emoji key opens every standard Unicode emoji (Emoji 18.0, 1,923 without
+skin tones) in a recycled grid (`EmojiPanelView`, a `RecyclerView`): Recent
+first, then the nine Unicode groups, with a tab for each. The data is
+`app/src/main/assets/emoji/emoji.txt`, generated from Unicode and CLDR files
+by `mobile/tools/emojigen` (see its `DATA_SOURCES.md`). On first use it loads
+off the main thread and drops each emoji the system font cannot draw as one
+glyph (`Paint.hasGlyph`), so an older phone shows no empty boxes.
+
+- Hold an emoji with a corner mark for its five skin tones; the grid then
+  shows the chosen one for that emoji.
+- Recent emoji and chosen tones are kept in the `emoji` preferences.
+- Search emoji opens a search field above the letter keys; the keys type
+  into it, results match name and keyword prefixes, and ← or Enter goes back.
+
 ## The engine boundary
 
 The keyboard UI makes no typing decisions. It hands the raw position of each

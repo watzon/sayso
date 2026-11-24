@@ -4,10 +4,12 @@ kotlin = "2.4.21"
 composeBom = "2026.11.01"
 activityCompose = "1.13.0"
 coreKtx = "1.19.1"
+recyclerview = "1.4.0"
 junit = "4.13.2"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-recyclerview = { module = "androidx.recyclerview:recyclerview", version.ref = "recyclerview" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 compose-ui = { module = "androidx.compose.ui:ui" }

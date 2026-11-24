@@ -24,7 +24,8 @@ private val SPEECH_LICENSE_ASSETS = listOf("licenses/sherpa-onnx.txt", "licenses
 /**
  * Credits for the data the typing model is built from, as its licenses ask
  * (mobile/tools/sslmgen/DATA_SOURCES.md), and for the speech recognition
- * library and the downloadable speech models (asr/ModelCatalog.kt).
+ * library and the downloadable speech models (asr/ModelCatalog.kt), and for
+ * the emoji data (mobile/tools/emojigen/DATA_SOURCES.md).
  */
 @Composable
 fun Acknowledgements() {
@@ -67,6 +68,13 @@ fun Acknowledgements() {
             }
             if (showNotice) Text(notice, style = MaterialTheme.typography.bodySmall, color = muted)
         }
+        Text("Emoji", style = body, color = muted)
+        Text(
+            "Emoji names, groups, and skin tones from Unicode emoji-test.txt (Emoji 18.0), and search " +
+                "keywords from the Unicode CLDR (release 49). Copyright © Unicode, Inc., used under the " +
+                "Unicode License v3 (https://www.unicode.org/license.txt).",
+            style = body,
+        )
         Text("On-device speech recognition", style = body, color = muted)
         Text(
             "sherpa-onnx by the k2-fsa project (https://github.com/k2-fsa/sherpa-onnx), licensed under " +

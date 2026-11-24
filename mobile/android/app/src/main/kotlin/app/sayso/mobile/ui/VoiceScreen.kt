@@ -160,7 +160,7 @@ fun VoiceScreen(voice: VoiceCore) {
             Column(Modifier.weight(1f).padding(end = 16.dp)) {
                 Text("Hands-free", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Done also sends the message and starts listening again.",
+                    "Stop also sends the message and starts listening again.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

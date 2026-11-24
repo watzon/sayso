@@ -128,6 +128,7 @@ if (saysoSherpa) tasks.named("preBuild") { dependsOn(copySpeechLicenses) }
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

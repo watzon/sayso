@@ -12,6 +12,9 @@ import android.view.MotionEvent
 import android.view.View
 import app.sayso.mobile.engine.Suggestion
 
+/** The height of the suggestion strip, and of the dictation strip that covers it. */
+const val STRIP_HEIGHT_DP = 46f
+
 /**
  * Three candidates, a revert chip (after an autocorrect, or Undo after a
  * dictation), and the microphone. The candidate that space will commit is
@@ -56,7 +59,7 @@ class SuggestionStripView(
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), dp(46f).toInt())
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), dp(STRIP_HEIGHT_DP).toInt())
     }
 
     private val micWidth get() = dp(48f)

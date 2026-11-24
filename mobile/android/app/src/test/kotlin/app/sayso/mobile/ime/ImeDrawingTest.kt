@@ -52,4 +52,16 @@ class ImeDrawingTest {
         }
         assertEquals("density read inside TextPaint().apply", emptyList<String>(), hits)
     }
+
+    /**
+     * The dictation strip once filled the whole input view and hid the keys:
+     * a plain View measured in a wrap-content frame takes all the height it
+     * is offered. It must measure itself one strip tall.
+     */
+    @Test
+    fun theDictationStripIsOneStripTall() {
+        val bar = File(dir, "VoiceBarView.kt").readText()
+        val measure = Regex("""override fun onMeasure[^}]*setMeasuredDimension\([^,]+,\s*dp\(STRIP_HEIGHT_DP\)""")
+        assertTrue("VoiceBarView must measure to STRIP_HEIGHT_DP", measure.containsMatchIn(bar))
+    }
 }

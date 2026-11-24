@@ -54,6 +54,11 @@ class VoiceBarView(
     private val button get() = dp(VoiceStrip.BUTTON_DP)
     private val radius get() = dp(16f)
 
+    // One strip tall: the keys below stay on screen.
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), dp(STRIP_HEIGHT_DP).toInt())
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val state = voice.machine.state

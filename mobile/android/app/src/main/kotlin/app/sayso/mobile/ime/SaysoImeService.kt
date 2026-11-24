@@ -46,6 +46,8 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     private lateinit var strip: SuggestionStripView
     private lateinit var diagnosticsPanel: DiagnosticsPanelView
     private lateinit var emojiPanel: EmojiPanelView
+    private lateinit var emojiSearch: EmojiSearchView
+    private lateinit var topRow: View
     private lateinit var voice: VoiceController
     private var voiceBar: VoiceBarView? = null
 
@@ -130,7 +132,16 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         keyboardView = KeyboardView(this, this)
         strip = SuggestionStripView(this, onPick = ::pick, onRevert = ::revert, onMic = { voice.micTapped(flags, imeAction) })
         diagnosticsPanel = DiagnosticsPanelView(this)
-        emojiPanel = EmojiPanelView(this, onEmoji = ::onText, onBackspace = ::onBackspace, onLetters = { showEmoji(false) })
+        val emojiStore = EmojiStore(this)
+        emojiPanel = EmojiPanelView(
+            this,
+            emojiStore,
+            onEmoji = ::commitText,
+            onBackspace = ::onBackspace,
+            onLetters = { showEmoji(false) },
+            onSearch = ::openEmojiSearch,
+        )
+        emojiSearch = EmojiSearchView(this, emojiStore, onEmoji = ::commitText, onClose = { showEmoji(true) })
         val bar = VoiceBarView(
             this,
             voice,
@@ -141,9 +152,9 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         voiceBar = bar
 
         // The dictation strip covers the suggestions only; the keys stay usable below it.
-        val top = FrameLayout(this).apply {
+        topRow = FrameLayout(this).apply {
             addView(strip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
-            addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         val keys = FrameLayout(this).apply {
             clipChildren = false
@@ -151,12 +162,14 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
             addView(emojiPanel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
         }
         emojiPanel.visibility = View.GONE
+        emojiSearch.visibility = View.GONE
         bar.visibility = View.GONE
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
             addView(diagnosticsPanel)
-            addView(top)
+            addView(topRow)
+            addView(emojiSearch)
             addView(keys)
         }
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
@@ -227,6 +240,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         strip.palette = palette
         diagnosticsPanel.palette = palette
         emojiPanel.palette = palette
+        emojiSearch.palette = palette
         voiceBar?.palette = palette
         (keyboardView.parent?.parent as? View)?.setBackgroundColor(palette.ground)
         // The system draws the keyboard's navigation buttons over that ground.
@@ -236,6 +250,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     // KeyboardActionListener
 
     override fun onLetter(key: Key, x: Float, y: Float, timeMs: Long) {
+        if (emojiSearching) return emojiSearch.type(key.spec.label)
         val code = engine.onTouch(x, y, timeMs, shift.isUpperCase)
         if (code == TypingEngine.NO_KEY) return
         val char = code.toChar()
@@ -248,6 +263,12 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onText(text: String) {
+        if (emojiSearching) return emojiSearch.type(text)
+        commitText(text)
+    }
+
+    /** Types [text] into the editor: a key's text, or an emoji. */
+    private fun commitText(text: String) {
         doubleSpace.reset()
         if (text.length == 1 && text[0] in SEPARATORS) {
             commitSeparator(text[0])
@@ -261,6 +282,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onSpace() {
+        if (emojiSearching) return emojiSearch.type(" ")
         val s = session ?: return
         val period = doubleSpace.onSpace(editor.textBeforeCursor(2), SystemClock.uptimeMillis(), flags.inputKind == InputKind.TEXT)
         if (period == null) {
@@ -279,6 +301,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onBackspace() {
+        if (emojiSearching) return emojiSearch.deleteChar()
         val s = session ?: return
         val selected = currentInputConnection?.getSelectedText(0)
         val period = if (selected.isNullOrEmpty()) doubleSpace.onBackspace(editor.textBeforeCursor(2)) else null
@@ -303,6 +326,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onDeleteWord() {
+        if (emojiSearching) return emojiSearch.clear()
         doubleSpace.reset()
         session?.deleteWordBefore()
         engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
@@ -312,6 +336,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onCursorMove(steps: Int) {
+        if (emojiSearching) return
         doubleSpace.reset()
         val code = if (steps > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
         repeat(kotlin.math.abs(steps)) { sendDownUpKeyEvents(code) }
@@ -331,7 +356,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
                 afterEdit()
             }
             KeyCodes.EMOJI -> showEmoji(true)
-            KeyCodes.ENTER -> onEnter()
+            KeyCodes.ENTER -> if (emojiSearching) showEmoji(true) else onEnter()
         }
     }
 
@@ -377,17 +402,40 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         afterEdit()
     }
 
+    /** Emoji search above the letter keys; they type into the search until it closes. */
+    private fun openEmojiSearch() {
+        showEmoji(false)
+        keyboardView.mode = KeyboardMode.LETTERS
+        topRow.visibility = View.GONE
+        emojiSearch.open()
+        emojiSearch.visibility = View.VISIBLE
+    }
+
     /** Shows the dictation strip over the suggestions while a dictation runs or its error shows. */
     private fun showVoice() {
         val bar = voiceBar ?: return
+        if (voice.machine.state != VoiceState.Idle) topRow.visibility = View.VISIBLE
         bar.visibility = if (voice.machine.state != VoiceState.Idle) View.VISIBLE else View.GONE
         bar.invalidate()
         strip.micActive = voice.machine.active
         refreshStrip()
     }
 
+    private val emojiSearching: Boolean get() = emojiSearch.visibility == View.VISIBLE
+
+    /**
+     * The emoji grid in place of the keys, and of the suggestion strip too
+     * unless a dictation shows there. Closes emoji search either way.
+     */
     private fun showEmoji(show: Boolean) {
-        if (show) emojiPanel.layoutParams = emojiPanel.layoutParams.apply { height = keyboardView.height }
+        emojiSearch.visibility = View.GONE
+        val coverStrip = show && voice.machine.state == VoiceState.Idle
+        if (show) {
+            val stripHeight = if (coverStrip) topRow.height else 0
+            emojiPanel.layoutParams = emojiPanel.layoutParams.apply { height = keyboardView.height + stripHeight }
+            emojiPanel.open()
+        }
+        topRow.visibility = if (coverStrip) View.GONE else View.VISIBLE
         emojiPanel.visibility = if (show) View.VISIBLE else View.GONE
         keyboardView.visibility = if (show) View.INVISIBLE else View.VISIBLE
     }
