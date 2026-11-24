@@ -1,6 +1,7 @@
 package app.sayso.mobile.ime
 
 import android.content.Intent
+import android.os.SystemClock
 import android.inputmethodservice.InputMethodService
 import android.view.KeyEvent
 import android.view.View
@@ -18,6 +19,7 @@ import app.sayso.mobile.engine.EditorFlags
 import app.sayso.mobile.engine.InputKind
 import app.sayso.mobile.engine.SaysoEngine
 import app.sayso.mobile.engine.TypingEngine
+import app.sayso.mobile.keyboard.DoubleSpacePeriod
 import app.sayso.mobile.keyboard.EditorSession
 import app.sayso.mobile.keyboard.ImeAction
 import app.sayso.mobile.keyboard.Key
@@ -48,6 +50,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     private var voiceBar: VoiceBarView? = null
 
     private val shift = ShiftState()
+    private val doubleSpace = DoubleSpacePeriod()
     private var session: EditorSession? = null
     private var flags = editorFlagsFor(0, 0)
     private var imeAction = ImeAction.NEWLINE
@@ -97,6 +100,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
             currentInputConnection?.getTextAfterCursor(length, 0)?.toString().orEmpty()
 
         override fun insertDictation(text: String) {
+            doubleSpace.reset()
             session?.insert(text)
             engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
             revertWord = null
@@ -187,6 +191,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
 
         applyPalette(KeyboardPalette.forUiMode(resources.configuration.uiMode))
         keyboardView.hapticsEnabled = settings.haptics
+        doubleSpace.enabled = settings.doubleSpacePeriod
         keyboardView.enterLabel = imeAction.label
         keyboardView.mode = initialMode(flags)
         diagnosticsPanel.visibility = if (settings.diagnostics) View.VISIBLE else View.GONE
@@ -205,6 +210,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         val s = session ?: return
         if (!s.movedExternally(newSelStart, newSelEnd)) return
         s.resetCursor(newSelStart)
+        doubleSpace.reset()
         engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
         revertWord = null
         voice.undo.clear()
@@ -233,6 +239,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         val code = engine.onTouch(x, y, timeMs, shift.isUpperCase)
         if (code == TypingEngine.NO_KEY) return
         val char = code.toChar()
+        doubleSpace.reset()
         session?.insert((if (shift.isUpperCase) char.uppercaseChar() else char).toString())
         shift.onLetter()
         revertWord = null
@@ -241,6 +248,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onText(text: String) {
+        doubleSpace.reset()
         if (text.length == 1 && text[0] in SEPARATORS) {
             commitSeparator(text[0])
             return
@@ -252,7 +260,19 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         afterEdit()
     }
 
-    override fun onSpace() = commitSeparator(' ')
+    override fun onSpace() {
+        val s = session ?: return
+        val period = doubleSpace.onSpace(editor.textBeforeCursor(2), SystemClock.uptimeMillis(), flags.inputKind == InputKind.TEXT)
+        if (period == null) {
+            commitSeparator(' ')
+            return
+        }
+        s.apply(period)
+        engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
+        revertWord = null
+        voice.undo.clear()
+        afterEdit()
+    }
 
     override fun onSpaceLongPress() {
         getSystemService(InputMethodManager::class.java).showInputMethodPicker()
@@ -261,7 +281,12 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     override fun onBackspace() {
         val s = session ?: return
         val selected = currentInputConnection?.getSelectedText(0)
-        if (!selected.isNullOrEmpty()) {
+        val period = if (selected.isNullOrEmpty()) doubleSpace.onBackspace(editor.textBeforeCursor(2)) else null
+        doubleSpace.reset()
+        if (period != null) {
+            s.apply(period)
+            engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
+        } else if (!selected.isNullOrEmpty()) {
             currentInputConnection?.commitText("", 1)
             engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
         } else {
@@ -278,6 +303,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onDeleteWord() {
+        doubleSpace.reset()
         session?.deleteWordBefore()
         engine.setContext(editor.textBeforeCursor(CONTEXT_LENGTH))
         revertWord = null
@@ -286,11 +312,13 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     override fun onCursorMove(steps: Int) {
+        doubleSpace.reset()
         val code = if (steps > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
         repeat(kotlin.math.abs(steps)) { sendDownUpKeyEvents(code) }
     }
 
     override fun onSpecialKey(code: Int, timeMs: Long) {
+        doubleSpace.reset()
         when (code) {
             KeyCodes.SHIFT -> {
                 shift.onShiftTap(timeMs)
@@ -330,6 +358,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     private fun pick(index: Int) {
+        doubleSpace.reset()
         session?.apply(engine.pickSuggestion(index))
         revertWord = null
         voice.undo.clear()
@@ -337,6 +366,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
     }
 
     private fun revert() {
+        doubleSpace.reset()
         if (voice.undoLast()) {
             afterEdit()
             return

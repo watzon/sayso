@@ -50,6 +50,9 @@ fun SettingsScreen(settings: KeyboardSettings, onChange: (KeyboardSettings) -> U
         Toggle("Next-word prediction", "Suggest a word after you finish one.", settings.nextWordPrediction) {
             onChange(settings.copy(nextWordPrediction = it))
         }
+        Toggle("Double-space period", "Tap space twice after a word to type a period and a space.", settings.doubleSpacePeriod) {
+            onChange(settings.copy(doubleSpacePeriod = it))
+        }
         Toggle(
             "Developer diagnostics",
             "Draw hit targets and learned offsets on the keyboard, with candidate scores above it.",

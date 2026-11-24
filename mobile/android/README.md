@@ -102,6 +102,8 @@ Long-press the space bar to switch keyboards later.
 | Swipe left from backspace | Deletes a word, one more for each further swipe step |
 | Drag along the space bar | Moves the cursor |
 | Backspace right after an autocorrect | Restores the typed word |
+| Double-tap space after a word | Types ". " (Settings › Double-space period, on by default; text fields only) |
+| Backspace right after a double-space period | Puts the single space back |
 
 ## The engine boundary
 
