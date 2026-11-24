@@ -23,7 +23,8 @@ private class SherpaLocalAsr : LocalAsr {
         // Free a model that is no longer wanted before loading another.
         if (loaded != null && loaded?.first != model) release()
         val recognizer = loaded?.second ?: load(model).also { loaded = model to it }
-        return Stream(recognizer, model.model.layout.maxSegmentSeconds * Pcm.SAMPLE_RATE)
+        val layout = model.model.layout
+        return Stream(recognizer, layout.maxSegmentSeconds * Pcm.SAMPLE_RATE, whisper = layout is WhisperLayout)
     }
 
     override fun release() {
@@ -39,7 +40,11 @@ private class SherpaLocalAsr : LocalAsr {
     )
 
     /** [maxSegment] in samples, or 0 to decode the whole recording at once. */
-    private class Stream(private val recognizer: OfflineRecognizer, private val maxSegment: Int) : AsrStream {
+    private class Stream(
+        private val recognizer: OfflineRecognizer,
+        private val maxSegment: Int,
+        private val whisper: Boolean,
+    ) : AsrStream {
         private var buffer = FloatArray(Pcm.SAMPLE_RATE * 10)
         private var size = 0
 
@@ -59,11 +64,13 @@ private class SherpaLocalAsr : LocalAsr {
         }
 
         private fun decode(samples: FloatArray): String {
+            if (isSilence(samples)) return ""
             val s = recognizer.createStream()
             try {
                 s.acceptWaveform(samples, Pcm.SAMPLE_RATE)
                 recognizer.decode(s)
-                return recognizer.getResult(s).text
+                val text = recognizer.getResult(s).text
+                return if (whisper) dropWhisperTags(text) else text
             } finally {
                 s.release()
             }

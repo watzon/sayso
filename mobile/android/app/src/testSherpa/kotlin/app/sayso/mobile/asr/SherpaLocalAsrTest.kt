@@ -36,12 +36,16 @@ class SherpaLocalAsrTest {
 
     /** The sample [times] times with half a second of silence after each, about 7 seconds apiece. */
     private fun transcribe(m: AsrModel, times: Int = 1): String {
+        assumeTrue("needs 0.wav in -PsaysoAsrTestDir", dir != null && File(dir, "0.wav").isFile)
+        val one = sample()
+        return transcribe(m, if (times == 1) one else FloatArray(0).let { var a = it; repeat(times) { a += one + FloatArray(8_000) }; a })
+    }
+
+    private fun transcribe(m: AsrModel, samples: FloatArray): String {
         val model = model(m)
-        assumeTrue("needs -PsaysoAsrTestDir with ${m.id}", model != null && File(dir, "0.wav").isFile)
+        assumeTrue("needs -PsaysoAsrTestDir with ${m.id}", model != null)
         val asr = createLocalAsr()!!
         val stream = asr.open(model!!)
-        val one = sample()
-        val samples = if (times == 1) one else FloatArray(0).let { var a = it; repeat(times) { a += one + FloatArray(8_000) }; a }
         for (start in samples.indices step 640) stream.accept(samples.copyOfRange(start, minOf(samples.size, start + 640)))
         val text = stream.finish()
         stream.close()
@@ -77,6 +81,30 @@ class SherpaLocalAsrTest {
 
     @Test
     fun whisperSmallGivesTheFinalText() = assertHeardTheSample(transcribe(ModelCatalog.WHISPER_SMALL_EN))
+
+    /** Whisper writes "(buzzing)" or "you" for silence when it decodes it. */
+    @Test
+    fun whisperBaseWritesNothingForSilence() = assertEquals("", transcribe(ModelCatalog.WHISPER_BASE_EN, FloatArray(16_000 * 4)))
+
+    @Test
+    fun whisperSmallWritesNothingForSilence() = assertEquals("", transcribe(ModelCatalog.WHISPER_SMALL_EN, FloatArray(16_000 * 4)))
+
+    /** The silence gate lets speech 30 dB quieter than the sample through. */
+    @Test
+    fun whisperHearsQuietSpeech() {
+        assumeTrue("needs 0.wav in -PsaysoAsrTestDir", dir != null && File(dir, "0.wav").isFile)
+        assertHeardTheSample(transcribe(ModelCatalog.WHISPER_BASE_EN, sample().map { it * 0.0316f }.toFloatArray()))
+    }
+
+    /** A silent stretch between two takes adds no words. */
+    @Test
+    fun whisperAddsNothingForASilentSegment() {
+        assumeTrue("needs 0.wav in -PsaysoAsrTestDir", dir != null && File(dir, "0.wav").isFile)
+        val one = sample()
+        val text = transcribe(ModelCatalog.WHISPER_BASE_EN, one + FloatArray(16_000 * 40) + one)
+        assertEquals(text, 2, Regex("yellow lamps").findAll(text.lowercase()).count())
+        assertTrue(text, !text.contains('(') && !text.contains('['))
+    }
 
     private fun assertHeardEveryRepeat(m: AsrModel) {
         val text = transcribe(m, times = 6)

@@ -107,7 +107,7 @@ Long-press the space bar to switch keyboards later.
 
 ## Emoji
 
-The emoji key opens every standard Unicode emoji (Emoji 18.0, 1,923 without
+The emoji key opens every standard Unicode emoji (Emoji 18.0, 1,922 without
 skin tones) in a recycled grid (`EmojiPanelView`, a `RecyclerView`): Recent
 first, then the nine Unicode groups, with a tab for each. The data is
 `app/src/main/assets/emoji/emoji.txt`, generated from Unicode and CLDR files
@@ -232,7 +232,10 @@ Stop ─▶ final text ─▶ VoiceCore.postProcess(raw, before, after)
   streaming model. Whisper and Moonshine get the recording in pieces of at
   most 25 s, cut at the quietest moment in the last 5 s before each limit:
   sherpa-onnx drops what Whisper hears after 30 s, and Moonshine repeats
-  itself on a 40 s recording. `deleteRetired` removes the folders of models that left
+  itself on a 40 s recording. A recording or piece whose loudest 30 ms is
+  below about -54 dBFS is not decoded (`isSilence`), and Whisper's
+  non-speech tags such as `[BLANK_AUDIO]` or `(buzzing)` are dropped
+  (`dropWhisperTags`): Whisper writes them, or "you", for silence. `deleteRetired` removes the folders of models that left
   the catalog (the Voice tab runs it). Its `download` blocks
   and reports progress, for the companion app to run on a background thread.
   `ramAdvisory` warns when the device has less RAM than a model wants.

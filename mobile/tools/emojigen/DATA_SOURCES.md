@@ -43,5 +43,5 @@ go run ./tools/emojigen -strict
 ```
 
 Two runs on the same inputs give a byte-identical file. The committed file:
-114,659 bytes, 1,923 emoji in 9 groups, 332 with skin tones; sha256
+114,659 bytes, 1,922 emoji in 9 groups, 332 with skin tones; sha256
 `ec39b73a15b69e39834bf8c2452949006372aefd5730ef687de24daa10f07441`.
