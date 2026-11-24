@@ -1,13 +1,5 @@
 package app.sayso.mobile.asr
 
-enum class AsrModelKind {
-    /** Decodes while you speak: gives live text, and the final text when no batch model is active. */
-    STREAMING,
-
-    /** Decodes the whole recording at the end: the final text. */
-    OFFLINE,
-}
-
 /** One file of a model, checked by size and sha256 after download. */
 data class ModelFile(val name: String, val url: String, val sizeBytes: Long, val sha256: String)
 
@@ -26,7 +18,6 @@ data class TransducerLayout(
 data class AsrModel(
     val id: String,
     val name: String,
-    val kind: AsrModelKind,
     /** BCP 47 language tags the model was trained on. */
     val languages: List<String>,
     val license: String,
@@ -43,7 +34,8 @@ data class AsrModel(
 }
 
 /**
- * The models the keyboard can download. They are never in the APK.
+ * The models the keyboard can download. They are never in the APK. Each one
+ * decodes the whole recording when the dictation ends.
  *
  * Files come from the sherpa-onnx project's Hugging Face repositories, pinned to
  * a commit so their content cannot change under the hashes. The Parakeet files
@@ -59,13 +51,10 @@ object ModelCatalog {
 
     private const val PARAKEET_REPO = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
     private const val PARAKEET_REV = "ed5d745623472f97cfc2e6c2916ee248798fc5a8"
-    private const val ZIPFORMER_REPO = "sherpa-onnx-streaming-zipformer-en-2023-06-26"
-    private const val ZIPFORMER_REV = "672fbf1b30579d6585301139bb363f42a0ad4a24"
 
     val PARAKEET_V3 = AsrModel(
         id = "parakeet-tdt-0.6b-v3-int8",
         name = "Parakeet TDT 0.6B v3",
-        kind = AsrModelKind.OFFLINE,
         languages = listOf(
             "bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "hr", "hu", "it",
             "lt", "lv", "mt", "nl", "pl", "pt", "ro", "ru", "sk", "sl", "sv", "uk",
@@ -81,29 +70,7 @@ object ModelCatalog {
         recommendedRamBytes = 6L shl 30,
     )
 
-    val ZIPFORMER_EN = AsrModel(
-        id = "zipformer-en-streaming-2023-06-26",
-        name = "Streaming Zipformer English",
-        kind = AsrModelKind.STREAMING,
-        languages = listOf("en"),
-        license = "Apache-2.0 (k2-fsa/icefall)",
-        files = listOf(
-            hf(ZIPFORMER_REPO, ZIPFORMER_REV, "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx", 71_083_163, "563fde436d16cf7607cf408cd6b30909819d03162652ef389c2450ced3f45ac1"),
-            hf(ZIPFORMER_REPO, ZIPFORMER_REV, "decoder-epoch-99-avg-1-chunk-16-left-128.onnx", 2_092_621, "7bf787f90b194b307e5a4ad6a34fadb4e748304c35f78a8d66358a05b13ee6ef"),
-            hf(ZIPFORMER_REPO, ZIPFORMER_REV, "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx", 259_335, "d944208d660d67c8d72cd2acaeac971fa5ceb8c80e76c1968148846fedd6e297"),
-            hf(ZIPFORMER_REPO, ZIPFORMER_REV, "tokens.txt", 5_048, "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb"),
-        ),
-        layout = TransducerLayout(
-            "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
-            "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
-            "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
-            "tokens.txt",
-            "zipformer2",
-        ),
-        recommendedRamBytes = 0,
-    )
-
-    val ALL: List<AsrModel> = listOf(PARAKEET_V3, ZIPFORMER_EN)
+    val ALL: List<AsrModel> = listOf(PARAKEET_V3)
 
     fun byId(id: String?): AsrModel? = ALL.firstOrNull { it.id == id }
 }

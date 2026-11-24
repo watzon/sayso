@@ -15,7 +15,7 @@ import android.os.RemoteException
 /**
  * The keyboard's side of [AsrService]. Binds on the first dictation, queues
  * messages until the service is connected, and unbinds after [IDLE_UNBIND_MS]
- * without a dictation, which frees the models' memory.
+ * without a dictation, which frees the model's memory.
  *
  * If the :asr process dies (a native crash, or the system killed it for
  * memory) the listener gets [Listener.onAsrError] with processDied = true,
@@ -24,7 +24,6 @@ import android.os.RemoteException
  */
 class AsrClient(context: Context, private val listener: Listener) {
     interface Listener {
-        fun onAsrPartial(session: Int, text: String)
         fun onAsrFinal(session: Int, text: String)
         fun onAsrError(session: Int, message: String, processDied: Boolean)
     }
@@ -39,7 +38,6 @@ class AsrClient(context: Context, private val listener: Listener) {
     private val incoming = Messenger(Handler(Looper.getMainLooper()) { msg ->
         val text = msg.data?.getString(AsrProtocol.TEXT).orEmpty()
         when (msg.what) {
-            AsrProtocol.PARTIAL -> listener.onAsrPartial(msg.arg1, text)
             AsrProtocol.FINAL -> listener.onAsrFinal(msg.arg1, text)
             AsrProtocol.ERROR -> listener.onAsrError(msg.arg1, text, processDied = false)
         }
@@ -69,7 +67,7 @@ class AsrClient(context: Context, private val listener: Listener) {
 
     private val idleUnbind = Runnable { unbind() }
 
-    fun start(session: Int, final: ModelOnDisk?, live: ModelOnDisk?) {
+    fun start(session: Int, model: ModelOnDisk) {
         main.removeCallbacks(idleUnbind)
         this.session = session
         if (!bound) {
@@ -79,7 +77,7 @@ class AsrClient(context: Context, private val listener: Listener) {
                 return
             }
         }
-        send(message(AsrProtocol.START, session).apply { data = AsrProtocol.startData(final, live) })
+        send(message(AsrProtocol.START, session).apply { data = AsrProtocol.startData(model) })
     }
 
     fun audio(session: Int, pcm: ShortArray) {

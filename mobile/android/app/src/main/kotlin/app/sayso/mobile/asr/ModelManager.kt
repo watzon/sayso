@@ -163,18 +163,26 @@ class ModelManager(
         if (updated != s) settings.save(updated)
     }
 
-    /** Makes an installed [model] the active model of its kind. False when it is not installed. */
+    /** Makes an installed [model] the active model. False when it is not installed. */
     fun setActive(model: AsrModel): Boolean {
         if (!isInstalled(model)) return false
         settings.save(settings.load().withActiveModel(model))
         return true
     }
 
-    /** The active models that are installed: the final-text model and the live-text model. */
-    fun activeModels(): ActiveModels {
-        val s = settings.load()
-        fun installed(id: String?) = catalog.firstOrNull { it.id == id }?.takeIf(::isInstalled)
-        return ActiveModels(final = installed(s.finalModelId), live = installed(s.liveModelId))
+    /** The active model when it is in the catalog and installed, else null. */
+    fun activeModel(): AsrModel? {
+        val id = settings.load().modelId
+        return catalog.firstOrNull { it.id == id }?.takeIf(::isInstalled)
+    }
+
+    /**
+     * Deletes the folders of models that are no longer in the catalog, such as
+     * a model an older version offered. Blocks: call it from a background thread.
+     */
+    fun deleteRetired() {
+        val known = catalog.map { it.id }.toSet()
+        root.listFiles()?.filter { it.isDirectory && it.name !in known }?.forEach { it.deleteRecursively() }
     }
 
     fun ramAdvisory(model: AsrModel, deviceTotalRamBytes: Long): RamAdvisory? =
@@ -215,10 +223,4 @@ class ModelManager(
             return info.totalMem
         }
     }
-}
-
-/** What the :asr process loads for a dictation. Either may be null. */
-data class ActiveModels(val final: AsrModel?, val live: AsrModel?) {
-    /** True when there is a local model to give the final text. */
-    val any: Boolean get() = final != null || live != null
 }

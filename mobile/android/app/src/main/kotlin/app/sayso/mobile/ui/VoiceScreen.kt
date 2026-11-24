@@ -28,6 +28,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -42,7 +43,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import app.sayso.mobile.asr.AsrModel
-import app.sayso.mobile.asr.AsrModelKind
 import app.sayso.mobile.asr.LOCAL_ASR_BUILT
 import app.sayso.mobile.asr.ModelManager
 import app.sayso.mobile.asr.ModelState
@@ -52,6 +52,8 @@ import app.sayso.mobile.engine.VoiceCore
 import app.sayso.mobile.settings.VoiceEngineChoice
 import app.sayso.mobile.settings.VoiceSettings
 import app.sayso.mobile.settings.VoiceSettingsStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun VoiceScreen(voice: VoiceCore) {
@@ -72,6 +74,10 @@ fun VoiceScreen(voice: VoiceCore) {
     OnResume {
         settings = store.load()
         diskTick++
+    }
+
+    LaunchedEffect(manager) {
+        withContext(Dispatchers.IO) { manager.deleteRetired() }
     }
 
     Column(
@@ -108,7 +114,7 @@ fun VoiceScreen(voice: VoiceCore) {
 
         if (LOCAL_ASR_BUILT) {
             Section("Models", "Downloaded once over the internet, then run on this phone.")
-            val active = remember(settings, diskTick) { manager.activeModels() }
+            val active = remember(settings, diskTick) { manager.activeModel() }
             for (model in manager.catalog) {
                 val download = ModelDownloads.status[model.id]
                 val state = remember(diskTick, download) { manager.state(model) }
@@ -116,16 +122,14 @@ fun VoiceScreen(voice: VoiceCore) {
                     model = model,
                     state = state,
                     download = download,
-                    active = model == active.final || model == active.live,
+                    active = model == active,
                     ramWarning = manager.ramAdvisory(model, deviceRam)?.let {
                         "This phone has ${formatRam(it.deviceRamBytes)} of memory; this model wants ${formatRam(model.recommendedRamBytes)}. It may be slow or stop."
                     },
                     onDownload = {
                         ModelDownloads.start(manager, model) {
-                            // The first model of its kind becomes the active one.
-                            val now = manager.activeModels()
-                            val noneOfKind = if (model.kind == AsrModelKind.OFFLINE) now.final == null else now.live == null
-                            if (noneOfKind) manager.setActive(model)
+                            // The first model downloaded becomes the active one.
+                            if (manager.activeModel() == null) manager.setActive(model)
                             settings = store.load()
                             diskTick++
                         }
@@ -245,7 +249,7 @@ private fun ModelCard(
                 Badge(badge)
             }
             Text(
-                "${modelRole(model)} · ${formatBytes(model.downloadBytes)}",
+                "${modelLanguages(model)} · ${formatBytes(model.downloadBytes)}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

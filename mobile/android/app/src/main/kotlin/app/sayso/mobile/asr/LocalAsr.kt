@@ -14,23 +14,19 @@ data class ModelOnDisk(val model: AsrModel, val dir: File) {
  */
 interface LocalAsr {
     /**
-     * Starts one utterance. Loads the models on first use and keeps them loaded
-     * for the next call with the same models. Throws when a model cannot load.
-     * [final] decodes the whole recording at the end; [live] decodes while you
-     * speak and gives the final text when [final] is null. At least one is set.
+     * Starts one utterance with [model], which decodes the whole recording at
+     * the end. Loads the model on first use and keeps it loaded for the next
+     * call with the same model. Throws when the model cannot load.
      */
-    fun open(final: ModelOnDisk?, live: ModelOnDisk?): AsrStream
+    fun open(model: ModelOnDisk): AsrStream
 
-    /** Frees every loaded model. */
+    /** Frees the loaded model. */
     fun release()
 }
 
 interface AsrStream {
     /** 16 kHz mono samples in [-1, 1]. */
     fun accept(samples: FloatArray)
-
-    /** The live text so far, or null when there is no live model. */
-    fun partial(): String?
 
     /** Ends the utterance and returns its text. */
     fun finish(): String

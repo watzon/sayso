@@ -13,8 +13,7 @@ import org.junit.Test
 class VoiceSettingsTest {
     private val full = VoiceSettings(
         engine = VoiceEngineChoice.CLOUD,
-        finalModelId = "parakeet",
-        liveModelId = "zipformer",
+        modelId = "parakeet",
         styleId = "email",
         handsFree = true,
         cloud = CloudConfig(
@@ -74,14 +73,20 @@ class VoiceSettingsTest {
     }
 
     @Test
-    fun activeModelsByKind() {
-        val s = VoiceSettings()
-            .withActiveModel(ModelCatalog.PARAKEET_V3)
-            .withActiveModel(ModelCatalog.ZIPFORMER_EN)
-        assertEquals(ModelCatalog.PARAKEET_V3.id, s.finalModelId)
-        assertEquals(ModelCatalog.ZIPFORMER_EN.id, s.liveModelId)
-        val dropped = s.withoutModel(ModelCatalog.PARAKEET_V3.id)
-        assertNull(dropped.finalModelId)
-        assertEquals(ModelCatalog.ZIPFORMER_EN.id, dropped.liveModelId)
+    fun oneActiveModel() {
+        val s = VoiceSettings().withActiveModel(ModelCatalog.PARAKEET_V3)
+        assertEquals(ModelCatalog.PARAKEET_V3.id, s.modelId)
+        assertEquals(s, s.withoutModel("other"))
+        assertNull(s.withoutModel(ModelCatalog.PARAKEET_V3.id).modelId)
+    }
+
+    @Test
+    fun anOlderInstallKeepsItsActiveModelAndDropsTheLiveOne() {
+        val s = VoiceSettingsCodec.decode(
+            mapOf("final_model" to ModelCatalog.PARAKEET_V3.id, "live_model" to "zipformer-en-streaming-2023-06-26"),
+            emptyMap(),
+        )
+        assertEquals(ModelCatalog.PARAKEET_V3.id, s.modelId)
+        assertFalse(VoiceSettingsCodec.encode(s).containsKey("live_model"))
     }
 }

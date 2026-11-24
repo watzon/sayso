@@ -164,11 +164,10 @@ with the field's action (send, search, go) and starts the next dictation.
 mic tap ─▶ VoiceController ── planEngines(choice, availability, field) ─▶ first engine
              │
              ├─ A local:  AudioRecord 16 kHz mono ─▶ AsrClient ═Messenger═▶ AsrService (:asr)
-             │                                                     sherpa-onnx: streaming model → live text
-             │                                                                  Parakeet       → final text
+             │                                                     sherpa-onnx: Parakeet → final text
              ├─ B system: SpeechRecognizer (on-device when available; records itself)
              └─ C cloud:  AudioRecord ─▶ VoiceCore.transcribeCloud (background)
-                          (also streams to :asr when a local model is active: live text and fallback)
+                          (also streams to :asr when a local model is active, as the fallback)
 Done ─▶ final text ─▶ VoiceCore.postProcess(raw, before, after)
                   ─▶ VoiceCore.enhance (background, 3 s, only for a style with a prompt and cloud Styles on)
                   ─▶ insert through EditorSession ─▶ Undo chip ─▶ VoiceCore.recordHistory
@@ -202,20 +201,20 @@ Done ─▶ final text ─▶ VoiceCore.postProcess(raw, before, after)
 - **Models.** `ModelCatalog` lists the downloadable models; none is in the
   APK. `ModelManager` downloads one file at a time into `noBackupFilesDir`,
   resumes with HTTP Range, checks each file's size and sha256 before it gets
-  its name, deletes, and sets the active model (`VoiceSettings.finalModelId`
-  for a batch model, `liveModelId` for a streaming one). Its `download` blocks
+  its name, deletes, and sets the active model (`VoiceSettings.modelId`).
+  Every model decodes the whole recording when the dictation ends; there is no
+  streaming model. `deleteRetired` removes the folders of models that left
+  the catalog (the Voice tab runs it). Its `download` blocks
   and reports progress, for the companion app to run on a background thread.
   `ramAdvisory` warns when the device has less RAM than a model wants.
 
 | Model | Role | Download | sha256 (per file in `ModelCatalog.kt`) | License |
 |---|---|---|---|---|
 | Parakeet TDT 0.6B v3 int8 | Final text, 25 European languages | 670.6 MB | encoder `1afbe69c…2c479` | CC BY 4.0 |
-| Streaming Zipformer English 2023-06-26 | Live text; final text when it is the only model | 73.4 MB | encoder `563fde43…45ac1` | Apache-2.0 |
 
 Parakeet wants a phone with 6 GB of RAM: loading it and decoding a 17 s clip
 peaked at about 2 GB on a Mac (sherpa-onnx 2.0.3, int8, 4 threads; not yet
-measured on a phone). Below 6 GB the app should offer the streaming model
-alone.
+measured on a phone). Below 6 GB the app shows a memory warning on its card.
 
 ## Developer Diagnostics
 

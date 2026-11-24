@@ -1,7 +1,6 @@
 package app.sayso.mobile.ui
 
 import app.sayso.mobile.asr.AsrModel
-import app.sayso.mobile.asr.AsrModelKind
 import app.sayso.mobile.asr.ModelState
 import app.sayso.mobile.engine.CloudAsrProvider
 import app.sayso.mobile.engine.CloudStyleProvider
@@ -49,16 +48,10 @@ fun formatBytes(bytes: Long): String = when {
 /** Device RAM in binary GB, the way phones advertise it. */
 fun formatRam(bytes: Long): String = String.format(Locale.US, "%.1f GB", bytes / (1L shl 30).toDouble())
 
-/** One line on what the model is for. */
-fun modelRole(model: AsrModel): String {
-    val role = when (model.kind) {
-        AsrModelKind.OFFLINE -> "Final text"
-        AsrModelKind.STREAMING -> "Live text while you speak"
-    }
-    val langs = if (model.languages.size == 1) Locale.forLanguageTag(model.languages[0]).getDisplayLanguage(Locale.US)
+/** One line on the languages the model knows. */
+fun modelLanguages(model: AsrModel): String =
+    if (model.languages.size == 1) Locale.forLanguageTag(model.languages[0]).getDisplayLanguage(Locale.US)
     else "${model.languages.size} languages"
-    return "$role · $langs"
-}
 
 /** The style the keyboard will use: [id] when it exists, else the first, as the keyboard resolves it. */
 fun effectiveStyleId(styles: List<VoiceStyle>, id: String): String? =

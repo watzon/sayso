@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import app.sayso.mobile.asr.AsrModel
-import app.sayso.mobile.asr.AsrModelKind
 import app.sayso.mobile.engine.CloudAsrProvider
 import app.sayso.mobile.engine.CloudConfig
 import app.sayso.mobile.engine.CloudStyleProvider
@@ -26,27 +25,18 @@ enum class VoiceEngineChoice {
 
 data class VoiceSettings(
     val engine: VoiceEngineChoice = VoiceEngineChoice.AUTO,
-    /** The local model for the final text (a batch model such as Parakeet), or null. */
-    val finalModelId: String? = null,
-    /** The local streaming model for live text while speaking, or null. */
-    val liveModelId: String? = null,
+    /** The local model that transcribes a dictation, or null. */
+    val modelId: String? = null,
     val styleId: String = DEFAULT_STYLE,
     /** Done sends (the field's action) and starts the next dictation. */
     val handsFree: Boolean = false,
     /** Cloud transcription and Styles. Keys live in a separate private file. */
     val cloud: CloudConfig = CloudConfig.OFF,
 ) {
-    /** Makes [model] the active model for its kind. */
-    fun withActiveModel(model: AsrModel): VoiceSettings = when (model.kind) {
-        AsrModelKind.OFFLINE -> copy(finalModelId = model.id)
-        AsrModelKind.STREAMING -> copy(liveModelId = model.id)
-    }
+    fun withActiveModel(model: AsrModel): VoiceSettings = copy(modelId = model.id)
 
-    /** Drops [modelId] wherever it is active, for when the model is deleted. */
-    fun withoutModel(modelId: String): VoiceSettings = copy(
-        finalModelId = finalModelId.takeUnless { it == modelId },
-        liveModelId = liveModelId.takeUnless { it == modelId },
-    )
+    /** Drops [id] when it is the active model, for when the model is deleted. */
+    fun withoutModel(id: String): VoiceSettings = copy(modelId = modelId.takeUnless { it == id })
 
     val cloudAsrConfigured: Boolean
         get() = when (cloud.asrProvider) {
@@ -74,8 +64,7 @@ interface VoiceSettingsRepository {
  */
 object VoiceSettingsCodec {
     private const val ENGINE = "engine"
-    private const val FINAL_MODEL = "final_model"
-    private const val LIVE_MODEL = "live_model"
+    private const val MODEL = "final_model"
     private const val STYLE = "style"
     private const val HANDS_FREE = "hands_free"
     private const val ASR_PROVIDER = "cloud_asr_provider"
@@ -89,8 +78,7 @@ object VoiceSettingsCodec {
 
     fun encode(s: VoiceSettings): Map<String, String> = buildMap {
         put(ENGINE, s.engine.name)
-        s.finalModelId?.let { put(FINAL_MODEL, it) }
-        s.liveModelId?.let { put(LIVE_MODEL, it) }
+        s.modelId?.let { put(MODEL, it) }
         put(STYLE, s.styleId)
         put(HANDS_FREE, s.handsFree.toString())
         put(ASR_PROVIDER, s.cloud.asrProvider.name)
@@ -110,8 +98,7 @@ object VoiceSettingsCodec {
         val d = VoiceSettings()
         return VoiceSettings(
             engine = enumOr(values[ENGINE], d.engine),
-            finalModelId = values[FINAL_MODEL]?.takeIf { it.isNotEmpty() },
-            liveModelId = values[LIVE_MODEL]?.takeIf { it.isNotEmpty() },
+            modelId = values[MODEL]?.takeIf { it.isNotEmpty() },
             styleId = values[STYLE]?.takeIf { it.isNotEmpty() } ?: d.styleId,
             handsFree = values[HANDS_FREE]?.toBooleanStrictOrNull() ?: d.handsFree,
             cloud = CloudConfig(

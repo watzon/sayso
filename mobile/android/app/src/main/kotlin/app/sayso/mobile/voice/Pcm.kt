@@ -57,8 +57,7 @@ class PcmBuffer(private val maxSamples: Int) {
 }
 
 /**
- * Some models (the streaming Zipformer) write in capitals with no
- * punctuation. Lowercases such text, capitalizes the first letter, and
+ * Some models write in capitals with no punctuation. Lowercases such text, capitalizes the first letter, and
  * writes the pronoun "I" in capitals; VoiceCore.postProcess does the rest.
  * Text with any lowercase letter is returned as it is.
  */

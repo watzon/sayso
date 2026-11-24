@@ -20,7 +20,7 @@ import java.io.File
  * drops audio for any session but the current one.
  */
 internal object AsrProtocol {
-    /** Keyboard to service. Data: the model ids and folders, see [models]. */
+    /** Keyboard to service. Data: the model id and folder, see [model]. */
     const val START = 1
 
     /** Data: [PCM], a ShortArray of 16 kHz mono samples. */
@@ -29,7 +29,6 @@ internal object AsrProtocol {
     const val CANCEL = 4
 
     /** Service to keyboard. Data: [TEXT]. */
-    const val PARTIAL = 10
     const val FINAL = 11
 
     /** Data: [TEXT], the reason. */
@@ -37,30 +36,25 @@ internal object AsrProtocol {
 
     const val PCM = "pcm"
     const val TEXT = "text"
-    private const val FINAL_ID = "final_id"
-    private const val FINAL_DIR = "final_dir"
-    private const val LIVE_ID = "live_id"
-    private const val LIVE_DIR = "live_dir"
+    private const val MODEL_ID = "model_id"
+    private const val MODEL_DIR = "model_dir"
 
-    fun startData(final: ModelOnDisk?, live: ModelOnDisk?) = Bundle().apply {
-        final?.let { putString(FINAL_ID, it.model.id); putString(FINAL_DIR, it.dir.absolutePath) }
-        live?.let { putString(LIVE_ID, it.model.id); putString(LIVE_DIR, it.dir.absolutePath) }
+    fun startData(model: ModelOnDisk) = Bundle().apply {
+        putString(MODEL_ID, model.model.id)
+        putString(MODEL_DIR, model.dir.absolutePath)
     }
 
-    /** The models of a [START] message: the final model and the live model. */
-    fun models(data: Bundle): Pair<ModelOnDisk?, ModelOnDisk?> {
-        fun read(idKey: String, dirKey: String): ModelOnDisk? {
-            val model = ModelCatalog.byId(data.getString(idKey)) ?: return null
-            val dir = data.getString(dirKey) ?: return null
-            return ModelOnDisk(model, File(dir))
-        }
-        return read(FINAL_ID, FINAL_DIR) to read(LIVE_ID, LIVE_DIR)
+    /** The model of a [START] message, or null when it is not in the catalog. */
+    fun model(data: Bundle): ModelOnDisk? {
+        val model = ModelCatalog.byId(data.getString(MODEL_ID)) ?: return null
+        val dir = data.getString(MODEL_DIR) ?: return null
+        return ModelOnDisk(model, File(dir))
     }
 }
 
 /**
  * Hosts local speech recognition in its own process (android:process=":asr").
- * Models load on the first dictation and stay loaded while the keyboard keeps
+ * The model loads on the first dictation and stays loaded while the keyboard keeps
  * the service bound. All work runs on one background thread, in message order.
  */
 class AsrService : Service() {
@@ -70,7 +64,6 @@ class AsrService : Service() {
     private var stream: AsrStream? = null
     private var session = 0
     private var client: Messenger? = null
-    private var lastPartial = ""
 
     override fun onCreate() {
         super.onCreate()
@@ -104,12 +97,11 @@ class AsrService : Service() {
         closeStream()
         session = msg.arg1
         client = msg.replyTo
-        lastPartial = ""
-        val (final, live) = AsrProtocol.models(msg.data)
+        val model = AsrProtocol.model(msg.data)
         try {
             val engine = asr ?: createLocalAsr()?.also { asr = it } ?: return reply(AsrProtocol.ERROR, "This build has no local speech engine")
-            if (final == null && live == null) return reply(AsrProtocol.ERROR, "No local model is installed")
-            stream = engine.open(final, live)
+            if (model == null) return reply(AsrProtocol.ERROR, "No local model is installed")
+            stream = engine.open(model)
         } catch (e: Throwable) {
             // Includes OutOfMemoryError: a model too big for this device must not kill the process.
             Log.w(TAG, "model load failed", e)
@@ -122,11 +114,6 @@ class AsrService : Service() {
         val s = stream ?: return
         try {
             s.accept(Pcm.toFloats(pcm))
-            val text = s.partial()?.let(::normalizeTranscript) ?: return
-            if (text != lastPartial) {
-                lastPartial = text
-                reply(AsrProtocol.PARTIAL, text)
-            }
         } catch (e: Throwable) {
             Log.w(TAG, "decode failed", e)
             closeStream()

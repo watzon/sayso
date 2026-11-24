@@ -49,16 +49,15 @@ class VoiceOptionsTest {
     @Test
     fun sizesMatchTheReadme() {
         assertEquals("670.6 MB", formatBytes(ModelCatalog.PARAKEET_V3.downloadBytes))
-        assertEquals("73.4 MB", formatBytes(ModelCatalog.ZIPFORMER_EN.downloadBytes))
         assertEquals("1.50 GB", formatBytes(1_500_000_000))
         assertEquals("6 KB", formatBytes(5_048))
         assertEquals("6.0 GB", formatRam(6L shl 30))
     }
 
     @Test
-    fun roles() {
-        assertEquals("Final text · 25 languages", modelRole(ModelCatalog.PARAKEET_V3))
-        assertEquals("Live text while you speak · English", modelRole(ModelCatalog.ZIPFORMER_EN))
+    fun languages() {
+        assertEquals("25 languages", modelLanguages(ModelCatalog.PARAKEET_V3))
+        assertEquals("English", modelLanguages(ModelCatalog.PARAKEET_V3.copy(languages = listOf("en"))))
     }
 
     @Test

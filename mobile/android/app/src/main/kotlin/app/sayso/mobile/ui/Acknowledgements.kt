@@ -79,11 +79,6 @@ fun Acknowledgements() {
                 "the sherpa-onnx project.",
             style = body,
         )
-        Text(
-            "Streaming Zipformer English (sherpa-onnx-streaming-zipformer-en-2023-06-26) by the k2-fsa " +
-                "icefall project, licensed under the Apache License 2.0.",
-            style = body,
-        )
         if (speechLicenses != null) {
             TextButton(onClick = { showSpeechLicenses = !showSpeechLicenses }) {
                 Text(if (showSpeechLicenses) "Hide the sherpa-onnx and ONNX Runtime licenses" else "Show the sherpa-onnx and ONNX Runtime licenses")

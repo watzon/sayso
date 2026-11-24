@@ -56,10 +56,9 @@ class ModelManagerTest {
     private val fetcher = FakeFetcher(mapOf("https://m/enc" to big, "https://m/tok" to small))
     private val settings = MemorySettings()
 
-    private fun model(encSha: String = sha(big), kind: AsrModelKind = AsrModelKind.OFFLINE, id: String = "m") = AsrModel(
+    private fun model(encSha: String = sha(big), id: String = "m") = AsrModel(
         id = id,
         name = "M",
-        kind = kind,
         languages = listOf("en"),
         license = "test",
         files = listOf(
@@ -162,19 +161,42 @@ class ModelManagerTest {
     }
 
     @Test
-    fun setActiveNeedsAnInstalledModelAndPicksTheRoleByKind() {
-        val final = model(id = "final")
-        val live = model(id = "live", kind = AsrModelKind.STREAMING)
-        val mm = manager(final, live)
-        assertFalse(mm.setActive(final))
-        assertNull(settings.value.finalModelId)
-        mm.download(final)
-        mm.download(live)
-        assertTrue(mm.setActive(final))
-        assertTrue(mm.setActive(live))
-        assertEquals("final", settings.value.finalModelId)
-        assertEquals("live", settings.value.liveModelId)
-        assertEquals(ActiveModels(final, live), mm.activeModels())
+    fun setActiveNeedsAnInstalledModelAndReplacesTheActiveOne() {
+        val first = model(id = "first")
+        val second = model(id = "second")
+        val mm = manager(first, second)
+        assertFalse(mm.setActive(first))
+        assertNull(settings.value.modelId)
+        mm.download(first)
+        mm.download(second)
+        assertTrue(mm.setActive(first))
+        assertEquals(first, mm.activeModel())
+        assertTrue(mm.setActive(second))
+        assertEquals("second", settings.value.modelId)
+        assertEquals(second, mm.activeModel())
+    }
+
+    @Test
+    fun anActiveIdOutsideTheCatalogIsNotActive() {
+        val m = model()
+        val mm = manager(m)
+        mm.download(m)
+        settings.value = VoiceSettings(modelId = "zipformer-en-streaming-2023-06-26")
+        assertNull(mm.activeModel())
+    }
+
+    @Test
+    fun deleteRetiredKeepsCatalogModelsAndRemovesTheRest() {
+        val m = model()
+        val mm = manager(m)
+        mm.download(m)
+        val retired = File(root, "zipformer-en-streaming-2023-06-26").apply { mkdirs() }
+        File(retired, "encoder.onnx").writeBytes(small)
+        val stray = File(root, "notes.txt").apply { writeText("x") }
+        mm.deleteRetired()
+        assertFalse(retired.exists())
+        assertTrue(stray.exists())
+        assertTrue(mm.isInstalled(m))
     }
 
     @Test
@@ -185,8 +207,8 @@ class ModelManagerTest {
         mm.setActive(m)
         mm.delete(m)
         assertFalse(mm.modelDir(m).exists())
-        assertNull(settings.value.finalModelId)
-        assertEquals(ActiveModels(null, null), mm.activeModels())
+        assertNull(settings.value.modelId)
+        assertNull(mm.activeModel())
     }
 
     @Test
@@ -196,7 +218,7 @@ class ModelManagerTest {
         mm.download(m)
         mm.setActive(m)
         File(mm.modelDir(m), "tokens.txt").delete()
-        assertFalse(mm.activeModels().any)
+        assertNull(mm.activeModel())
     }
 
     @Test
@@ -207,7 +229,7 @@ class ModelManagerTest {
         assertNull(mm.ramAdvisory(parakeet, 5_500_000_000)) // a 6 GB phone's totalMem
         assertNull(mm.ramAdvisory(parakeet, 8 * gb))
         assertEquals(RamAdvisory(parakeet, 4 * gb), mm.ramAdvisory(parakeet, 4 * gb))
-        assertNull(mm.ramAdvisory(ModelCatalog.ZIPFORMER_EN, 2 * gb))
+        assertNull(mm.ramAdvisory(model(), 2 * gb))
     }
 }
 
@@ -230,10 +252,10 @@ class ModelCatalogTest {
     }
 
     @Test
-    fun theCatalogHasAFinalModelAndASmallStreamingModel() {
-        assertEquals(AsrModelKind.OFFLINE, ModelCatalog.PARAKEET_V3.kind)
-        assertEquals(AsrModelKind.STREAMING, ModelCatalog.ZIPFORMER_EN.kind)
-        assertTrue(ModelCatalog.ZIPFORMER_EN.downloadBytes < 100_000_000)
+    fun theCatalogHasParakeetAndNoStreamingZipformer() {
         assertEquals(6L shl 30, ModelCatalog.PARAKEET_V3.recommendedRamBytes)
+        assertTrue(ModelCatalog.PARAKEET_V3 in ModelCatalog.ALL)
+        assertNull(ModelCatalog.byId("zipformer-en-streaming-2023-06-26"))
+        assertTrue(ModelCatalog.ALL.none { it.id.contains("streaming") || it.layout.modelType == "zipformer2" })
     }
 }

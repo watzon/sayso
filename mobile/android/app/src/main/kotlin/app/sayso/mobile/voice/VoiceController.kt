@@ -7,7 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
-import app.sayso.mobile.asr.ActiveModels
+import app.sayso.mobile.asr.AsrModel
 import app.sayso.mobile.asr.AsrClient
 import app.sayso.mobile.asr.LOCAL_ASR_BUILT
 import app.sayso.mobile.asr.ModelManager
@@ -84,7 +84,7 @@ class VoiceController(context: Context, private val host: VoiceHost) {
     private var policy = VoicePolicy(sensitive = false)
     private var imeAction = ImeAction.NEWLINE
     private var plan: List<VoiceEngine> = emptyList()
-    private var active = ActiveModels(null, null)
+    private var active: AsrModel? = null
     private var streamingToAsr = false
     private var sendAfterInsert = false
     private val buffer = PcmBuffer(maxSamples = (VoiceMachine.MAX_RECORDING_MS / 1000 * Pcm.SAMPLE_RATE).toInt())
@@ -100,10 +100,6 @@ class VoiceController(context: Context, private val host: VoiceHost) {
     private var system: SystemRecognizer? = null
 
     private val asr = AsrClient(context, object : AsrClient.Listener {
-        override fun onAsrPartial(session: Int, text: String) {
-            if (machine.partial(session, text)) host.onVoiceChanged()
-        }
-
         override fun onAsrFinal(session: Int, text: String) {
             main.removeCallbacks(finalTimeout)
             onTranscript(session, text)
@@ -161,9 +157,9 @@ class VoiceController(context: Context, private val host: VoiceHost) {
         undo.clear()
         // Only Done sends; a dictation the system recognizer ends by itself does not.
         sendAfterInsert = false
-        active = models.activeModels()
+        active = models.activeModel()
         val available = EngineAvailability(
-            local = LOCAL_ASR_BUILT && active.any && now() >= localBrokenUntilMs,
+            local = LOCAL_ASR_BUILT && active != null && now() >= localBrokenUntilMs,
             system = SystemRecognizer.available(context),
             cloud = settings.cloudAsrConfigured,
         )
@@ -187,17 +183,16 @@ class VoiceController(context: Context, private val host: VoiceHost) {
         when (engine) {
             VoiceEngine.LOCAL, VoiceEngine.CLOUD -> {
                 if (!capture.start()) return onMicUnavailable(session, engine)
-                // Cloud also streams to the local engine when there is one: live text, and the fallback.
-                if (engine == VoiceEngine.LOCAL || (VoiceEngine.LOCAL in plan)) {
+                // Cloud also streams to the local engine when there is one, as its fallback.
+                val model = active
+                if (model != null && (engine == VoiceEngine.LOCAL || VoiceEngine.LOCAL in plan)) {
                     streamingToAsr = true
-                    asr.start(session, active.final?.let(::onDisk), active.live?.let(::onDisk))
+                    asr.start(session, ModelOnDisk(model, models.modelDir(model)))
                 }
             }
             VoiceEngine.SYSTEM -> startSystem(session)
         }
     }
-
-    private fun onDisk(m: app.sayso.mobile.asr.AsrModel) = ModelOnDisk(m, models.modelDir(m))
 
     private fun startSystem(session: Int) {
         system?.cancel()
@@ -283,7 +278,7 @@ class VoiceController(context: Context, private val host: VoiceHost) {
         when (val s = machine.state) {
             is VoiceState.Listening -> {
                 if (s.session != session) return
-                if (s.engine == VoiceEngine.CLOUD) return // the local engine only gave live text
+                if (s.engine == VoiceEngine.CLOUD) return // the local engine was only the fallback
                 val next = fallbackAfter(VoiceEngine.LOCAL, plan)
                 if (next == VoiceEngine.SYSTEM) {
                     // SpeechRecognizer records the microphone itself: release ours first.
