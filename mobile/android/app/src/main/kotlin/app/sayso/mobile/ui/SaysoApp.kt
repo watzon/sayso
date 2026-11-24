@@ -39,7 +39,7 @@ fun SaysoApp(
     var settings by remember { mutableStateOf(store.load()) }
     val voice = remember { createVoiceCore(context) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    SaysoTheme(settings.theme) {
+    SaysoTheme {
         Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
             // Edge-to-edge windows no longer resize for the keyboard: shrink for it here,
             // less the navigation bar the Scaffold padding already covers.

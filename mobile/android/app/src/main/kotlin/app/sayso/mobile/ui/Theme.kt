@@ -8,7 +8,6 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
-import app.sayso.mobile.settings.ThemeMode
 
 // The Sumi ink palette of the desktop app (internal/theme/ink.go).
 private val WarmPaper = lightColorScheme(
@@ -68,12 +67,8 @@ private val CrispInk = darkColorScheme(
 )
 
 @Composable
-fun SaysoTheme(mode: ThemeMode, content: @Composable () -> Unit) {
-    val dark = when (mode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
+fun SaysoTheme(content: @Composable () -> Unit) {
+    val dark = isSystemInDarkTheme()
     val base = Typography()
     // Serif headings stand in for the website's Fraunces; the fonts are not bundled.
     val typography = base.copy(

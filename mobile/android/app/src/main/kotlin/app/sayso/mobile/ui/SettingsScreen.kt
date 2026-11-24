@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import app.sayso.mobile.engine.AutocorrectMode
 import app.sayso.mobile.settings.KeyboardSettings
-import app.sayso.mobile.settings.ThemeMode
 
 @Composable
 fun SettingsScreen(settings: KeyboardSettings, onChange: (KeyboardSettings) -> Unit, onResetLearned: () -> Unit) {
@@ -51,13 +50,6 @@ fun SettingsScreen(settings: KeyboardSettings, onChange: (KeyboardSettings) -> U
         Toggle("Next-word prediction", "Suggest a word after you finish one.", settings.nextWordPrediction) {
             onChange(settings.copy(nextWordPrediction = it))
         }
-        Choice(
-            title = "Theme",
-            hint = null,
-            options = ThemeMode.entries,
-            selected = settings.theme,
-            label = { it.name.lowercase().replaceFirstChar(Char::uppercaseChar) },
-        ) { onChange(settings.copy(theme = it)) }
         Toggle(
             "Developer diagnostics",
             "Draw hit targets and learned offsets on the keyboard, with candidate scores above it.",

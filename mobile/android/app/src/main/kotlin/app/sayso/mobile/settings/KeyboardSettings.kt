@@ -6,13 +6,10 @@ import androidx.core.content.edit
 import app.sayso.mobile.engine.AutocorrectMode
 import app.sayso.mobile.engine.EnginePreferences
 
-enum class ThemeMode { SYSTEM, LIGHT, DARK }
-
 data class KeyboardSettings(
     val haptics: Boolean = true,
     val autocorrect: AutocorrectMode = AutocorrectMode.NORMAL,
     val nextWordPrediction: Boolean = true,
-    val theme: ThemeMode = ThemeMode.SYSTEM,
     val diagnostics: Boolean = false,
 ) {
     fun enginePreferences() = EnginePreferences(autocorrect, nextWordPrediction)
@@ -28,7 +25,6 @@ class KeyboardSettingsStore(context: Context) {
             haptics = prefs.getBoolean(HAPTICS, defaults.haptics),
             autocorrect = enumOr(prefs.getString(AUTOCORRECT, null), defaults.autocorrect),
             nextWordPrediction = prefs.getBoolean(NEXT_WORD, defaults.nextWordPrediction),
-            theme = enumOr(prefs.getString(THEME, null), defaults.theme),
             diagnostics = prefs.getBoolean(DIAGNOSTICS, defaults.diagnostics),
         )
     }
@@ -38,7 +34,6 @@ class KeyboardSettingsStore(context: Context) {
             putBoolean(HAPTICS, settings.haptics)
             putString(AUTOCORRECT, settings.autocorrect.name)
             putBoolean(NEXT_WORD, settings.nextWordPrediction)
-            putString(THEME, settings.theme.name)
             putBoolean(DIAGNOSTICS, settings.diagnostics)
         }
     }
@@ -50,7 +45,6 @@ class KeyboardSettingsStore(context: Context) {
         const val HAPTICS = "haptics"
         const val AUTOCORRECT = "autocorrect"
         const val NEXT_WORD = "next_word_prediction"
-        const val THEME = "theme"
         const val DIAGNOSTICS = "developer_diagnostics"
     }
 }

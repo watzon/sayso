@@ -149,14 +149,6 @@ fun VoiceScreen(voice: VoiceCore) {
             }
         }
 
-        Section("Style", "How the text is cleaned up. Styles that rewrite text need a cloud style provider.")
-        val selectedStyle = effectiveStyleId(styles, settings.styleId)
-        Column(Modifier.selectableGroup()) {
-            for (style in styles) {
-                EngineOption(style.name, null, style.id == selectedStyle) { update { it.copy(styleId = style.id) } }
-            }
-        }
-
         Row(
             Modifier.fillMaxWidth().toggleable(
                 value = settings.handsFree,
@@ -203,6 +195,17 @@ fun VoiceScreen(voice: VoiceCore) {
             onProvider = { p -> update { it.copy(cloud = it.cloud.copy(styleProvider = p)) } },
             onChange = { key, url, m -> update { it.copy(cloud = it.cloud.copy(styleApiKey = key, styleBaseUrl = url, styleModel = m)) } },
         )
+
+        // Without a style provider no style can rewrite text, so there is nothing to pick.
+        if (settings.cloud.styleProvider != CloudStyleProvider.OFF) {
+            Section("Style", "How your style provider rewrites a dictation. Never used in password or private fields.")
+            val selectedStyle = effectiveStyleId(styles, settings.styleId)
+            Column(Modifier.selectableGroup()) {
+                for (style in styles) {
+                    EngineOption(style.name, null, style.id == selectedStyle) { update { it.copy(styleId = style.id) } }
+                }
+            }
+        }
     }
 }
 

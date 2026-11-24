@@ -4,7 +4,9 @@ import android.text.InputType
 import android.view.inputmethod.EditorInfo
 import app.sayso.mobile.engine.CloudAsrProvider
 import app.sayso.mobile.engine.CloudConfig
+import app.sayso.mobile.engine.CloudStyleProvider
 import app.sayso.mobile.engine.CommitAction
+import app.sayso.mobile.engine.VoiceStyle
 import app.sayso.mobile.keyboard.ImeAction
 import app.sayso.mobile.keyboard.editorFlagsFor
 import app.sayso.mobile.settings.VoiceEngineChoice
@@ -165,5 +167,18 @@ class PcmTest {
         assertEquals("Already mixed Case", normalizeTranscript("Already mixed Case"))
         assertEquals("", normalizeTranscript("   "))
         assertEquals("123", normalizeTranscript("123"))
+    }
+
+    @Test
+    fun aStyleAppliesOnlyWithAPromptAndACloudStyleProvider() {
+        val email = VoiceStyle("email", "Email", "Write an email.", builtIn = true)
+        val raw = VoiceStyle("raw", "Raw", "", builtIn = true)
+        val styles = CloudConfig(styleProvider = CloudStyleProvider.ANTHROPIC, styleApiKey = "k")
+        assertTrue(styleApplies(email, styles))
+        assertFalse(styleApplies(email, CloudConfig.OFF))
+        assertFalse(styleApplies(raw, styles))
+        assertFalse(styleApplies(null, styles))
+        val private = VoicePolicy(sensitive = true).cloudConfig(VoiceSettings(cloud = styles))
+        assertFalse("never in a private field", styleApplies(email, private))
     }
 }

@@ -131,17 +131,20 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
             this,
             voice,
             onCancel = voice::cancel,
-            onDone = voice::done,
+            onStop = voice::done,
             onRetry = { voice.micTapped(flags, imeAction) },
-            onHandsFree = voice::toggleHandsFree,
         )
         voiceBar = bar
 
+        // The dictation strip covers the suggestions only; the keys stay usable below it.
+        val top = FrameLayout(this).apply {
+            addView(strip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
         val keys = FrameLayout(this).apply {
             clipChildren = false
             addView(keyboardView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             addView(emojiPanel, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
-            addView(bar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0))
         }
         emojiPanel.visibility = View.GONE
         bar.visibility = View.GONE
@@ -149,7 +152,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
             addView(diagnosticsPanel)
-            addView(strip)
+            addView(top)
             addView(keys)
         }
         ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
@@ -182,7 +185,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         engine.setEditorFlags(flags)
         engine.setPreferences(settings.enginePreferences())
 
-        applyPalette(KeyboardPalette.resolve(settings.theme, resources.configuration))
+        applyPalette(KeyboardPalette.forUiMode(resources.configuration.uiMode))
         keyboardView.hapticsEnabled = settings.haptics
         keyboardView.enterLabel = imeAction.label
         keyboardView.mode = initialMode(flags)
@@ -344,19 +347,10 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         afterEdit()
     }
 
-    /** Shows the voice bar in place of the keys while a dictation runs or its error shows. */
+    /** Shows the dictation strip over the suggestions while a dictation runs or its error shows. */
     private fun showVoice() {
         val bar = voiceBar ?: return
-        val show = voice.machine.state != VoiceState.Idle
-        if (show && bar.visibility != View.VISIBLE) {
-            showEmoji(false)
-            bar.layoutParams = bar.layoutParams.apply { height = keyboardView.height }
-            bar.visibility = View.VISIBLE
-            keyboardView.visibility = View.INVISIBLE
-        } else if (!show && bar.visibility == View.VISIBLE) {
-            bar.visibility = View.GONE
-            keyboardView.visibility = View.VISIBLE
-        }
+        bar.visibility = if (voice.machine.state != VoiceState.Idle) View.VISIBLE else View.GONE
         bar.invalidate()
         strip.micActive = voice.machine.active
         refreshStrip()

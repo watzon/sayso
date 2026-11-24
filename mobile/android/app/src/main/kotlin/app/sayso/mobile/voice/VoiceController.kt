@@ -13,7 +13,6 @@ import app.sayso.mobile.asr.LOCAL_ASR_BUILT
 import app.sayso.mobile.asr.ModelManager
 import app.sayso.mobile.asr.ModelOnDisk
 import app.sayso.mobile.engine.CloudConfig
-import app.sayso.mobile.engine.CloudStyleProvider
 import app.sayso.mobile.engine.EditorFlags
 import app.sayso.mobile.engine.VoiceCore
 import app.sayso.mobile.engine.VoiceHistoryEntry
@@ -120,8 +119,9 @@ class VoiceController(context: Context, private val host: VoiceHost) {
             else -> ""
         }
 
+    /** The style that will rewrite this dictation, or empty when none will. */
     val styleLabel: String
-        get() = activeStyle()?.name.orEmpty()
+        get() = activeStyle()?.takeIf { styleApplies(it, policy.cloudConfig(settings)) }?.name.orEmpty()
 
     /** The style in the settings, or the first style when that one is gone (or the core has another set). */
     private fun activeStyle(): VoiceStyle? {
@@ -322,7 +322,7 @@ class VoiceController(context: Context, private val host: VoiceHost) {
         )
         val cloud = policy.cloudConfig(settings)
         host.onVoiceChanged()
-        if (style == null || style.prompt.isBlank() || cloud.styleProvider == CloudStyleProvider.OFF) {
+        if (style == null || !styleApplies(style, cloud)) {
             insert(session, text, record)
             return
         }
@@ -363,12 +363,6 @@ class VoiceController(context: Context, private val host: VoiceHost) {
         if (machine.state == VoiceState.Idle) return
         machine.cancel()
         stopEverything()
-        host.onVoiceChanged()
-    }
-
-    fun toggleHandsFree() {
-        handsFree = !handsFree
-        settingsStore.update { it.copy(handsFree = handsFree) }
         host.onVoiceChanged()
     }
 

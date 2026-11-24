@@ -153,12 +153,19 @@ through the real JNI glue on the JVM.
 
 ## Voice
 
-The mic at the right of the suggestion strip starts a dictation. The keys
-give way to the voice bar: the engine and the style, the time, a waveform of
-the microphone level, the live text, Cancel (×), Hands-free, and Done (✓).
-Done inserts the text; an Undo chip in the strip then removes exactly that
-text, while it is still before the cursor. With Hands-free on, Done also sends
-with the field's action (send, search, go) and starts the next dictation.
+The mic at the right of the suggestion strip starts a dictation. The
+dictation strip (`VoiceBarView`, laid out by `VoiceStrip`) then covers the
+suggestions, and the keys stay on screen: Cancel (×) at the left, a waveform
+of the microphone level with the time, and Stop (■) at the right. After Stop
+it reads "Transcribing…" (or "Applying <style>…" when a cloud style rewrites
+the text); after an error it shows the message and Retry. The text is
+inserted when it is ready; an Undo chip in the strip then removes exactly that
+text, while it is still before the cursor. With Hands-free on (Voice tab),
+Stop also sends with the field's action (send, search, go) and starts the
+next dictation.
+
+The Voice tab lists the styles only once a cloud Styles provider is set up;
+without one no style can rewrite text, and the strip names none.
 
 ```
 mic tap ─▶ VoiceController ── planEngines(choice, availability, field) ─▶ first engine
@@ -168,7 +175,7 @@ mic tap ─▶ VoiceController ── planEngines(choice, availability, field) �
              ├─ B system: SpeechRecognizer (on-device when available; records itself)
              └─ C cloud:  AudioRecord ─▶ VoiceCore.transcribeCloud (background)
                           (also streams to :asr when a local model is active, as the fallback)
-Done ─▶ final text ─▶ VoiceCore.postProcess(raw, before, after)
+Stop ─▶ final text ─▶ VoiceCore.postProcess(raw, before, after)
                   ─▶ VoiceCore.enhance (background, 3 s, only for a style with a prompt and cloud Styles on)
                   ─▶ insert through EditorSession ─▶ Undo chip ─▶ VoiceCore.recordHistory
 ```

@@ -1,7 +1,6 @@
 package app.sayso.mobile.ime
 
 import android.content.res.Configuration
-import app.sayso.mobile.settings.ThemeMode
 
 /** The Sumi ink palette of the desktop app (internal/theme/ink.go), as ARGB ints. */
 data class KeyboardPalette(
@@ -54,11 +53,8 @@ data class KeyboardPalette(
             success = 0xFF8FB98A.toInt(),
         )
 
-        fun resolve(mode: ThemeMode, configuration: Configuration): KeyboardPalette = when (mode) {
-            ThemeMode.LIGHT -> LIGHT
-            ThemeMode.DARK -> DARK
-            ThemeMode.SYSTEM ->
-                if (configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) DARK else LIGHT
-        }
+        /** The palette for the system's light or dark mode, given Configuration.uiMode. */
+        fun forUiMode(uiMode: Int): KeyboardPalette =
+            if (uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) DARK else LIGHT
     }
 }

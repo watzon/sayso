@@ -1,8 +1,10 @@
 package app.sayso.mobile.voice
 
 import app.sayso.mobile.engine.CloudConfig
+import app.sayso.mobile.engine.CloudStyleProvider
 import app.sayso.mobile.engine.CommitAction
 import app.sayso.mobile.engine.EditorFlags
+import app.sayso.mobile.engine.VoiceStyle
 import app.sayso.mobile.keyboard.ImeAction
 import app.sayso.mobile.settings.VoiceEngineChoice
 import app.sayso.mobile.settings.VoiceSettings
@@ -57,6 +59,14 @@ fun planEngines(choice: VoiceEngineChoice, available: EngineAvailability, policy
 /** The engine after [failed] in [plan], or null when none is left. */
 fun fallbackAfter(failed: VoiceEngine, plan: List<VoiceEngine>): VoiceEngine? =
     plan.dropWhile { it != failed }.drop(1).firstOrNull()
+
+/**
+ * True when [style] rewrites the text: it has a prompt and [cloud] (already
+ * passed through [VoicePolicy.cloudConfig]) has a style provider. Otherwise
+ * only the text rules run, and the keyboard does not name a style.
+ */
+fun styleApplies(style: VoiceStyle?, cloud: CloudConfig): Boolean =
+    style != null && style.prompt.isNotBlank() && cloud.styleProvider != CloudStyleProvider.OFF
 
 /** In hands-free mode Done sends with the field's action. A field whose Enter is a newline has nothing to send. */
 fun handsFreeSends(action: ImeAction): Boolean = action != ImeAction.NEWLINE
