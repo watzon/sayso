@@ -271,8 +271,8 @@ func TestTurningOffStopsQueuedRetriesAndTheSendInFlight(t *testing.T) {
 	if n := in.requests(); n != 1 {
 		t.Fatalf("%d requests, want only the one in flight when it was turned off", n)
 	}
-	if loadState(o.StateFile).FirstLaunchSent {
-		t.Fatal("the cancelled app.installed was marked sent")
+	if !loadState(o.StateFile).FirstLaunchSent {
+		t.Fatal("app.installed reached the server but is not marked sent")
 	}
 
 	// Off with a failed batch waiting for its retry.
@@ -445,5 +445,48 @@ func TestASendCancelledByOffIsNotRetriedAfterOnAgain(t *testing.T) {
 	settle(c)
 	if n := in.requests(); n != 1 {
 		t.Fatalf("%d requests: the cancelled batch was sent again", n)
+	}
+}
+
+func TestInstalledCutOffByOffAfterTheServerTookItIsNotSentAgain(t *testing.T) {
+	in := newIngest(t)
+	in.hold = make(chan struct{})
+	o := in.options(t)
+	c := New(o, true)
+	c.Launched()
+	in.waitRequest(t) // the server has the batch; its 200 is held
+	c.SetEnabled(false)
+	c.SetEnabled(true)
+	settle(c)
+	if got := types(in.signals()); len(got) != 2 || got[0] != TypeInstalled {
+		t.Fatalf("first run sent %v", got)
+	}
+
+	in.mu.Lock()
+	in.hold, in.bodies = nil, nil
+	in.mu.Unlock()
+	c = New(o, true)
+	c.Launched()
+	settle(c)
+	if got := types(in.signals()); len(got) != 1 || got[0] != TypeLaunched {
+		t.Fatalf("after on again and a relaunch: %v, want only %s", got, TypeLaunched)
+	}
+}
+
+func TestInstalledRefusedOnARetryStaysMarkedFromTheEarlierSend(t *testing.T) {
+	in := newIngest(t)
+	in.hold = make(chan struct{})
+	o := in.options(t)
+	o.HTTP = &http.Client{Timeout: 200 * time.Millisecond}
+	c := New(o, true)
+	c.Launched()
+	in.waitRequest(t) // times out: the server may have it
+	in.mu.Lock()
+	in.hold, in.status = nil, http.StatusServiceUnavailable
+	in.mu.Unlock()
+	in.waitRequest(t) // the retry is refused
+	settle(c)
+	if !loadState(o.StateFile).FirstLaunchSent {
+		t.Fatal("a refused retry unmarked an app.installed the server may already have")
 	}
 }

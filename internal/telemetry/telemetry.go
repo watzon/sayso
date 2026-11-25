@@ -15,6 +15,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -290,6 +291,14 @@ func (c *Client) flush() bool {
 	}
 	batch, gen := c.queue, c.gen
 	c.queue = nil
+	// app.installed is marked sent before it leaves: a send cut off by off
+	// or a timeout may still have reached the server, and a second one would
+	// count the install twice.
+	marked := false
+	if !c.st.FirstLaunchSent && hasType(batch, TypeInstalled) {
+		c.st.FirstLaunchSent, marked = true, true
+		c.saveStateLocked()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cancel = cancel
 	c.mu.Unlock()
@@ -300,15 +309,10 @@ func (c *Client) flush() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cancel = nil
-	if err == nil {
-		// The server has app.installed even if telemetry was turned off
-		// meanwhile; sending it again would count the install twice.
-		for _, s := range batch {
-			if s.Type == TypeInstalled && !c.st.FirstLaunchSent {
-				c.st.FirstLaunchSent = true
-				c.saveStateLocked()
-			}
-		}
+	var refused statusError
+	if marked && errors.As(err, &refused) {
+		c.st.FirstLaunchSent = false
+		c.saveStateLocked()
 	}
 	if gen != c.gen || !c.activeLocked() {
 		return true // turned off meanwhile: nothing goes back
@@ -340,9 +344,23 @@ func (c *Client) post(ctx context.Context, batch []Signal) error {
 	}
 	resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("status %d", resp.StatusCode)
+		return statusError(resp.StatusCode)
 	}
 	return nil
+}
+
+// statusError is a non-2xx answer: the server did not take the batch.
+type statusError int
+
+func (e statusError) Error() string { return fmt.Sprintf("status %d", int(e)) }
+
+func hasType(batch []Signal, typ string) bool {
+	for _, s := range batch {
+		if s.Type == typ {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) saveStateLocked() {

@@ -128,7 +128,7 @@ class TelemetryClientTest {
         transport.down = true
         val c = client()
         c.launched()
-        assertFalse(prefs.firstLaunchSent)
+        assertTrue("an app.installed that may have reached the server is not marked sent", prefs.firstLaunchSent)
         transport.down = false
         transport.bodies.clear()
         c.dictationCompleted(DictationSignal("m", "local", "raw"))
@@ -177,7 +177,7 @@ class TelemetryClientTest {
         transport.bodies.clear()
         c.dictationCompleted(DictationSignal("m", "local", "raw"))
         assertEquals(listOf("dictation.completed"), transport.types())
-        assertFalse(prefs.firstLaunchSent)
+        assertTrue(prefs.firstLaunchSent)
     }
 
     @Test
@@ -229,12 +229,42 @@ class TelemetryClientTest {
             assertTrue("no request", server.arrived.await(5, TimeUnit.SECONDS))
             c.enabled = false
             worker.submit {}.get(5, TimeUnit.SECONDS) // the send ended without the server's answer
-            assertFalse(prefs.firstLaunchSent)
+            assertTrue("the server has app.installed", prefs.firstLaunchSent)
             assertEquals(1, server.requests.get())
         } finally {
             worker.shutdownNow()
             server.stop()
         }
+    }
+
+    @Test
+    fun installedCutOffByOffAfterTheServerTookItIsNotSentAgain() {
+        val server = Ingest(hold = true)
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val c = TelemetryClient("APP-ID", server.url, true, base, prefs, HttpTelemetryTransport, worker)
+            c.launched()
+            assertTrue("no request", server.arrived.await(5, TimeUnit.SECONDS)) // its 200 is held
+            c.enabled = false
+            worker.submit {}.get(5, TimeUnit.SECONDS)
+            c.enabled = true
+        } finally {
+            worker.shutdownNow()
+            server.stop()
+        }
+        client().launched() // the next process
+        assertEquals(listOf("app.launched"), transport.types())
+    }
+
+    @Test
+    fun installedRefusedOnARetryStaysMarkedFromTheEarlierSend() {
+        transport.down = true
+        val c = client()
+        c.launched() // may have reached the server
+        transport.down = false
+        transport.status = 503
+        c.dictationCompleted(DictationSignal("m", "local", "raw"))
+        assertTrue(prefs.firstLaunchSent)
     }
 
     @Test

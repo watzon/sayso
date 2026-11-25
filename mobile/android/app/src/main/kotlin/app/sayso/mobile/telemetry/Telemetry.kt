@@ -240,22 +240,32 @@ class TelemetryClient(
             gen = generation
             sending = true
         }
+        var marked = false
         val gate = SendGate { abort ->
             synchronized(lock) {
-                (gen == generation && active).also { if (it) abortSend = abort }
+                (gen == generation && active).also {
+                    if (!it) return@also
+                    abortSend = abort
+                    // Marked before it leaves: a send cut off by off or a
+                    // timeout may still reach the server, and a second
+                    // app.installed would count the install twice.
+                    if (!prefs.firstLaunchSent && Telemetry.INSTALLED in types) {
+                        prefs.firstLaunchSent = true
+                        marked = true
+                    }
+                }
             }
         }
-        val ok = try {
-            transport.post(endpoint, batch.joinToString(",", "[", "]"), gate) / 100 == 2
+        val status = try {
+            transport.post(endpoint, batch.joinToString(",", "[", "]"), gate)
         } catch (_: IOException) {
-            false
+            null
         }
+        val ok = status != null && status / 100 == 2
         synchronized(lock) {
             sending = false
             abortSend = null
-            // The server has app.installed even if telemetry was turned off
-            // meanwhile; sending it again would count the install twice.
-            if (ok && Telemetry.INSTALLED in types) prefs.firstLaunchSent = true
+            if (marked && status != null && !ok) prefs.firstLaunchSent = false
             if (gen != generation || !active) return
             if (!ok) {
                 queue.addAll(0, batch)
