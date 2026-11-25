@@ -79,7 +79,8 @@ type Options struct {
 // OptionsForThisBuild are the options of this build: the App ID, the
 // endpoint, and test mode from the build, overridden by
 // SAYSO_TELEMETRY_APP_ID, SAYSO_TELEMETRY_ENDPOINT and
-// SAYSO_TELEMETRY_TEST_MODE. A build that is not official is in test mode.
+// SAYSO_TELEMETRY_TEST_MODE=1. A build that is not official is always in
+// test mode: the variable can only turn test mode on.
 func OptionsForThisBuild(dataDir, version string, official bool) Options {
 	o := Options{AppID: DefaultAppID, Endpoint: DefaultEndpoint, TestMode: !official,
 		StateFile: filepath.Join(dataDir, "telemetry.json"), AppVersion: version, Channel: ChannelDev}
@@ -95,8 +96,6 @@ func OptionsForThisBuild(dataDir, version string, official bool) Options {
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("SAYSO_TELEMETRY_TEST_MODE"))) {
 	case "1", "true":
 		o.TestMode = true
-	case "0", "false":
-		o.TestMode = false
 	}
 	return o
 }

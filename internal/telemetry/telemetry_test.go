@@ -391,9 +391,14 @@ func TestOptionsForThisBuild(t *testing.T) {
 	if qa.AppID != "QA-ID" || qa.Endpoint != "http://127.0.0.1:9/v2/" || !qa.TestMode || qa.Channel != ChannelRelease {
 		t.Fatalf("overrides %+v", qa)
 	}
-	t.Setenv("SAYSO_TELEMETRY_TEST_MODE", "false")
-	if OptionsForThisBuild("/data", "0.16.0", false).TestMode {
-		t.Fatal("SAYSO_TELEMETRY_TEST_MODE=false kept test mode")
+	for _, v := range []string{"false", "0", "FALSE"} {
+		t.Setenv("SAYSO_TELEMETRY_TEST_MODE", v)
+		if !OptionsForThisBuild("/data", "0.16.0", false).TestMode {
+			t.Fatalf("SAYSO_TELEMETRY_TEST_MODE=%s took a build that is not official out of test mode", v)
+		}
+		if OptionsForThisBuild("/data", "0.16.0", true).TestMode {
+			t.Fatalf("SAYSO_TELEMETRY_TEST_MODE=%s put an official build in test mode", v)
+		}
 	}
 }
 
