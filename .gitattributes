@@ -5,3 +5,4 @@
 native/macos/SaysoEngine/Sources/SaysoEngine/*.generated.swift text eol=lf
 internal/theme/testdata/** text eol=lf
 internal/bridge/testdata/** text eol=lf
+internal/localengine/catalog/descriptors.json text eol=lf
