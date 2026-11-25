@@ -275,8 +275,8 @@ func moveIntoPlace(staging, dest string) error {
 	}
 	switch {
 	case len(entries) == 1 && entries[0].IsDir():
-		if err := os.Rename(filepath.Join(staging, entries[0].Name()), dest); err != nil {
-			return fmt.Errorf("cannot move files to %s: %w", dest, err)
+		if err := storeRename(filepath.Join(staging, entries[0].Name()), dest); err != nil {
+			return err
 		}
 		if err := os.Remove(staging); err != nil {
 			return fmt.Errorf("cannot remove %s: %w", staging, err)
@@ -284,8 +284,8 @@ func moveIntoPlace(staging, dest string) error {
 	case len(entries) == 0:
 		return errors.New("the archive is empty")
 	default:
-		if err := os.Rename(staging, dest); err != nil {
-			return fmt.Errorf("cannot move files to %s: %w", dest, err)
+		if err := storeRename(staging, dest); err != nil {
+			return err
 		}
 	}
 	return nil

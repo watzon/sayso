@@ -404,3 +404,25 @@ func TestOldModelsAndTokenizers(t *testing.T) {
 		}
 	}
 }
+
+func TestAnExtractedFolderMovesWhileAFileInItIsStillOpenForAMoment(t *testing.T) {
+	dir := t.TempDir()
+	staging, dest := filepath.Join(dir, "staging"), filepath.Join(dir, "dest")
+	if err := os.MkdirAll(filepath.Join(staging, "model"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	held, err := os.Create(filepath.Join(staging, "model", "encoder.onnx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		held.Close()
+	}()
+	if err := moveIntoPlace(staging, dest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "encoder.onnx")); err != nil {
+		t.Fatal(err)
+	}
+}
