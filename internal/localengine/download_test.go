@@ -20,7 +20,7 @@ func fetchFixture(t *testing.T, name string) error {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) }))
 	defer srv.Close()
 	dir := t.TempDir()
-	return fetchArchive(newHTTPClient(), srv.URL+"/a.tar.bz2", "", filepath.Join(dir, "work"), filepath.Join(dir, "dest"), func(int64) {})
+	return fetchArchive(newHTTPClient(), srv.URL+"/a.tar.bz2", "", filepath.Join(dir, "work"), filepath.Join(dir, "dest"), newProgress(0))
 }
 
 func TestAnArchiveWithALinkOrAnUnsafePathIsRefused(t *testing.T) {

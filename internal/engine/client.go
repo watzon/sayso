@@ -255,6 +255,10 @@ func statusOf(m Message) ModelStatus {
 	s := ModelStatus{State: m.str("state"), Message: m.Message, Reason: m.Reason}
 	m.Field("preview", &s.Preview)
 	s.LoadMs = m.u64("load_ms")
+	if s.State == StateDownloading {
+		m.Field("fraction", &s.Fraction)
+		s.BytesDone, s.BytesTotal = m.u64("bytes_done"), m.u64("bytes_total")
+	}
 	return s
 }
 
@@ -263,6 +267,11 @@ func (c *Client) event(m Message) {
 	case "model_state":
 		model, s := m.str("model"), statusOf(m)
 		c.mu.Lock()
+		// Engines send model_state downloading after each download_progress;
+		// one without the progress keeps what download_progress said.
+		if prev := c.statuses[model]; s.State == StateDownloading && prev.State == StateDownloading && s.BytesDone == 0 && s.Fraction == 0 {
+			s.Fraction, s.BytesDone, s.BytesTotal = prev.Fraction, prev.BytesDone, prev.BytesTotal
+		}
 		c.statuses[model] = s
 		switch s.State {
 		case StateReady:

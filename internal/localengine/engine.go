@@ -325,6 +325,9 @@ func (e *incompleteError) Error() string { return e.message }
 
 func (e *Engine) report(id *string, model string, p *progress, fraction float64) {
 	_, done, total := p.snapshot()
+	if !p.knownTotal() {
+		total = 0
+	}
 	f := fields{"model": model, "fraction": fraction, "bytes_done": done, "bytes_total": total}
 	e.out.Send("download_progress", id, f)
 	e.modelState(id, model, "downloading", f)
@@ -403,15 +406,12 @@ func (e *Engine) downloadStored(r *Request, store *modelStore, desc *descriptor)
 	p := newProgress(int64(total))
 	p.due(time.Now())
 	e.report(r.ID, model, p, 0)
-	onBytes := func(n int64) {
-		p.add(n)
-		if p.due(time.Now()) {
-			fraction, _, _ := p.snapshot()
-			e.report(r.ID, model, p, fraction)
-		}
-	}
+	m := reporting{p, func() {
+		fraction, _, _ := p.snapshot()
+		e.report(r.ID, model, p, fraction)
+	}}
 	err = store.download(data, desc, func(a *artifact, work, files string) error {
-		return fetchStoreArtifact(e.client, a, e.storeURL, work, files, onBytes)
+		return fetchStoreArtifact(e.client, a, e.storeURL, work, files, m)
 	}, func() {
 		// Another engine downloads a part of this model.
 		fraction, _, _ := p.snapshot()
@@ -463,13 +463,10 @@ func (e *Engine) fetch(id *string, model string, spec *modelSpec, p *progress) e
 			return err
 		}
 		url, file := e.sourceOf(spec, archive)
-		err = fetchArchive(e.client, url, file, staging, dest, func(n int64) {
-			p.add(n)
-			if p.due(time.Now()) {
-				fraction, _, _ := p.snapshot()
-				e.report(id, model, p, fraction)
-			}
-		})
+		err = fetchArchive(e.client, url, file, staging, dest, reporting{p, func() {
+			fraction, _, _ := p.snapshot()
+			e.report(id, model, p, fraction)
+		}})
 		if err != nil {
 			return err
 		}

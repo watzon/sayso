@@ -81,9 +81,9 @@ func newHTTPClient() *http.Client {
 
 // fetchArchive downloads the archive at url and extracts it to dest, or with
 // file != "", puts the file at url in the folder dest under that name.
-// staging is a temporary folder beside dest. onBytes gets the size of each
-// piece that arrives.
-func fetchArchive(client *http.Client, url, file, staging, dest string, onBytes func(int64)) error {
+// staging is a temporary folder beside dest. m hears the size of each
+// response and of each piece that arrives.
+func fetchArchive(client *http.Client, url, file, staging, dest string, m meter) error {
 	if err := os.RemoveAll(staging); err != nil {
 		return fmt.Errorf("cannot remove %s: %w", staging, err)
 	}
@@ -92,9 +92,9 @@ func fetchArchive(client *http.Client, url, file, staging, dest string, onBytes 
 	}
 	var err error
 	if file != "" {
-		err = downloadToFile(client, url, filepath.Join(staging, file), onBytes)
+		err = downloadToFile(client, url, filepath.Join(staging, file), m)
 	} else {
-		err = downloadAndExtract(client, url, staging, onBytes)
+		err = downloadAndExtract(client, url, staging, m)
 	}
 	if err == nil {
 		err = moveIntoPlace(staging, dest)
@@ -107,9 +107,9 @@ func fetchArchive(client *http.Client, url, file, staging, dest string, onBytes 
 
 // fetchStoreArtifact puts the files of a store artifact at files. urlOf gives
 // the URL to use for a URL of a descriptor. work is an empty folder.
-func fetchStoreArtifact(client *http.Client, a *artifact, urlOf func(string) string, work, files string, onBytes func(int64)) error {
+func fetchStoreArtifact(client *http.Client, a *artifact, urlOf func(string) string, work, files string, m meter) error {
 	if a.Source.Kind == "archive" {
-		return fetchArchive(client, urlOf(a.Source.URL), "", filepath.Join(work, "extract"), files, onBytes)
+		return fetchArchive(client, urlOf(a.Source.URL), "", filepath.Join(work, "extract"), files, m)
 	}
 	for _, f := range a.Files {
 		if err := checkStorePath(f.Path); err != nil {
@@ -123,31 +123,38 @@ func fetchStoreArtifact(client *http.Client, a *artifact, urlOf func(string) str
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return fmt.Errorf("cannot create %s: %w", filepath.Dir(target), err)
 		}
-		if err := downloadToFile(client, urlOf(url), target, onBytes); err != nil {
+		if err := downloadToFile(client, urlOf(url), target, m); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// meter follows a download: expect gets the Content-Length of each response
+// that has one, add the size of each piece of a body.
+type meter interface {
+	expect(size int64)
+	add(n int64)
+}
+
 // countingReader counts the bytes that pass through it.
 type countingReader struct {
-	r       io.Reader
-	count   int64
-	onBytes func(int64)
+	r     io.Reader
+	count int64
+	m     meter
 }
 
 func (c *countingReader) Read(p []byte) (int, error) {
 	n, err := c.r.Read(p)
 	if n > 0 {
 		c.count += int64(n)
-		c.onBytes(int64(n))
+		c.m.add(int64(n))
 	}
 	return n, err
 }
 
 // get starts a download. The caller closes the body.
-func get(client *http.Client, url string, onBytes func(int64)) (io.ReadCloser, *countingReader, int64, error) {
+func get(client *http.Client, url string, m meter) (io.ReadCloser, *countingReader, int64, error) {
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("cannot download %s: %w", url, err)
@@ -156,7 +163,10 @@ func get(client *http.Client, url string, onBytes func(int64)) (io.ReadCloser, *
 		resp.Body.Close()
 		return nil, nil, 0, fmt.Errorf("cannot download %s: http status: %d", url, resp.StatusCode)
 	}
-	return resp.Body, &countingReader{r: resp.Body, onBytes: onBytes}, resp.ContentLength, nil
+	if resp.ContentLength > 0 {
+		m.expect(resp.ContentLength)
+	}
+	return resp.Body, &countingReader{r: resp.Body, m: m}, resp.ContentLength, nil
 }
 
 func checkSize(url string, count, expected int64) error {
@@ -166,8 +176,8 @@ func checkSize(url string, count, expected int64) error {
 	return nil
 }
 
-func downloadToFile(client *http.Client, url, target string, onBytes func(int64)) error {
-	body, counted, expected, err := get(client, url, onBytes)
+func downloadToFile(client *http.Client, url, target string, m meter) error {
+	body, counted, expected, err := get(client, url, m)
 	if err != nil {
 		return err
 	}
@@ -190,8 +200,8 @@ func downloadToFile(client *http.Client, url, target string, onBytes func(int64)
 	return checkSize(url, counted.count, expected)
 }
 
-func downloadAndExtract(client *http.Client, url, staging string, onBytes func(int64)) error {
-	body, counted, expected, err := get(client, url, onBytes)
+func downloadAndExtract(client *http.Client, url, staging string, m meter) error {
+	body, counted, expected, err := get(client, url, m)
 	if err != nil {
 		return err
 	}
@@ -292,16 +302,27 @@ func moveIntoPlace(staging, dest string) error {
 }
 
 // progress is the download progress over all archives of a model. The
-// fraction never goes backwards and stays below 1 until the end.
+// fraction never goes backwards and stays below 1 until the end. A model
+// whose size is not known takes its total from the Content-Length of the
+// responses as they start.
 type progress struct {
 	mu       sync.Mutex
+	sized    bool
 	total    int64
 	done     int64
 	highest  float64
 	lastEmit time.Time
 }
 
-func newProgress(total int64) *progress { return &progress{total: total} }
+func newProgress(total int64) *progress { return &progress{total: total, sized: total > 0} }
+
+func (p *progress) expect(size int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.sized && size > 0 {
+		p.total += size
+	}
+}
 
 func (p *progress) add(n int64) {
 	p.mu.Lock()
@@ -318,6 +339,13 @@ func (p *progress) snapshot() (fraction float64, done, total int64) {
 	return p.highest, p.done, max(p.total, p.done)
 }
 
+// knownTotal is false while no size is known: bytes_total is then 0.
+func (p *progress) knownTotal() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.total > 0
+}
+
 // due is true when a progress message is due at now. It then counts as sent.
 func (p *progress) due(now time.Time) bool {
 	p.mu.Lock()
@@ -327,4 +355,19 @@ func (p *progress) due(now time.Time) bool {
 		return true
 	}
 	return false
+}
+
+// reporting is a meter that sends progress messages when they are due.
+type reporting struct {
+	p      *progress
+	report func()
+}
+
+func (r reporting) expect(size int64) { r.p.expect(size) }
+
+func (r reporting) add(n int64) {
+	r.p.add(n)
+	if r.p.due(time.Now()) {
+		r.report()
+	}
 }
