@@ -214,7 +214,7 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 		warm = append(warm, cleanupWarmer(w.Warm))
 	}
 	// Anonymous usage signals, while the user has them on.
-	tel := telemetry.New(telemetry.OptionsForThisBuild(p.DataDir, update.Version, update.IsOfficialBuild()), cfg.Telemetry.Enabled)
+	tel := telemetry.New(telemetry.OptionsForThisBuild(p.DataDir, update.Version, update.IsOfficialBuild()), telemetryOn(cfg))
 	a.OnConfig(eachConfig(cleanupSwitch(cleanupRuntime, a.ControllerConfig(), warm...), telemetrySwitch(tel, a.ControllerConfig())))
 
 	// The dictation controller.
