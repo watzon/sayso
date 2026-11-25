@@ -23,6 +23,10 @@ type Desktop struct {
 	overlay *mygo.Window
 	wins    map[Window]*mygo.Window
 	tray    *mygo.Tray
+	// trayItem is tray as the tray path sees it; tests give a fake.
+	trayItem trayItem
+	// trayAttached: the menu stays on the icon (wireTray).
+	trayAttached bool
 	// layer is the window system under the tray path; tests give a fake.
 	layer   shellLayer
 	popover popoverToggle
@@ -378,29 +382,65 @@ func pointInWindows(p mygo.Point, boxes []mygo.Rectangle) bool {
 	return false
 }
 
+// trayItem is what the tray path asks of the tray icon; *mygo.Tray has it.
+type trayItem interface {
+	OnClick(fn func()) func()
+	OnRightClick(fn func()) func()
+	SetMenu(m *mygo.Menu)
+	PopUpMenu()
+}
+
+// trayMenuAttached: on Linux the menu is attached to the tray icon for good.
+// The AppIndicator never reports a right click, and opens the menu it holds
+// on a click: GNOME's extension on a single click, and it sends a double
+// click to OnClick, which opens the popover; KDE sends a left click there.
+const trayMenuAttached = runtime.GOOS == "linux"
+
 func (d *Desktop) newTray() {
-	click := func(fn func()) func(*mygo.MenuItem, *mygo.Window) {
-		return func(*mygo.MenuItem, *mygo.Window) { fn() }
-	}
-	menu := mygo.NewMenu([]*mygo.MenuItem{
-		{Label: i18n.T("tray.toggle_dictation"), Click: click(d.a.Toggle)},
-		{Label: i18n.T("tray.open_hub"), Click: click(d.ShowHub)},
-		mygo.Separator(),
-		{Label: i18n.T("tray.quit"), Accelerator: "CmdOrCtrl+Q", Click: click(d.Quit)},
-	})
 	var err error
 	d.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "sayso", Icon: trayIcon(d.a.incognito), IconIsTemplate: trayTemplate, ToolTip: "Sayso"})
 	if err != nil {
 		log.Printf("tray: %v", err)
 		return
 	}
-	// The primary click opens the themed popover; the secondary click the
-	// plain menu, for screen readers and keyboard users.
-	d.tray.OnClick(func() { d.trayClicked(time.Now()) })
-	d.tray.OnRightClick(func() {
-		d.tray.SetMenu(menu)
-		d.tray.PopUpMenu()
+	d.wireTray(d.tray, trayMenuAttached)
+}
+
+// trayMenu is the plain tray menu, in the current interface language.
+func (d *Desktop) trayMenu() *mygo.Menu {
+	click := func(fn func()) func(*mygo.MenuItem, *mygo.Window) {
+		return func(*mygo.MenuItem, *mygo.Window) { fn() }
+	}
+	return mygo.NewMenu([]*mygo.MenuItem{
+		{Label: i18n.T("tray.toggle_dictation"), Click: click(d.a.Toggle)},
+		{Label: i18n.T("tray.open_hub"), Click: click(d.ShowHub)},
+		mygo.Separator(),
+		{Label: i18n.T("tray.quit"), Accelerator: "CmdOrCtrl+Q", Click: click(d.Quit)},
 	})
+}
+
+// wireTray connects the tray icon t. On macOS and Windows the primary
+// click opens the themed popover and the secondary click the plain menu,
+// for screen readers and keyboard users. With attached, the menu is on
+// the icon from the start.
+func (d *Desktop) wireTray(t trayItem, attached bool) {
+	d.trayItem, d.trayAttached = t, attached
+	if attached {
+		t.SetMenu(d.trayMenu())
+	}
+	t.OnClick(func() { d.trayClicked(time.Now()) })
+	t.OnRightClick(func() {
+		t.SetMenu(d.trayMenu())
+		t.PopUpMenu()
+	})
+}
+
+// RefreshTrayMenu puts the attached tray menu in the current interface
+// language. A menu set only for the secondary click is built as it opens.
+func (d *Desktop) RefreshTrayMenu() {
+	if d.trayItem != nil && d.trayAttached {
+		d.trayItem.SetMenu(d.trayMenu())
+	}
 }
 
 // SetTrayIncognito dims the tray icon while incognito is on.

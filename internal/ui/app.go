@@ -296,6 +296,9 @@ func (a *App) invalidate() {
 // trayIncognito is a shell whose tray icon dims while incognito is on.
 type trayIncognito interface{ SetTrayIncognito(on bool) }
 
+// trayMenuRefresher is a shell whose tray menu follows the interface language.
+type trayMenuRefresher interface{ RefreshTrayMenu() }
+
 // overlayInvalidator is a shell that can redraw the overlay alone.
 type overlayInvalidator interface{ InvalidateOverlay() }
 
@@ -340,6 +343,9 @@ func (a *App) SetLanguage(code string) {
 	a.cfg.General.Language = code
 	a.applyLocale()
 	a.saveConfig()
+	if t, ok := a.d.Shell.(trayMenuRefresher); ok {
+		t.RefreshTrayMenu()
+	}
 	a.invalidate()
 }
 
