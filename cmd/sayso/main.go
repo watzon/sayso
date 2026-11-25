@@ -20,6 +20,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/egoist/mygo"
 
@@ -34,6 +35,7 @@ import (
 	"github.com/watzon/sayso/internal/platform"
 	"github.com/watzon/sayso/internal/providers"
 	"github.com/watzon/sayso/internal/store"
+	"github.com/watzon/sayso/internal/telemetry"
 	"github.com/watzon/sayso/internal/theme"
 	"github.com/watzon/sayso/internal/ui"
 	"github.com/watzon/sayso/internal/update"
@@ -211,7 +213,9 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 	if w, ok := styler.Cleaner.(interface{ Warm(string) error }); ok {
 		warm = append(warm, cleanupWarmer(w.Warm))
 	}
-	a.OnConfig(cleanupSwitch(cleanupRuntime, a.ControllerConfig(), warm...))
+	// Anonymous usage signals, while the user has them on.
+	tel := telemetry.New(telemetry.OptionsForThisBuild(p.DataDir, update.Version, update.IsOfficialBuild()), cfg.Telemetry.Enabled)
+	a.OnConfig(eachConfig(cleanupSwitch(cleanupRuntime, a.ControllerConfig(), warm...), telemetrySwitch(tel, a.ControllerConfig())))
 
 	// The dictation controller.
 	deps := dictation.Deps{
@@ -221,6 +225,7 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 		System:    systemInfo,
 		StyleName: func(s *enhance.Style) string { return s.Name },
 		Styler:    styler,
+		Telemetry: tel,
 	}
 	if plat != nil {
 		deps.Platform = *plat
@@ -280,6 +285,7 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 	})
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		ctl.Close()
+		tel.Close(time.Second)
 		enhance.StopSpares()
 		cleanupRuntime.Stop()
 		if plat != nil && plat.Hotkeys != nil {
