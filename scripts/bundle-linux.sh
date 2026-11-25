@@ -23,6 +23,11 @@ export CGO_ENABLED=0
 # The app reports the version of the tarball, which the updater compares
 # with the newest release.
 version_flag="-X github.com/watzon/sayso/internal/update.Version=$version"
+# A release (SAYSO_OFFICIAL_BUILD=1, set by the Release workflow) updates
+# itself and sends telemetry as a release, not in test mode.
+if [[ "${SAYSO_OFFICIAL_BUILD:-}" == 1 ]]; then
+  version_flag+=" -X github.com/watzon/sayso/internal/update.OfficialBuild=1"
+fi
 if [[ "$profile" == release ]]; then ldflags=(-ldflags="-s -w $version_flag" -tags mygo_noinspector); else ldflags=(-ldflags="$version_flag"); fi
 
 echo "==> app, engine, and cleanup runtime (go, $profile)"

@@ -44,6 +44,11 @@ New-Item -ItemType Directory -Force $buildDir | Out-Null
 # The app reports the version of the installer, which the updater compares
 # with the newest release.
 $versionFlag = "-X github.com/watzon/sayso/internal/update.Version=$version"
+# A release (SAYSO_OFFICIAL_BUILD=1, set by the Release workflow) updates
+# itself and sends telemetry as a release, not in test mode.
+if ($env:SAYSO_OFFICIAL_BUILD -eq '1') {
+    $versionFlag += ' -X github.com/watzon/sayso/internal/update.OfficialBuild=1'
+}
 if ($Debug) {
     Invoke-Checked 'app (go, debug)' { go build "-ldflags=$versionFlag" -o build\sayso.exe .\cmd\sayso }
 } else {

@@ -333,7 +333,7 @@ Setup replaces files one at a time, so it is not atomic as the exchange on macOS
 
 ## Official builds
 
-The updater is on only when the build has `SAYSO_OFFICIAL_BUILD=1` at compile time (`option_env!`). The Release workflow sets it. A build from source, a build by a distribution, and `cargo run` have no updater: Settings shows the version, and no request goes out. A changed version of Sayso under another name (the license asks for that) then never replaces itself with the official app.
+The updater is on only when the build has `SAYSO_OFFICIAL_BUILD=1` at compile time: the bundle scripts then pass `-ldflags "-X github.com/watzon/sayso/internal/update.OfficialBuild=1"`. The Release workflow sets it. A build from source, a build by a distribution, and `go run` have no updater, and their telemetry is in test mode: Settings shows the version, and no request goes out. A changed version of Sayso under another name (the license asks for that) then never replaces itself with the official app.
 
 ## Release pipeline
 

@@ -100,6 +100,11 @@ ffi_flag=$("$tool" ldflags -os darwin)
 # The app reports the version of the bundle (Info.plist), which the updater
 # compares with the newest release.
 version_flag="-X github.com/watzon/sayso/internal/update.Version=$version"
+# A release (SAYSO_OFFICIAL_BUILD=1, set by the Release workflow) updates
+# itself and sends telemetry as a release, not in test mode.
+if [[ "${SAYSO_OFFICIAL_BUILD:-}" == 1 ]]; then
+  version_flag+=" -X github.com/watzon/sayso/internal/update.OfficialBuild=1"
+fi
 if [[ "$profile" == release ]]; then
   go build -tags mygo_noinspector -ldflags="-s -w $version_flag" -o build/sayso ./cmd/sayso &
   go build -tags ffi_no_embed -ldflags="-s -w $ffi_flag" -o build/sayso-cleanup ./cmd/sayso-cleanup
