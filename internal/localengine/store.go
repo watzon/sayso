@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -790,7 +791,8 @@ func verifyArtifact(folder string, a *artifact) error {
 	}
 	sort.Strings(wanted)
 	if strings.Join(found, "\x00") != strings.Join(wanted, "\x00") {
-		return &verifyError{fmt.Sprintf("the files of %s are not the files of its descriptor: %q", a.Digest, found)}
+		extra, missing := fileSetDiff(found, wanted)
+		return &verifyError{fmt.Sprintf("the files of %s are not the files of its descriptor: not in the descriptor %q, missing %q", a.Digest, extra, missing)}
 	}
 	for _, f := range a.Files {
 		p := filepath.Join(folder, filepath.FromSlash(f.Path))
@@ -823,6 +825,22 @@ func verifyArtifact(folder string, a *artifact) error {
 		}
 	}
 	return nil
+}
+
+// fileSetDiff is the paths of found that are not in wanted, and the reverse.
+func fileSetDiff(found, wanted []string) (extra, missing []string) {
+	extra, missing = []string{}, []string{}
+	for _, p := range found {
+		if !slices.Contains(wanted, p) {
+			extra = append(extra, p)
+		}
+	}
+	for _, p := range wanted {
+		if !slices.Contains(found, p) {
+			missing = append(missing, p)
+		}
+	}
+	return extra, missing
 }
 
 // walkFiles lists the files under folder in / form. A link is an error.

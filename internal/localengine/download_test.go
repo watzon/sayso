@@ -99,3 +99,28 @@ func TestAnExtractedFolderMovesWhileAFileInItIsStillOpenForAMoment(t *testing.T)
 		t.Fatal("the file is not in place")
 	}
 }
+
+func TestAnArtifactWithAFileThatItsDescriptorLacksIsRefusedByName(t *testing.T) {
+	folder := t.TempDir()
+	for _, name := range []string{"README.md", "tokens.txt"} {
+		if err := os.WriteFile(filepath.Join(folder, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sum, err := hashFile(filepath.Join(folder, "tokens.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &artifact{Digest: "d", Files: []storeFile{
+		{Path: "tokens.txt", Size: uint64(len("tokens.txt")), SHA256: sum},
+		{Path: "test_wavs/en.wav", Size: 1, SHA256: sum},
+	}}
+	err = verifyArtifact(folder, a)
+	if err == nil {
+		t.Fatal("accepted")
+	}
+	want := `not in the descriptor ["README.md"], missing ["test_wavs/en.wav"]`
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("%v, want it to contain %s", err, want)
+	}
+}

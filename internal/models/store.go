@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -723,6 +724,22 @@ func renameRetry(from, to string) error {
 	return fmt.Errorf("cannot move %s: %w", from, err)
 }
 
+// fileSetDiff is the paths of found that are not in wanted, and the reverse.
+func fileSetDiff(found, wanted []string) (extra, missing []string) {
+	extra, missing = []string{}, []string{}
+	for _, p := range found {
+		if !slices.Contains(wanted, p) {
+			extra = append(extra, p)
+		}
+	}
+	for _, p := range wanted {
+		if !slices.Contains(found, p) {
+			missing = append(missing, p)
+		}
+	}
+	return extra, missing
+}
+
 // Verify checks that folder holds the files of the artifact and nothing else,
 // with their sizes and hashes, and flushes each file.
 func Verify(folder string, a Artifact) error {
@@ -737,7 +754,8 @@ func Verify(folder string, a Artifact) error {
 	}
 	sort.Strings(wanted)
 	if strings.Join(found, "\x00") != strings.Join(wanted, "\x00") {
-		return fmt.Errorf("%w: the files of %s are not the files of its descriptor: %q", ErrVerify, a.Digest, found)
+		extra, missing := fileSetDiff(found, wanted)
+		return fmt.Errorf("%w: the files of %s are not the files of its descriptor: not in the descriptor %q, missing %q", ErrVerify, a.Digest, extra, missing)
 	}
 	for _, f := range a.Files {
 		p := filepath.Join(folder, filepath.FromSlash(f.Path))
