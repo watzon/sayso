@@ -38,6 +38,7 @@ type Config struct {
 	History      History
 	Appearance   Appearance
 	Updates      Updates
+	Telemetry    Telemetry
 	Advanced     Advanced
 	Onboarding   Onboarding
 }
@@ -60,6 +61,7 @@ func Default() Config {
 		History:    History{Enabled: true, SaveAudio: true, KeepAudioDays: u32p(30), SiteIcons: true},
 		Appearance: Appearance{Theme: ThemeSystem, Ink: Ink{Named: InkSumi}, PaperTexture: true, SystemTitleBar: true},
 		Updates:    Updates{Check: true},
+		Telemetry:  Telemetry{Enabled: true},
 	}
 }
 
@@ -398,6 +400,9 @@ type Appearance struct {
 // Updates is [updates].
 type Updates struct{ Check, Automatic bool }
 
+// Telemetry is [telemetry]: anonymous usage signals (internal/telemetry).
+type Telemetry struct{ Enabled bool }
+
 // Advanced is [advanced].
 type Advanced struct {
 	EnginePath *string
@@ -587,6 +592,7 @@ func fromSections(doc map[string]any, issues *[]Issue) Config {
 	section("history", func(v any) error { return readInto(&cfg.History, readHistory, v) })
 	section("appearance", func(v any) error { return readInto(&cfg.Appearance, readAppearance, v) })
 	section("updates", func(v any) error { return readInto(&cfg.Updates, readUpdates, v) })
+	section("telemetry", func(v any) error { return readInto(&cfg.Telemetry, readTelemetry, v) })
 	section("advanced", func(v any) error { return readInto(&cfg.Advanced, readAdvanced, v) })
 	section("onboarding", func(v any) error { return readInto(&cfg.Onboarding, readOnboarding, v) })
 	return cfg
@@ -765,6 +771,13 @@ func readUpdates(v any) (Updates, error) {
 	r.boolean("check", &u.Check)
 	r.boolean("automatic", &u.Automatic)
 	return u, r.err
+}
+
+func readTelemetry(v any) (Telemetry, error) {
+	t := Default().Telemetry
+	r := newReader(v)
+	r.boolean("enabled", &t.Enabled)
+	return t, r.err
 }
 
 func readAdvanced(v any) (Advanced, error) {
@@ -1014,6 +1027,7 @@ func (c Config) ToTOML() string {
 	root.Set("appearance", at.Set("system_title_bar", ap.SystemTitleBar).Set("sidebar_collapsed", ap.SidebarCollapsed))
 
 	root.Set("updates", newTable().Set("check", c.Updates.Check).Set("automatic", c.Updates.Automatic))
+	root.Set("telemetry", newTable().Set("enabled", c.Telemetry.Enabled))
 	adv := newTable()
 	if c.Advanced.EnginePath != nil {
 		adv.Set("engine_path", *c.Advanced.EnginePath)

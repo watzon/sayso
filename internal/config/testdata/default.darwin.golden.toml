@@ -88,6 +88,9 @@ sidebar_collapsed = false
 check = true
 automatic = false
 
+[telemetry]
+enabled = true
+
 [advanced]
 
 [onboarding]

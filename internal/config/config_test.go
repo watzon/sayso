@@ -426,3 +426,22 @@ func TestDanglingDefaultProviderIsClearedOnLoad(t *testing.T) {
 		t.Fatal("dropped the default of an unknown entry")
 	}
 }
+
+func TestTelemetryIsOnUnlessTurnedOff(t *testing.T) {
+	// A config from before [telemetry] existed, and one with the section but not the key.
+	for _, text := range []string{"[updates]\ncheck = false\n", "[telemetry]\n"} {
+		if l := Parse(text); !l.Config.Telemetry.Enabled || len(l.Issues) != 0 {
+			t.Fatalf("%q: enabled %v, issues %v", text, l.Config.Telemetry.Enabled, l.Issues)
+		}
+	}
+	off := Parse("[telemetry]\nenabled = false\n").Config
+	if off.Telemetry.Enabled {
+		t.Fatal("enabled = false read as on")
+	}
+	if !strings.Contains(off.ToTOML(), "[telemetry]\nenabled = false\n") || Parse(off.ToTOML()).Config.Telemetry.Enabled {
+		t.Fatal("off does not survive a save")
+	}
+	if l := Parse("[telemetry]\nenabled = \"no\"\n"); !l.Config.Telemetry.Enabled || len(l.Issues) != 1 || l.Issues[0].Field != "telemetry" {
+		t.Fatalf("a bad value: enabled %v, issues %v", l.Config.Telemetry.Enabled, l.Issues)
+	}
+}
