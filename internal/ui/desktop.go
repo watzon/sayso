@@ -267,24 +267,8 @@ func (d *Desktop) ClosePopover(keep bool) {
 }
 
 func (d *Desktop) newWindow(which Window) *mygo.Window {
-	opts := mygo.WindowOptions{TitleBarStyle: mygo.TitleBarHidden, DisableMaximize: true, DisableFullScreen: true}
-	switch which {
-	case WinOnboarding:
-		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("onboarding.welcome.title"), OnboardingW, OnboardingH, mu.View(d.a.OnboardingView)
-		// A fixed size, as the Rust window; the traffic lights sit in the
-		// sheet's 52 px top bar, as the Paper artboards place them.
-		opts.DisableResize, opts.DisableMinimize = true, false
-		opts.TrafficLightPosition = &mygo.Point{X: 28, Y: 30}
-	case WinPermissions:
-		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("settings.permissions.title"), PermissionsW, PermissionsH, mu.View(d.a.PermissionsView)
-	case WinWhatsNew:
-		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("whats_new.window_title"), WhatsNewW, WhatsNewH, mu.View(d.a.WhatsNewView)
-	case WinUpdate:
-		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("update.slip_title"), UpdateW, UpdateH, mu.View(d.a.UpdateView)
-	case WinApproval:
-		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("apps.approval.window_title"), ApprovalW, ApprovalH, mu.View(d.a.ApprovalView)
-		opts.AlwaysOnTop = true
-	default:
+	opts, ok := d.windowOptions(which)
+	if !ok {
 		return nil
 	}
 	w := mygo.NewWindow(opts)
@@ -306,6 +290,33 @@ func (d *Desktop) newWindow(which Window) *mygo.Window {
 		}
 	})
 	return w
+}
+
+// windowOptions are the options of the secondary window which; false for a
+// window that is not one.
+func (d *Desktop) windowOptions(which Window) (mygo.WindowOptions, bool) {
+	opts := mygo.WindowOptions{TitleBarStyle: mygo.TitleBarHidden, DisableMaximize: true, DisableFullScreen: true}
+	switch which {
+	case WinOnboarding:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("onboarding.welcome.title"), OnboardingW, OnboardingH, mu.View(d.a.OnboardingView)
+		// A fixed size, as the Rust window; the traffic lights sit in the
+		// sheet's 52 px top bar, as the Paper artboards place them.
+		opts.DisableResize, opts.DisableMinimize = true, false
+		opts.TrafficLightPosition = &mygo.Point{X: 28, Y: 30}
+	case WinPermissions:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("settings.permissions.title"), PermissionsW, PermissionsH, mu.View(d.a.PermissionsView)
+	case WinWhatsNew:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("whats_new.window_title"), WhatsNewW, WhatsNewH, mu.View(d.a.WhatsNewView)
+		opts.DisableResize = true
+	case WinUpdate:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("update.slip_title"), UpdateW, UpdateH, mu.View(d.a.UpdateView)
+	case WinApproval:
+		opts.Title, opts.Width, opts.Height, opts.Content = i18n.T("apps.approval.window_title"), ApprovalW, ApprovalH, mu.View(d.a.ApprovalView)
+		opts.AlwaysOnTop = true
+	default:
+		return mygo.WindowOptions{}, false
+	}
+	return opts, true
 }
 
 // newPopover is the themed panel under the tray item.

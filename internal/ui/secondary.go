@@ -33,12 +33,18 @@ func (a *App) showWindow(w Window, show bool) {
 	}
 }
 
-// secondaryFrame is the paper sheet every secondary window draws on.
+// secondaryFrame is the paper sheet every secondary window draws on. The
+// windows have no title bar, so the whole sheet moves the window: a press
+// on a control inside it still goes to the control.
 func (a *App) secondaryFrame(c *mu.Context, fn func(p theme.Colors)) {
 	p := a.look(c)
 	c.Root().Background(p.Sheet)
 	bar := c.TitleBar()
-	mu.Column(c).Fill().Padding(max(bar.Bottom, 0)+24, 28, 24, 28).Gap(14).Children(func() { fn(p) })
+	sheet := mu.Column(c.Key("secondary.sheet")).Fill().Padding(max(bar.Bottom, 0)+24, 28, 24, 28).Gap(14).DragWindow()
+	// None of these windows maximizes, so a double click on the sheet does
+	// nothing, rather than the zoom or maximize of a title bar.
+	sheet.WindowDoubleClicked()
+	sheet.Children(func() { fn(p) })
 }
 
 // finishSecondary ends onboarding: What's New waits for the next version (a
