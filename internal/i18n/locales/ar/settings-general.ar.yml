@@ -3,8 +3,8 @@ _version: 1
 settings:
   general:
     title: "عام"
-    subtitle_mac: "اللغة واسمك وبدء التشغيل وأيقونة Dock والتحديثات وملف الإعدادات."
-    subtitle_other: "اللغة واسمك وبدء التشغيل والتحديثات وملف الإعدادات."
+    subtitle_mac: "اللغة واسمك وبدء التشغيل وأيقونة Dock والتحديثات والخصوصية وملف الإعدادات."
+    subtitle_other: "اللغة واسمك وبدء التشغيل والتحديثات والخصوصية وملف الإعدادات."
     language: "اللغة"
     interface_language: "لغة الواجهة"
     interface_language_detail: "لغة النصوص التي يعرضها Sayso. أما اللغة التي تتحدث بها فتجدها في الإعدادات › الإملاء."
@@ -64,6 +64,9 @@ settings:
     check_updates_detail: "عند بدء Sayso، ومرة واحدة يوميًا. لا يرسل التحقق أي بيانات عنك."
     install_automatically: "تثبيت التحديثات تلقائيًا"
     install_automatically_detail: "ينزّل Sayso كل إصدار جديد ويثبّته عند تشغيله في المرة التالية."
+    privacy: "الخصوصية"
+    telemetry: "إحصاءات استخدام مجهولة الهوية"
+    telemetry_detail: "يُبلغ TelemetryDeck عند بدء Sayso وعند انتهاء كل إملاء، مع الإصدار والنظام والنموذج ونوع النمط. لا يرسل أبدًا كلماتك أو الصوت أو التوجيهات."
     about: "حول"
     version: "الإصدار %{version}"
     tagline: "إملاء محلي لنظام %{os}"

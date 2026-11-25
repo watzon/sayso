@@ -3,8 +3,8 @@ _version: 1
 settings:
   general:
     title: "일반"
-    subtitle_mac: "언어, 이름, 시작, Dock 아이콘, 업데이트, 설정 파일을 설정해요."
-    subtitle_other: "언어, 이름, 시작, 업데이트, 설정 파일을 설정해요."
+    subtitle_mac: "언어, 이름, 시작, Dock 아이콘, 업데이트, 개인정보, 설정 파일을 설정해요."
+    subtitle_other: "언어, 이름, 시작, 업데이트, 개인정보, 설정 파일을 설정해요."
     language: "언어"
     interface_language: "인터페이스 언어"
     interface_language_detail: "Sayso가 표시하는 텍스트의 언어예요. 말하는 언어는 설정 › 받아쓰기에서 정해요."
@@ -59,6 +59,9 @@ settings:
     check_updates_detail: "Sayso를 시작할 때와 하루에 한 번 확인해요. 확인할 때 사용자 정보를 보내지 않아요."
     install_automatically: "업데이트 자동 설치"
     install_automatically_detail: "Sayso가 새 버전을 다운로드하고 다음에 Sayso를 시작할 때 설치해요."
+    privacy: "개인정보"
+    telemetry: "익명 사용 통계"
+    telemetry_detail: "Sayso를 시작할 때와 받아쓰기를 마칠 때 버전, 시스템, 모델, 스타일 종류를 TelemetryDeck에 보내요. 말한 내용, 오디오, 프롬프트는 절대 보내지 않아요."
     about: "정보"
     version: "버전 %{version}"
     tagline: "%{os}용 로컬 받아쓰기"

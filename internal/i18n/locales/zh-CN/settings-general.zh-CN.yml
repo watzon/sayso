@@ -3,8 +3,8 @@ _version: 1
 settings:
   general:
     title: "通用"
-    subtitle_mac: "语言、你的名字、启动、程序坞图标、更新和配置文件。"
-    subtitle_other: "语言、你的名字、启动、更新和配置文件。"
+    subtitle_mac: "语言、你的名字、启动、程序坞图标、更新、隐私和配置文件。"
+    subtitle_other: "语言、你的名字、启动、更新、隐私和配置文件。"
     language: "语言"
     interface_language: "界面语言"
     interface_language_detail: "Sayso 显示文本所用的语言。你说话所用的语言在“设置 › 听写”中。"
@@ -59,6 +59,9 @@ settings:
     check_updates_detail: "在 Sayso 启动时以及每天检查一次。检查时不会发送任何关于你的数据。"
     install_automatically: "自动安装更新"
     install_automatically_detail: "Sayso 会下载每个新版本，并在下次启动时安装。"
+    privacy: "隐私"
+    telemetry: "匿名使用统计"
+    telemetry_detail: "在 Sayso 启动和每次听写完成时，向 TelemetryDeck 发送版本、系统、模型和风格类型。绝不发送你说的话、音频或提示词。"
     about: "关于"
     version: "版本 %{version}"
     tagline: "适用于 %{os} 的本地听写"

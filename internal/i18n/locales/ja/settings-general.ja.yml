@@ -3,8 +3,8 @@ _version: 1
 settings:
   general:
     title: "一般"
-    subtitle_mac: "言語、名前、起動、Dock アイコン、アップデート、設定ファイル。"
-    subtitle_other: "言語、名前、起動、アップデート、設定ファイル。"
+    subtitle_mac: "言語、名前、起動、Dock アイコン、アップデート、プライバシー、設定ファイル。"
+    subtitle_other: "言語、名前、起動、アップデート、プライバシー、設定ファイル。"
     language: "言語"
     interface_language: "表示言語"
     interface_language_detail: "Sayso に表示されるテキストの言語です。話す言語は「設定 › 音声入力」で設定します。"
@@ -59,6 +59,9 @@ settings:
     check_updates_detail: "Sayso の起動時と、1日に1回確認します。確認の際に個人に関するデータは送信されません。"
     install_automatically: "アップデートを自動でインストール"
     install_automatically_detail: "Sayso は新しいバージョンをダウンロードし、次回の起動時にインストールします。"
+    privacy: "プライバシー"
+    telemetry: "匿名の利用状況データ"
+    telemetry_detail: "Sayso の起動時と音声入力の完了時に、バージョン、システム、モデル、スタイルの種類を TelemetryDeck に送ります。話した言葉、音声、プロンプトは送りません。"
     about: "情報"
     version: "バージョン %{version}"
     tagline: "%{os} 用のローカル音声入力"

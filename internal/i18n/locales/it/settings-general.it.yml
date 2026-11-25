@@ -3,8 +3,8 @@ _version: 1
 settings:
   general:
     title: "Generali"
-    subtitle_mac: "Lingua, il tuo nome, avvio, icona nel Dock, aggiornamenti e file di configurazione."
-    subtitle_other: "Lingua, il tuo nome, avvio, aggiornamenti e file di configurazione."
+    subtitle_mac: "Lingua, il tuo nome, avvio, icona nel Dock, aggiornamenti, privacy e file di configurazione."
+    subtitle_other: "Lingua, il tuo nome, avvio, aggiornamenti, privacy e file di configurazione."
     language: "Lingua"
     interface_language: "Lingua dell'interfaccia"
     interface_language_detail: "La lingua del testo che Sayso mostra. La lingua che parli è in Impostazioni › Dettatura."
@@ -61,6 +61,9 @@ settings:
     check_updates_detail: "All'avvio di Sayso e una volta al giorno. La verifica non invia alcun dato su di te."
     install_automatically: "Installa gli aggiornamenti automaticamente"
     install_automatically_detail: "Sayso scarica ogni nuova versione e la installa al prossimo avvio di Sayso."
+    privacy: "Privacy"
+    telemetry: "Telemetria d’uso anonima"
+    telemetry_detail: "Comunica a TelemetryDeck quando Sayso si avvia e quando finisce una dettatura, con versione, sistema, modello e tipo di stile. Mai le tue parole, l’audio o i prompt."
     about: "Informazioni"
     version: "Versione %{version}"
     tagline: "Dettatura locale per %{os}"
