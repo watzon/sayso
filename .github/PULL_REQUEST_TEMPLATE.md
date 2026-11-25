@@ -4,11 +4,10 @@
 
 ## How you checked it
 
-CI runs only the dependency-rule check, so mark the checks that you ran on your Mac.
+CI runs the Go tests on macOS, Linux, and Windows. Mark the checks that you ran yourself.
 
-- [ ] `cargo test --workspace`
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`
-- [ ] `scripts/check-deps.sh`
+- [ ] `go vet ./internal/... ./cmd/...`
+- [ ] `go test ./internal/... ./cmd/...`
 - [ ] I ran the app and used the changed feature
 
 <!-- For a UI change, add a screenshot. -->

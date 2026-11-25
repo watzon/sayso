@@ -1,9 +1,9 @@
 name: CI
 
-# Every push and pull request runs the dependency rules, the Go tests (CGO_ENABLED=0),
-# the Rust SDK tests (cargo test --workspace), and the TypeScript SDK tests (pnpm test).
-# A change to only documents (Markdown, docs/, the license, the funding file) runs nothing.
-# The slow jobs (cleanup runtime, engine files) run only when you start them:
+# Every push and pull request runs the Go tests (CGO_ENABLED=0) on macOS, Linux,
+# and Windows. A change to only documents (Markdown, docs/, the license, the
+# funding file) runs nothing. The slow jobs (engine files) run only when you
+# start them:
 #   gh workflow run ci.yml
 on:
   push:
@@ -31,19 +31,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  dependency-rules:
-    name: Dependency rules
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      # The rules read only the manifests (cargo metadata --no-deps).
-      - name: Check the dependency rules
-        run: RUSTUP_TOOLCHAIN=stable scripts/check-deps.sh
-      # The Rust code in docs/sdk-guide must be the code of the examples that CI compiles.
-      - name: Check the code of the SDK guide
-        run: python3 scripts/check-sdk-guide.py
-
   go:
     name: Go tests, ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -69,141 +56,6 @@ jobs:
           go build -tags mygo_noinspector -ldflags="-s -w" -o "${RUNNER_TEMP}/sayso" ./cmd/sayso
           go build -ldflags="-s -w" -o "${RUNNER_TEMP}/sayso-engine" ./cmd/sayso-engine
           go build -tags ffi_no_embed -ldflags="-s -w" -o "${RUNNER_TEMP}/sayso-cleanup" ./cmd/sayso-cleanup
-
-  rust-sdk:
-    name: Rust SDK tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Linux audio headers
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      - name: Test
-        run: cargo test --workspace
-      # packages/sdk/src/protocol must be what sayso-protocol writes (feature ts).
-      - name: Check the TypeScript types of the protocol
-        run: scripts/check-protocol-ts.sh
-      # Each npm package has the version of Cargo.toml (docs/releasing.md, step 2).
-      - name: Check the version of the npm packages
-        run: python3 scripts/npm-packages.py check-versions
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
-  ts-sdk:
-    name: TypeScript SDK tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Linux audio headers
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libasound2-dev
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - run: pnpm install --frozen-lockfile
-      - name: Build the addon and the fake engine
-        run: |
-          node packages/sdk/scripts/build-addon.mjs
-          cargo build -p sayso-sdk --example sayso-fake-engine
-          pnpm build
-      - name: Test
-        run: pnpm test
-
-  # The Rust cleanup runtime (native/cleanup, the sayso-cleanup binary of the
-  # SDK release files and @justsayso/cleanup; the app runs cmd/sayso-cleanup) is its own
-  # Cargo workspace. It builds llama.cpp with CMake, so no job above builds it.
-  # One job for each target that Sayso ships. It reports the size and the
-  # libraries of the binary, and fails on OpenMP (libgomp, libomp, vcomp):
-  # the runtime must need no library that the system does not have.
-  cleanup-runtime:
-    name: Cleanup runtime, ${{ matrix.name }} (manual)
-    if: github.event_name == 'workflow_dispatch'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: macOS arm64
-            runner: macos-26
-          - name: Windows x86_64
-            runner: windows-2025
-          - name: Linux x86_64
-            runner: ubuntu-24.04
-          - name: Linux arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    defaults:
-      run:
-        shell: bash
-        working-directory: native/cleanup
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install the build packages (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential cmake clang libclang-dev
-      - name: Install CMake (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install cmake --no-progress -y
-          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native/cleanup
-      - name: Build
-        run: cargo build --release
-      - name: Test
-        run: cargo test
-      - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
-      - name: Size and libraries of the binary
-        run: |
-          case "$RUNNER_OS" in
-            Windows) binary=target/release/sayso-cleanup.exe ;;
-            *) binary=target/release/sayso-cleanup ;;
-          esac
-          ls -l "$binary"
-          echo "size: $(wc -c < "$binary") bytes"
-          case "$RUNNER_OS" in
-            macOS)
-              deps=$(otool -L "$binary")
-              # Only system libraries: llama.cpp and ggml are linked statically.
-              if tail -n +2 <<< "$deps" | grep -vE '^[[:space:]]*(/System/Library/|/usr/lib/)'; then
-                echo "::error::The cleanup runtime links a library that is not part of macOS."
-                exit 1
-              fi ;;
-            Linux) deps=$(ldd "$binary") ;;
-            Windows)
-              # llvm-readobj comes with LLVM. dumpbin comes with Visual Studio.
-              readobj="/c/Program Files/LLVM/bin/llvm-readobj.exe"
-              if [[ -x "$readobj" ]]; then
-                deps=$("$readobj" --coff-imports "$binary" | grep -E 'Name:.*\.(dll|DLL)')
-              else
-                vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" -latest -products '*' -property installationPath)
-                dumpbin=$(find "$(cygpath -u "$vs")/VC/Tools/MSVC" -path '*Hostx64/x64/dumpbin.exe' | sort | tail -1)
-                deps=$("$dumpbin" //dependents "$binary")
-              fi ;;
-          esac
-          echo "$deps"
-          if grep -qiE 'libgomp|libomp|vcomp' <<< "$deps"; then
-            echo "::error::The cleanup runtime needs an OpenMP library. The llama-cpp-2 features must stay off (native/cleanup/Cargo.toml)."
-            exit 1
-          fi
-          if grep -q 'not found' <<< "$deps"; then
-            echo "::error::The cleanup runtime has a library that is missing."
-            exit 1
-          fi
 
   # The engine release files, and their check on clean runners. The Release
   # workflow makes the same files from the signed and notarized app. CI has no
@@ -238,7 +90,7 @@ jobs:
           if-no-files-found: error
 
   # The Intel engine is a cross-compile of the Swift engine alone. The job
-  # needs no Rust and no app bundle, and Sayso has no Intel app.
+  # needs no app bundle, and Sayso has no Intel app.
   engine-file-macos-x86_64:
     name: Engine file, macOS x86_64 (manual)
     if: github.event_name == 'workflow_dispatch'
@@ -271,18 +123,11 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v4
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native/cleanup
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - name: Install CMake and Inno Setup
-        run: |
-          choco install cmake innosetup --no-progress -y
-          "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
       # No SAYSO_SIGN_CERT, so nothing is signed. The installer is for tests on a VM.
       # The engine DLLs (sherpa-onnx, ONNX Runtime, whisper.cpp, ggml) come from a
       # folder that SAYSO_NATIVE_LIBS_DIR names; the runner has none, so set it to a
@@ -294,20 +139,6 @@ jobs:
         with:
           name: test-windows-installer
           path: dist/Sayso-*-windows-x64-setup.exe
-          if-no-files-found: error
-      # The checks of the real system audio and the example apps, for the same VM.
-      - name: Build the test programs
-        run: |
-          cargo build -p sayso-sdk --example scribe --example transcribe
-          $out = cargo test -p sayso-capture --test system_real --no-run --message-format=json | ConvertFrom-Json | Where-Object { $_.reason -eq 'compiler-artifact' -and $_.target.name -eq 'system_real' }
-          New-Item -ItemType Directory -Force dist\test-programs | Out-Null
-          Copy-Item $out.executable dist\test-programs\system_real.exe
-          Copy-Item target\debug\examples\scribe.exe, target\debug\examples\transcribe.exe dist\test-programs\
-      - name: Keep the test programs
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-windows-programs
-          path: dist/test-programs/
           if-no-files-found: error
       - name: Make the engine release file
         run: scripts\package-engine.ps1

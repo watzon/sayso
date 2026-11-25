@@ -1,5 +1,6 @@
-// Generated from crates/sayso-core/src/engine_catalog/descriptors.json. Do not edit.
-// Make it again with: SAYSO_WRITE_CATALOG=1 cargo test -p sayso-core engine_catalog
+// The model store descriptors of the formats of this engine, as JSON. Each one
+// is the same as in internal/localengine/catalog/descriptors.json. No generator
+// writes them: change both together.
 
 /// The descriptors of the model store for the formats of this engine (`docs/sdk.md`, "Model store").
 enum BuiltInDescriptors {

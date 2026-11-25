@@ -1,5 +1,5 @@
-// Generated from crates/sayso-core/src/engine_catalog.rs. Do not edit.
-// Make it again with: SAYSO_WRITE_CATALOG=1 cargo test -p sayso-core engine_catalog
+// The catalog of this engine, as JSON. It must name the models and files of
+// internal/models/catalog.go. No generator writes it: change both together.
 
 /// The built-in catalog of the engine (`docs/engine-protocol.md`, "Models").
 enum BuiltInCatalog {

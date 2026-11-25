@@ -69,7 +69,7 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 [InstallDelete]
 ; The speech engine before 0.12. sayso-engine.exe replaces it.
 Type: files; Name: "{app}\SaysoEngine.exe"
-; The Rust cleanup runtime of older versions, in the app folder. llama\sayso-cleanup.exe replaces it.
+; The cleanup runtime of 0.16 and older, in the app folder. llama\sayso-cleanup.exe replaces it.
 Type: files; Name: "{app}\sayso-cleanup.exe"
 Type: files; Name: "{app}\sayso-cleanup-avx.exe"
 Type: files; Name: "{app}\sayso-cleanup-baseline.exe"

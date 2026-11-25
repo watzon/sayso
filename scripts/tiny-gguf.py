@@ -4,7 +4,7 @@
 #
 # A load and a completion of it run the CPU kernels of llama.cpp, like a real
 # cleanup model, in a moment. The text it writes is noise.
-# scripts/test-cleanup-cpus.sh uses it.
+# scripts/test-llama-cpus.sh uses it.
 import sys
 import numpy as np
 import gguf

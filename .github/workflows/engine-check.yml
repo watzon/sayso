@@ -2,9 +2,7 @@ name: Engine file check
 
 # Check the engine release files on runners that have no build tools. Each job
 # gets one file as an artifact (release-engine-<os>-<arch>), unpacks it, and
-# checks the unpacked engine with the hello request. The
-# suite is a Rust crate, so each job installs Rust and builds only that crate.
-# No job builds an engine.
+# checks the unpacked engine with the hello request. No job builds an engine.
 #
 # The Release workflow calls this workflow after it makes the files. The CI
 # workflow calls it too (start it with: gh workflow run ci.yml), so the check
@@ -52,7 +50,7 @@ jobs:
           ref: ${{ inputs.ref }}
 
       # The Linux engine needs the Vulkan loader, also for a model that runs on
-      # the CPU (build.rs, and the README of the file). The loader is the only
+      # the CPU (the README of the file). The loader is the only
       # package that the file needs from the system, and the packages of Sayso
       # depend on it too.
       - name: Install the Vulkan loader (Linux)
@@ -60,11 +58,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libvulkan1
-
-      - name: Install the Rust toolchain from rust-toolchain.toml
-        run: rustup toolchain install
-
-      - uses: Swatinem/rust-cache@v2
 
       - name: Get the engine file
         uses: actions/download-artifact@v4

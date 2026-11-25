@@ -1,24 +1,10 @@
-/target
 /build
 /dist
-spikes/*/target
-spikes/engine/.models
-spikes/engine/build
-# Raw spike output; the results are in docs/plan.md §7.
-spikes/engine/runs/*.jsonl
-spikes/engine/runs/*.stderr
 # Swift Package Manager build folders.
 .build/
 .swiftpm/
 .DS_Store
 
-# The cleanup runtime is its own Cargo workspace.
-native/cleanup/target
-
 # Agent worktrees of Claude Code.
 .claude/worktrees/
-
-# npm packages (packages/*).
-node_modules/
-packages/*/dist/
-*.node
+__pycache__/

@@ -1,5 +1,5 @@
-// Generated from crates/sayso-core/src/model_migration.rs. Do not edit.
-// Make it again with: SAYSO_WRITE_CATALOG=1 cargo test -p sayso-core model_migration
+// The old model folders that internal/models/migration.go looks for. No
+// generator writes them: change both together.
 
 /// The old folder of each part of each model, as the migration in Sayso looks for them.
 let migrationOldFolders: [(id: String, parts: [(role: String, folder: String)])] = [

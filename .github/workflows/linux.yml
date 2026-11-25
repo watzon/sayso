@@ -102,7 +102,7 @@ jobs:
         if: steps.vulkan-deps.outputs.cache-hit != 'true'
         run: scripts/linux-vulkan-deps.sh "$VULKAN_SDK"
 
-      # Save now, not at the end of the job, so a failed cargo build keeps it.
+      # Save now, not at the end of the job, so a failed build keeps it.
       - name: Keep the Vulkan headers and glslc in the cache
         if: steps.vulkan-deps.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
