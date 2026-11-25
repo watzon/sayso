@@ -214,7 +214,12 @@ func (a *App) WhatsNewView(c *mu.Context) {
 // Updater is the background updater; *update.Updater implements it.
 type Updater interface {
 	CheckNow()
+	// Install downloads and prepares the offered version.
 	Install()
+	// Cancel stops a download.
+	Cancel()
+	// Restart installs the prepared version; StatusRestarting follows.
+	Restart()
 	SetAutoCheck(on bool)
 	SetAutomatic(on bool)
 }
@@ -227,6 +232,10 @@ type updateState struct {
 func (a *App) UpdateStatus(s update.Status) {
 	a.post(func() {
 		a.upd.status = s
+		if s.Kind == update.StatusRestarting && a.d.Shell != nil {
+			// The new version (macOS) or Setup (Windows) waits for Sayso to quit.
+			a.d.Shell.Quit()
+		}
 		a.invalidate()
 	})
 }
@@ -313,8 +322,13 @@ func (a *App) UpdateView(c *mu.Context) {
 				label = i18n.T("update.action.restart")
 			}
 			if a.btn(c, p, "update.install", label, btnPrimary) && a.d.Updater != nil {
-				a.d.Updater.Install()
+				if a.upd.status.Kind == update.StatusReady {
+					a.d.Updater.Restart()
+				} else {
+					a.d.Updater.Install()
+				}
 			}
+
 		})
 	})
 }

@@ -724,10 +724,13 @@ func TestWhatsNewShowsAndCloses(t *testing.T) {
 	}
 }
 
-type fakeUpdater struct{ checks, installs int }
+type fakeUpdater struct{ checks, installs, cancels, restarts int }
 
-func (f *fakeUpdater) CheckNow()         { f.checks++ }
-func (f *fakeUpdater) Install()          { f.installs++ }
+func (f *fakeUpdater) CheckNow() { f.checks++ }
+func (f *fakeUpdater) Install()  { f.installs++ }
+func (f *fakeUpdater) Cancel()   { f.cancels++ }
+func (f *fakeUpdater) Restart()  { f.restarts++ }
+
 func (f *fakeUpdater) SetAutoCheck(bool) {}
 func (f *fakeUpdater) SetAutomatic(bool) {}
 

@@ -22,6 +22,9 @@ const (
 	StatusReady
 	StatusUnreadable // signed with an unknown key or schema: a newer Sayso is needed
 	StatusFailed
+	// StatusRestarting: the update is in place (macOS) or Setup runs
+	// (Windows); Sayso must quit now.
+	StatusRestarting
 )
 
 // Status is one report of the updater.
@@ -121,6 +124,7 @@ const (
 	cmdAutoOff
 	cmdAutomaticOn
 	cmdAutomaticOff
+	cmdRestart
 )
 
 // Updater checks, downloads, and prepares updates on its own goroutine.
@@ -178,6 +182,8 @@ func (u *Updater) loop() {
 				u.w.o.Automatic = false
 			case cmdInstall:
 				u.w.install(true)
+			case cmdRestart:
+				u.w.restart()
 			case cmdCheck:
 				u.w.check(true)
 				arm(u.w.o.Interval)
@@ -191,8 +197,12 @@ func (u *Updater) loop() {
 
 func (u *Updater) CheckNow() { u.commands <- cmdCheck }
 func (u *Updater) Install()  { u.commands <- cmdInstall }
-func (u *Updater) Cancel()   { u.w.cancel.Store(true) }
-func (u *Updater) Stop()     { close(u.commands) }
+
+// Restart installs the prepared update (the user pressed Restart to update).
+// StatusRestarting says that Sayso must quit.
+func (u *Updater) Restart() { u.commands <- cmdRestart }
+func (u *Updater) Cancel()  { u.w.cancel.Store(true) }
+func (u *Updater) Stop()    { close(u.commands) }
 func (u *Updater) SetAutoCheck(on bool) {
 	u.commands <- map[bool]command{true: cmdAutoOn, false: cmdAutoOff}[on]
 }
@@ -229,7 +239,31 @@ func (u *Updater) DismissNotice() {
 	}
 }
 
+func (w *worker) restart() {
+	if w.o.Installer == nil || w.o.Lock == nil {
+		w.onStatus(Status{Kind: StatusFailed, Failure: Failure{Kind: "cannot_update_itself"}})
+		return
+	}
+	version := Semver{}
+	if r := LoadRecord(w.o.Installer.RecordPath()); r != nil {
+		version = r.ToVersion
+	}
+	err := Swap(&w.o.Context, w.o.Installer, w.o.Lock)
+	var f Failure
+	switch {
+	case err == nil:
+		w.onStatus(Status{Kind: StatusRestarting, Version: version})
+	case IsBusy(err):
+		w.onStatus(Status{Kind: StatusFailed, Failure: Failure{Kind: "busy"}})
+	case errors.As(err, &f):
+		w.onStatus(Status{Kind: StatusFailed, Failure: f})
+	default:
+		w.onStatus(Status{Kind: StatusFailed, Failure: Failure{Kind: "unknown"}})
+	}
+}
+
 func (w *worker) available(r Release) Status {
+
 	m := ManualNone
 	if w.o.Installer == nil {
 		m = w.o.Manual

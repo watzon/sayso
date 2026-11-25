@@ -160,6 +160,16 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 	desk := ui.NewDesktop(a)
 	cfg := a.Config()
 
+	// A prepared update goes in before anything starts: the swap starts the
+	// new version (macOS) or Setup (Windows), and this copy ends.
+	uo, updates := update.OptionsForThisBuild(p.DataDir, p.CacheDir, cfg.Updates.Check, cfg.Updates.Automatic)
+	var atStart update.AtStart
+	if updates {
+		if atStart = uo.AtStart(); atStart.Kind == update.AtStartRelaunching {
+			return nil
+		}
+	}
+
 	// The speech engine.
 	var speech *ui.EngineAdapter
 	var ctl *dictation.Controller
@@ -255,9 +265,17 @@ func runApp(a *ui.App, p paths.Paths, plat *platform.Services, db *store.Store, 
 
 	// Updates.
 	var updater *update.Updater
-	if uo, ok := update.OptionsForThisBuild(p.DataDir, p.CacheDir, cfg.Updates.Check, cfg.Updates.Automatic); ok {
+	if updates {
 		updater = update.Spawn(uo, a.UpdateStatus)
 		a.SetUpdater(updater)
+		switch atStart.Kind {
+		case update.AtStartUpdated:
+			updater.Confirm()
+		case update.AtStartReady:
+			a.UpdateStatus(update.Status{Kind: update.StatusReady, Version: atStart.Version})
+		case update.AtStartFailed:
+			a.UpdateStatus(update.Status{Kind: update.StatusFailed, Failure: atStart.Failure})
+		}
 	}
 
 	mygo.App.OnSecondInstance(func(args []string, _ string) {
