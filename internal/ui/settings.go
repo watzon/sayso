@@ -32,6 +32,9 @@ type settingsState struct {
 	confirmClear bool
 	// confirmAudio asks once more before Delete audio deletes.
 	confirmAudio bool
+	// pillReset: Reset position ran, with pillResetErr.
+	pillReset    bool
+	pillResetErr error
 	// storage is what History, audio and models take on disk, read off the
 	// UI thread.
 	storage     storageCache
@@ -594,6 +597,19 @@ func (a *App) overlaySection(c *mu.Context, p theme.Colors) {
 		}
 		a.toggleRow(c, p, "overlay.hide_fullscreen", i18n.T("settings.overlay.hide_fullscreen"), i18n.T("settings.overlay.hide_fullscreen_detail"), &o.HideInFullscreen, a.overlayChanged)
 		a.toggleRow(c, p, "overlay.follow_display", i18n.T("settings.overlay.follow"), i18n.T("settings.overlay.follow_detail"), &o.FollowDisplay, a.overlayChanged)
+		if !notch {
+			a.row(c, p, i18n.T("settings.overlay.position"), i18n.T("settings.overlay.position_detail"), func() {
+				if a.button(c, p, "overlay.reset_position", i18n.T("settings.overlay.reset_position"), bopt{size: sizeSmall}) {
+					a.set.pillReset, a.set.pillResetErr = true, a.ResetPillPosition()
+				}
+			})
+			switch {
+			case a.set.pillReset && a.set.pillResetErr != nil:
+				banner(c, p, bannerWarning, i18n.T("settings.overlay.reset_failed", "error", a.set.pillResetErr.Error()))
+			case a.set.pillReset:
+				banner(c, p, bannerInfo, i18n.T("settings.overlay.reset_done"))
+			}
+		}
 		detail := i18n.T("settings.overlay.live_preview_detail")
 		if notch {
 			detail = i18n.T("settings.overlay.live_preview_notch_detail")

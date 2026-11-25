@@ -42,6 +42,10 @@ type Desktop struct {
 	// the overlay.
 	focus  focusState
 	placed overlayPlaced
+	// pill is the press of the pill that may drag it; spots are its saved
+	// places, by display (desktop_pill.go).
+	pill  pillDrag
+	spots map[int64]pillSpot
 	// wasRecording is the state ShowOverlay last saw, to place the overlay
 	// as a dictation starts.
 	wasRecording bool

@@ -80,6 +80,7 @@ func (l *fakeLayer) overlay() overlayWindow {
 	return l.ov
 }
 func (l *fakeLayer) displays() []mygo.Display { return l.screens }
+func (l *fakeLayer) pointer() mygo.Point      { return l.cursor }
 func (l *fakeLayer) giveBack(d time.Duration) {
 	l.log.add("giveBack")
 	l.gaveBack = append(l.gaveBack, d)
