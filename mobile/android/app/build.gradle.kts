@@ -19,6 +19,9 @@ val modelsDir = file("../../models")
 // The TelemetryDeck App ID for this build; empty uses Telemetry.DEFAULT_APP_ID
 // (app/sayso/mobile/telemetry/Telemetry.kt). -PsaysoTelemetryAppId=<id> sets it.
 val saysoTelemetryAppId = providers.gradleProperty("saysoTelemetryAppId").getOrElse("")
+// -PsaysoOfficialBuild=true marks the official release: only that build's
+// release variant sends telemetry out of test mode.
+val saysoOfficialBuild = providers.gradleProperty("saysoOfficialBuild").map { it.toBoolean() }.getOrElse(false)
 
 // Local speech recognition in the :asr process: the sherpa-onnx Android AAR that
 // mobile/scripts/fetch-sherpa-onnx.sh downloads and checks. Without it the build
@@ -54,6 +57,7 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         buildConfigField("String", "TELEMETRY_APP_ID", "\"${saysoTelemetryAppId.replace("\"", "")}\"")
+        buildConfigField("boolean", "OFFICIAL_BUILD", saysoOfficialBuild.toString())
         // sherpa-onnx ships four ABIs; the app supports these two.
         ndk { abiFilters += coreAbis }
         if (saysoNative) {

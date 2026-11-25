@@ -4,9 +4,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
+import app.sayso.mobile.BuildConfig
+import com.sun.net.httpserver.HttpServer
 import org.junit.Test
 import java.io.IOException
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 private class MemoryPrefs : TelemetryPrefs {
     override var enabled = true
@@ -14,7 +22,10 @@ private class MemoryPrefs : TelemetryPrefs {
     override var firstLaunchSent = false
 }
 
-/** Keeps each body; answers [status], or throws when [down]. */
+/**
+ * Keeps each body it sends; answers [status], or throws when [down]. Like
+ * the real one it sends nothing when the gate is shut.
+ */
 private class FakeTransport : TelemetryTransport {
     val bodies = mutableListOf<String>()
     val urls = mutableListOf<String>()
@@ -22,7 +33,8 @@ private class FakeTransport : TelemetryTransport {
     var down = false
     var during: (() -> Unit)? = null
 
-    override fun post(url: String, json: String): Int {
+    override fun post(url: String, json: String, gate: SendGate): Int {
+        if (!gate.open {}) throw IOException("telemetry is off")
         urls += url
         bodies += json
         during?.invoke()
@@ -34,6 +46,32 @@ private class FakeTransport : TelemetryTransport {
 
     companion object {
         val TYPE = Regex("\"type\":\"([^\"]+)\"")
+    }
+}
+
+/** A local TelemetryDeck that counts requests; with [hold] it never answers. */
+private class Ingest(hold: Boolean = false) {
+    val requests = AtomicInteger()
+    val arrived = CountDownLatch(1)
+    private val release = CountDownLatch(1)
+    private val server = HttpServer.create(InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0).apply {
+        executor = Executors.newCachedThreadPool()
+        createContext("/v2/") { ex ->
+            ex.requestBody.readBytes()
+            requests.incrementAndGet()
+            arrived.countDown()
+            if (hold) release.await(10, TimeUnit.SECONDS)
+            ex.sendResponseHeaders(200, -1)
+            ex.close()
+        }
+        start()
+    }
+    val url = "http://127.0.0.1:${server.address.port}/v2/"
+
+    fun stop() {
+        release.countDown()
+        server.stop(0)
+        (server.executor as java.util.concurrent.ExecutorService).shutdownNow()
     }
 }
 
@@ -140,6 +178,74 @@ class TelemetryClientTest {
         c.dictationCompleted(DictationSignal("m", "local", "raw"))
         assertEquals(listOf("dictation.completed"), transport.types())
         assertFalse(prefs.firstLaunchSent)
+    }
+
+    @Test
+    fun installedTakenByTheServerIsMarkedSentEvenIfTurnedOffMeanwhile() {
+        val c = client()
+        transport.during = { c.enabled = false } // the 200 is on its way back
+        c.launched()
+        transport.during = null
+        assertEquals(listOf("app.installed", "app.launched"), transport.types())
+        assertTrue(prefs.firstLaunchSent)
+
+        c.enabled = true
+        transport.bodies.clear()
+        client().launched() // the next process
+        assertEquals(listOf("app.launched"), transport.types())
+    }
+
+    @Test
+    fun turningOffAfterTheBatchIsTakenButBeforeItConnectsSendsNoRequest() {
+        val server = Ingest()
+        try {
+            lateinit var c: TelemetryClient
+            var pause = true
+            val pausedAfterDequeue = TelemetryTransport { url, json, gate ->
+                if (pause) c.enabled = false
+                pause = false
+                HttpTelemetryTransport.post(url, json, gate)
+            }
+            c = TelemetryClient("APP-ID", server.url, true, base, prefs, pausedAfterDequeue) { it.run() }
+            c.launched()
+            assertEquals("HTTP requests after telemetry was turned off", 0, server.requests.get())
+            assertFalse(prefs.firstLaunchSent)
+
+            c.enabled = true
+            c.dictationCompleted(DictationSignal("m", "local", "raw"))
+            assertEquals("the turned-off batch was retried", 1, server.requests.get())
+        } finally {
+            server.stop()
+        }
+    }
+
+    @Test
+    fun turningOffDuringASendDisconnectsIt() {
+        val server = Ingest(hold = true)
+        val worker = Executors.newSingleThreadExecutor()
+        try {
+            val c = TelemetryClient("APP-ID", server.url, true, base, prefs, HttpTelemetryTransport, worker)
+            c.launched()
+            assertTrue("no request", server.arrived.await(5, TimeUnit.SECONDS))
+            c.enabled = false
+            worker.submit {}.get(5, TimeUnit.SECONDS) // the send ended without the server's answer
+            assertFalse(prefs.firstLaunchSent)
+            assertEquals(1, server.requests.get())
+        } finally {
+            worker.shutdownNow()
+            server.stop()
+        }
+    }
+
+    @Test
+    fun onlyAnOfficialReleaseBuildLeavesTestMode() {
+        assertTrue("a release build that is not official", Telemetry.isTestMode(debug = false, official = false))
+        assertTrue(Telemetry.isTestMode(debug = true, official = false))
+        assertTrue(Telemetry.isTestMode(debug = true, official = true))
+        assertFalse(Telemetry.isTestMode(debug = false, official = true))
+        assertEquals("dev", Telemetry.channel(testMode = true))
+        assertEquals("release", Telemetry.channel(testMode = false))
+        assertFalse("-PsaysoOfficialBuild is off by default", BuildConfig.OFFICIAL_BUILD)
     }
 
     @Test

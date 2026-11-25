@@ -12,6 +12,7 @@ import java.security.MessageDigest
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Anonymous usage signals to TelemetryDeck (Ingest API v2), the same ones the
@@ -40,12 +41,19 @@ object Telemetry {
     fun get(context: Context): TelemetryClient = client ?: TelemetryClient(
         appId = BuildConfig.TELEMETRY_APP_ID.ifBlank { DEFAULT_APP_ID },
         endpoint = ENDPOINT,
-        testMode = BuildConfig.DEBUG,
-        base = basePayload(BuildConfig.VERSION_NAME, if (BuildConfig.DEBUG) "dev" else "release", Build.SUPPORTED_ABIS.firstOrNull().orEmpty()),
+        testMode = buildTestMode,
+        base = basePayload(BuildConfig.VERSION_NAME, channel(buildTestMode), Build.SUPPORTED_ABIS.firstOrNull().orEmpty()),
         prefs = TelemetryPrefsStore(context),
         transport = HttpTelemetryTransport,
         executor = Executors.newSingleThreadExecutor { Thread(it, "sayso-telemetry") },
     ).also { client = it }
+
+    private val buildTestMode = isTestMode(BuildConfig.DEBUG, BuildConfig.OFFICIAL_BUILD)
+
+    /** Only an official (`-PsaysoOfficialBuild=true`) release build sends real signals. */
+    fun isTestMode(debug: Boolean, official: Boolean): Boolean = debug || !official
+
+    fun channel(testMode: Boolean): String = if (testMode) "dev" else "release"
 
     /** The fields of every signal; arch uses the desktop's names (Go's GOARCH). */
     fun basePayload(appVersion: String, channel: String, abi: String): Map<String, String> = mapOf(
@@ -100,13 +108,24 @@ class TelemetryPrefsStore(context: Context) : TelemetryPrefs {
     }
 }
 
-/** Posts a JSON body; the HTTP status, or IOException. */
+/**
+ * Posts a JSON body; the HTTP status, or IOException. It asks [gate] right
+ * before it connects and sends nothing when the answer is no.
+ */
 fun interface TelemetryTransport {
-    fun post(url: String, json: String): Int
+    fun post(url: String, json: String, gate: SendGate): Int
+}
+
+/**
+ * Whether a send may still go out. [abort] stops the send if telemetry is
+ * turned off while it runs; false means it is off already.
+ */
+fun interface SendGate {
+    fun open(abort: () -> Unit): Boolean
 }
 
 object HttpTelemetryTransport : TelemetryTransport {
-    override fun post(url: String, json: String): Int {
+    override fun post(url: String, json: String, gate: SendGate): Int {
         val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 15_000
@@ -114,7 +133,15 @@ object HttpTelemetryTransport : TelemetryTransport {
             conn.requestMethod = "POST"
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            conn.outputStream.use { it.write(json.toByteArray(Charsets.UTF_8)) }
+            val body = json.toByteArray(Charsets.UTF_8)
+            // Streaming: an aborted POST is never sent again behind our back.
+            conn.setFixedLengthStreamingMode(body.size)
+            val aborted = AtomicBoolean(false)
+            if (!gate.open { aborted.set(true); conn.disconnect() }) throw IOException("telemetry is off")
+            conn.connect()
+            // disconnect() before connect() does not stop it, so look again.
+            if (aborted.get()) throw IOException("telemetry is off")
+            conn.outputStream.use { it.write(body) }
             return conn.responseCode
         } finally {
             conn.disconnect()
@@ -142,8 +169,11 @@ class TelemetryClient(
     private var launched = false
     private var sending = false
 
-    /** Bumped when telemetry is turned off, so a send already running neither retries nor marks app.installed sent. */
+    /** Bumped when telemetry is turned off, so a send already running is not retried. */
     private var generation = 0
+
+    /** Stops the send in flight; set while it runs. */
+    private var abortSend: (() -> Unit)? = null
 
     /** True when signals can leave: an App ID is set and the user has telemetry on. */
     val active: Boolean get() = appId.isNotBlank() && prefs.enabled
@@ -156,6 +186,8 @@ class TelemetryClient(
                 queue.clear()
                 queuedTypes.clear()
                 generation++
+                abortSend?.invoke()
+                abortSend = null
             }
         }
 
@@ -208,13 +240,22 @@ class TelemetryClient(
             gen = generation
             sending = true
         }
+        val gate = SendGate { abort ->
+            synchronized(lock) {
+                (gen == generation && active).also { if (it) abortSend = abort }
+            }
+        }
         val ok = try {
-            transport.post(endpoint, batch.joinToString(",", "[", "]")) / 100 == 2
+            transport.post(endpoint, batch.joinToString(",", "[", "]"), gate) / 100 == 2
         } catch (_: IOException) {
             false
         }
         synchronized(lock) {
             sending = false
+            abortSend = null
+            // The server has app.installed even if telemetry was turned off
+            // meanwhile; sending it again would count the install twice.
+            if (ok && Telemetry.INSTALLED in types) prefs.firstLaunchSent = true
             if (gen != generation || !active) return
             if (!ok) {
                 queue.addAll(0, batch)
@@ -225,7 +266,6 @@ class TelemetryClient(
                 }
                 return
             }
-            if (Telemetry.INSTALLED in types) prefs.firstLaunchSent = true
         }
     }
 

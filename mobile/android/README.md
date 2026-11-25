@@ -23,7 +23,8 @@ package id `app.sayso.mobile`.
 - `telemetry/`: anonymous TelemetryDeck signals (app.installed, app.launched,
   dictation.completed), the same as the desktop's; off in Setup or Settings.
   Set the App ID in `Telemetry.DEFAULT_APP_ID` or with
-  `-PsaysoTelemetryAppId=<id>`.
+  `-PsaysoTelemetryAppId=<id>`. Signals are in test mode unless the build is a
+  release built with `-PsaysoOfficialBuild=true`.
 
 ## Build
 
