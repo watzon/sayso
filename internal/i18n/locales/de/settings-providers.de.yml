@@ -79,6 +79,7 @@ settings:
     download: "Herunterladen"
     cleanup_ready: "Bereit · Läuft auf diesem %{computer} · %{languages}"
     cleanup_downloading: "Lädt herunter · %{percent} %"
+    cleanup_downloading_bytes: "Lädt herunter · %{amount}"
     cleanup_not_downloaded: "Nicht heruntergeladen"
     cleanup_deleting: "Wird gelöscht"
     cleanup_delete_failed: "Löschen fehlgeschlagen"

@@ -57,6 +57,7 @@ home:
     download: "다운로드"
     add_words: "단어 추가"
     downloading: "다운로드 중 %{percent}%"
+    downloading_bytes: "다운로드 중 %{amount}"
     dictionary_summary: "%{words} · %{rules}"
     words:
       other: "단어 %{count}개"

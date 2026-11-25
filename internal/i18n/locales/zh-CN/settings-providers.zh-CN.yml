@@ -79,6 +79,7 @@ settings:
     download: "下载"
     cleanup_ready: "就绪 · 在这台%{computer}上运行 · %{languages}"
     cleanup_downloading: "正在下载 · %{percent}%"
+    cleanup_downloading_bytes: "正在下载 · %{amount}"
     cleanup_not_downloaded: "未下载"
     cleanup_deleting: "正在删除"
     cleanup_delete_failed: "无法删除"

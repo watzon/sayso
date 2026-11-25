@@ -57,6 +57,7 @@ home:
     download: "下载"
     add_words: "添加词语"
     downloading: "正在下载 %{percent}%"
+    downloading_bytes: "正在下载 %{amount}"
     dictionary_summary: "%{words} · %{rules}"
     words:
       other: "%{count} 个词语"

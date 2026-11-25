@@ -307,6 +307,15 @@ func downloadAmount(st engine.ModelStatus) string {
 	return fmt.Sprintf("%d%%", int(st.Fraction*100))
 }
 
+// downloadText is key with the percent of a download, or key_bytes with
+// the bytes so far while the size is not known.
+func downloadText(key string, st engine.ModelStatus, args ...any) string {
+	if downloadFraction(st) < 0 {
+		return i18n.T(key+"_bytes", append(args, "amount", models.FormatSize(st.BytesDone))...)
+	}
+	return i18n.T(key, append(args, "percent", int(st.Fraction*100))...)
+}
+
 func a11yKey(c *mu.Context, key string) *mu.Context {
 	if key == "" {
 		return c

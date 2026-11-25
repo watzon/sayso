@@ -57,6 +57,7 @@ home:
     download: "ダウンロード"
     add_words: "単語を追加"
     downloading: "ダウンロード中 %{percent}%"
+    downloading_bytes: "ダウンロード中 %{amount}"
     dictionary_summary: "%{words} · %{rules}"
     words:
       other: "%{count}語"

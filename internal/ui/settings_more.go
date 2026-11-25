@@ -13,6 +13,7 @@ import (
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/enhance"
 	"github.com/watzon/sayso/internal/i18n"
+	"github.com/watzon/sayso/internal/models"
 	"github.com/watzon/sayso/internal/models/languages"
 	"github.com/watzon/sayso/internal/theme"
 	"github.com/watzon/sayso/internal/update"
@@ -285,8 +286,10 @@ func (a *App) providersSection(c *mu.Context, p theme.Colors, sub string) {
 			switch {
 			case ready:
 				detail = i18n.T("settings.providers.cleanup_ready", "computer", computer(), "languages", strings.Join(m.Languages, ", "))
+			case downloading && cleanupFraction(dl.progress) < 0:
+				detail = i18n.T("settings.providers.cleanup_downloading_bytes", "amount", models.FormatSize(dl.progress.BytesDone))
 			case downloading:
-				detail = i18n.T("settings.providers.cleanup_downloading", "percent", int(max(0, cleanupFraction(dl.progress))*100))
+				detail = i18n.T("settings.providers.cleanup_downloading", "percent", int(cleanupFraction(dl.progress)*100))
 			case active:
 				detail = i18n.T("settings.providers.cleanup_download_failed")
 			}

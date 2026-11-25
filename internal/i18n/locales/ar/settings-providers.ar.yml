@@ -79,6 +79,7 @@ settings:
     download: "تنزيل"
     cleanup_ready: "جاهز · يعمل على %{computer} · %{languages}"
     cleanup_downloading: "جارٍ التنزيل · %{percent}%"
+    cleanup_downloading_bytes: "جارٍ التنزيل · %{amount}"
     cleanup_not_downloaded: "غير منزَّل"
     cleanup_deleting: "جار الحذف"
     cleanup_delete_failed: "تعذّر الحذف"

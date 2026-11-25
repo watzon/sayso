@@ -79,6 +79,7 @@ settings:
     download: "Скачать"
     cleanup_ready: "Готово · Работает на этом устройстве (%{computer}) · %{languages}"
     cleanup_downloading: "Загрузка · %{percent}%"
+    cleanup_downloading_bytes: "Загрузка · %{amount}"
     cleanup_not_downloaded: "Не скачано"
     cleanup_deleting: "Удаление"
     cleanup_delete_failed: "Не удалось удалить"

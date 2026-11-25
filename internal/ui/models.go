@@ -356,7 +356,7 @@ func (a *App) statusText(id models.ModelID) string {
 	st := a.modelStatus(id)
 	switch st.State {
 	case engine.StateDownloading:
-		return i18n.T("app.engine.detail_downloading", "model", a.modelName(id), "percent", int(st.Fraction*100))
+		return downloadText("app.engine.detail_downloading", st, "model", a.modelName(id))
 	case engine.StateOptimizing:
 		return i18n.T("app.engine.optimizing")
 	case engine.StateReady:

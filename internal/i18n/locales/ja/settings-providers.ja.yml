@@ -79,6 +79,7 @@ settings:
     download: "ダウンロード"
     cleanup_ready: "準備完了 · この %{computer} で実行 · %{languages}"
     cleanup_downloading: "ダウンロード中 · %{percent}%"
+    cleanup_downloading_bytes: "ダウンロード中 · %{amount}"
     cleanup_not_downloaded: "未ダウンロード"
     cleanup_deleting: "削除中"
     cleanup_delete_failed: "削除できませんでした"

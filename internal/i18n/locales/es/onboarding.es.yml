@@ -10,6 +10,7 @@ onboarding:
     get_started: "Empezar"
     continue: "Continuar"
     downloading: "Descargando %{percent}%"
+    downloading_bytes: "Descargando %{amount}"
     download: "Descargar"
     skip: "Omitir por ahora"
     finish: "Terminar"

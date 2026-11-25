@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"runtime"
 	"strings"
@@ -417,7 +416,7 @@ func (a *App) permissionsDownload(c *mu.Context, p theme.Colors) {
 	frac, label := float32(0), i18n.T("onboarding.permissions.model_not_started")
 	switch st.State {
 	case engine.StateDownloading:
-		frac, label = st.Fraction, fmt.Sprintf("%.0f%%", st.Fraction*100)
+		frac, label = downloadFraction(st), downloadAmount(st)
 	case engine.StateReady:
 		frac, label = 1, i18n.T("onboarding.permissions.model_ready")
 	case engine.StateOptimizing:

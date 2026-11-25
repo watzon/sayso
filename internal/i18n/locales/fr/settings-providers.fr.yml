@@ -79,6 +79,7 @@ settings:
     download: "Télécharger"
     cleanup_ready: "Prêt · S’exécute sur votre %{computer} · %{languages}"
     cleanup_downloading: "Téléchargement · %{percent} %"
+    cleanup_downloading_bytes: "Téléchargement · %{amount}"
     cleanup_not_downloaded: "Non téléchargé"
     cleanup_deleting: "Suppression"
     cleanup_delete_failed: "Suppression impossible"

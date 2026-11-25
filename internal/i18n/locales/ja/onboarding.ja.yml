@@ -10,6 +10,7 @@ onboarding:
     get_started: "始める"
     continue: "続ける"
     downloading: "ダウンロード中 %{percent}%"
+    downloading_bytes: "ダウンロード中 %{amount}"
     download: "ダウンロード"
     skip: "今はスキップ"
     finish: "完了"

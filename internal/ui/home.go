@@ -441,6 +441,8 @@ type checkItem struct {
 	ok                 bool
 	action             string
 	do                 func()
+	// progress is a download under way, shown next to the action.
+	progress string
 }
 
 func (a *App) checklist() []checkItem {
@@ -471,18 +473,18 @@ func (a *App) checklist() []checkItem {
 	}
 	model := a.FinalModel()
 	ms := a.modelStatus(model)
-	modelDetail := a.modelName(model)
-	switch ms.State {
-	case engine.StateDownloading:
-		modelDetail = i18n.T("home.checklist.downloading", "percent", int(ms.Fraction*100))
+	modelItem := checkItem{key: "home.check.model", title: i18n.T("home.checklist.model"), detail: a.modelName(model), ok: ms.IsOnDisk(),
+		action: i18n.T("home.checklist.open_models"), do: func() { a.SetPage(PageModels) }}
+	if ms.State == engine.StateDownloading {
+		modelItem.progress = downloadText("home.checklist.downloading", ms)
 	}
 	return []checkItem{
-		{"home.check.mic", i18n.T("home.checklist.microphone"), a.micDetail(allowed(perm.mic)), perm.mic, i18n.T("home.checklist.allow"), request("microphone")},
-		{"home.check.ax", i18n.TOS("os.permission.accessibility", nil), allowed(perm.ax), perm.ax, i18n.T("home.checklist.allow"), request("accessibility")},
-		{"home.check.model", i18n.T("home.checklist.model"), modelDetail, ms.IsOnDisk(), i18n.T("home.checklist.open_models"), func() { a.SetPage(PageModels) }},
-		{"home.check.dictionary", i18n.T("home.checklist.dictionary"), i18n.T("home.checklist.dictionary_summary",
+		{key: "home.check.mic", title: i18n.T("home.checklist.microphone"), detail: a.micDetail(allowed(perm.mic)), ok: perm.mic, action: i18n.T("home.checklist.allow"), do: request("microphone")},
+		{key: "home.check.ax", title: i18n.TOS("os.permission.accessibility", nil), detail: allowed(perm.ax), ok: perm.ax, action: i18n.T("home.checklist.allow"), do: request("accessibility")},
+		modelItem,
+		{key: "home.check.dictionary", title: i18n.T("home.checklist.dictionary"), detail: i18n.T("home.checklist.dictionary_summary",
 			"words", i18n.TP("home.checklist.words", a.home.words, nil), "rules", i18n.TP("home.checklist.rules", a.home.rules, nil)),
-			a.home.words > 0, i18n.T("home.checklist.add_words"), func() { a.SetPage(PageDictionary) }},
+			ok: a.home.words > 0, action: i18n.T("home.checklist.add_words"), do: func() { a.SetPage(PageDictionary) }},
 	}
 }
 
@@ -491,6 +493,9 @@ func (a *App) checkRow(c *mu.Context, p theme.Colors, it checkItem) {
 		checkDot(c, p, it.ok)
 		uiText(c, it.title, 14, 400, p.Ink).LineHeight(18.0 / 14).Grow(1).Basis(0).SingleLine()
 		if !it.ok && it.do != nil {
+			if it.progress != "" {
+				uiText(c, it.progress, 13, 400, p.Graphite).SingleLine().Shrink(0)
+			}
 			if a.link(c, p, it.key, it.action, 13, 500, "") {
 				it.do()
 			}

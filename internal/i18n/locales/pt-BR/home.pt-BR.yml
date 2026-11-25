@@ -57,6 +57,7 @@ home:
     download: "Baixar"
     add_words: "Adicionar palavras"
     downloading: "Baixando %{percent}%"
+    downloading_bytes: "Baixando %{amount}"
     dictionary_summary: "%{words} · %{rules}"
     words:
       one: "Palavras: %{count}"

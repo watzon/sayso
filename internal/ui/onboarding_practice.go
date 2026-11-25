@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"runtime"
 	"strings"
 	"unicode"
@@ -126,7 +125,7 @@ func (a *App) onbPractice(c *mu.Context, p theme.Colors) {
 			case st.IsOnDisk():
 				label, col = i18n.T("onboarding.practice.final_ready"), p.Success
 			case st.State == engine.StateDownloading:
-				label, col = i18n.T("onboarding.practice.final_downloading", "percent", fmt.Sprintf("%.0f", st.Fraction*100)), p.Accent
+				label, col = downloadText("onboarding.practice.final_downloading", st), p.Accent
 			case st.State == engine.StateFailed:
 				label, col = i18n.T("onboarding.practice.final_stopped"), p.Danger
 			}
@@ -140,7 +139,7 @@ func (a *App) onbPractice(c *mu.Context, p theme.Colors) {
 				case ps.State == engine.StateReady || (a.d.Engine != nil && ps.IsOnDisk() && a.d.Engine.PreviewReady(string(pid))):
 					label, col = i18n.T("onboarding.practice.preview_ready"), p.Success
 				case ps.State == engine.StateDownloading:
-					label, col = i18n.T("onboarding.practice.preview_downloading", "percent", fmt.Sprintf("%.0f", ps.Fraction*100)), p.Accent
+					label, col = downloadText("onboarding.practice.preview_downloading", ps), p.Accent
 				case ps.IsOnDisk():
 					label, col = i18n.T("onboarding.practice.preview_loading"), p.Accent
 				default:

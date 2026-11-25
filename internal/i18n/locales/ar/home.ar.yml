@@ -57,6 +57,7 @@ home:
     download: "تنزيل"
     add_words: "إضافة كلمات"
     downloading: "جارٍ التنزيل %{percent}%"
+    downloading_bytes: "جارٍ التنزيل %{amount}"
     dictionary_summary: "%{words} · %{rules}"
     words:
       zero: "%{count} كلمة"

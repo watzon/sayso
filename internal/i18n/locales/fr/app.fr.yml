@@ -22,6 +22,7 @@ app:
     model_error: "Erreur de modèle"
     detail_cloud: "%{model} · Cloud"
     detail_downloading: "%{model} · %{percent} %"
+    detail_downloading_bytes: "%{model} · %{amount}"
     detail_not_in_memory: "%{model} · pas en mémoire"
   # The import from Pindrop. %{number} is the count with a thousands separator.
   pindrop:

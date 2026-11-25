@@ -203,3 +203,96 @@ func TestAFailedCleanupDownloadSaysSoAndOffersItAgain(t *testing.T) {
 		t.Fatal("no Download button to try again")
 	}
 }
+
+// unknownSize is a download whose size the server did not send.
+var unknownSize = engine.ModelStatus{State: engine.StateDownloading, BytesDone: 3_456_789}
+
+func TestHomeShowsTheModelDownloadNextToOpenModels(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		st   engine.ModelStatus
+		want string
+	}{
+		{"known size", engine.ModelStatus{State: engine.StateDownloading, Fraction: 0.42, BytesDone: 42e6, BytesTotal: 100e6}, "Downloading 42%"},
+		{"unknown size", unknownSize, "Downloading " + models.FormatSize(3_456_789)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.a.SetPage(PageHome)
+			e.eng.setState(string(e.a.FinalModel()), c.st)
+			tt := e.hub(t)
+			tt.Frame()
+			if !hasExactText(tt, c.want) || hasExactText(tt, "Downloading 0%") {
+				t.Fatalf("want %q: %q", c.want, tt.Texts())
+			}
+			press(t, tt, i18n.T("home.checklist.open_models"))
+			tt.Frame()
+			if e.a.page != PageModels {
+				t.Fatalf("Open Models went to page %v", e.a.page)
+			}
+		})
+	}
+}
+
+func TestOnboardingShowsTheBytesOfADownloadOfUnknownSize(t *testing.T) {
+	amount := models.FormatSize(3_456_789)
+	noZero := func(t *testing.T, tt *mu.Tester) {
+		t.Helper()
+		for _, x := range tt.Texts() {
+			if strings.Contains(x, "0%") {
+				t.Fatalf("a false 0%%: %q", tt.Texts())
+			}
+		}
+	}
+
+	t.Run("model step footer", func(t *testing.T) {
+		e := newEnv(t)
+		e.eng.setState(string(e.a.FinalModel()), unknownSize)
+		e.a.goToStep(stepModel)
+		tt := onboardingTester(e)
+		tt.Frame()
+		if want := "Downloading " + amount; footerLabel(e) != want || !tt.HasText(want) {
+			t.Fatalf("footer %q, want %q: %q", footerLabel(e), want, tt.Texts())
+		}
+		noZero(t, tt)
+	})
+
+	t.Run("permissions step", func(t *testing.T) {
+		e := newEnv(t)
+		e.eng.setState(string(e.a.FinalModel()), unknownSize)
+		e.a.goToStep(stepPermissions)
+		tt := onboardingTester(e)
+		tt.Frame()
+		if !hasExactText(tt, amount) {
+			t.Fatalf("no %q: %q", amount, tt.Texts())
+		}
+		noZero(t, tt)
+	})
+
+	t.Run("practice step", func(t *testing.T) {
+		e := newEnv(t)
+		e.a.cfg.Dictation.LivePreview = true
+		e.a.cfg.Dictation.PreviewModel.Model = otherModel(t, e).ID
+		pid, _ := e.a.previewModel()
+		e.eng.setState(string(e.a.FinalModel()), unknownSize)
+		e.eng.setState(string(pid), unknownSize)
+		e.a.goToStep(stepPractice)
+		tt := onboardingTester(e)
+		tt.Frame()
+		for _, want := range []string{"Final pass downloading · " + amount, "Live preview downloading · " + amount} {
+			if !tt.HasText(want) {
+				t.Fatalf("no %q: %q", want, tt.Texts())
+			}
+		}
+		noZero(t, tt)
+	})
+
+	t.Run("status text", func(t *testing.T) {
+		e := newEnv(t)
+		id := e.a.FinalModel()
+		e.eng.setState(string(id), unknownSize)
+		if got, want := e.a.statusText(id), e.a.modelName(id)+" · "+amount; got != want {
+			t.Fatalf("%q, want %q", got, want)
+		}
+	})
+}

@@ -22,6 +22,7 @@ app:
     model_error: "Error del modelo"
     detail_cloud: "%{model} · Nube"
     detail_downloading: "%{model} · %{percent}%"
+    detail_downloading_bytes: "%{model} · %{amount}"
     detail_not_in_memory: "%{model} · no está en memoria"
   # The import from Pindrop. %{number} is the count with a thousands separator.
   pindrop:

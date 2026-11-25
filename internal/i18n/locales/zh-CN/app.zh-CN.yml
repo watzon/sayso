@@ -22,6 +22,7 @@ app:
     model_error: "模型错误"
     detail_cloud: "%{model} · 云端"
     detail_downloading: "%{model} · %{percent}%"
+    detail_downloading_bytes: "%{model} · %{amount}"
     detail_not_in_memory: "%{model} · 未载入内存"
   # The import from Pindrop. %{number} is the count with a thousands separator.
   pindrop:

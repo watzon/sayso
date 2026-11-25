@@ -10,6 +10,7 @@ onboarding:
     get_started: "시작하기"
     continue: "계속"
     downloading: "다운로드 중 %{percent}%"
+    downloading_bytes: "다운로드 중 %{amount}"
     download: "다운로드"
     skip: "나중에 하기"
     finish: "마침"

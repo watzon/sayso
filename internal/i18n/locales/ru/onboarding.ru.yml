@@ -10,6 +10,7 @@ onboarding:
     get_started: "Начать"
     continue: "Продолжить"
     downloading: "Загрузка %{percent}%"
+    downloading_bytes: "Загрузка %{amount}"
     download: "Скачать"
     skip: "Пропустить"
     finish: "Готово"

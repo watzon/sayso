@@ -57,6 +57,7 @@ home:
     download: "Скачать"
     add_words: "Добавить слова"
     downloading: "Загрузка %{percent}%"
+    downloading_bytes: "Загрузка %{amount}"
     dictionary_summary: "%{words} · %{rules}"
     words:
       one: "%{count} слово"

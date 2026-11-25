@@ -205,7 +205,7 @@ func (a *App) footerFor() footer {
 		case st.IsOnDisk():
 			return footer{label: i18n.T("onboarding.footer.continue"), enabled: true}
 		case st.State == engine.StateDownloading:
-			return footer{label: i18n.T("onboarding.footer.downloading", "percent", fmt.Sprintf("%.0f", st.Fraction*100)), enabled: false}
+			return footer{label: downloadText("onboarding.footer.downloading", st), enabled: false}
 		}
 		return footer{label: i18n.T("onboarding.footer.download"), enabled: a.d.Engine != nil}
 	case stepAI:

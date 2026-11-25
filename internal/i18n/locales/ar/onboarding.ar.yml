@@ -10,6 +10,7 @@ onboarding:
     get_started: "البدء"
     continue: "متابعة"
     downloading: "جارٍ التنزيل %{percent}%"
+    downloading_bytes: "جارٍ التنزيل %{amount}"
     download: "تنزيل"
     skip: "التخطي الآن"
     finish: "إنهاء"
