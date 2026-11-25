@@ -33,7 +33,7 @@ This file says what GPUI and gpui-kit give us for accessibility, what Sayso does
 
 ### Sayso today
 
-- Sayso sets no role, no label, and no accessibility action anywhere. `grep` finds no `.role(`, `aria_`, or `a11y` in `crates/`.
+- Sayso sets no role, no label, and no accessibility action anywhere. `grep` found no `.role(`, `aria_`, or `a11y` in the Rust app.
 - `sayso-ui` builds `Button`, `Switch`, `Segmented`, `NavItem`, `Chip`, `Stepper`, `Progress`, `radio_dot`, and `option_card` from plain `div`s. It uses gpui-component only for `Input`, `Textarea`, scrolling, and one tooltip.
 - There are about 215 `.on_click` handlers in `sayso-app` and `sayso-ui`, and about 145 uses of the `sayso-ui` controls.
 - I read the tree of the onboarding window with Cua. It has the window, two traffic-light buttons, and the menu bar item. It has nothing from Sayso, not even "Get started". This is why Cua cannot press anything in the background: there is no element to press.
@@ -120,7 +120,7 @@ Exit for each window: a VoiceOver pass reads every control in order, and Cua lis
 
 ## Conventions for UI code
 
-These rules apply to every window. The building blocks are in `crates/sayso-ui/src/a11y.rs`.
+These rules apply to every window. The building blocks are the `Key`, `Role`, and label calls of the kit in `internal/ui/kit.go`.
 
 - **A control is a `Pressable` or a `sayso-ui` control.** `Pressable::new(id)` is a `div` with an id, a role (default `Button`), a focus handle (so Tab reaches it and Enter or Space presses it), the focus ring, and `.disabled(..)`. It adds no layout. Use its own `.on_click(..)`, which a disabled control drops. Use `.shadows(..)` for its shadows, so the focus ring adds to them. Never put `.on_click` on a plain `div`: it has no node and no keyboard access.
 - **Every control has a name.** `Button`, `Chip`, and `NavItem` use their visible text. Give `.label(..)` (or `.a11y_label(..)`) to a `Switch`, `Segmented`, `Stepper`, `Progress`, an icon-only control, an `Input` (`.aria_label(..)`), and a control that has a vague text such as "Change" or "Remove". Use the row title as the name, and add the object when there are many of them: "Delete Parakeet". Names come from the catalogs (`t!`), never from English literals.

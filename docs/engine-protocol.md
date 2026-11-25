@@ -9,9 +9,9 @@ Two engines implement this protocol:
 | Engine | Systems | Source |
 |---|---|---|
 | `SaysoEngine` (Swift) | macOS | `native/macos/SaysoEngine` |
-| `sayso-engine` (Rust) | Linux, Windows | `crates/sayso-engine` |
+| `sayso-engine` (Go) | Linux, Windows | `cmd/sayso-engine`, `internal/localengine` |
 
-`sayso-fake-engine` (`crates/sayso-engine-client/src/bin/fake_engine.rs`) is a scripted engine for the tests of the client. The notes on each engine are in `crates/sayso-engine-client/NOTES.md` and `crates/sayso-engine/NOTES.md`.
+The tests of the app's engine client (`internal/engine`) use a scripted fake engine (`SAYSO_FAKE=engine` in `internal/ui/engine_adapter_test.go`).
 
 ## Transport
 
@@ -170,7 +170,7 @@ With the feature `segments`, `transcribe` takes `segments: true`. The `final` re
              {"start_ms":1900,"end_ms":2950,"text":"How are you?","words":[...]}]}
 ```
 
-How much timing a model gives is its timestamp level: `word`, `segment`, or `none`. The model catalog of Sayso says the level of each model (`EngineKind::timestamps` in `crates/sayso-core/src/models.rs`).
+How much timing a model gives is its timestamp level: `word`, `segment`, or `none`. The model catalog of Sayso says the level of each model (`internal/models/catalog.go`).
 
 - `word`: each segment has `words`, each with `start_ms`, `end_ms`, and `text`. A segment ends after a word that ends a sentence (`.`, `?`, `!`, `。`, `？`, `！`), before a pause of 700 ms or more between two words, and before it would pass 20 s.
 - `segment`: the segments of the model, with no `words`.
@@ -291,7 +291,7 @@ A model has an id, such as `parakeet-tdt-v3`, and an `engine` object. The `engin
 
 VAD and diarization models have kinds of their own. The Rust engine runs `{"kind":"sherpa_vad","recipe":"silero","file":"silero_vad.onnx"}` (or `"recipe":"ten"`) and `{"kind":"sherpa_diarization","segmentation":"sherpa-onnx-pyannote-segmentation-3-0","embedding":"<file>.onnx"}`. The Swift engine runs the FluidAudio models: `{"kind":"fluid_vad"}` and `{"kind":"fluid_diarization"}`.
 
-With the feature `catalog`, each engine has a built-in catalog: the models that it runs on this system, by id. The catalog comes from the model catalog of Sayso (`crates/sayso-core/src/models.rs` for macOS, `crates/sayso-core/src/models_onnx.rs` for Linux and Windows), so a client gets the same models as Sayso.
+With the feature `catalog`, each engine has a built-in catalog: the models that it runs on this system, by id. The catalog comes from the model catalog of Sayso (`internal/models/catalog.go`; the Linux and Windows lists are in `internal/localengine/catalog/`), so a client gets the same models as Sayso.
 
 - `list_models`, `download`, `load`, and `delete` can leave out `engine`. The engine then takes the `engine` object of the id from its catalog. An id that is not in the catalog gets an `error` with `code: "unknown_model"`.
 - A request with `engine` uses that object, also for an id that is not in the catalog. Sayso sends `engine`, and a client can use it to run a model that the catalog does not have.
@@ -311,38 +311,17 @@ The messages do not change. With a store:
 Two variables are for tests only:
 
 - `SAYSO_STORE_TEST_DESCRIPTORS`: a file in the form of `descriptors.json`, in place of the descriptors that the engine has built in.
-- `SAYSO_STORE_TEST_HOOK`: a folder. At each step of the rules, the engine writes the file `at-<step>` there. When the file `hold-<step>` is there, the engine then waits until it is gone. `crates/sayso-engine-conformance/src/store.rs` lists the steps.
+- `SAYSO_STORE_TEST_HOOK`: a folder. At each step of the rules, the engine writes the file `at-<step>` there. When the file `hold-<step>` is there, the engine then waits until it is gone. `internal/localengine/store.go` lists the steps.
 
 `SAYSO_HF_ENDPOINT` and `SAYSO_MODELS_URL` also move the sources of the descriptors.
 
-## Conformance tests
+## Tests
 
-`sayso-engine-conformance` (`crates/sayso-engine-conformance`, MIT) checks an engine against this spec. It starts the engine, sends requests, and checks each line that comes back. It has four levels:
+Each engine has its own tests of this spec:
 
-| Level | Needs | Checks |
-|---|---|---|
-| core | nothing | `hello` and `features`, `"v":1` and `type` on every line, one reply for each request, the errors of this spec, unknown stream sessions, `unload` and `language_model` when listed, `shutdown`, and the exit when stdin closes |
-| model | a model id and its `engine` object | `list_models`, `delete`, and the errors for a model that is not downloaded or not loaded |
-| ready | a models folder with the model on disk, and a WAV file with speech | `list_models`, `load`, `transcribe`, a stream (with `--stream`), and `unload`; with the features, segments, the detected language, three streams at the same time, VAD (with `--vad`), and diarization (with `--diarization`) |
-| store | the feature `store_v1`, and a small VAD model of the catalog with its `engine` object | Two engines on one store: one download for two requests, a loaded model that another engine deletes, a shared artifact, manifests that do not go back in revision, and a load that fails. Then one engine stops at each step of the rules while the other does each kind of work, and one engine is killed at each step. After each, the store is checked and a new engine makes it clean. It downloads the model once, and after that it serves the files itself. |
-
-```text
-cargo run -p sayso-engine-conformance -- <engine> \
-    [--model <id> --engine-json <json>] \
-    [--models-dir <dir> --audio <wav> [--stream]] \
-    [--vad <id> <json>] [--diarization <id> <json>] \
-    [--store <id> <json>]
-```
-
-`--vad` and `--diarization` give a VAD model and a diarization model in the same models folder.
-
-The suite does not download or delete in the ready level, but the engine can write to the models folder (for example, a cache).
-
-Where it runs:
-
-- `cargo test -p sayso-engine` runs the core and model levels against the Rust engine, on Linux and Windows. CI also runs its ignored test, the store level.
-- `cargo test -p sayso-engine-client` runs the core and ready levels against `sayso-fake-engine`. The fake engine keeps no download or load state, so it does not run the model level.
-- The macOS job of CI builds the Swift engine and runs the core, model, and store levels against it.
+- `go test ./internal/localengine` for the Go engine (`protocol_test.go` and `engine_test.go` for the messages, `spec_test.go` for the `engine` objects, `layout_test.go` and `download_test.go` for the model files, and the tests of each runtime). They run on macOS, Linux, and Windows in CI.
+- `swift test` in `native/macos/SaysoEngine` for the Swift engine.
+- The engine file check of a release (`engine-check.yml`) starts each packed engine and checks its `hello`.
 
 A feature is in this spec only when each engine passes its tests, or each engine that does not pass leaves the feature out of `features`.
 

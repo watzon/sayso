@@ -177,7 +177,7 @@ jobs:
 
       # Every Mach-O file of the app and the Intel engine. A file with SDK 27 or
       # newer and a string table that is not aligned to 8 bytes does not load
-      # on macOS 27 (docs/sdk-typescript.md, "The load error of macOS 27").
+      # on macOS 27 (docs/releasing.md, "The load error of macOS 27").
       - name: Check the Mach-O files
         run: python3 scripts/check-macho.py dist/Sayso.app dist/engine-x86_64
 

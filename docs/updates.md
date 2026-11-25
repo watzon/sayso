@@ -100,7 +100,7 @@ An install is Manual in these cases:
 - Linux: the install is a `--system` install, has no install marker, or its file system has no atomic exchange.
 - All systems: the manifest has a `schema` that this version does not know. The text says that this version cannot read the update information, with a link to the download page.
 
-On Linux, Sayso also finds the package that holds the install, and the text names the place of the new version. The code is `crates/sayso-update/src/install/package.rs`.
+On Linux, Sayso also finds the package that holds the install, and the text names the place of the new version. The code is `internal/update/install_other.go`.
 
 | Package | How Sayso finds it | What the user gets |
 |---|---|---|
@@ -233,7 +233,7 @@ Sayso does no swap when it quits. A swap during a logout or a shutdown can be ki
 
 ### The swap on macOS and Linux, step by step
 
-The code is `crates/sayso-update/src/swap.rs`.
+The code is `internal/update/swap.go`.
 
 1. Get the exclusive lock.
 2. Do the checks of the record again.
@@ -351,7 +351,7 @@ Users see a new version only after step 5. If one platform job fails, the releas
 
 Signing:
 
-- The signature is Ed25519. The private key is the repository secret `SAYSO_UPDATE_SIGNING_KEY`. The public keys are in `crates/sayso-update/keys/`, each with an id.
+- The signature is Ed25519. The private key is the repository secret `SAYSO_UPDATE_SIGNING_KEY`. The public keys are in `ReleaseKeys` (`internal/update/manifest.go`), each with an id.
 - A small program in the `sayso-update` crate makes a key pair and signs a manifest. The app and the release job then use the same code for the signature, and a test covers both.
 - Chris makes the key pair on his Mac and stores the secret with `scripts/set-release-secrets.sh`. The private key also goes into his password manager. It never goes into the repository.
 - To change the key: add the new public key to the app, and sign each release with the old key and the new key for a period. An app that has only the old key still updates during that period. After the period, an app that never updated in it is Manual forever, and the download page is its route.
@@ -361,7 +361,7 @@ Signing:
 
 ## Code layout
 
-A new crate, `crates/sayso-update`, holds everything that is not UI.
+The package `internal/update` holds everything that is not UI.
 
 | Module | Contents |
 |---|---|
@@ -374,7 +374,7 @@ A new crate, `crates/sayso-update`, holds everything that is not UI.
 | `bin/sayso-update-tool` | `keygen` and `sign`, for the release job |
 
 - New dependencies: `ed25519-dalek`, `sha2`, `semver`, `flate2`. `ureq`, `tar`, `base64`, and `libc` are in the workspace already.
-- `sayso-update` depends on `sayso-core` for `Paths` and the config. It does not depend on GPUI or on a platform crate. `scripts/check-deps.sh` gets that rule.
+- `internal/update` takes the paths and the config from `internal/paths` and `internal/config`. It does not depend on the UI or on `internal/platform`.
 - `sayso-app` owns the UI and the shutdown: it refuses new dictations, stops the engine, and calls `cx.restart()`. `AppModel` holds the update state and starts the updater. `app::run` runs the recovery table at start, before GPUI. The Popover and Settings › General render the state.
 - `Config` gets the `updates` table.
 

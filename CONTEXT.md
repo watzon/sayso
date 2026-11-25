@@ -35,7 +35,7 @@ The raw text from the speech model, before any changes.
 The fixed steps that turn audio into inserted text: transcribe → apply replacements → apply spoken punctuation → apply style → insert. Spoken punctuation is a setting and is off by default.
 
 **Engine**
-The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows and Linux it is the Rust sidecar (`sayso-engine`) with sherpa-onnx, and also whisper.cpp on Windows and parakeet.cpp on Linux. Both engines speak the same protocol. Rust code talks to the engine through the `SttBackend` trait. The engine never sees a cloud model. The engine on macOS also runs the language model of a style (see Apple Intelligence). Rust code reaches it through the `LanguageModel` trait.
+The process that runs local models. On macOS this is the Swift sidecar (`SaysoEngine`) with WhisperKit and FluidAudio. On Windows and Linux it is the Go sidecar (`sayso-engine`, `cmd/sayso-engine`) with sherpa-onnx, and also whisper.cpp on Windows and parakeet.cpp on Linux. Both engines speak the same protocol. The app talks to the engine through `internal/engine`. The engine never sees a cloud model. The engine on macOS also runs the language model of a style (see Apple Intelligence). The app reaches it through the `LanguageModel` interface of `internal/enhance`.
 
 **Engine protocol**
 The NDJSON protocol between an engine and its client (`docs/engine-protocol.md`, MIT). Sayso uses it, and an app that runs an engine alone uses it.
@@ -102,22 +102,10 @@ _Avoid_: extension, plug-in, add-on, client (in UI text).
 The answer of the user to the first connection of an app: **Allow** with the capabilities that the app asked for, or **Don't allow**. Sayso keeps it in `<data dir>/apps.toml`. The host knows the app by the identity of its executable: the team and the identifier of its code signature on macOS, its app id in a Flatpak sandbox, else its path. A program with a signature that is not valid gets no question. The user can change the answer in Settings › Connected apps.
 
 **Host**
-Sayso, when it serves connected apps (`sayso-host`). It knows an app by the identity of its executable and the record of the app in `apps.toml`.
+Sayso, when it serves connected apps (`internal/bridge`). It knows an app by the identity of its executable and the record of the app in `apps.toml`.
 
 **Host API**
-The protocol between the host and a connected app, over a local socket (a named pipe on Windows). It uses the message shapes of the engine protocol. The types are in `sayso-protocol`, and the client is `sayso-sdk` (both MIT).
-
-**SDK**
-The crate `sayso-sdk` (MIT). Its type `Speech` gives an app one API with three modes: `Mode::Sayso`, `Mode::Local`, and `Mode::Auto`. Both ways to do the work use the messages of `sayso-protocol` and the same end rules.
-
-**Sayso mode**
-The SDK does the work through the Host API. Sayso owns the engine, the microphone, the models, and the choices of the user.
-
-**Local mode**
-The SDK starts the engine that the app ships and does the work in the process of the app, with `sayso-speech` and `sayso-capture`. It does not need Sayso, and it never asks a user. Not to be confused with a **local model**, which is a model that runs on this computer in either mode.
-
-**Mode change**
-`Mode::Auto` goes from one mode to the other, only when the app has no active work. A change never moves work. See `docs/sdk.md`, "Mode changes in `Mode::Auto`".
+The protocol between the host and a connected app, over a local socket (a named pipe on Windows). It uses the message shapes of the engine protocol. The types are in `internal/bridge`.
 
 **Capability**
 A permission that an app asks for in `hello` and the user grants in the approval question, for example `audio.mic`. The host refuses a request whose capability the user did not grant. `models.read` is always granted.
@@ -129,7 +117,7 @@ The language the user speaks: a language code, or "auto" to let the model detect
 The language of the text that Sayso shows. It is not the dictation language. The setting `general.language` is "system" or a locale. "system" takes the first language of the system that has a catalog, else English.
 
 **Catalog**
-The file with the interface text of one locale, keyed by name: `crates/sayso-i18n/locales/<locale>.yml`. English is the source catalog.
+The file with the interface text of one locale, keyed by name: `internal/i18n/locales/<locale>/*.<locale>.yml`. English is the source catalog.
 
 **Locale**
 A code such as `en`, `pt-BR`, or `zh-CN` that names one catalog.
@@ -167,7 +155,7 @@ The step that changes the English commands "comma", "period", "question mark", "
 A word that the speaker spells after a cue: "Dana Cats, that's K A T Z". Before the model of a style runs, code puts the spelled word in place of the cue and of the words that it corrects.
 
 **Enhancer**
-The trait that sends a transcript and a style prompt to an AI provider and returns schema-checked JSON. The implementations are the OpenAI-compatible endpoint, the Claude CLI, the ChatGPT plan, and the language model of the engine. A cleanup model is not an enhancer: it runs through `Cleaner`.
+The interface that sends a transcript and a style prompt to an AI provider and returns schema-checked JSON. The implementations are the OpenAI-compatible endpoint, the Claude CLI, the ChatGPT plan, and the language model of the engine. A cleanup model is not an enhancer: it runs through `Cleaner`.
 
 **Cleanup model**
 A local model that cleans up text with fixed settings and reads no prompt: S1-mini by Superwhisper (English) and Cleanup 1 by Spokenly (seven languages). It is a provider of a style, like Apple Intelligence, with the badge "No prompts". It runs a style only when the style has cleanup settings that the model supports; else it does a cleanup only, and the overlay says so. It runs only when Sayso knows the language of the dictation and the model supports it. The text stays on the computer. [docs/cleanup-models.md](docs/cleanup-models.md) has the design.
@@ -179,7 +167,7 @@ The part of a style that a cleanup model uses (`[cleanup]` in the style file): t
 How a cleanup model writes capital letters and the final period: very casual, casual, or formal. It does not change words. Only Cleanup 1 has tones.
 
 **Cleanup runtime**
-The process `sayso-cleanup` (`cmd/sayso-cleanup`) that runs a cleanup model with llama.cpp, from the prebuilt llama.cpp libraries of one pinned release that ship with Sayso (`internal/llamalib`). It knows no model: it loads a GGUF file and completes text. Sayso starts it at the first use, loads the model ahead when a cleanup model is a provider, and stops it after 10 minutes with no use. A stop is graceful (the runtime frees the model and llama.cpp and exits), except for a request past its deadline, which kills it. The SDKs use the Rust runtime of `native/cleanup`, which speaks the same protocol.
+The process `sayso-cleanup` (`cmd/sayso-cleanup`) that runs a cleanup model with llama.cpp, from the prebuilt llama.cpp libraries of one pinned release that ship with Sayso (`internal/llamalib`). It knows no model: it loads a GGUF file and completes text. Sayso starts it at the first use, loads the model ahead when a cleanup model is a provider, and stops it after 10 minutes with no use. A stop is graceful (the runtime frees the model and llama.cpp and exits), except for a request past its deadline, which kills it.
 
 **Thinking level**
 How much the model of a provider thinks before it answers, for example low, medium, or high. A higher level is slower. The levels are those that the provider reports for the model, with its model list: the Claude tool, the ChatGPT backend, and OpenRouter do. The user sets the level for each provider in Settings. With no choice, Claude and ChatGPT get low, and an OpenAI-compatible provider gets no level, so the model uses its own default. When the user chooses another model, a level that the model does not have becomes its lowest level. The level goes out as `--effort` (Claude), `reasoning.effort` (ChatGPT and OpenRouter), or `reasoning_effort` (other servers).
@@ -191,7 +179,7 @@ The provider of a style that runs the language model of macOS (macOS 26 and late
 The step that puts the final text into the focused app. The default is paste through the clipboard, with a safe restore. Typing is the fallback. Sayso adds a space after the text, and a setting turns this off.
 
 **Shell**
-The app glue that GPUI does not cover, one backend for each system: window placement, the tray, the Dock, and startup (`crates/sayso-app/src/shell`). On Linux it also picks the display server for the UI.
+The app glue that MyGo does not cover, one backend for each system: window placement, the tray, the Dock, and startup (`internal/platform`). On Linux it also picks the display server for the UI.
 
 **Rail**
 The collapsed Hub sidebar: a column of icons with no labels. Each label shows as a tooltip. The user collapses and expands the sidebar with a button in its footer (`appearance.sidebar_collapsed`). In a window less than 920 wide the Hub always shows the rail.

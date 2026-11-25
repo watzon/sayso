@@ -16,10 +16,11 @@ The accuracy and speed figures on the Models page come from this benchmark. Says
 ```text
 uv run scripts/benchmark/prepare.py
 (cd native/macos/SaysoEngine && swift build -c release)
-SAYSO_BENCH_MODELS=all cargo test --release -p sayso-engine-client --test benchmark benchmark_every_model -- --ignored --nocapture
-SAYSO_BENCH_PREVIEW=parakeet-unified-en cargo test --release -p sayso-engine-client --test benchmark benchmark_preview -- --ignored --nocapture
-uv run scripts/benchmark/score.py --rust crates/sayso-core/src/models/benchmark.rs --json docs/benchmark-results.json --machine "Apple M5 Pro, macOS 27.0"
+# Run each clip through the engine; this writes ~/.cache/sayso-bench/results/<model>.jsonl.
+uv run scripts/benchmark/score.py --go internal/models/benchmark.go --json docs/benchmark-results.json --machine "Apple M5 Pro, macOS 27.0"
 ```
+
+The runner that sent the clips to the engine was a Rust test, and it has no Go version yet. Until it has one, a new run needs a runner that writes the same `results/<model>.jsonl` lines.
 
 The clips, results, and models go to `~/.cache/sayso-bench`. A run that stops continues where it stopped. Delete `results/<model>.jsonl` to measure a model again. The full run takes about five hours, most of it for the large Whisper models and Canary.
 
@@ -110,8 +111,6 @@ The times with a recording are a little higher than the times without one, also 
 ```text
 uv run scripts/benchmark/prepare.py
 (cd native/macos/SaysoEngine && swift build -c release)
-SAYSO_CONF_MODELS=<a models folder with parakeet-unified-en, silero-vad, speaker-diarization> \
-  cargo test --release -p sayso-host --test dictation_bench -- --ignored --nocapture
 ```
 
-`SAYSO_BENCH_CLIPS` sets the number of dictations (default 15). Without the clips in `~/.cache/sayso-bench`, set `SAYSO_CONF_AUDIO` to a 16 kHz mono WAV file. The run takes about 11 minutes and prints the table above.
+The dictation benchmark that printed the table above was a Rust test of the host, and it has no Go version yet.

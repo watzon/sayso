@@ -43,7 +43,7 @@ If the certificate is not `Developer ID Application: Watzon Ventures LLc (MB5789
 
 ### The update signing key
 
-The key pair exists. The private key is the secret `SAYSO_UPDATE_SIGNING_KEY` and the 1Password item "Sayso update signing key (Ed25519, key id 2026-10)". The public key is in `crates/sayso-update/src/keys.rs`, and its id is `SAYSO_UPDATE_KEY_ID` in `.github/workflows/release.yml`.
+The key pair exists. The private key is the secret `SAYSO_UPDATE_SIGNING_KEY` and the 1Password item "Sayso update signing key (Ed25519, key id 2026-10)". The public key is in `ReleaseKeys` in `internal/update/manifest.go`, and its id is `SAYSO_UPDATE_KEY_ID` in `.github/workflows/release.yml`.
 
 To set the secret again from 1Password:
 
@@ -55,14 +55,14 @@ Make sure that `op read` printed the key before you trust the secret. `gh secret
 
 **Change the key.** Do this when you want a new key and the old key is still safe.
 
-1. Make a key pair: `cargo run -p sayso-update --example update_tool -- keygen <new id>`. The entry for `keys.rs` goes to stdout, and the private key goes to stderr.
-2. Add the entry to `keys.rs`. Keep the old entry.
+1. Make a key pair: `go run ./scripts/update-tool keygen <new id>`. The entry for `ReleaseKeys` goes to stdout, and the private key goes to stderr.
+2. Add the entry to `ReleaseKeys`. Keep the old entry.
 3. Ship releases that still sign with the old key. Each app that updates in this period learns the new key.
 4. Set the secret to the new key and `SAYSO_UPDATE_KEY_ID` to the new id. An app that never updated in the period shows "A newer Sayso is available" with a link to the download page.
 
 **The key is lost.** Do the steps above, without the period: the next release signs with the new key. All apps with only the old key show the link to the download page. Tell users on the website.
 
-**The key is stolen.** Do the same, and also remove the old entry from `keys.rs` in that release. An app that still trusts the old key accepts a manifest from the thief, but only for files on the Releases page of this repository. Tell users on the website and in the release notes to install the new version by hand at once.
+**The key is stolen.** Do the same, and also remove the old entry from `ReleaseKeys` in that release. An app that still trusts the old key accepts a manifest from the thief, but only for files on the Releases page of this repository. Tell users on the website and in the release notes to install the new version by hand at once.
 
 ### Homebrew tap
 
@@ -105,38 +105,9 @@ The AUR commit uses the name and the email address of the repository variables `
 
 To change the package without a new Sayso version (for example a new dependency), change `PKGBUILD.in`, increase `pkgrel` there, and push the files by hand. Set `pkgrel` back to 1 for the next version.
 
-### npm packages
-
-The job **npm publish** publishes the 18 packages of the TypeScript SDK ([sdk-typescript.md](sdk-typescript.md), "CI and publication"). `scripts/npm-packages.py names` lists them. The job **npm addons** (`npm.yml`) builds and tests the native addons on the five platforms, at the same time as the other build jobs. The publish job runs after the release is the latest release, like the Homebrew job, so a failure there does not change the release. To publish again, run the failed jobs of the run again. The publish job skips each package version that npm already has.
-
-The job uses npm trusted publishing: npm trusts `release.yml` of `watzon/sayso`, and the job gets a short token with OIDC. The repository keeps no npm token. A package must exist on npm before it can have a trusted publisher, and npm does not let a token publish without two-factor authentication. So the first version of a new package comes from a Mac, with your npm login. 0.16.0 was the first version of all 18 packages (2026-11-12), and it has no provenance for that reason.
-
-When a version adds a new package, do these steps for that package:
-
-1. Let the release run as usual. The publish job fails at the new package, after the packages before it.
-2. On a Mac, make the packages from the files of the run as the job does ("Make the engine and cleanup packages from the release files", and the addons of the artifacts `addon-<platform>`), and publish the new package. Run it in a terminal: npm opens a page in the browser for the two-factor approval.
-
-   ```sh
-   npm login --auth-type=web
-   cd <folder of the package> && npm publish --access public
-   ```
-
-3. Add the trusted publisher to every package. It needs npm 11.15.0 or later. Every npm trust command needs two-factor authentication, also `--list`. Run the script in a terminal. At the first package, npm opens its approval page in the browser. Approve, and select the option to skip two-factor authentication for 5 minutes. Or set `NPM_OTP_COMMAND` (the comment at the top of the script tells how):
-
-   ```sh
-   scripts/npm-trust.sh
-   scripts/npm-trust.sh --list   # each package names release.yml
-   ```
-
-4. Run the failed jobs of the release run again. The publish job skips the versions that npm has, and publishes the rest.
-
-A new trusted publisher expires when it has no publication in 2 days. Then run step 3 again before the next release.
-
-The `.node` files of the addons are not signed with the Developer ID. Each app that ships the SDK signs them with its own identity.
-
 ### Windows signing (optional)
 
-The Windows job signs the installer and the exes (`Sayso.exe`, the three builds of the speech engine: `sayso-engine.exe`, `sayso-engine-avx.exe`, and `sayso-engine-baseline.exe`, the cleanup runtime `llama\sayso-cleanup.exe` and the llama.cpp DLLs and `libffi-8.dll` beside it, and the three builds of the Rust cleanup runtime of the release file: `sayso-cleanup.exe`, `sayso-cleanup-avx.exe`, and `sayso-cleanup-baseline.exe`) when these secrets exist. The Visual C++ runtime DLLs keep the signature of Microsoft. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
+The Windows job signs the installer and the exes (`Sayso.exe`, the speech engine `sayso-engine.exe`, and the cleanup runtime `llama\sayso-cleanup.exe` with the llama.cpp DLLs and `libffi-8.dll` beside it) when these secrets exist. The Visual C++ runtime DLLs keep the signature of Microsoft. Without them it builds an unsigned installer, and Windows SmartScreen warns the user.
 
 | Secret | Contents |
 |---|---|
@@ -158,23 +129,15 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    To see the window, run `scripts/dev.sh --whats-new`. It shows the first entry of the file.
 
-2. Set the new version in `Cargo.toml` (`[workspace.package]`, `version`), run `cargo build`, so `Cargo.lock` gets the version, and set the same version in `engineVersion` in `native/macos/SaysoEngine/Sources/SaysoEngine/Protocol.swift`. Set it in `Version` in `internal/update/version.go` too: the bundle scripts give the app the version of `Cargo.toml`, but `go run` and `go install` builds use that file, and `TestVersionMatchesCargoToml` fails when the two differ. The Swift engine cannot read `Cargo.toml`, and its `hello` reply must have the version of the release. The test `the_swift_engine_reports_the_sayso_version` in `sayso-core` (step 3) fails when the two differ. Then write the version into the npm packages:
+2. Set the new version in `Version` in `internal/update/version.go`, the one source of the version: the bundle scripts, the engine file scripts, and the Release workflow read it with `scripts/version.sh`. Set the same version in `Version` in `internal/localengine/protocol.go` and in `engineVersion` in `native/macos/SaysoEngine/Sources/SaysoEngine/Protocol.swift`, because each engine answers `hello` with its own copy. `TestTheEnginesHaveTheVersionOfTheApp` (step 3) fails when one differs. Commit the three files and `release-notes.toml` to `main`.
+3. Run the checks on your Mac.
 
    ```sh
-   python3 scripts/npm-packages.py set-version --version 0.3.0
+   CGO_ENABLED=0 go vet ./internal/... ./cmd/...
+   CGO_ENABLED=0 go test ./internal/... ./cmd/...
    ```
 
-   The release stops at its first job when an npm package has another version. Commit the three files, the `package.json` files in `packages/`, and `release-notes.toml` to `main`.
-3. Run the checks on your Mac. CI does not run them on a push.
-
-   ```sh
-   cargo test --workspace
-   cargo clippy --workspace --all-targets -- -D warnings
-   scripts/check-deps.sh
-   python3 scripts/npm-packages.py check-versions
-   ```
-
-4. Publish the release as a prerelease. The tag must be `v` plus the version in `Cargo.toml`, or the workflow stops. `--notes-start-tag` names the release before this one, because GitHub does not use a prerelease as the start of the notes by itself.
+4. Publish the release as a prerelease. The tag must be `v` plus the version in `internal/update/version.go`, or the workflow stops. `--notes-start-tag` names the release before this one, because GitHub does not use a prerelease as the start of the notes by itself.
 
    ```sh
    gh release create v0.3.0 --target main --title "Sayso 0.3.0" --prerelease --generate-notes --notes-start-tag v0.2.0
@@ -200,13 +163,7 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
 
    The AUR package `sayso-bin` must also have the new version.
 
-   npm must have the new version of `@justsayso/sdk`, `@justsayso/engine`, and `@justsayso/cleanup`:
-
-   ```sh
-   npm view @justsayso/sdk version
-   ```
-
-7. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before. The Nix package installs every `bin/sayso-cleanup*` file of the tarball, so it needs a release with the cleanup runtime (0.11.0 or later).
+7. Point the Nix package and the download buttons of the README to the new release, and commit the two files to `main`. Until this step, `nix run github:watzon/sayso` and the buttons give the release before. The Nix package takes the cleanup runtime from `bin/llama` of the tarball, or from `bin/` for a tarball of 0.16.0 or older.
 
    ```sh
    scripts/after-release.sh v0.3.0
@@ -256,13 +213,15 @@ The bundle scripts get the libraries with `go run ./scripts/llama-libs fetch`, w
 
 A runtime that finds no libraries (a development build, a broken install) says so in its `hello`, and the app downloads the archive of its platform into the user cache (`<cache>/llama/<tag>-<os>-<arch>`), checks the archive and each file, and the runtime loads them from there. A signed macOS app cannot load these: library validation accepts only libraries signed with its team identity, so a Mac always uses the libraries of the bundle.
 
-The SDKs (the Rust `sayso-sdk`, `@justsayso/cleanup`, and the `sayso-cleanup-<version>-<os>-<arch>` release files) still use the Rust runtime of `native/cleanup`, its own Cargo workspace, which links llama.cpp. The release workflow builds it on its own for those files (`scripts/build-cleanup.sh`, `scripts/build-cleanup.ps1`), no longer from the app. It speaks the same protocol, so the SDKs could move to the Go runtime later.
+`linux.yml` starts the installed Go runtime in the `.deb` test and checks that it answers `hello` with the `cpu` backend and its libraries, and that its libraries take `libgomp` from their own folder.
 
-The CI job **Cleanup runtime** (`ci.yml`, start it with `gh workflow run ci.yml`) builds, tests, and lints the Rust runtime on the four targets. `linux.yml` starts the installed Go runtime in the `.deb` test and checks that it answers `hello` with the `cpu` backend and its libraries, and that its libraries take `libgomp` from their own folder.
+### The load error of macOS 27
+
+A Mach-O file built with SDK 27 or newer whose string table is not aligned to 8 bytes does not load on macOS 27: dyld says `mis-aligned LINKEDIT string pool`. The linker of Xcode 27 does not pad `stroff` of `LC_SYMTAB` (`indirectsymoff + 4 × nindirectsyms`), so a file with an odd count of indirect symbols is 4 bytes off, by chance. `strip` does not change it. CI builds with Xcode 26, so the files load today. `scripts/check-macho.py` checks every Mach-O file of a release in the macOS job, so a bad file stops the release.
 
 ## Build the release files on your Mac
 
-`scripts/release.sh` does the same steps as the macOS job and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`) and CMake (for the MediaRemoteAdapter framework). It needs no Cargo. It does not build the engine file for Intel Macs. See "The engine release files".
+`scripts/release.sh` does the same steps as the macOS job and writes the files to `dist/`. It needs `create-dmg` (`brew install create-dmg`) and CMake (for the MediaRemoteAdapter framework). It does not build the engine file for Intel Macs. See "The engine release files".
 
 ```sh
 scripts/release.sh --skip-notarize   # bundle and DMG only. Nothing goes to Apple.
@@ -284,7 +243,7 @@ Each release also has the speech engine as a separate file for each system, for 
 |---|---|---|
 | `sayso-engine-<version>-macos-arm64.tar.gz` | `scripts/package-engine.sh`, in the **macOS** job after `scripts/release.sh` | `dist/Sayso.app/Contents/MacOS/SaysoEngine`, signed and notarized with the app |
 | `sayso-engine-<version>-macos-x86_64.tar.gz` | `scripts/package-engine.sh --require-signed`, in the **macOS** job after `scripts/build-engine-x86_64.sh` | `dist/engine-x86_64/SaysoEngine`, a cross-compile of the Swift engine for Intel Macs. The script signs and notarizes it like the engine of the app. |
-| `sayso-engine-<version>-windows-x64.zip` | `scripts/package-engine.ps1`, in the **Windows** job after `scripts\bundle-windows.ps1` | The three builds of the engine in the app folder (`sayso-engine.exe`, `sayso-engine-avx.exe`, `sayso-engine-baseline.exe`), signed when the certificate is set, with every DLL of that folder |
+| `sayso-engine-<version>-windows-x64.zip` | `scripts/package-engine.ps1`, in the **Windows** job after `scripts\bundle-windows.ps1` | `sayso-engine.exe` of the app folder, signed when the certificate is set, with every DLL of that folder |
 | `sayso-engine-<version>-linux-x86_64.tar.gz` and `-linux-arm64.tar.gz` | `scripts/package-engine.sh`, in the `build` job of `linux.yml` after `scripts/bundle-linux.sh` | `bin/sayso-engine` of the Linux tarball |
 
 The packing scripts copy the engine. They never build one, so the file has the binary that was signed. Only the Intel engine has its own build script, because Sayso has no Intel app that holds an engine. Each file has the folder `sayso-engine-<version>/` with `sayso-engine` (`sayso-engine.exe` on Windows), the DLLs on Windows, `README.md` (from `packaging/engine/README.md.in`), `LICENSE`, and `licenses/`. The licenses are the ones that the app ships for the engine. On macOS, where the app ships none, the file has the licenses of the two Swift packages that the engine links (FluidAudio and WhisperKit). The Linux engine needs the Vulkan loader (`libvulkan.so.1`) from the system, and the README says so.
@@ -295,7 +254,7 @@ The Linux files reach the release in the `manifest` job, like the Linux tarballs
 
 The Intel engine is for Macs with an Intel processor, on macOS 14 or later. An Intel Mac has no Neural Engine, so the models run on the CPU and the GPU and are slower than on Apple silicon. The macOS job cross-compiles the engine on the arm64 runner (`swift build --arch x86_64`) and signs it with the same identity, identifier (`dev.sayso.Sayso.engine`), entitlements, hardened runtime, and secure timestamp as the engine of the app. Then it uploads the engine to Apple with `notarytool`, in a zip, because Apple takes a bare executable only in an archive. A bare executable cannot have a stapled ticket, so macOS looks the ticket up online the first time that it runs the engine.
 
-The job **Engine file check** (`engine-check.yml`) runs after the three build jobs and before the `manifest` job, so a release with a bad engine file does not become the latest release. It runs on `macos-latest`, `macos-15-intel`, `ubuntu-24.04`, `ubuntu-24.04-arm`, and `windows-latest`. `macos-15-intel` is a real Intel Mac. GitHub plans to end its Intel macOS runners after the macOS 15 image, in 2027. When that happens, the Intel check needs another machine. Each job installs only Rust (and the Vulkan loader on Linux), unpacks the file, checks the files, (on macOS) checks that the architecture of the engine is the one in the file name, checks that `hello` has the version of the release, and runs the core level of the conformance suite against the unpacked engine. It builds no engine.
+The job **Engine file check** (`engine-check.yml`) runs after the three build jobs and before the `manifest` job, so a release with a bad engine file does not become the latest release. It runs on `macos-latest`, `macos-15-intel`, `ubuntu-24.04`, `ubuntu-24.04-arm`, and `windows-latest`. `macos-15-intel` is a real Intel Mac. GitHub plans to end its Intel macOS runners after the macOS 15 image, in 2027. When that happens, the Intel check needs another machine. Each job installs only the Vulkan loader (on Linux), unpacks the file, checks the files and their libraries, (on macOS) checks that the architecture of the engine is the one in the file name, and checks that `hello` has the version of the release. It builds no engine.
 
 To test the files without a release, run `gh workflow run ci.yml`. The jobs **Engine file, macOS arm64 (manual)**, **Engine file, macOS x86_64 (manual)**, **Engine file, Windows x86_64 (manual)**, and **Engine file, Linux** build the app (the Intel job builds only the engine) without a signature, pack the engine with the same scripts, and then **Engine file check** runs. The files from CI are not signed and not notarized. On a Mac, to make a file from a build that you have:
 
@@ -314,7 +273,7 @@ scripts/package-engine.sh --out /tmp/engine dist/engine-x86_64/SaysoEngine
 
 ## Build the Windows files on a PC
 
-`scripts/bundle-windows.ps1 -Installer` does the same steps as the Windows job and writes the installer and its `.sha256` to `dist\`. It builds the speech engine and the cleanup runtime, so it needs CMake and libclang (`scripts\windows-env.ps1` finds them), and [Inno Setup 6](https://jrsoftware.org/isinfo.php). Set `SAYSO_SIGN_CERT` and `SAYSO_SIGN_PASSWORD` to sign.
+`scripts/bundle-windows.ps1 -Installer` does the same steps as the Windows job and writes the installer and its `.sha256` to `dist\`. It needs Go, the Visual Studio 2022 Build Tools (for the Visual C++ runtime DLLs), `SAYSO_NATIVE_LIBS_DIR` with the engine DLLs, and [Inno Setup 6](https://jrsoftware.org/isinfo.php). Set `SAYSO_SIGN_CERT` and `SAYSO_SIGN_PASSWORD` to sign.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
