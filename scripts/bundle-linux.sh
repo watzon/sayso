@@ -28,6 +28,15 @@ version_flag="-X github.com/watzon/sayso/internal/update.Version=$version"
 if [[ "${SAYSO_OFFICIAL_BUILD:-}" == 1 ]]; then
   version_flag+=" -X github.com/watzon/sayso/internal/update.OfficialBuild=1"
 fi
+# The speech engine loads these at run time (below). A release without them
+# would have no local speech recognition, so it stops before the build.
+engine_libs=(libsherpa-onnx-c-api.so libonnxruntime.so libparakeet.so)
+if [[ "${SAYSO_OFFICIAL_BUILD:-}" == 1 ]]; then
+  [[ -n "${SAYSO_NATIVE_LIBS_DIR:-}" ]] || { echo "set SAYSO_NATIVE_LIBS_DIR to the folder with the engine libraries (${engine_libs[*]})" >&2; exit 1; }
+  for lib in "${engine_libs[@]}"; do
+    [[ -f "$SAYSO_NATIVE_LIBS_DIR/$lib" ]] || { echo "SAYSO_NATIVE_LIBS_DIR ($SAYSO_NATIVE_LIBS_DIR) has no $lib" >&2; exit 1; }
+  done
+fi
 # The TelemetryDeck App ID of the official app (internal/telemetry). Without
 # it the build sends no signal.
 if [[ -n "${SAYSO_TELEMETRY_APP_ID:-}" ]]; then
@@ -53,9 +62,12 @@ mkdir -p "$out/bin" "$out/share/applications" "$out/share/metainfo" "$out/lib/ud
 install -m 755 build/go/sayso "$out/bin/sayso"
 install -m 755 build/go/sayso-engine "$out/bin/sayso-engine"
 # The engine loads sherpa-onnx, whisper.cpp, ggml, and parakeet at run time
-# (purego): SAYSO_NATIVE_LIBS_DIR holds the .so files that go beside it.
+# (purego): SAYSO_NATIVE_LIBS_DIR holds the .so files that go beside it
+# (scripts/engine-libs and scripts/build-parakeet.sh).
 if [[ -n "${SAYSO_NATIVE_LIBS_DIR:-}" ]]; then
   install -m 755 "$SAYSO_NATIVE_LIBS_DIR"/*.so* "$out/bin/"
+else
+  echo "warning: no SAYSO_NATIVE_LIBS_DIR, so the engine has no speech libraries" >&2
 fi
 # The cleanup runtime and its llama.cpp libraries live in bin/llama, apart from
 # the ggml of the engine in bin/ (internal/llamalib). The libraries find each

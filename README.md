@@ -185,7 +185,7 @@ open build/Sayso.app
 
 ### Windows
 
-You need Go and the Visual Studio 2022 Build Tools (the "Desktop development with C++" workload), whose Visual C++ runtime ships next to the app. Set `SAYSO_NATIVE_LIBS_DIR` to a folder with the DLLs of the engine (sherpa-onnx, ONNX Runtime, whisper.cpp, ggml).
+You need Go and the Visual Studio 2022 Build Tools (the "Desktop development with C++" workload), whose Visual C++ runtime ships next to the app. Set `SAYSO_NATIVE_LIBS_DIR` to a folder with the DLLs of the engine (sherpa-onnx, ONNX Runtime, whisper.cpp, ggml): `go run ./scripts/engine-libs fetch` downloads the pinned ones and prints their folder.
 
 ```powershell
 git clone https://github.com/watzon/sayso.git
@@ -204,7 +204,13 @@ You need the packages in `scripts/linux-deps.sh` (Debian and Ubuntu names) and G
 git clone https://github.com/watzon/sayso.git
 cd sayso
 scripts/linux-deps.sh
-scripts/bundle-linux.sh
+# The speech engine libraries: pinned sherpa-onnx and ONNX Runtime, and
+# parakeet.cpp built from pinned sources (on Ubuntu 22.04, first run
+# scripts/linux-vulkan-deps.sh and set VULKAN_SDK to its folder).
+mkdir -p build/native-libs
+cp "$(go run ./scripts/engine-libs fetch)"/* build/native-libs/
+scripts/build-parakeet.sh build/native-libs
+SAYSO_NATIVE_LIBS_DIR=$PWD/build/native-libs scripts/bundle-linux.sh
 ```
 
 The script makes `build/sayso-<version>-linux-<arch>.tar.gz`. Unpack it and run `./install.sh`. To make the `.deb`, the `.rpm`, the AppImage, and the Flatpak from that tarball, run `scripts/package-linux.sh build/sayso-<version>-linux-<arch>.tar.gz`.

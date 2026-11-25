@@ -273,7 +273,7 @@ scripts/package-engine.sh --out /tmp/engine dist/engine-x86_64/SaysoEngine
 
 ## Build the Windows files on a PC
 
-`scripts/bundle-windows.ps1 -Installer` does the same steps as the Windows job and writes the installer and its `.sha256` to `dist\`. It needs Go, the Visual Studio 2022 Build Tools (for the Visual C++ runtime DLLs), `SAYSO_NATIVE_LIBS_DIR` with the engine DLLs, and [Inno Setup 6](https://jrsoftware.org/isinfo.php). Set `SAYSO_SIGN_CERT` and `SAYSO_SIGN_PASSWORD` to sign.
+`scripts/bundle-windows.ps1 -Installer` does the same steps as the Windows job and writes the installer and its `.sha256` to `dist\`. It needs Go, the Visual Studio 2022 Build Tools (for the Visual C++ runtime DLLs), `SAYSO_NATIVE_LIBS_DIR` with the engine DLLs (`go run ./scripts/engine-libs fetch` prints a folder with the pinned ones), and [Inno Setup 6](https://jrsoftware.org/isinfo.php). Set `SAYSO_SIGN_CERT` and `SAYSO_SIGN_PASSWORD` to sign.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
@@ -283,7 +283,7 @@ powershell -ExecutionPolicy Bypass -File scripts\bundle-windows.ps1 -Installer
 
 The Linux jobs are in their own workflow, `linux.yml`, which the Release workflow calls. It has two jobs for each architecture:
 
-1. **Build** compiles the three binaries one time, in an Ubuntu 22.04 container, and makes the tarball (`scripts/bundle-linux.sh`) and the engine release file (`scripts/package-engine.sh`, see "The engine release files"). The container sets the oldest glibc that Sayso runs on: 2.35.
+1. **Build** compiles the three binaries one time, in an Ubuntu 22.04 container, gets the speech engine libraries (`scripts/engine-libs` and `scripts/build-parakeet.sh`), and makes the tarball (`scripts/bundle-linux.sh`) and the engine release file (`scripts/package-engine.sh`, see "The engine release files"). The container sets the oldest glibc that Sayso runs on: 2.35.
 2. **Packages** makes the `.deb`, the `.rpm`, the AppImage, and the Flatpak from the tarball (`scripts/package-linux.sh`), with no compiler. The AppImage gets its copies of the fallback libraries from the packages of this container. It then installs the `.deb` on Ubuntu 22.04 and starts Sayso on a virtual display.
 
 `linux.yml` has the input `skip_packages`, which the CI workflow sets: the **Packages** jobs then do not run.

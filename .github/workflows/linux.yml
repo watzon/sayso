@@ -33,6 +33,8 @@ on:
       - 'packaging/linux/**'
       - 'scripts/bundle-linux.sh'
       - 'scripts/llama-libs/**'
+      - 'scripts/engine-libs/**'
+      - 'scripts/build-parakeet.sh'
       - 'scripts/test-llama-cpus.sh'
       - 'scripts/tiny-gguf.py'
       - 'scripts/package-linux.sh'
@@ -114,6 +116,19 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # The libraries that the speech engine loads: sherpa-onnx and ONNX
+      # Runtime from pinned archives, and libparakeet.so built from pinned
+      # sources with ggml's Vulkan backend (the reason for the steps above).
+      - name: Get the speech engine libraries
+        shell: bash
+        run: |
+          libs="$PWD/build/native-libs"
+          prebuilt=$(go run ./scripts/engine-libs fetch -out build/engine-libs)
+          mkdir -p "$libs"
+          cp "$prebuilt"/* "$libs/"
+          scripts/build-parakeet.sh "$libs"
+          echo "SAYSO_NATIVE_LIBS_DIR=$libs" >> "$GITHUB_ENV"
+
       - name: Build the tarball
         run: SAYSO_BUNDLE_DIR=dist scripts/bundle-linux.sh
 
@@ -194,6 +209,13 @@ jobs:
           reply=$(printf '{"v":1,"id":"1","type":"hello"}\n' | SAYSO_MODELS_DIR="$RUNNER_TEMP/models" timeout 20 /usr/lib/sayso/sayso-engine)
           echo "$reply"
           [[ "$reply" == *'"type":"hello"'* ]] || { echo "::error::sayso-engine gave no hello reply."; exit 1; }
+          # The speech libraries beside the engine, and every library they need.
+          for lib in libsherpa-onnx-c-api.so libonnxruntime.so libparakeet.so; do
+            [[ -f "/usr/lib/sayso/$lib" ]] || { echo "::error::The package has no $lib."; exit 1; }
+          done
+          deps=$(ldd /usr/lib/sayso/*.so)
+          echo "$deps"
+          if grep -q 'not found' <<< "$deps"; then echo "::error::A speech library misses a library."; exit 1; fi
       # The cleanup runtime needs no model to answer hello, and its backend
       # is the CPU on Linux. Its llama.cpp libraries are in /usr/lib/sayso/llama
       # with libgomp, and libffi comes from the libffi8 dependency.
