@@ -77,6 +77,11 @@ Copy-Item 'build\sayso.exe' (Join-Path $app 'Sayso.exe')
 Copy-Item 'build\sayso-engine.exe' (Join-Path $app 'sayso-engine.exe')
 # The engine loads its native libraries from its own folder.
 if ($env:SAYSO_NATIVE_LIBS_DIR) {
+    if (-not $Debug) {
+        foreach ($dll in 'sherpa-onnx-c-api.dll', 'onnxruntime.dll', 'whisper.dll', 'ggml.dll', 'ggml-base.dll', 'ggml-cpu.dll') {
+            if (-not (Test-Path (Join-Path $env:SAYSO_NATIVE_LIBS_DIR $dll))) { throw "SAYSO_NATIVE_LIBS_DIR ($env:SAYSO_NATIVE_LIBS_DIR) has no $dll" }
+        }
+    }
     Get-ChildItem $env:SAYSO_NATIVE_LIBS_DIR -Filter '*.dll' | Copy-Item -Destination $app
 } elseif (-not $Debug) {
     throw 'set SAYSO_NATIVE_LIBS_DIR to the folder with the engine DLLs (sherpa-onnx, onnxruntime, whisper, ggml)'

@@ -128,10 +128,15 @@ jobs:
           go-version-file: go.mod
       - name: Install Inno Setup
         run: choco install innosetup --no-progress -y
+      # The engine DLLs (sherpa-onnx, ONNX Runtime, whisper.cpp, ggml), from
+      # pinned archives.
+      - name: Get the speech engine libraries
+        run: |
+          $libs = go run ./scripts/engine-libs fetch -out build/engine-libs
+          if ($LASTEXITCODE -ne 0) { throw 'the speech engine libraries could not be fetched' }
+          "SAYSO_NATIVE_LIBS_DIR=$libs" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
       # No SAYSO_SIGN_CERT, so nothing is signed. The installer is for tests on a VM.
-      # The engine DLLs (sherpa-onnx, ONNX Runtime, whisper.cpp, ggml) come from a
-      # folder that SAYSO_NATIVE_LIBS_DIR names; the runner has none, so set it to a
-      # download step before this one runs a release build.
       - name: Build the app folder and the installer, not signed
         run: scripts\bundle-windows.ps1 -Installer
       - name: Keep the installer

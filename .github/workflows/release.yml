@@ -293,6 +293,14 @@ jobs:
             Write-Output "::warning::WINDOWS_CERTIFICATE_PFX is not set, so the Windows build is not signed. See docs/releasing.md."
           }
 
+      # The engine DLLs (sherpa-onnx, ONNX Runtime, whisper.cpp, ggml), from
+      # pinned archives.
+      - name: Get the speech engine libraries
+        run: |
+          $libs = go run ./scripts/engine-libs fetch -out build/engine-libs
+          if ($LASTEXITCODE -ne 0) { throw 'the speech engine libraries could not be fetched' }
+          "SAYSO_NATIVE_LIBS_DIR=$libs" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
       - name: Build the app and the installer
         env:
           SAYSO_SIGN_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
