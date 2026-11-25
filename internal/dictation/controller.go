@@ -153,9 +153,10 @@ type Deps struct {
 	Platform   platform.Services
 	Engine     Engine // nil: no local engine
 	Secrets    providers.SecretStore
-	History    History // nil: no history
-	Host       Host    // nil: no Host API
-	Styler     Styler  // nil: DefaultStyler
+	History    History   // nil: no history
+	Host       Host      // nil: no Host API
+	Styler     Styler    // nil: DefaultStyler
+	Telemetry  Telemetry // nil: no telemetry
 	Config     func() *config.Config
 	Styles     func() *enhance.StyleLibrary
 	Replacer   func() *enhance.Replacer
@@ -1181,6 +1182,7 @@ func (c *Controller) insert(id SessionID, text string) {
 				s.diagnostics.StopToInsertMs = &ms
 			}
 			c.tellApps(id)
+			c.countDictation(id)
 			c.dispatch(Event{Kind: EvInserted, Session: id})
 		})
 	}()
