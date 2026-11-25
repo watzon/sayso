@@ -2,7 +2,7 @@
 // window (Home, History, Dictionary, Styles, Models, Settings), the
 // recording overlay (pill or notch), the tray popover, and the secondary
 // windows (onboarding, permissions guide, What's New, update, app
-// approval). It is the Go port of crates/sayso-app.
+// approval).
 //
 // # Shape
 //

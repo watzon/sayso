@@ -1,6 +1,5 @@
-// Package dictation is the dictation of Sayso: the state machine of
-// crates/sayso-core/src/dictation.rs and the controller of
-// crates/sayso-app/src/dictation.rs that runs its effects (microphone,
+// Package dictation is the dictation of Sayso: the state machine and the
+// controller that runs its effects (microphone,
 // live preview, final pass, replacements, spoken punctuation, style,
 // insertion, history, sounds, media pause).
 package dictation

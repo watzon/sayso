@@ -1,6 +1,6 @@
 // Package store is Sayso's storage: SQLite for history and the dictionary
-// (pure Go, no cgo), FLAC files for audio, retention, and the Pindrop import
-// (crates/sayso-store). The schema is the Rust one, so both apps open the
+// (pure Go, no cgo), FLAC files for audio, retention, and the Pindrop import.
+// The schema is the one of the Rust app (0.16 and older), so both open the
 // same sayso.db.
 package store
 

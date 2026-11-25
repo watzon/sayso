@@ -9,7 +9,7 @@ let engineFeatures = [
     "catalog", "concurrent_streams", "detected_language", "diarization", "language_model", "prepare", "segments",
     "store_v1", "unload", "vad",
 ]
-/// The Sayso version, as in `Cargo.toml`. A test in `sayso-core` fails when they differ.
+/// The Sayso version, as in `internal/update/version.go`. A test there fails when they differ.
 /// Keep this on one line: that test reads it.
 let engineVersion = "0.16.0"
 

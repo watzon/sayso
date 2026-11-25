@@ -7,7 +7,7 @@ import (
 )
 
 // Style rules: the style of a dictation follows the app or the site that the
-// text goes into (crates/sayso-core/src/style_rules.rs).
+// text goes into.
 
 // StyleRule is the apps and sites of one style.
 type StyleRule struct {

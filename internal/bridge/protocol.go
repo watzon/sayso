@@ -1,5 +1,5 @@
 // Package bridge is the Host API of Sayso (docs/extensions.md, "Host API"):
-// the messages of crates/sayso-protocol, the host of crates/sayso-host (the
+// the messages of the protocol, the host (the
 // socket or named pipe, the identity check, apps.toml, the approval
 // question, the capabilities, jobs, and live sessions).
 //

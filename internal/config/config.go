@@ -1,5 +1,5 @@
 // Package config reads and writes config.toml, the single source of truth
-// for settings (crates/sayso-core/src/config.rs). Every field has a default,
+// for settings. Every field has a default,
 // so a missing or partial file works. An invalid value gives an Issue that
 // Settings shows; Sayso never falls back silently.
 package config
@@ -70,7 +70,7 @@ func u32p(v uint32) *uint32 { return &v }
 // SystemLanguage is the general.language value that follows the system.
 const SystemLanguage = "system"
 
-// InterfaceLocales are the locale codes of the interface (crates/sayso-i18n).
+// InterfaceLocales are the locale codes of the interface.
 var InterfaceLocales = []string{"en", "es", "pt-BR", "zh-CN", "ja", "de", "fr", "it", "ko", "ru", "ar"}
 
 // IsValidInterfaceLanguage is true for "system" or a locale (letter case ignored).

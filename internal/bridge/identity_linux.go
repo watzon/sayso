@@ -17,7 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The identity of a peer on Linux (crates/sayso-bridge/src/identity.rs):
+// The identity of a peer on Linux:
 // the executable of a process in this PID namespace, or the Flatpak app of
 // a process in a sandbox.
 

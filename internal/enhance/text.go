@@ -1,8 +1,6 @@
 // Package enhance is the text pipeline of a dictation: dictionary
 // replacements, spoken punctuation, spelled words, styles, and the AI
-// enhancers (ports of sayso-core dictionary/spoken_punctuation/spelled/style/
-// enhance/pipeline, sayso-cleanup-models, sayso-cleanup-client, and
-// sayso-enhance).
+// enhancers.
 //
 // The pure text rules live in mobile/core/textrules, which the mobile
 // keyboard shares; this file adapts them to the store types.

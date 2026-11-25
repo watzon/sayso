@@ -61,7 +61,7 @@ struct PreviewTail {
 
     /// True for a character of a script that has no spaces between words (Chinese,
     /// Japanese, Thai, Lao, Myanmar, Khmer). Any point next to one is a word boundary.
-    /// Keep the same ranges as `is_unspaced` in `crates/sayso-app/src/overlay/mod.rs`.
+    /// Keep the same ranges as `IsUnspaced` in `internal/bridge/protocol.go`.
     static func isUnspaced(_ c: Character) -> Bool {
         guard let scalar = c.unicodeScalars.first?.value else { return false }
         switch scalar {

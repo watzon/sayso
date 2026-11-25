@@ -1,5 +1,5 @@
 // Package languages holds the language codes of the dictation setting and the
-// model catalog (crates/sayso-core/src/languages.rs). Codes are ISO 639-1
+// model catalog. Codes are ISO 639-1
 // where one exists, else ISO 639-3 ("yue").
 package languages
 

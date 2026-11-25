@@ -22,8 +22,7 @@ import (
 	"github.com/watzon/sayso/internal/store"
 )
 
-// The controller of a dictation (crates/sayso-app/src/dictation.rs without
-// GPUI): one goroutine owns the machine and the sessions; effects that
+// The controller of a dictation: one goroutine owns the machine and the sessions; effects that
 // block run on their own goroutine and send their result back as an event.
 
 // SelfBundleID is the app id that a dictation into Sayso itself records.

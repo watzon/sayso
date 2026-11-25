@@ -1,8 +1,6 @@
 // Package models holds the speech model catalog, the role selection rules,
 // the model store (docs/sdk.md, "Model store"), its descriptors, downloads,
-// and the migration of the old model folders. It ports
-// crates/sayso-core/src/{models,models_onnx,model_store,model_migration}.rs
-// and engine_catalog/descriptors.rs.
+// and the migration of the old model folders.
 package models
 
 import (

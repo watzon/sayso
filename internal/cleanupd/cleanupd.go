@@ -1,8 +1,7 @@
 // Package cleanupd is the cleanup runtime: the request loop and the state of
 // cmd/sayso-cleanup. It speaks protocol 1 of the cleanup runtime (NDJSON on
 // stdin and stdout, one request at a time), the same protocol as the Rust
-// runtime in native/cleanup, so internal/engine's CleanupClient and the SDKs
-// drive either one. See native/cleanup/NOTES.md, "Protocol".
+// runtime of 0.16, so internal/engine's CleanupClient drives either one.
 //
 // The model work is behind Engine and Model, so this package does not load
 // llama.cpp: cleanupd/llama implements them with yzma.
@@ -303,7 +302,7 @@ func (r *Runtime) model(id string) (*loaded, *Error) {
 	return r.loaded, nil
 }
 
-// complete runs one completion. The rules (as native/cleanup):
+// complete runs one completion. The rules:
 //   - the prompt is tokenized with the BOS rule of the model; no tokens is bad_request;
 //   - the prompt plus maxTokens over the context gives stop "context" with no text;
 //   - maxTokens 0 gives stop "limit";

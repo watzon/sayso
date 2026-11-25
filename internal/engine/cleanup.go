@@ -83,7 +83,7 @@ type CleanupHello struct {
 	Backend  string `json:"backend"`
 	// Libraries is "found" or "missing": where the runtime loads llama.cpp
 	// from shared libraries (cmd/sayso-cleanup). Empty for a runtime that
-	// links llama.cpp (native/cleanup).
+	// links llama.cpp statically.
 	Libraries string `json:"libraries,omitempty"`
 }
 

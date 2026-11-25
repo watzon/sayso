@@ -25,7 +25,7 @@ import (
 // build/llama-libs (downloaded once and checked against the pins).
 //
 // On Apple silicon (Metal) the answers must be the bytes that the Rust runtime
-// (native/cleanup, llama-cpp-2 0.1.160) gave for the same prompts. On the CPU
+// of 0.16 (llama-cpp-2 0.1.160) gave for the same prompts. On the CPU
 // the order of float sums depends on the thread count, so there the test only
 // checks for a whole, clean answer.
 

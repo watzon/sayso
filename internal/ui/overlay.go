@@ -19,7 +19,7 @@ import (
 // while recording, with a paper slip under it for the live preview and
 // notices). The desktop part (window, placement, click-through) is in the
 // shell; this file draws it and decides when it shows. Its look is the
-// Paper page "Overlay" and the Rust overlay (crates/sayso-app/src/overlay).
+// Paper page "Overlay" and the Rust overlay.
 
 // The overlay window at size Large (Rust overlay WIDTH and HEIGHT), in DIPs.
 // The pill's window scales with the size; the notch's does not.

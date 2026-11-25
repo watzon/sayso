@@ -17,7 +17,7 @@ import (
 )
 
 // Onboarding: seven steps in one window, as the Paper page "Onboarding"
-// draws them and crates/sayso-app/src/onboarding (088f25f) runs them.
+// draws them.
 // Every move is saved, so Sayso resumes at the same step after a quit.
 
 // The onboarding window, in DIPs: the Paper artboards and the Rust window.

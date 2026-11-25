@@ -1,5 +1,5 @@
 // The model store: the rules of docs/sdk.md, "Model store", as in
-// crates/sayso-core/src/model_store.rs. The layout, the lock order, and the names of the
+// internal/localengine. The layout, the lock order, and the names of the
 // steps are the same, so two engines of any kind can share one store.
 //
 // `locks/meta` is shared to read manifests, and exclusive to change them or to decide what

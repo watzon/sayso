@@ -8,9 +8,8 @@ import (
 	"github.com/watzon/sayso/internal/models/languages"
 )
 
-// Speech providers: cloud services that run the final pass
-// (crates/sayso-core/src/speech.rs). API keys are in the secret store,
-// never in config.toml.
+// Speech providers: cloud services that run the final pass.
+// API keys are in the secret store, never in config.toml.
 
 // SpeechProviderKind is the API a speech provider speaks.
 type SpeechProviderKind string

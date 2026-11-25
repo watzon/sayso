@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Hotkeys (crates/sayso-core/src/hotkey.rs). A hotkey is a chord (modifiers
+// Hotkeys. A hotkey is a chord (modifiers
 // plus one key, "opt+space"), one modifier on its own ("right_option"), or a
 // set of side-specific modifiers ("left_command+left_option"). The modifier
 // names are the Mac ones; on Linux and Windows option is Alt and command is

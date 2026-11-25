@@ -1,5 +1,4 @@
-// Package i18n is the text of the interface in each language. It is the Go
-// port of crates/sayso-i18n.
+// Package i18n is the text of the interface in each language.
 //
 // Each locale has a folder of YAML catalogs under locales/<code>/, compiled
 // into the binary. The catalogs are flattened into dot-separated keys:

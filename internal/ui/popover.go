@@ -11,7 +11,7 @@ import (
 	"github.com/watzon/sayso/internal/theme"
 )
 
-// The tray popover (crates/sayso-app/src/popover.rs): a 340 px sheet under
+// The tray popover: a 340 px sheet under
 // the menu bar or tray icon with the status, the ink Start button, the last
 // dictation, the style chips, Model, Microphone and Incognito, and Open and
 // Quit.

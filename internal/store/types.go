@@ -10,9 +10,8 @@ import (
 	"unicode/utf8"
 )
 
-// The record shapes of the history and the dictionary
-// (crates/sayso-core/src/{history,dictionary,enhance}.rs). JSON matches serde,
-// so a database written by the Rust app reads the same here.
+// The record shapes of the history and the dictionary.
+// JSON matches serde, so a database written by the Rust app reads the same here.
 
 // Word is a dictionary word (recognition bias).
 type Word struct {

@@ -2,7 +2,7 @@ import XCTest
 
 @testable import SaysoEngine
 
-/// The migration in Sayso (`crates/sayso-core/src/model_migration.rs`) finds the files of a
+/// The migration in Sayso finds the files of a
 /// model in the folders that this engine used before the model store. Its list must say the
 /// same as `ModelStore`.
 final class OldFoldersTests: XCTestCase {

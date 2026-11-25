@@ -11,7 +11,7 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// testdata/sayso-ink-golden.txt was printed by the Rust crates/sayso-ink
+// testdata/sayso-ink-golden.txt was printed by the Rust sayso-ink of 0.16
 // (Palette::new and Palette::contrast_report) for the six inks, a custom
 // #123456 and a pale #D0D0D0.
 func goldenInks() map[string]Ink {

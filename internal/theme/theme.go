@@ -1,5 +1,5 @@
 // Package theme is Sayso's paper-and-ink palette and the MyGo widget theme
-// made from it. The color math is the port of crates/sayso-ink; the fonts,
+// made from it. The color math is in ink.go; the fonts,
 // icons, provider logos, sound cues and paper textures are embedded.
 package theme
 

@@ -14,7 +14,7 @@ import (
 	"github.com/watzon/sayso/internal/theme"
 )
 
-// The paper material of the Rust app (crates/sayso-ui/src/paper.rs): no
+// The paper material of the Rust app: no
 // surface has a border; depth comes from stacked shadows and a 1 px white
 // catch-light on the top edge. Each helper sets the surface's fill and its
 // stack, so a page reads as sheets, slips and wells pressed into paper.

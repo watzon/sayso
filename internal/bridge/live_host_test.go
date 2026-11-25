@@ -14,7 +14,7 @@ import (
 
 // session_start, session_audio, and session_stop over a real socket (a named
 // pipe on Windows), with the identity and grant checks of the host and a fake
-// engine (ported from crates/sayso-host/tests/live.rs).
+// engine.
 
 type liveWorldServices struct {
 	*fakeServices

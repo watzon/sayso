@@ -1,4 +1,4 @@
-// Code generated from crates/sayso-core/src/languages.rs. Keep in sync.
+// The languages of each model. Keep in sync with internal/models/catalog.go.
 
 package languages
 

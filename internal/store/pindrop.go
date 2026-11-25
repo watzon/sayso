@@ -13,8 +13,8 @@ import (
 	"howett.net/plist"
 )
 
-// The import from Pindrop, the app Sayso replaced
-// (crates/sayso-store/src/pindrop.rs). Pindrop keeps a Core Data SQLite
+// The import from Pindrop, the app Sayso replaced.
+// Pindrop keeps a Core Data SQLite
 // store; the import reads a copy of it, so Pindrop can keep running.
 
 const (

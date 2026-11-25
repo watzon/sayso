@@ -4,7 +4,7 @@ import XCTest
 @testable import SaysoEngine
 
 /// The rules of the store with small files and no network. The conformance suite runs them
-/// between two engine processes (`crates/sayso-engine-conformance/src/store.rs`).
+/// between two engine processes.
 final class StoreV1Tests: XCTestCase {
     private var dir: URL!
 

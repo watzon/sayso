@@ -1,5 +1,5 @@
 // Package paths resolves Sayso's file locations, with the same XDG lookup as
-// crates/sayso-core/src/paths.rs: the XDG variables win on every system, then
+// the Rust app of 0.16 and older: the XDG variables win on every system, then
 // ~/.config/sayso when it exists (config only), then the system default.
 package paths
 
@@ -171,7 +171,7 @@ func Display(path, home string) string {
 	return "~" + string(filepath.Separator) + rel
 }
 
-// Windows single-instance names (crates/sayso-platform-windows/src/window.rs).
+// Windows single-instance names.
 const (
 	InstanceMutex = `Local\dev.sayso.Sayso.instance`
 	ShowEvent     = `Local\dev.sayso.Sayso.show`

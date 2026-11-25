@@ -172,8 +172,8 @@ func (m *Model) piece(tok llama.Token, buf []byte) []byte {
 	return buf[:max(n, 0)]
 }
 
-// Complete is greedy decoding, line for line the complete() of
-// native/cleanup/src/runtime.rs.
+// Complete is greedy decoding, line for line the complete() of the Rust
+// runtime of 0.16, so the answers stay byte for byte the same.
 func (m *Model) Complete(prompt string, end []string, maxTokens, nCtx uint32) (cleanupd.Completion, error) {
 	toks := llama.Tokenize(m.vocab, prompt, llama.VocabGetAddBOS(m.vocab), true)
 	c := cleanupd.Completion{TokensIn: uint32(len(toks))}

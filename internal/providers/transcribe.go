@@ -1,5 +1,5 @@
 // Package providers holds the cloud speech-to-text clients for the final
-// pass (a port of crates/sayso-transcribe) and the secret store that keeps
+// pass and the secret store that keeps
 // API keys (a port of sayso-enhance/src/secrets.rs). All calls block.
 //
 // The caller reads the API key from the secret store and passes it in. This

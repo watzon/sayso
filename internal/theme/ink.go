@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Rgb is an sRGB color as 0xRRGGBB. It ports crates/sayso-ink.
+// Rgb is an sRGB color as 0xRRGGBB.
 type Rgb uint32
 
 // R, G and B are the channels.

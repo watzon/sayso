@@ -7,7 +7,7 @@ import (
 	"runtime"
 )
 
-// The Host API socket, as crates/sayso-protocol/src/socket.rs finds it:
+// The Host API socket, where clients look for it:
 //
 //  1. SAYSO_HOST_SOCKET, when it is set.
 //  2. Linux: $XDG_RUNTIME_DIR/sayso/host.sock, or

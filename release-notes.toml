@@ -4,11 +4,11 @@
 # Newest release first. A release without an entry here shows no window.
 #
 #   [[release]]
-#   version = "1.2.3"            # The version in Cargo.toml.
+#   version = "1.2.3"            # Version in internal/update/version.go.
 #   title = "One short line"     # The headline of the window.
 #
 #   [[release.item]]             # One new feature. Keep to five or fewer.
-#   icon = "sparkle"             # A name from `icon` in crates/sayso-app/src/whats_new.rs.
+#   icon = "sparkle"             # A name from NotesIcons in internal/update/notes.go.
 #   title = "The feature"
 #   text = "One or two sentences."
 #   systems = ["macos"]          # Optional: "macos", "windows", "linux". Without it, all systems.

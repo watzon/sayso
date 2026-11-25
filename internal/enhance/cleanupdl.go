@@ -25,7 +25,7 @@ import (
 	"github.com/watzon/sayso/internal/update"
 )
 
-// Download of cleanup model files (sayso-cleanup-client/src/download.rs).
+// Download of cleanup model files.
 // A model lives in <models dir>/cleanup/<id>/. The model file streams into
 // <file>.partial and resumes with a Range request; after the size and SHA-256
 // check it gets its name and ready.json is written.

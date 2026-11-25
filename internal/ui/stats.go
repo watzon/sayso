@@ -9,7 +9,7 @@ import (
 )
 
 // typingWPM is the typing speed behind "time saved", a common average for
-// adults (crates/sayso-core/src/stats.rs).
+// adults.
 const typingWPM = 40.0
 
 // Stats are the numbers of the Home strip.

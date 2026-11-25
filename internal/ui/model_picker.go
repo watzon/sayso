@@ -14,7 +14,7 @@ import (
 	"github.com/watzon/sayso/internal/theme"
 )
 
-// The model picker (crates/sayso-app/src/model_picker.rs, Paper page "Model
+// The model picker (Paper page "Model
 // picker · Thinking"): a trigger that shows the chosen model, and a sheet
 // under it with the provider's models, a filter, Refresh, and for a
 // provider the thinking level of the chosen model as a pen line.
@@ -596,7 +596,7 @@ func indexOf(list []string, s string) int {
 	return -1
 }
 
-// The pen line (crates/sayso-ui/src/components/pen_line.rs): one stroke
+// The pen line: one stroke
 // that gets heavier from the left to the right, with a tick for each stop.
 // Ink fills it up to the value; the rest stays as an impression in the
 // paper. The geometry is in design units, 352 wide, scaled to the box.

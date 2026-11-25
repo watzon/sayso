@@ -1,5 +1,4 @@
-// Package localengine is the speech engine for Linux and Windows: the Go port
-// of crates/sayso-engine. It speaks the NDJSON protocol of
+// Package localengine is the speech engine for Linux and Windows. It speaks the NDJSON protocol of
 // docs/engine-protocol.md (version 1) on stdin and stdout, and runs
 // sherpa-onnx models (speech, VAD, and diarization), whisper.cpp models
 // (Windows), and parakeet.cpp models (Linux). The native libraries are loaded

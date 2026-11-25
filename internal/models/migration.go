@@ -14,8 +14,8 @@ import (
 )
 
 // The move of the models from the old folders into the store (docs/sdk.md,
-// "Migration and downgrade"; crates/sayso-core/src/model_migration.rs). It
-// runs before Sayso starts its engine and holds locks/meta for the whole run.
+// "Migration and downgrade"). It runs before Sayso starts its engine and
+// holds locks/meta for the whole run.
 // migration.json is the journal; each step can run twice with the same result.
 
 // Journal is the name of the journal in the store.
@@ -95,7 +95,7 @@ func StoreInUse(modelsDir string) bool {
 }
 
 // ModelStoreEnv runs the migration and gives the environment that tells the
-// engine to use the store (crates/sayso-app/src/app.rs, model_store_env).
+// engine to use the store.
 // After an error the engine runs on the old folders when they are all there.
 func ModelStoreEnv(modelsDir string) []string {
 	storeEnv := []string{StoreEnv + "=" + filepath.Join(modelsDir, StoreFolder)}

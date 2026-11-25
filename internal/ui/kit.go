@@ -7,8 +7,7 @@ import (
 	"github.com/watzon/sayso/internal/theme"
 )
 
-// The kit: the controls every page shares, in the paper-and-ink look of
-// crates/sayso-ui/src/components/controls.rs. Each control that takes
+// The kit: the controls every page shares, in the paper-and-ink look. Each control that takes
 // input gets its key from App.k and a label, so screen readers, the tests
 // and mygo-automation find it.
 

@@ -1,6 +1,6 @@
 // Times of words and segments for `transcribe` with `segments: true`
-// (docs/engine-protocol.md, "Segments"). The rules are the same as in the Rust engine
-// (crates/sayso-engine/src/timing.rs), so both engines cut text the same way.
+// (docs/engine-protocol.md, "Segments"). The rules are the same as in the Go engine
+// (internal/localengine), so both engines cut text the same way.
 import Foundation
 
 /// One word and its time, in milliseconds from the start of the audio.

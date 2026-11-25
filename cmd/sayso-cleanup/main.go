@@ -5,7 +5,7 @@
 // after it frees the context, the model, and the llama.cpp backend, in that
 // order.
 //
-// The protocol is the one of native/cleanup (protocol 1, native/cleanup/NOTES.md).
+// The protocol is protocol 1 of internal/cleanupd.
 // The app starts it and kills it when a request passes its deadline
 // (internal/engine/cleanup.go).
 //

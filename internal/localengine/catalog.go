@@ -6,11 +6,10 @@ import (
 	"runtime"
 )
 
-// The built-in catalogs (docs/engine-protocol.md, "Models"): the output of
-// sayso_core::engine_catalog::json(Engine::Rust(System::Linux | Windows)),
-// so a client gets the same models as from the Rust engine. They are
-// generated, not written by hand; regenerate them when
-// crates/sayso-core/src/models_onnx.rs changes.
+// The built-in catalogs (docs/engine-protocol.md, "Models"), the same models
+// as the Rust engine of 0.16 listed, so a client of either gets the same list.
+// No generator writes them any more: change them by hand, with
+// internal/models/catalog.go.
 
 //go:embed catalog/catalog_linux.json
 var catalogLinux []byte

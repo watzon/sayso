@@ -71,7 +71,7 @@ func NewDesktop(a *App) *Desktop {
 func (d *Desktop) Start(showHub bool) {
 	RegisterFonts()
 	d.SetThemeMode(d.a.cfg.Appearance.Theme)
-	// The system title bar is a Linux choice (crates/sayso-app/src/chrome.rs);
+	// The system title bar is a Linux choice;
 	// macOS and Windows always draw the paper up to the top edge.
 	style := mygo.TitleBarHidden
 	if runtime.GOOS == "linux" && d.a.cfg.Appearance.SystemTitleBar {

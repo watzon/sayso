@@ -20,8 +20,7 @@ import (
 // ProgressInterval is the time between two progress messages.
 const ProgressInterval = 250 * time.Millisecond
 
-// Downloader fetches the files of artifacts over HTTP
-// (crates/sayso-engine/src/download.rs).
+// Downloader fetches the files of artifacts over HTTP.
 type Downloader struct {
 	Client *http.Client
 	// URLOf maps a URL of a descriptor to the URL to use (a mirror, a test

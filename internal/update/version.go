@@ -1,5 +1,5 @@
 // Package update checks for, verifies, and installs new Sayso versions
-// (a port of crates/sayso-update; docs/updates.md).
+// (docs/updates.md).
 package update
 
 // Version is the version of this build. Release builds set it with

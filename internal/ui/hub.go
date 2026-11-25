@@ -10,7 +10,7 @@ import (
 
 // The hub: the window is the board, the sidebar sits on it, and the page
 // is a sheet of paper laid over the right side, with two sheets peeking
-// out under its right and bottom edges (crates/sayso-app/src/hub/mod.rs).
+// out under its right and bottom edges.
 
 // Hub window geometry.
 const (

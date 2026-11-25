@@ -124,7 +124,7 @@ const (
 	StateFailed        = "failed"
 )
 
-// ModelStatus is the state of a model (crates/sayso-core/src/stt.rs).
+// ModelStatus is the state of a model.
 type ModelStatus struct {
 	State      string  `json:"state"`
 	Fraction   float32 `json:"fraction,omitempty"`
