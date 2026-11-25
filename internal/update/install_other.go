@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build !darwin && !windows
 
 package update
 
@@ -13,12 +13,13 @@ const (
 	aurLicenseDir = "/usr/share/licenses/sayso-bin"
 )
 
-// DetectInstaller: only macOS updates itself. On Linux it names the package
-// that updates Sayso instead.
+// DetectInstaller: Linux does not update itself. It names the package that
+// updates Sayso instead.
 func DetectInstaller() (Installer, Manual, Package) {
 	if runtime.GOOS != "linux" {
 		return nil, ManualUnsupported, PackageNone
 	}
+
 	exe, err := os.Executable()
 	if err == nil {
 		exe, err = filepath.EvalSymlinks(exe)

@@ -1,6 +1,6 @@
 # Updates
 
-Status: written as a plan on 2026-10-02 and changed after two reviews (see "Review record"). On 2026-10-03 the check, the download, the release pipeline, and the install on macOS exist. A run with two notarized builds on macOS passed (see "Release gates"). Linux and Windows show a new version and open the download page. No release has a manifest yet: the first one comes from the first release that the changed workflow builds.
+Status: written as a plan on 2026-10-02 and changed after two reviews (see "Review record"). On 2026-10-03 the check, the download, the release pipeline, and the install on macOS exist. A run with two notarized builds on macOS passed (see "Release gates"). Linux shows a new version and opens the download page. On 2026-11-25 Windows got the hand-off to Setup ("Windows" below), tested with a Setup that records its start; a run with a real Setup on a Windows desktop is open.
 
 This file says how Sayso finds, downloads, and installs a new version on macOS, Windows, and Linux. The method follows the updater of the Zed editor, which is also a GPUI app and ships the same three kinds of release file. The section "Differences from Zed" lists where this plan does something else, and why.
 
@@ -304,9 +304,9 @@ The symlink `~/.local/bin/sayso`, the `Exec` line of the desktop entry, and the 
 
 On Windows, Sayso downloads and verifies the installer, and then the installer does the work in view of the user. Sayso does not run Setup hidden. A hidden Setup needs a protocol between Sayso and Setup for locks, results, and the restart, and that protocol cannot be tested without a Windows desktop. A visible Setup shows its own progress and its own errors, and it is the same installer that the user knows from the first install.
 
-Only an install for the current user gets this. An install for all users is Manual, because Setup must start again with administrator rights, and the installer has no signature that Windows can check after that step. This changes when the Windows builds are signed.
+An install for the current user gets this (its folder is the `InstallLocation` of the uninstall entry of Setup in `HKCU`). An install for all users is Manual, because Setup must start again with administrator rights, and the installer has no signature that Windows can check after that step. This changes when the Windows builds are signed. A copy that Setup did not install (a portable folder, a build from source) gets it too, but Setup runs with its pages, without `/SILENT` and `/DIR`, so the user sees where it installs; the copy itself stays the old version and keeps no record.
 
-Stage: keep the verified installer in `%LOCALAPPDATA%\Sayso\updates\`. The state is Ready.
+Stage: keep the verified installer in `%LOCALAPPDATA%\Sayso\Cache\updates\staged-<hash of the folder>\` (`internal/update/install_win.go`), one folder for each copy. The state is Ready.
 
 Swap, when the user selects **Restart to update** or when Sayso starts with a staged update:
 
@@ -318,7 +318,7 @@ Swap, when the user selects **Restart to update** or when Sayso starts with a st
 Changes to `packaging/windows/Sayso.iss`:
 
 - A function `IsUpdating` is true for `/UPDATE=1`.
-- `PrepareToInstall` waits during an update until the mutex `Local\dev.sayso.Sayso.instance` is gone, for 15 seconds at most. `AppMutex` stays as it is: if Sayso still runs after that, Setup shows its "Sayso is running" dialog, and the user closes Sayso.
+- `InitializeSetup` waits during an update until the mutex `Local\dev.sayso.Sayso.instance` is gone, for 15 seconds at most. Setup checks `AppMutex` right after `InitializeSetup`, so `AppMutex` stays as it is: if Sayso still runs after that, Setup shows its "Sayso is running" dialog, and the user closes Sayso.
 - A second `[Run]` entry starts `Sayso.exe` with `Check: IsUpdating` and `Flags: nowait`. The entry that exists has `skipifsilent`, so it does not run during an update.
 
 Recovery at start on Windows:
@@ -327,7 +327,7 @@ Recovery at start on Windows:
 |---|---|
 | `staged` | The swap, steps 1 to 4 |
 | `swapping`, running is new | Setup completed. Delete the installer and the record, set `notice` |
-| `swapping`, running is old | Setup did not complete, or it still runs. Delete the record, keep the installer, and show Failed with the text "The installer did not finish" and the action **Try again**, which runs the installer again |
+| `swapping`, running is old | Setup did not complete, or it still runs. Show Failed ("Sayso could not install the update") with **Try again**, which checks and downloads again |
 
 Setup replaces files one at a time, so it is not atomic as the exchange on macOS and Linux is. If Setup stops in the middle, it shows the error, and the user can run the installer again from the download page.
 
@@ -395,7 +395,8 @@ The check and the Manual state can ship first. Self-install stays off on a platf
 - **macOS, done on 2026-10-03, before and after the changes from the code review:** two notarized debug builds (0.2.0 and 0.2.1) in a test folder, against a local server. These passed: automatic staging from the real DMG with the `codesign` and `spctl` checks, the swap at start, **Update now** and **Restart to update** by a click, the delete of the old version after 30 seconds, the notice, and the refusal of a staged app with a changed binary. A second Sayso (the developer's own, from another folder) ran through the test without effect.
 - **macOS, not done:** two notarized builds with different versions, on a clean user account. The swap from **Restart to update** and at start, a kill during staging, the three permission grants, the login item, an app in `~/Applications`, an app on the DMG, and an app with App Translocation.
 - **Linux:** the OrbStack VM `sayso-linux` and the GNOME VM. A user install, a `--system` install (Manual), a start of a second `sayso` during the swap, the autostart entry, and the GNOME custom shortcuts after an update.
-- **Windows:** a step in the Windows release job installs the build before it in silent mode, runs the new installer with `/UPDATE=1`, and checks the installed version. This proves the install. The progress window, the start of the new version, a Sayso that still runs, and a locked file need a run by hand on a Windows desktop, which is not available now. The installer hand-off on Windows stays off until that run is done, and **Update now** opens the download page until then.
+- **Windows:** a step in the Windows release job installs the build before it in silent mode, runs the new installer with `/UPDATE=1`, and checks the installed version. This proves the install. The progress window, the start of the new version, a Sayso that still runs, and a locked file need a run by hand on a Windows desktop, which is not available now. The hand-off is on since 2026-11-25; that run by hand is still open.
+
 - **GitHub:** a test release in a scratch repository confirms the prerelease and promotion steps before the first real release.
 
 ## Order of work

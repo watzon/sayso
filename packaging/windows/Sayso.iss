@@ -14,6 +14,8 @@
 #ifndef OutputDir
   #define OutputDir "..\..\dist"
 #endif
+; Sayso holds this mutex while it runs (paths.InstanceMutex).
+#define InstanceMutex "Local\dev.sayso.Sayso.instance"
 
 [Setup]
 ; The id of the app for Windows. Never change it: updates find the
@@ -42,9 +44,8 @@ UninstallDisplayIcon={app}\Sayso.exe
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
-; Sayso holds this mutex while it runs (internal/platform).
 ; Setup asks the user to quit Sayso first.
-AppMutex=Local\dev.sayso.Sayso.instance
+AppMutex={#InstanceMutex}
 CloseApplications=yes
 ; Pick the language from Windows without a question.
 ShowLanguageDialog=no
@@ -85,7 +86,10 @@ Name: "{autodesktop}\Sayso"; Filename: "{app}\Sayso.exe"; Tasks: desktopicon
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Run]
-Filename: "{app}\Sayso.exe"; Description: "{cm:LaunchProgram,Sayso}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Sayso.exe"; Description: "{cm:LaunchProgram,Sayso}"; Flags: nowait postinstall skipifsilent; Check: not IsUpdating
+; An update that Sayso started (/UPDATE=1) starts the new version, also in
+; silent mode.
+Filename: "{app}\Sayso.exe"; Flags: nowait; Check: IsUpdating
 
 [UninstallRun]
 ; Quit a running Sayso, so its files can be removed.
@@ -109,6 +113,34 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 // The helpers of Sayso, with the names of every version since 0.12.
 const
   HelperNames = 'sayso-engine,sayso-engine-avx,sayso-engine-baseline,sayso-cleanup,sayso-cleanup-avx,sayso-cleanup-baseline';
+  InstanceMutex = '{#InstanceMutex}';
+
+
+// IsUpdating is true when Sayso started Setup to install an update
+// (internal/update, SetupCommandLine).
+function IsUpdating: Boolean;
+begin
+  Result := ExpandConstant('{param:UPDATE|0}') = '1';
+end;
+
+// Sayso quits right after it starts Setup for an update. Setup checks
+// AppMutex after InitializeSetup, so wait here, up to 15 seconds, for Sayso
+// to be gone; if it still runs then, AppMutex asks the user to close it.
+function InitializeSetup: Boolean;
+var
+  Waited: Integer;
+begin
+  Result := True;
+  if not IsUpdating then
+    Exit;
+  Waited := 0;
+  while CheckForMutexes(InstanceMutex) and (Waited < 15000) do
+  begin
+    Sleep(250);
+    Waited := Waited + 250;
+  end;
+end;
+
 
 // AppMutex makes the user quit Sayso before the install. A helper that
 // outlives its app (after a crash) still holds its exe open, and then the

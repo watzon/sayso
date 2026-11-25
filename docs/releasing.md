@@ -308,6 +308,7 @@ The Release workflow has one job for each platform, and the `manifest` job that 
 
 ## Limits
 
-- Only macOS installs an update by itself. On Windows and Linux, Sayso shows the new version and opens the download page.
+- macOS installs an update by itself, and Windows hands it to Setup (`docs/updates.md`, "Windows"); an install for all users on Windows opens the download page. On Linux, Sayso shows the new version and opens the download page.
+
 - Versions 0.2.0 and older have no updater. Their users get each new version from the download page.
 - The workflow does not run the tests. Step 2 above is the only test run before a release.
