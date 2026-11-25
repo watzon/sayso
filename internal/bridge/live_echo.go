@@ -22,7 +22,7 @@ import (
 const (
 	// echoLimit is the part of the words of a microphone segment that must
 	// be in the system audio of the same time. docs/sdk.md says how the test
-	// data in crates/sayso-speech/tests/fixtures/echo_pairs.tsv chose it.
+	// data in internal/bridge/testdata/echo_pairs.tsv chose it.
 	echoLimit = 0.6
 	// A microphone segment with echoShortWords words or fewer is an echo only
 	// when it is also most of the system words of its time.

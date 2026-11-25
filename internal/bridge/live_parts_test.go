@@ -164,12 +164,12 @@ func TestTheEndOfTheSystemAndTheHoldLimitReleaseWhatWaits(t *testing.T) {
 	}
 }
 
-// TestEchoLimitKeepsRealRepliesAndDropsMostEchoes uses the test data of the
-// Rust crate (echo_pairs.tsv), so both hosts make the same decisions.
+// TestEchoLimitKeepsRealRepliesAndDropsMostEchoes checks the echo limit
+// against the labeled pairs of testdata/echo_pairs.tsv.
 func TestEchoLimitKeepsRealRepliesAndDropsMostEchoes(t *testing.T) {
-	f, err := os.Open(filepath.Join("..", "..", "crates", "sayso-speech", "tests", "fixtures", "echo_pairs.tsv"))
+	f, err := os.Open(filepath.Join("testdata", "echo_pairs.tsv"))
 	if err != nil {
-		t.Skip("no echo_pairs.tsv:", err)
+		t.Fatal(err)
 	}
 	defer f.Close()
 	type pair struct {
