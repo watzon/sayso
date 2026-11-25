@@ -16,6 +16,7 @@ import (
 	mu "github.com/egoist/mygo/ui"
 
 	"github.com/watzon/sayso/internal/config"
+	"github.com/watzon/sayso/internal/enhance"
 	"github.com/watzon/sayso/internal/i18n"
 	"github.com/watzon/sayso/internal/models"
 	"github.com/watzon/sayso/internal/platform"
@@ -49,6 +50,13 @@ type settingsState struct {
 	provSel     string // the provider Settings › Providers shows
 	customOpen  bool   // Appearance shows the custom ink field
 	customField mu.Handle
+	// cleanupDl is each cleanup model download that runs or failed, by model id.
+	cleanupDl map[string]cleanupDownload
+}
+
+type cleanupDownload struct {
+	progress enhance.DownloadProgress
+	failed   bool
 }
 
 func (a *App) settingsPage(c *mu.Context, p theme.Colors) {

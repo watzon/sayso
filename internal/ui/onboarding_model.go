@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"math"
 	"runtime"
 	"slices"
@@ -261,9 +262,24 @@ func track(c *mu.Context, p theme.Colors, key string, fraction float32, height f
 	return trackIn(c, p, key, fraction, height, label, p.InkFill)
 }
 
-// trackIn is a progress track filled with fill.
+// trackIn is a progress track filled with fill. A negative fraction is a
+// progress of unknown size: a moving sweep, or a faint full fill with less motion.
 func trackIn(c *mu.Context, p theme.Colors, key string, fraction float32, height float32, label string, fill mu.Color) mu.Element {
-	f := max(0, min(fraction, 1))
+	if fraction < 0 {
+		still := stillMotion(c)
+		return mu.Box(a11yKey(c, key)).Height(height).Radius(99).Background(p.DebossShade).InsetShadow(0, 1, 2, 0, p.ShadowA(0.3)).
+			Role(mu.RoleProgress).Label(label).Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
+			if still {
+				pt.Fill(r, fill.Alpha(0.35), r.H/2)
+				return
+			}
+			pt.AnimationFrame()
+			phase := float32(pt.Now().UnixMilli()%1400) / 1400
+			w := r.W * 0.3
+			pt.Clip(r, r.H/2, func() { pt.Fill(mu.Rect{X: r.X - w + (r.W+w)*phase, Y: r.Y, W: w, H: r.H}, fill, r.H/2) })
+		}))
+	}
+	f := min(fraction, 1)
 	return mu.Box(a11yKey(c, key)).Height(height).Radius(99).Background(p.DebossShade).InsetShadow(0, 1, 2, 0, p.ShadowA(0.3)).
 		Role(mu.RoleProgress).Label(label).Range(0, 100, math.Round(float64(f)*100)).Draw(mirrored(rtl(c), func(pt *mu.Painter, r mu.Rect) {
 		if f > 0 {
@@ -271,6 +287,24 @@ func trackIn(c *mu.Context, p theme.Colors, key string, fraction float32, height
 
 		}
 	}))
+}
+
+// downloadFraction is the fraction of a download to show, or -1 while
+// bytes arrive and the size is not known.
+func downloadFraction(st engine.ModelStatus) float32 {
+	if st.Fraction == 0 && st.BytesTotal == 0 && st.BytesDone > 0 {
+		return -1
+	}
+	return max(0, st.Fraction)
+}
+
+// downloadAmount is the percent of a download, or the bytes so far while
+// the size is not known.
+func downloadAmount(st engine.ModelStatus) string {
+	if downloadFraction(st) < 0 {
+		return models.FormatSize(st.BytesDone)
+	}
+	return fmt.Sprintf("%d%%", int(st.Fraction*100))
 }
 
 func a11yKey(c *mu.Context, key string) *mu.Context {
@@ -298,7 +332,10 @@ func (a *App) downloadStrip(c *mu.Context, p theme.Colors, id models.ModelID) {
 			total = m.SizeBytes
 		}
 		right := ""
-		if total > 0 {
+		switch {
+		case downloadFraction(st) < 0:
+			right = sizeText(st.BytesDone)
+		case total > 0:
 			right = i18n.T("onboarding.model.progress", "done", sizeText(st.BytesDone), "total", sizeText(total))
 		}
 		if left := a.onb.dl.left(id, time.Now(), st.BytesDone, total); left != "" {
@@ -310,7 +347,7 @@ func (a *App) downloadStrip(c *mu.Context, p theme.Colors, id models.ModelID) {
 				uiText(c, title, 14, 600, p.Ink).Grow(1).Basis(0).SingleLine().Ellipsis("…")
 				mu.Text(c, right).Font(monoFont(right)).FontSize(12).TextColor(p.Graphite).SingleLine()
 			})
-			track(c, p, "onboarding.model.progress", st.Fraction, 8, title)
+			track(c, p, "onboarding.model.progress", downloadFraction(st), 8, title)
 			if m.Engine.Kind == models.KindParakeetUnified {
 				uiText(c, i18n.T("onboarding.model.parts_note"), 12, 400, p.Graphite)
 			}

@@ -279,16 +279,27 @@ func (a *App) providersSection(c *mu.Context, p theme.Colors, sub string) {
 	a.group(c, p, i18n.T("settings.providers.group_on_this_computer", "computer", computer()), func() {
 		for _, m := range enhance.CleanupCatalog() {
 			ready := a.d.Paths.DataDir != "" && enhance.CleanupModelReady(a.d.Paths.ModelsDir(), &m)
+			dl, active := a.set.cleanupDl[m.ID]
+			downloading := active && !dl.failed
 			detail := i18n.T("settings.providers.cleanup_not_downloaded")
-			if ready {
+			switch {
+			case ready:
 				detail = i18n.T("settings.providers.cleanup_ready", "computer", computer(), "languages", strings.Join(m.Languages, ", "))
+			case downloading:
+				detail = i18n.T("settings.providers.cleanup_downloading", "percent", int(max(0, cleanupFraction(dl.progress))*100))
+			case active:
+				detail = i18n.T("settings.providers.cleanup_download_failed")
 			}
 			a.row(c, p, m.Name, detail, func() {
-				if ready {
-					return
-				}
-				if a.btn(c, p, "providers.cleanup."+m.ID, i18n.T("settings.providers.download"), btnSecondary) {
-					a.downloadCleanup(m)
+				switch {
+				case ready:
+				case downloading:
+					track(c, p, "providers.cleanup.progress."+m.ID, cleanupFraction(dl.progress), 6,
+						i18n.T("models.a11y.downloading", "name", m.Name)).Width(160).Shrink(0)
+				default:
+					if a.btn(c, p, "providers.cleanup."+m.ID, i18n.T("settings.providers.download"), btnSecondary) {
+						a.downloadCleanup(m)
+					}
 				}
 			})
 		}
@@ -738,16 +749,43 @@ func (a *App) refreshSecrets() {
 	}()
 }
 
+// cleanupFraction is how far a cleanup model download is, or -1 while
+// its size is not known.
+func cleanupFraction(d enhance.DownloadProgress) float32 {
+	if d.BytesTotal == 0 {
+		return -1
+	}
+	return min(float32(float64(d.BytesDone)/float64(d.BytesTotal)), 1)
+}
+
 func (a *App) downloadCleanup(m enhance.CleanupModelInfo) {
 	dir := a.d.Paths.ModelsDir()
 	if a.d.Paths.DataDir == "" {
 		return
 	}
+	if dl, ok := a.set.cleanupDl[m.ID]; ok && !dl.failed {
+		return
+	}
+	if a.set.cleanupDl == nil {
+		a.set.cleanupDl = map[string]cleanupDownload{}
+	}
+	a.set.cleanupDl[m.ID] = cleanupDownload{progress: enhance.DownloadProgress{BytesTotal: m.SizeBytes}}
+	a.invalidate()
 	go func() {
-		_, err := enhance.DownloadCleanupModel(dir, &m, "", nil, func(enhance.DownloadProgress) { a.post(a.invalidate) })
+		_, err := enhance.DownloadCleanupModel(dir, &m, "", nil, func(d enhance.DownloadProgress) {
+			a.post(func() {
+				if dl, ok := a.set.cleanupDl[m.ID]; ok && !dl.failed {
+					a.set.cleanupDl[m.ID] = cleanupDownload{progress: d}
+				}
+				a.invalidate()
+			})
+		})
 		a.post(func() {
 			if err != nil {
 				a.set.provErr = i18n.T("settings.providers.cleanup_download_failed_detail", "name", m.Name)
+				a.set.cleanupDl[m.ID] = cleanupDownload{failed: true}
+			} else {
+				delete(a.set.cleanupDl, m.ID)
 			}
 			a.invalidate()
 		})

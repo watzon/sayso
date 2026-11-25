@@ -266,7 +266,7 @@ func (a *App) modelSlots(c *mu.Context, p theme.Colors) {
 		switch st.State {
 		case engine.StateReady, engine.StateDownloaded:
 		case engine.StateDownloading:
-			dot, state = p.Accent, fmt.Sprintf("%d%%", int(st.Fraction*100))
+			dot, state = p.Accent, downloadAmount(st)
 		case engine.StateOptimizing:
 			dot, state = p.Accent, i18n.T("models.row.optimizing")
 		case engine.StateFailed:
@@ -407,7 +407,7 @@ func (a *App) modelRow(c *mu.Context, p theme.Colors, m models.ModelInfo) {
 			})
 			uiText(c, m.Vendor+" · "+languageLabel(m), 13, 400, p.Graphite).SingleLine()
 			if st.State == engine.StateDownloading {
-				mu.Progress(c, float64(st.Fraction)).Label(i18n.T("models.a11y.downloading", "name", m.Name)).Height(4).MaxWidth(240)
+				track(c, p, "models.progress."+id, downloadFraction(st), 4, i18n.T("models.a11y.downloading", "name", m.Name)).MaxWidth(240).Margin(4, 0, 0, 0)
 			}
 			if st.State == engine.StateFailed && st.Message != "" {
 				uiText(c, st.Message, 12, 400, p.Danger)
@@ -426,7 +426,7 @@ func (a *App) modelRow(c *mu.Context, p theme.Colors, m models.ModelInfo) {
 		mu.Row(c).Width(actionW).Shrink(0).Gap(6).Justify(mu.End).AlignItems(mu.Center).Children(func() {
 			switch {
 			case st.State == engine.StateDownloading:
-				mono(c, fmt.Sprintf("%d%%", int(st.Fraction*100)), 12, p.Graphite)
+				mono(c, downloadAmount(st), 12, p.Graphite)
 			case st.State == engine.StateOptimizing:
 				uiText(c, i18n.T("models.row.optimizing"), 12, 500, p.Graphite)
 			case st.IsOnDisk():
