@@ -25,7 +25,7 @@ var Features = []string{"catalog", "concurrent_streams", "detected_language", "d
 
 // Version is the Sayso release the engine comes with. Release builds set it
 // with -ldflags "-X github.com/watzon/sayso/internal/localengine.Version=...".
-var Version = "0.17.1"
+var Version = "0.17.2"
 
 // codedError is an error with a stable code for the error reply, for example
 // too_many_streams.

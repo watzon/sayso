@@ -20,6 +20,26 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.17.2"
+title = "In-app updates, live download progress, and Windows polish"
+
+[[release.item]]
+icon = "download"
+title = "Inline updates and automatic self-updater"
+text = "Download, track, cancel, and install updates right from Settings › Updates or the sidebar card, with automatic silent upgrades on Windows and in-place relaunch on macOS."
+
+[[release.item]]
+icon = "download"
+title = "Live model and cleanup download progress"
+text = "Model downloads now show accurate progress across Models, Home, Onboarding, and Settings › Providers, including byte counts when total size is unknown."
+
+[[release.item]]
+icon = "sparkle"
+title = "Windows caption bar and full-bleed taskbar icon"
+text = "Removed the extra strip above sheets under the Windows caption buttons and embedded a full-bleed multi-size app icon in Sayso.exe."
+systems = ["windows"]
+
+[[release]]
 version = "0.17.1"
 title = "Model download fixes and What's New polish"
 
