@@ -20,6 +20,21 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.17.1"
+title = "Model download fixes and What's New polish"
+
+[[release.item]]
+icon = "download"
+title = "Fixed Parakeet and diarization downloads"
+text = "Refreshed the Parakeet TDT v3, Parakeet TDT v2, and speaker diarization model descriptors to match updated upstream archives, and retried locked folder renames on Windows."
+systems = ["windows", "linux"]
+
+[[release.item]]
+icon = "sparkle"
+title = "Draggable, fixed-size What's New window"
+text = "The What's New and secondary dialogs can now be dragged by their background and stay at their intended size."
+
+[[release]]
 version = "0.17.0"
 title = "Rebuilt in Go, faster to launch and lighter to run"
 
