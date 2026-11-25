@@ -71,12 +71,15 @@ func (a *App) hubShortcuts(c *mu.Context) {
 
 // underSheets paints the two sheets under the page; they are paint only,
 // as elements there would take the page's clicks. r is the content column
-// with its 10 px padding.
-func underSheets(p theme.Colors) func(*mu.Painter, mu.Rect) {
+// with its padding, and the page starts inset below its top. The sheets
+// start there too, so none peeks out above the page into the window
+// controls.
+func underSheets(p theme.Colors, inset float32) func(*mu.Painter, mu.Rect) {
 	back := theme.Over(p.Sheet, p.Ground, 0.45)
 	middle := theme.Over(p.Sheet, p.Ground, 0.25)
 	return func(pt *mu.Painter, r mu.Rect) {
-		top := r.Y + 10
+		top := r.Y + inset
+
 		for _, s := range []struct {
 			dy, right, bottom, left float32
 			fill                    mu.Color
@@ -91,7 +94,7 @@ func underSheets(p theme.Colors) func(*mu.Painter, mu.Rect) {
 // sheet is the page on its stack of paper.
 func (a *App) sheet(c *mu.Context, p theme.Colors) {
 	top := sheetTop(c)
-	mu.Box(c).Grow(1).Basis(0).Padding(top, 0, 10, 0).PaddingEnd(10).Draw(mirrored(rtl(c), underSheets(p))).Children(func() {
+	mu.Box(c).Grow(1).Basis(0).Padding(top, 0, 10, 0).PaddingEnd(10).Draw(mirrored(rtl(c), underSheets(p, top))).Children(func() {
 		page := sheetStack(mu.Column(c).Fill().Radius(sheetRadius).Clip(), p).Draw(a.grain(p, "sheet", sheetRadius)).
 			Role(mu.RoleMain).Label(a.routeName())
 		page.Children(func() {
