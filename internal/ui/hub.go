@@ -290,12 +290,12 @@ func (a *App) sidebarFooter(c *mu.Context, p theme.Colors, rail bool) {
 				})
 			a.collapseBtn(c, p)
 		})
-		if a.updateOffered() && !rail {
-			label := i18n.T("update.slip_version", "version", a.upd.status.Version.String())
-			if a.button(c, p, "update.slip", label, bopt{size: sizeSmall, icon: "download"}) {
-				a.openUpdateWindow()
-			}
+		if rail {
+			mu.Row(c).Justify(mu.Center).Children(func() { a.updateSlip(c, p, true) })
+		} else {
+			a.updateSlip(c, p, false)
 		}
+
 		modes := []config.ThemeMode{config.ThemeSystem, config.ThemeLight, config.ThemeDark}
 		keys := []string{"theme.auto", "theme.light", "theme.dark"}
 		labels := []string{i18n.T("hub.sidebar.theme_auto"), i18n.T("hub.sidebar.theme_light"), i18n.T("hub.sidebar.theme_dark")}

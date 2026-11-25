@@ -226,13 +226,28 @@ type Updater interface {
 
 type updateState struct {
 	status update.Status
+	// offered is true from an offer until a check finds no newer version;
+	// offer is its version. A failure in between keeps them, for Try again.
+	offered  bool
+	offer    update.Semver
+	notesURL string // of the offer
 }
 
 // UpdateStatus implements the updater's status callback.
 func (a *App) UpdateStatus(s update.Status) {
 	a.post(func() {
 		a.upd.status = s
+		switch s.Kind {
+		case update.StatusAvailable, update.StatusDownloading, update.StatusPreparing, update.StatusReady:
+			a.upd.offered, a.upd.offer = true, s.Version
+			if s.NotesURL != "" {
+				a.upd.notesURL = s.NotesURL
+			}
+		case update.StatusIdle:
+			a.upd.offered = false
+		}
 		if s.Kind == update.StatusRestarting && a.d.Shell != nil {
+
 			// The new version (macOS) or Setup (Windows) waits for Sayso to quit.
 			a.d.Shell.Quit()
 		}
@@ -258,8 +273,6 @@ func (a *App) CheckForUpdates() {
 	a.invalidate()
 }
 
-func (a *App) openUpdateWindow() { a.showWindow(WinUpdate, true) }
-
 func (a *App) updateHeadline() string {
 	s := a.upd.status
 	switch s.Kind {
@@ -284,12 +297,20 @@ func (a *App) updateHeadline() string {
 func (a *App) updateDetail() string {
 	s := a.upd.status
 	switch s.Kind {
+	case update.StatusAvailable:
+		if s.Manual != update.ManualNone {
+			return a.updateManualText(s)
+		}
 	case update.StatusDownloading:
-		return i18n.T("update.downloaded", "received", models.FormatSize(s.Received), "total", models.FormatSize(s.Total))
+		return a.updateProgressText()
+	case update.StatusPreparing:
+		return i18n.T("update.preparing_detail")
 	case update.StatusReady:
 		return i18n.T("update.ready_detail")
 	case update.StatusFailed:
-		return s.Failure.Error()
+		return updateFailureText(s.Failure)
+	case update.StatusUnreadable:
+		return i18n.T("update.unreadable_detail", "version", a.d.Version)
 	case update.StatusIdle:
 		if s.LastCheck != nil {
 			t := time.Unix(int64(*s.LastCheck), 0)
@@ -305,8 +326,8 @@ func (a *App) UpdateView(c *mu.Context) {
 	a.secondaryFrame(c, func(p theme.Colors) {
 		heading(c, p, a.updateHeadline(), 24)
 		mu.Text(c, a.updateDetail()).FontSize(13.5).TextColor(p.Graphite)
-		if s := a.upd.status; s.Kind == update.StatusDownloading && s.Total > 0 {
-			mu.Progress(c, float64(s.Received)/float64(s.Total)).Height(4)
+		if a.upd.status.Kind == update.StatusDownloading {
+			a.updateTrack(c, p, "update.progress", 6)
 		}
 		mu.Spacer(c)
 		mu.Row(c).Gap(8).Children(func() {
@@ -317,16 +338,16 @@ func (a *App) UpdateView(c *mu.Context) {
 			if a.btn(c, p, "update.dismiss", i18n.T("update.dismiss"), btnSecondary) {
 				a.showWindow(WinUpdate, false)
 			}
-			label := i18n.T("update.action.update_now")
-			if a.upd.status.Kind == update.StatusReady {
-				label = i18n.T("update.action.restart")
+			act := a.updateActionNow()
+			label := updateActionLabel(act)
+			if act == updDownload {
+				label = i18n.T("update.action.update_now")
 			}
-			if a.btn(c, p, "update.install", label, btnPrimary) && a.d.Updater != nil {
-				if a.upd.status.Kind == update.StatusReady {
-					a.d.Updater.Restart()
-				} else {
-					a.d.Updater.Install()
-				}
+			if act == updNone {
+				label = i18n.T("update.action.update_now")
+			}
+			if a.button(c, p, "update.install", label, bopt{kind: btnPrimary, disabled: act == updNone}) {
+				a.runUpdateAction(act)
 			}
 
 		})

@@ -843,10 +843,12 @@ func (a *App) updatesSection(c *mu.Context, p theme.Colors) {
 			}
 		})
 		a.row(c, p, a.updateHeadline(), a.updateDetail(), func() {
-			if a.btn(c, p, "updates.check_now", i18n.T("update.action.check"), btnSecondary) {
-				a.CheckForUpdates()
-			}
+			a.updateButtons(c, p, "updates", true)
 		})
+		if a.upd.status.Kind == update.StatusDownloading {
+			a.updateTrack(c, p, "updates.progress", 6).Margin(10, 0, 4, 0)
+		}
+
 	})
 }
 
