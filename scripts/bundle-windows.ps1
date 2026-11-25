@@ -59,6 +59,9 @@ if ($Debug) {
     # -H=windowsgui makes a GUI program with no console window.
     Invoke-Checked 'app (go, release)' { go build -tags mygo_noinspector "-ldflags=-s -w -H=windowsgui $versionFlag" -o build\sayso.exe .\cmd\sayso }
 }
+# The window, the taskbar, and Alt+Tab take the icon from the resources that
+# cmd\sayso\rsrc_windows_*.syso link into the exe (scripts\winres).
+Invoke-Checked 'app icon resources' { go run .\scripts\winres check build\sayso.exe }
 Invoke-Checked 'engine (go, release)' { go build -ldflags='-s -w' -o build\sayso-engine.exe .\cmd\sayso-engine }
 # The cleanup runtime loads llama.cpp with yzma through libffi. ffi_no_embed:
 # it loads the libffi-8.dll beside it, not a copy written to the user cache.
