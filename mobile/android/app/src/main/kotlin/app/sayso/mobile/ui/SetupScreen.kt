@@ -41,7 +41,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun SetupScreen(status: KeyboardStatus, onEnableKeyboard: () -> Unit, onSwitchKeyboard: () -> Unit) {
+fun SetupScreen(
+    status: KeyboardStatus,
+    onEnableKeyboard: () -> Unit,
+    onSwitchKeyboard: () -> Unit,
+    telemetry: Boolean,
+    onTelemetry: (Boolean) -> Unit,
+) {
     var playground by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
     var micGranted by remember { mutableStateOf(hasMic(context)) }
@@ -105,6 +111,9 @@ fun SetupScreen(status: KeyboardStatus, onEnableKeyboard: () -> Unit, onSwitchKe
                 }
             },
         )
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+            Column(Modifier.padding(16.dp)) { TelemetryToggle(telemetry, onTelemetry) }
+        }
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 StepTitle(4, "Typing playground", done = false)

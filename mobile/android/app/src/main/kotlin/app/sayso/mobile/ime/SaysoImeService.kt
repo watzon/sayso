@@ -33,6 +33,7 @@ import app.sayso.mobile.keyboard.imeActionFor
 import app.sayso.mobile.keyboard.isMultiLine
 import app.sayso.mobile.settings.KeyboardSettings
 import app.sayso.mobile.settings.KeyboardSettingsStore
+import app.sayso.mobile.telemetry.Telemetry
 import app.sayso.mobile.voice.VoiceController
 import app.sayso.mobile.voice.VoiceHost
 import app.sayso.mobile.voice.VoiceState
@@ -88,6 +89,7 @@ class SaysoImeService : InputMethodService(), KeyboardActionListener {
         engine = SaysoEngine.get(this)
         settingsStore = KeyboardSettingsStore(this)
         voice = VoiceController(this, voiceHost)
+        Telemetry.get(this).launched()
     }
 
     override fun onDestroy() {

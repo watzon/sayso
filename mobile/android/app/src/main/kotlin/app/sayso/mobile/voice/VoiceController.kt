@@ -21,6 +21,8 @@ import app.sayso.mobile.engine.createVoiceCore
 import app.sayso.mobile.keyboard.ImeAction
 import app.sayso.mobile.settings.VoiceSettings
 import app.sayso.mobile.settings.VoiceSettingsStore
+import app.sayso.mobile.telemetry.DictationSignal
+import app.sayso.mobile.telemetry.Telemetry
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -69,6 +71,7 @@ class VoiceController(context: Context, private val host: VoiceHost) {
     private val settingsStore = VoiceSettingsStore(context)
     private val models = ModelManager.forApp(context)
     private val core: VoiceCore = SaysoVoiceCore.get(context)
+    private val telemetry = Telemetry.get(context)
 
     val machine = VoiceMachine()
     val undo = VoiceUndo()
@@ -322,24 +325,29 @@ class VoiceController(context: Context, private val host: VoiceHost) {
         )
         val cloud = policy.cloudConfig(settings)
         host.onVoiceChanged()
+        val localModel = active?.id
         if (style == null || !styleApplies(style, cloud)) {
-            insert(session, text, record)
+            insert(session, text, record, dictationSignal(engine, localModel, cloud, styled = false))
             return
         }
         worker.execute {
             // enhance gives the text back unchanged on timeout or error.
-            val styled = runCatching { core.enhance(style.id, text, cloud).text }.getOrDefault(text)
-            main.post { insert(session, styled, record.copy(finalText = styled)) }
+            val result = runCatching { core.enhance(style.id, text, cloud) }.getOrNull()
+            val styled = result?.text ?: text
+            val signal = dictationSignal(engine, localModel, cloud, styled = result?.enhanced == true)
+            main.post { insert(session, styled, record.copy(finalText = styled), signal) }
         }
     }
 
-    private fun insert(session: Int, text: String, record: VoiceHistoryEntry) {
+    private fun insert(session: Int, text: String, record: VoiceHistoryEntry, signal: DictationSignal) {
         if (!machine.complete(session)) return
         asr.idle()
         if (text.isNotEmpty()) {
             host.insertDictation(text)
             undo.record(text)
             core.recordHistory(record, sensitive = policy.sensitive)
+            // A password or private field is not counted either.
+            if (!policy.sensitive) telemetry.dictationCompleted(signal)
         }
         if (handsFree) {
             if (sendAfterInsert) {

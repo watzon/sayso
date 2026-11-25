@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import app.sayso.mobile.engine.TypingEngine
 import app.sayso.mobile.engine.createVoiceCore
 import app.sayso.mobile.settings.KeyboardSettingsStore
+import app.sayso.mobile.telemetry.Telemetry
 
 data class KeyboardStatus(val enabled: Boolean, val selected: Boolean)
 
@@ -37,6 +38,12 @@ fun SaysoApp(
 ) {
     val context = LocalContext.current
     var settings by remember { mutableStateOf(store.load()) }
+    val telemetry = remember { Telemetry.get(context) }
+    var telemetryOn by remember { mutableStateOf(telemetry.enabled) }
+    val setTelemetry = { on: Boolean ->
+        telemetry.enabled = on
+        telemetryOn = on
+    }
     val voice = remember { createVoiceCore(context) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     SaysoTheme {
@@ -50,7 +57,7 @@ fun SaysoApp(
                     }
                 }
                 when (tab) {
-                    0 -> SetupScreen(status, onEnableKeyboard, onSwitchKeyboard)
+                    0 -> SetupScreen(status, onEnableKeyboard, onSwitchKeyboard, telemetryOn, setTelemetry)
                     1 -> VoiceScreen(voice)
                     2 -> DictionaryScreen(engine)
                     3 -> HistoryScreen(voice)
@@ -61,6 +68,8 @@ fun SaysoApp(
                             store.save(it)
                         },
                         onResetLearned = engine::resetLearnedData,
+                        telemetry = telemetryOn,
+                        onTelemetry = setTelemetry,
                     )
                 }
             }

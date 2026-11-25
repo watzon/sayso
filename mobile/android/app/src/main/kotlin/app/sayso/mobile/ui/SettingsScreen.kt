@@ -29,7 +29,13 @@ import app.sayso.mobile.engine.AutocorrectMode
 import app.sayso.mobile.settings.KeyboardSettings
 
 @Composable
-fun SettingsScreen(settings: KeyboardSettings, onChange: (KeyboardSettings) -> Unit, onResetLearned: () -> Unit) {
+fun SettingsScreen(
+    settings: KeyboardSettings,
+    onChange: (KeyboardSettings) -> Unit,
+    onResetLearned: () -> Unit,
+    telemetry: Boolean,
+    onTelemetry: (Boolean) -> Unit,
+) {
     var confirmReset by rememberSaveable { mutableStateOf(false) }
     var resetDone by rememberSaveable { mutableStateOf(false) }
 
@@ -58,6 +64,7 @@ fun SettingsScreen(settings: KeyboardSettings, onChange: (KeyboardSettings) -> U
             "Draw hit targets and learned offsets on the keyboard, with candidate scores above it.",
             settings.diagnostics,
         ) { onChange(settings.copy(diagnostics = it)) }
+        TelemetryToggle(telemetry, onTelemetry)
 
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Learned data", style = MaterialTheme.typography.titleMedium)
@@ -94,6 +101,15 @@ fun SettingsScreen(settings: KeyboardSettings, onChange: (KeyboardSettings) -> U
         )
     }
 }
+
+/** The telemetry switch, the same in Setup and Settings. */
+@Composable
+fun TelemetryToggle(checked: Boolean, onChange: (Boolean) -> Unit) = Toggle(
+    "Anonymous usage telemetry",
+    "Tells TelemetryDeck when Sayso starts and when a dictation finishes, with the version, system, model, and kind of style. Never your words, audio, or prompts.",
+    checked,
+    onChange,
+)
 
 @Composable
 private fun Toggle(title: String, hint: String, checked: Boolean, onChange: (Boolean) -> Unit) {

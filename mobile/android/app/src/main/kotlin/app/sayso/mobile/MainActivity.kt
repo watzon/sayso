@@ -15,6 +15,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
 import app.sayso.mobile.engine.SaysoEngine
 import app.sayso.mobile.settings.KeyboardSettingsStore
+import app.sayso.mobile.telemetry.Telemetry
 import app.sayso.mobile.ui.KeyboardStatus
 import app.sayso.mobile.ui.SaysoApp
 
@@ -76,6 +77,8 @@ class MainActivity : ComponentActivity() {
         val current = Settings.Secure.getString(contentResolver, Settings.Secure.DEFAULT_INPUT_METHOD)
         val selected = current?.let { ComponentName.unflattenFromString(it)?.packageName } == packageName
         status.value = KeyboardStatus(enabled, selected)
+        // Like the desktop's end of onboarding: nothing is sent before the keyboard is set up.
+        if (enabled) Telemetry.get(this).launched()
     }
 
     companion object {

@@ -20,6 +20,10 @@ package id `app.sayso.mobile`.
 - `voice/`: dictation in the keyboard (see [Voice](#voice)).
 - `asr/`: the speech model catalog and manager, and local speech recognition
   in the `:asr` process.
+- `telemetry/`: anonymous TelemetryDeck signals (app.installed, app.launched,
+  dictation.completed), the same as the desktop's; off in Setup or Settings.
+  Set the App ID in `Telemetry.DEFAULT_APP_ID` or with
+  `-PsaysoTelemetryAppId=<id>`.
 
 ## Build
 
