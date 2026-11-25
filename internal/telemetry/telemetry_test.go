@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -289,6 +290,56 @@ func TestTurningOffStopsQueuedRetriesAndTheSendInFlight(t *testing.T) {
 	settle(c)
 	if n := in2.requests(); n != 1 {
 		t.Fatalf("%d requests: the retry ran after telemetry was turned off", n)
+	}
+}
+
+// acceptThenOff is a TelemetryDeck that takes each batch with 200, but the
+// user turns telemetry off before the client reads the answer.
+type acceptThenOff struct {
+	mu    sync.Mutex
+	c     *Client
+	types []string
+}
+
+func (a *acceptThenOff) RoundTrip(r *http.Request) (*http.Response, error) {
+	body, _ := io.ReadAll(r.Body)
+	var batch []Signal
+	json.Unmarshal(body, &batch)
+	a.mu.Lock()
+	for _, s := range batch {
+		a.types = append(a.types, s.Type)
+	}
+	c := a.c
+	a.mu.Unlock()
+	if c != nil {
+		c.SetEnabled(false)
+	}
+	return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("OK")), Request: r}, nil
+}
+
+func TestInstalledTakenByTheServerIsMarkedSentEvenIfTurnedOffMeanwhile(t *testing.T) {
+	rt := &acceptThenOff{}
+	o := Options{AppID: "APP-ID", Endpoint: "https://ingest.test/v2/", TestMode: true,
+		StateFile: filepath.Join(t.TempDir(), "telemetry.json"), HTTP: &http.Client{Transport: rt}, RetryAfter: time.Hour}
+	c := New(o, true)
+	rt.mu.Lock()
+	rt.c = c
+	rt.mu.Unlock()
+	c.Launched()
+	settle(c)
+	if len(rt.types) == 0 || rt.types[0] != TypeInstalled {
+		t.Fatalf("first run sent %v", rt.types)
+	}
+
+	rt.mu.Lock()
+	rt.c, rt.types = nil, nil
+	rt.mu.Unlock()
+	c = New(o, false)
+	c.SetEnabled(true)
+	c.Launched()
+	settle(c)
+	if len(rt.types) != 1 || rt.types[0] != TypeLaunched {
+		t.Fatalf("after on again and a relaunch: %v, want only %s", rt.types, TypeLaunched)
 	}
 }
 

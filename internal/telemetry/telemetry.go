@@ -137,7 +137,7 @@ type Client struct {
 	st       state
 	queue    []Signal
 	// gen changes when telemetry is turned off, so a send that started
-	// before does not mark app.installed as sent or put its signals back.
+	// before does not put its signals back for a retry.
 	gen    int
 	cancel context.CancelFunc
 
@@ -301,6 +301,16 @@ func (c *Client) flush() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cancel = nil
+	if err == nil {
+		// The server has app.installed even if telemetry was turned off
+		// meanwhile; sending it again would count the install twice.
+		for _, s := range batch {
+			if s.Type == TypeInstalled && !c.st.FirstLaunchSent {
+				c.st.FirstLaunchSent = true
+				c.saveStateLocked()
+			}
+		}
+	}
 	if gen != c.gen || !c.activeLocked() {
 		return true // turned off meanwhile: nothing goes back
 	}
@@ -311,12 +321,6 @@ func (c *Client) flush() bool {
 			c.queue = c.queue[n-maxQueued:]
 		}
 		return false
-	}
-	for _, s := range batch {
-		if s.Type == TypeInstalled && !c.st.FirstLaunchSent {
-			c.st.FirstLaunchSent = true
-			c.saveStateLocked()
-		}
 	}
 	return true
 }
