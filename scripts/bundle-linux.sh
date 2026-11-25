@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 [[ "$(uname -s)" == Linux ]] || { echo "bundle-linux.sh runs on Linux" >&2; exit 1; }
 profile=release
 [[ "${1:-}" == "--debug" ]] && profile=debug
-version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+version=$(scripts/version.sh)
 arch=$(uname -m)
 case "$arch" in
   x86_64) goarch=amd64 ;;
@@ -27,6 +27,11 @@ version_flag="-X github.com/watzon/sayso/internal/update.Version=$version"
 # itself and sends telemetry as a release, not in test mode.
 if [[ "${SAYSO_OFFICIAL_BUILD:-}" == 1 ]]; then
   version_flag+=" -X github.com/watzon/sayso/internal/update.OfficialBuild=1"
+fi
+# The TelemetryDeck App ID of the official app (internal/telemetry). Without
+# it the build sends no signal.
+if [[ -n "${SAYSO_TELEMETRY_APP_ID:-}" ]]; then
+  version_flag+=" -X github.com/watzon/sayso/internal/telemetry.DefaultAppID=$SAYSO_TELEMETRY_APP_ID"
 fi
 if [[ "$profile" == release ]]; then ldflags=(-ldflags="-s -w $version_flag" -tags mygo_noinspector); else ldflags=(-ldflags="$version_flag"); fi
 

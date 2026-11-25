@@ -41,7 +41,7 @@ done
 [[ -n "$engine" ]] || usage
 [[ -f "$engine" ]] || { echo "error: the engine $engine does not exist" >&2; exit 1; }
 
-version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+version=$(scripts/version.sh)
 case "$(uname -s)" in
   Darwin) system=macos ;;
   Linux) system=linux ;;

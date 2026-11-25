@@ -10,8 +10,7 @@
 # the licenses, and llama\: the cleanup runtime sayso-cleanup.exe (Go) with the
 # pinned llama.cpp DLLs (internal/llamalib), libffi, and a copy of the Visual
 # C++ runtime. The ggml of llama.cpp stays in llama\, apart from the ggml of
-# the engine. Nothing here runs Cargo. It runs
-# from where it is, so it is also the portable build. The installer needs Inno
+# the engine. It runs from where it is, so it is also the portable build. The installer needs Inno
 # Setup 6 (ISCC.exe on PATH, or in its default folder). Set SAYSO_BUNDLE_DIR to
 # use another folder.
 #
@@ -29,7 +28,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+$version = (Select-String -Path internal\update\version.go -Pattern '^var Version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
 
 function Invoke-Checked([string]$what, [scriptblock]$block) {
     Write-Host "==> $what"
@@ -48,6 +47,11 @@ $versionFlag = "-X github.com/watzon/sayso/internal/update.Version=$version"
 # itself and sends telemetry as a release, not in test mode.
 if ($env:SAYSO_OFFICIAL_BUILD -eq '1') {
     $versionFlag += ' -X github.com/watzon/sayso/internal/update.OfficialBuild=1'
+}
+# The TelemetryDeck App ID of the official app (internal/telemetry). Without
+# it the build sends no signal.
+if ($env:SAYSO_TELEMETRY_APP_ID) {
+    $versionFlag += " -X github.com/watzon/sayso/internal/telemetry.DefaultAppID=$($env:SAYSO_TELEMETRY_APP_ID)"
 }
 if ($Debug) {
     Invoke-Checked 'app (go, debug)' { go build "-ldflags=$versionFlag" -o build\sayso.exe .\cmd\sayso }

@@ -25,7 +25,7 @@ if ($Out) { $Out = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPath
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-$version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+$version = (Select-String -Path internal\update\version.go -Pattern '^var Version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
 if (-not $Folder) {
     $bundle = if ($env:SAYSO_BUNDLE_DIR) { $env:SAYSO_BUNDLE_DIR } else { Join-Path $root 'build\windows' }
     $Folder = Join-Path $bundle 'Sayso'

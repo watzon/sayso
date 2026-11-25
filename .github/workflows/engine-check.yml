@@ -75,7 +75,7 @@ jobs:
       # The name of the file must be what the Release workflow attaches.
       - name: Find the file
         run: |
-          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          version=$(scripts/version.sh)
           if [[ "$RUNNER_OS" == Windows ]]; then ext=zip; else ext=tar.gz; fi
           file="engine-file/sayso-engine-$version-${{ matrix.platform }}.$ext"
           ls -l engine-file

@@ -67,6 +67,8 @@ jobs:
     timeout-minutes: 90
     env:
       SAYSO_OFFICIAL_BUILD: ${{ inputs.official_build && '1' || '' }}
+      # The TelemetryDeck App ID (a repository variable) goes only into a release.
+      SAYSO_TELEMETRY_APP_ID: ${{ inputs.official_build && vars.SAYSO_TELEMETRY_APP_ID || '' }}
       # The Vulkan headers and glslc of scripts/linux-vulkan-deps.sh. CMake's
       # FindVulkan and ggml look in VULKAN_SDK first.
       VULKAN_SDK: /opt/vulkan-deps

@@ -23,8 +23,12 @@ permissions:
 
 env:
   TAG: ${{ github.event.release.tag_name || inputs.tag }}
-  # Turns the updater on in the app (internal/update).
+  # Turns the updater on in the app (internal/update), and makes telemetry
+  # signals release signals, not test signals (internal/telemetry).
   SAYSO_OFFICIAL_BUILD: "1"
+  # The TelemetryDeck App ID of the official app, a repository variable. Not
+  # set: the release sends no telemetry.
+  SAYSO_TELEMETRY_APP_ID: ${{ vars.SAYSO_TELEMETRY_APP_ID }}
 
 concurrency:
   group: release-${{ github.event.release.tag_name || inputs.tag }}
@@ -59,11 +63,11 @@ jobs:
             exit 1
           fi
 
-      - name: Check the tag against the version in Cargo.toml
+      - name: Check the tag against the version in internal/update/version.go
         run: |
-          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          version=$(scripts/version.sh)
           if [[ "$TAG" != "v$version" ]]; then
-            echo "::error::The tag is $TAG, but Cargo.toml has version $version. The tag must be v$version."
+            echo "::error::The tag is $TAG, but internal/update/version.go has version $version. The tag must be v$version."
             exit 1
           fi
 
@@ -322,11 +326,11 @@ jobs:
             exit 1
           fi
 
-      - name: Check the tag against the version in Cargo.toml
+      - name: Check the tag against the version in internal/update/version.go
         run: |
-          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          version=$(scripts/version.sh)
           if [[ "$TAG" != "v$version" ]]; then
-            echo "::error::The tag is $TAG, but Cargo.toml has version $version. The tag must be v$version."
+            echo "::error::The tag is $TAG, but internal/update/version.go has version $version. The tag must be v$version."
             exit 1
           fi
 
@@ -424,11 +428,11 @@ jobs:
             exit 1
           }
 
-      - name: Check the tag against the version in Cargo.toml
+      - name: Check the tag against the version in internal/update/version.go
         run: |
-          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
+          $version = (Select-String -Path internal\update\version.go -Pattern '^var Version = "(.+)"' | Select-Object -First 1).Matches[0].Groups[1].Value
           if ($env:TAG -ne "v$version") {
-            Write-Output "::error::The tag is $env:TAG, but Cargo.toml has version $version. The tag must be v$version."
+            Write-Output "::error::The tag is $env:TAG, but internal/update/version.go has version $version. The tag must be v$version."
             exit 1
           }
 

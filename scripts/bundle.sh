@@ -15,14 +15,14 @@
 # The Swift engine is built again only when its sources or Package files change
 # (build/engine.stamp). The llama.cpp libraries of the cleanup runtime come from
 # build/llama-libs, downloaded once and checked against the pins
-# (scripts/llama-libs, internal/llamalib). Nothing here runs Cargo.
+# (scripts/llama-libs, internal/llamalib).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export CGO_ENABLED=0
 profile=release
 [[ "${1:-}" == "--debug" ]] && profile=debug
 identity="${SAYSO_SIGN_IDENTITY:-Developer ID Application: Watzon Ventures LLc (MB5789APU7)}"
-version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+version=$(scripts/version.sh)
 build=$(date +%Y%m%d%H%M)
 app="${SAYSO_BUNDLE_DIR:-build}/Sayso.app"
 ent=packaging/Sayso.entitlements
@@ -42,7 +42,7 @@ engine_hash=$(hash_files "$engine_dir/Sources" "$engine_dir/Package.swift" "$eng
 # Everything in the bundle except the Go app.
 bundle_inputs=(
   scripts/bundle.sh
-  Cargo.toml
+  internal/update/version.go
   go.mod
   go.sum
   cmd/sayso-cleanup
@@ -104,6 +104,11 @@ version_flag="-X github.com/watzon/sayso/internal/update.Version=$version"
 # itself and sends telemetry as a release, not in test mode.
 if [[ "${SAYSO_OFFICIAL_BUILD:-}" == 1 ]]; then
   version_flag+=" -X github.com/watzon/sayso/internal/update.OfficialBuild=1"
+fi
+# The TelemetryDeck App ID of the official app (internal/telemetry). Without
+# it the build sends no signal.
+if [[ -n "${SAYSO_TELEMETRY_APP_ID:-}" ]]; then
+  version_flag+=" -X github.com/watzon/sayso/internal/telemetry.DefaultAppID=$SAYSO_TELEMETRY_APP_ID"
 fi
 if [[ "$profile" == release ]]; then
   go build -tags mygo_noinspector -ldflags="-s -w $version_flag" -o build/sayso ./cmd/sayso &
