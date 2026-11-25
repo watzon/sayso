@@ -118,7 +118,7 @@ The `.deb`, the `.rpm`, the AppImage, and the tarball need glibc 2.35 or later. 
 
 ## Privacy
 
-With a local model and the Raw style, your speech and your text stay on the computer. There is no telemetry.
+With a local model and the Raw style, your speech and your text stay on the computer.
 
 | You turn on | What leaves the computer | Where it goes |
 |---|---|---|
@@ -126,6 +126,27 @@ With a local model and the Raw style, your speech and your text stay on the comp
 | An AI style | The transcript, the style prompt, and your dictionary words | The AI provider of that style |
 
 The official build also looks for a new version when it starts and one time each day. It gets one file from the Releases page of this repository on GitHub. The request names your Sayso version and your system (for example `Sayso/0.3.0 (macos; aarch64)`), and GitHub sees your IP address. It has no identifier of you or your computer. To stop these checks, turn off **Settings › General › Check for updates**. A build from source makes no such request.
+
+### Anonymous usage telemetry
+
+Sayso sends a few anonymous signals to [TelemetryDeck](https://telemetrydeck.com), so its developer can see how many people use it and which models they pick. It is on by default. Turn it off on the last step of onboarding, or in **Settings › General › Anonymous usage telemetry**. On Android, the switch is in Setup and in Settings. Off stops every signal at once, including any that wait to be sent. Nothing is sent before you finish onboarding (on Android, before you enable the keyboard).
+
+There are three signals: `app.installed` (once per install), `app.launched`, and `dictation.completed`. Each holds only these fields:
+
+| Field | What it is |
+|---|---|
+| `clientUser` | The SHA-256 of a random ID that Sayso makes on first use and keeps on the device (`telemetry.json` in the data folder). TelemetryDeck hashes it again with a salt. It is not linked to you, your account, or your hardware. |
+| `sessionID` | A random ID for each launch |
+| `os`, `arch`, `platform` | For example `darwin`, `arm64`, `desktop` (or `android`) |
+| `appVersion`, `buildChannel` | For example `0.16.0`, `release` |
+| `modelId`, `modelKind` | Only in `dictation.completed`: the model's catalog name and `local` or `cloud`. A cloud model is the provider type and a public model name, such as `groq:whisper-large-v3`. A custom endpoint's model is not named. Android's own recognizer is `android_system` and `system`. |
+| `styleKind` | Only in `dictation.completed`: `raw`, `ai_local`, or `ai_cloud` |
+
+Sayso never sends your words, transcripts, audio, how long you spoke, dictionary words, style prompts, the app or website you dictate into, API keys, or the names and addresses of your providers. Incognito dictations are not counted, and neither are dictations into password or private fields on Android. TelemetryDeck sees your IP address, as any server does, and its [privacy FAQ](https://telemetrydeck.com/docs/guides/privacy-faq/) says it never stores IP addresses. Its servers are in the EU.
+
+A build from source sends signals only when it has a TelemetryDeck App ID, and it marks them as test signals.
+
+### Cloud destinations and keys
 
 The Models page and the Styles page label each cloud destination. Your API keys are in the macOS Keychain, in Windows Credential Manager, or in the Secret Service keyring on Linux.
 
@@ -141,7 +162,7 @@ The name Sayso and the app icon are not part of the license. If you publish a ch
 
 ## Support Sayso
 
-Sayso has no price, no ads, and no telemetry. The people who use it pay for the work on it.
+Sayso has no price and no ads. The people who use it pay for the work on it.
 
 If you got Sayso from GitHub (a release file, the Nix flake, or a build from source), nothing asked you what you want to pay. If Sayso is useful to you, sponsor its developer:
 
@@ -198,6 +219,7 @@ The script makes `build/sayso-<version>-linux-<arch>.tar.gz`. Unpack it and run 
 |---|---|---|---|
 | Config (`config.toml`, `styles/`) | `~/Library/Application Support/Sayso` | `%APPDATA%\Sayso` | `~/.config/sayso` |
 | History, audio, models | `~/Library/Application Support/Sayso` | `%LOCALAPPDATA%\Sayso` | `~/.local/share/sayso` |
+| Telemetry ID (`telemetry.json`) | `~/Library/Application Support/Sayso` | `%LOCALAPPDATA%\Sayso` | `~/.local/share/sayso` |
 | Logs | `~/Library/Caches/Sayso/logs/sayso.log` | `%LOCALAPPDATA%\Sayso\Cache\logs\sayso.log` | `~/.cache/sayso/logs/sayso.log` |
 
 On all three, `~/.config/sayso` wins for the config when it exists, and `$XDG_CONFIG_HOME`, `$XDG_DATA_HOME`, and `$XDG_CACHE_HOME` win over all of them.
