@@ -20,6 +20,30 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.17.0"
+title = "Rebuilt in Go, faster to launch and lighter to run"
+
+[[release.item]]
+icon = "sparkle"
+title = "Rebuilt in Go"
+text = "Sayso is now a pure-Go desktop app across macOS, Windows, and Linux with faster startup and lower memory use."
+
+[[release.item]]
+icon = "download"
+title = "Seamless in-place upgrade"
+text = "Upgrading from 0.14 through 0.16 keeps your settings, dictation history, downloaded models, dictionary, styles, and provider keys intact."
+
+[[release.item]]
+icon = "globe"
+title = "Arabic and right-to-left layout"
+text = "Sayso now includes an Arabic translation and mirrors its interface for right-to-left languages."
+
+[[release.item]]
+icon = "shield"
+title = "Anonymous usage telemetry"
+text = "Official builds send anonymous install, launch, model, and style counts to TelemetryDeck using a hashed random ID — never audio, text, prompts, dictionary words, or app names. Turn it off anytime in Onboarding or Settings › General."
+
+[[release]]
 version = "0.16.0"
 title = "A shortcut for each style"
 
