@@ -69,6 +69,9 @@ Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 [InstallDelete]
 ; The speech engine before 0.12. sayso-engine.exe replaces it.
 Type: files; Name: "{app}\SaysoEngine.exe"
+; The engine builds for each instruction set of 0.13 to 0.16. One sayso-engine.exe replaces them.
+Type: files; Name: "{app}\sayso-engine-avx.exe"
+Type: files; Name: "{app}\sayso-engine-baseline.exe"
 ; The cleanup runtime of 0.16 and older, in the app folder. llama\sayso-cleanup.exe replaces it.
 Type: files; Name: "{app}\sayso-cleanup.exe"
 Type: files; Name: "{app}\sayso-cleanup-avx.exe"
@@ -88,8 +91,12 @@ Filename: "{app}\Sayso.exe"; Description: "{cm:LaunchProgram,Sayso}"; Flags: now
 ; Quit a running Sayso, so its files can be removed.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM Sayso.exe /F"; Flags: runhidden; RunOnceId: "QuitSayso"
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-engine.exe /F"; Flags: runhidden; RunOnceId: "QuitEngine"
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-engine-avx.exe /F"; Flags: runhidden; RunOnceId: "QuitEngineAvx"
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-engine-baseline.exe /F"; Flags: runhidden; RunOnceId: "QuitEngineBaseline"
 ; The cleanup runtime (llama\sayso-cleanup.exe) holds the llama.cpp DLLs open.
 Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanup"
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup-avx.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanupAvx"
+Filename: "{sys}\taskkill.exe"; Parameters: "/IM sayso-cleanup-baseline.exe /F"; Flags: runhidden; RunOnceId: "QuitCleanupBaseline"
 
 [Registry]
 ; Settings › General › Launch at login writes this value. Remove it with the app.
@@ -97,3 +104,27 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 ; History, models, and settings stay in %APPDATA%\Sayso and %LOCALAPPDATA%\Sayso
 ; after an uninstall, as on macOS. The README says how to remove them.
+
+[Code]
+// The helpers of Sayso, with the names of every version since 0.12.
+const
+  HelperNames = 'sayso-engine,sayso-engine-avx,sayso-engine-baseline,sayso-cleanup,sayso-cleanup-avx,sayso-cleanup-baseline';
+
+// AppMutex makes the user quit Sayso before the install. A helper that
+// outlives its app (after a crash) still holds its exe open, and then the
+// install cannot replace or delete it. So stop each helper that runs from the
+// install folder, and no process of another app with the same name.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Dir, Command: String;
+  ResultCode: Integer;
+begin
+  Result := '';
+  Dir := AddBackslash(ExpandConstant('{app}'));
+  StringChangeEx(Dir, '''', '''''', True);
+  Command := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "' +
+    'Get-Process -Name ' + HelperNames + ' -ErrorAction SilentlyContinue | ' +
+    'Where-Object { $_.Path -and $_.Path.StartsWith(''' + Dir + ''', [StringComparison]::OrdinalIgnoreCase) } | ' +
+    'Stop-Process -Force -ErrorAction SilentlyContinue"';
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Command, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
