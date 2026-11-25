@@ -145,14 +145,30 @@ func checkNames(m *CleanupModelInfo) error {
 	return nil
 }
 
+// cleanupEndpoint is where model files come from: endpoint, else
+// SAYSO_HF_ENDPOINT, else Hugging Face.
+func cleanupEndpoint(endpoint string) string {
+	if endpoint != "" {
+		return endpoint
+	}
+	if v := os.Getenv("SAYSO_HF_ENDPOINT"); v != "" {
+		return v
+	}
+	return "https://huggingface.co"
+}
+
 // DownloadCleanupModel downloads the model and its license files from the
 // pinned revision. progress gets about eight calls a second and one at the
 // end; the fraction never goes backwards. A cancelled download keeps its
-// partial file for a later resume.
+// partial file for a later resume. endpoint "" and cancel nil are allowed.
 func DownloadCleanupModel(modelsDir string, m *CleanupModelInfo, endpoint string, cancel *atomic.Bool, progress func(DownloadProgress)) (string, error) {
 	if err := checkNames(m); err != nil {
 		return "", err
 	}
+	if cancel == nil {
+		cancel = new(atomic.Bool)
+	}
+	endpoint = cleanupEndpoint(endpoint)
 	dir := CleanupModelDir(modelsDir, m)
 	release, err := acquireDir(dir)
 	if err != nil {
