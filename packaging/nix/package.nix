@@ -49,13 +49,22 @@ stdenv.mkDerivation {
   ];
   dontStrip = true;
 
-  # The app finds the engine next to itself, and the cleanup runtime with its
-  # llama.cpp libraries in llama/ next to itself.
+  # The app finds the engine and the libraries that the engine loads
+  # (sherpa-onnx, whisper.cpp, ggml, parakeet) next to itself, and the cleanup
+  # runtime with its llama.cpp libraries in llama/ next to itself. The tarballs
+  # of 0.16.0 and older have the cleanup runtime in bin/ instead.
   installPhase = ''
     runHook preInstall
     install -Dm755 bin/sayso $out/lib/sayso/sayso
     install -Dm755 bin/sayso-engine $out/lib/sayso/sayso-engine
-    cp -a bin/llama $out/lib/sayso/llama
+    for lib in bin/*.so*; do
+      if [ -e "$lib" ]; then cp -a "$lib" $out/lib/sayso/; fi
+    done
+    if [ -d bin/llama ]; then
+      cp -a bin/llama $out/lib/sayso/llama
+    else
+      install -m755 bin/sayso-cleanup* $out/lib/sayso/
+    fi
     mkdir -p $out/bin
     ln -s $out/lib/sayso/sayso $out/bin/sayso
     cp -r share $out/share

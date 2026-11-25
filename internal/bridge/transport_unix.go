@@ -13,8 +13,7 @@ import (
 	"time"
 )
 
-// The Unix socket of the Host API (transport/unix.rs and
-// sayso-bridge/src/listen.rs).
+// The Unix socket of the Host API.
 
 const writeTimeout = 2 * time.Second
 

@@ -29,9 +29,9 @@ Get the files of the last release with `gh release download`.
 1. Install the last release on a clone, and download a model through onboarding. Keep the hash of each file of the models folder.
 2. Take a snapshot. Install the candidate over the last release, and start it from the desktop.
 3. The log has `moved to the model store`. Each hash is in `models/v1/artifacts`. Onboarding shows the model as downloaded.
-4. Run the example app `transcribe` against Sayso, with no engine in its folder. Answer the question on the screen. Check the text, `apps.toml`, **Don't allow**, and a second run that gets no question.
+4. Connect a Host API client to Sayso and transcribe a file. Answer the question on the screen. Check the text, `apps.toml`, **Don't allow**, and a second run that gets no question.
 5. Dictate with **Capture system audio** on, and check that the transcript has the system audio.
-6. On Linux, start the `.flatpak` as well, and run the example app outside and in a test Flatpak with `--filesystem=xdg-run/sayso:ro`. Do both against Sayso outside as well. The table in [sdk.md](sdk.md), "Flatpak", must stay true.
+6. On Linux, start the `.flatpak` as well, and connect the client from outside with `SAYSO_HOST_SOCKET=$XDG_RUNTIME_DIR/app/dev.sayso.Sayso/host.sock` ([linux.md](linux.md), "Flatpak").
 7. After a release, take the macOS clone back to the snapshot and let the 0.13 app update itself, then install the notarized DMG on a clean clone.
 
 ## What is different in a VM

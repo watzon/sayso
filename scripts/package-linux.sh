@@ -66,7 +66,10 @@ stage="$work/$name"
 # The packages declare the glibc and libstdc++ versions in nfpm.yaml. Stop
 # when a binary needs more, for example after a change of the build system.
 # The cleanup runtime and the llama.cpp libraries (with libgomp) are in bin/llama.
-newest() { objdump -T "$stage/bin/sayso" "$stage/bin/sayso-engine" $(find "$stage/bin/llama" -type f) | grep -oE "$1_[0-9.]+" | cut -d_ -f2 | sort -Vu | tail -1; }
+# The libraries that the engine loads (sherpa-onnx, ggml, parakeet) are in bin/.
+engine_libs=()
+for lib in "$stage"/bin/*.so*; do [[ -e "$lib" ]] && engine_libs+=("$lib"); done
+newest() { objdump -T "$stage/bin/sayso" "$stage/bin/sayso-engine" ${engine_libs[@]+"${engine_libs[@]}"} $(find "$stage/bin/llama" -type f) | grep -oE "$1_[0-9.]+" | cut -d_ -f2 | sort -Vu | tail -1; }
 declared_glibc=$(sed -n 's/.*libc6 (>= \([0-9.]*\)).*/\1/p' "$root/packaging/linux/nfpm.yaml")
 declared_glibcxx=$(sed -n 's/.*(GLIBCXX_\([0-9.]*\)).*/\1/p' "$root/packaging/linux/nfpm.yaml")
 check_floor() {
@@ -77,12 +80,26 @@ check_floor() {
 check_floor glibc "$(newest GLIBC)" "$declared_glibc"
 check_floor GLIBCXX "$(newest GLIBCXX)" "$declared_glibcxx"
 
+# nfpm.yaml lists the files that every tarball has. The engine libraries of
+# the tarball go next to the engine; nfpm has no optional glob, so the script
+# adds one entry for each.
+nfpm_config() {
+  local entries="$work/nfpm-engine-libs.yaml" lib
+  : > "$entries"
+  for lib in ${engine_libs[@]+"${engine_libs[@]}"}; do
+    lib=$(basename "$lib")
+    printf '  - src: bin/%s\n    dst: /usr/lib/sayso/%s\n    file_info: { mode: 0755 }\n' "$lib" "$lib" >> "$entries"
+  done
+  sed "/^contents:\$/r $entries" "$root/packaging/linux/nfpm.yaml" > "$work/nfpm.yaml"
+}
+
 package_nfpm() {
   fetch "${nfpm[@]}"
   tar -C "$tools" -xzf "$tools/${nfpm[0]}" nfpm
   cp "$root/packaging/linux/postinstall.sh" "$stage/"
+  nfpm_config
   (cd "$stage" && SAYSO_VERSION=$version SAYSO_PKG_ARCH=$pkg_arch \
-    "$tools/nfpm" package --config "$root/packaging/linux/nfpm.yaml" --packager "$1" --target "$out/$name.$1")
+    "$tools/nfpm" package --config "$work/nfpm.yaml" --packager "$1" --target "$out/$name.$1")
 }
 
 # The AppImage takes the libraries from the system, like the other packages.
@@ -140,8 +157,7 @@ package_appimage() {
 # The permissions (docs/linux.md, "Flatpak"): Sayso sends keys to other apps
 # and reads the keyboard (X11, /dev/uinput, /dev/input), and it starts the
 # `claude` and `codex` tools and `gsettings` of the host. It pauses media
-# players through MPRIS. `xdg-run/sayso:ro` lets a second sandbox of Sayso reach
-# the bridge: read-only, so no app in a sandbox can replace the socket.
+# players through MPRIS.
 flatpak_id=dev.sayso.Sayso
 flatpak_runtime=26.08
 package_flatpak() {
@@ -154,8 +170,7 @@ package_flatpak() {
   flatpak build-finish "$app" --command=sayso \
     --socket=wayland --socket=x11 --share=ipc --socket=pulseaudio --share=network --device=all \
     --talk-name=org.freedesktop.secrets --talk-name=org.kde.StatusNotifierWatcher \
-    --talk-name=org.freedesktop.Flatpak '--talk-name=org.mpris.MediaPlayer2.*' --filesystem=xdg-config/autostart:create \
-    --filesystem=xdg-run/sayso:ro
+    --talk-name=org.freedesktop.Flatpak '--talk-name=org.mpris.MediaPlayer2.*' --filesystem=xdg-config/autostart:create
   flatpak build-export --disable-sandbox --arch="$arch" "$repo" "$app" stable
   flatpak build-bundle --arch="$arch" --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
     "$repo" "$out/$name.flatpak" "$flatpak_id" stable

@@ -28,12 +28,17 @@ if [ "$mode" = uninstall ]; then
 fi
 
 mkdir -p "$bin" "$lib" "$share/applications" "$share/metainfo"
-# The app finds the engine next to itself, and the cleanup runtime with its
-# llama.cpp libraries in llama/ next to itself, so all of them live in one
-# folder.
+# The app finds the engine and the libraries that the engine loads next to
+# itself, and the cleanup runtime with its llama.cpp libraries in llama/ next
+# to itself, so all of them live in one folder. An install of 0.16 or older
+# also has sayso-bridge and sayso-cleanup* there, which this version does not
+# use.
 install -m 755 "$here/bin/sayso" "$lib/sayso"
 install -m 755 "$here/bin/sayso-engine" "$lib/sayso-engine"
-rm -rf "$lib/llama" "$lib"/sayso-cleanup*
+rm -rf "$lib/llama" "$lib"/sayso-cleanup* "$lib/sayso-bridge" "$lib"/*.so*
+for so in "$here"/bin/*.so*; do
+  if [ -e "$so" ]; then install -m 755 "$so" "$lib/"; fi
+done
 cp -a "$here/bin/llama" "$lib/llama"
 ln -sf "$lib/sayso" "$bin/sayso"
 sed "s|^Exec=sayso|Exec=$lib/sayso|" "$here/share/applications/dev.sayso.Sayso.desktop" > "$share/applications/dev.sayso.Sayso.desktop"

@@ -54,7 +54,7 @@ flatpak run dev.sayso.Sayso
 
 The install gets the runtime from Flathub, so your system must have the Flathub remote.
 
-A connected app reaches Sayso across the Flatpak sandbox, in both directions. An app outside needs nothing more. An app in its own Flatpak needs `--filesystem=xdg-run/sayso:ro` in its manifest, else it uses its own engine. Sayso starts a small program on the host for this, `sayso-bridge` ([sdk.md](sdk.md), "Flatpak").
+In the Flatpak, Sayso serves connected apps on `$XDG_RUNTIME_DIR/app/dev.sayso.Sayso/host.sock`, not on `$XDG_RUNTIME_DIR/sayso/host.sock`. An app outside the sandbox reaches it with `SAYSO_HOST_SOCKET` set to that path.
 
 Sayso must send keys to other apps, read the keyboard, and start tools of your system. So its Flatpak has wide permissions, and the sandbox protects little:
 
@@ -62,8 +62,7 @@ Sayso must send keys to other apps, read the keyboard, and start tools of your s
 |---|---|
 | X11 and Wayland | The windows, the overlay, key grabs, and the paste key on X11 |
 | All devices | `/dev/uinput` for the paste key and `/dev/input` for keyboard access. The udev rule and the `input` group of "Permissions" apply as they do without Flatpak. The Flatpak cannot install the udev rule. |
-| Host commands (`org.freedesktop.Flatpak`) | The `claude` and `codex` tools of your system, for AI styles, `gsettings`, for the GNOME custom shortcuts, and `sayso-bridge`, so that apps can connect |
-| `xdg-run/sayso`, read-only | A second sandbox of Sayso reaches the socket of `sayso-bridge` |
+| Host commands (`org.freedesktop.Flatpak`) | The `claude` and `codex` tools of your system, for AI styles, and `gsettings`, for the GNOME custom shortcuts |
 | `~/.config/autostart` | **Launch at login** |
 | Media players (`org.mpris.MediaPlayer2.*`) | **Pause media**: Sayso pauses the players that play while you dictate |
 | Secret Service, the tray, audio, network | API keys, the tray icon, the microphone, model downloads, and cloud providers |

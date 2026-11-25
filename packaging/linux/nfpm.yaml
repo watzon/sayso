@@ -4,7 +4,8 @@
 #
 # The app finds the engine next to itself and the cleanup runtime in llama/
 # next to itself (with the llama.cpp libraries), so the binaries live in
-# /usr/lib/sayso and /usr/bin/sayso is a link.
+# /usr/lib/sayso and /usr/bin/sayso is a link. package-linux.sh adds an entry
+# for each library of the engine in bin/ (sherpa-onnx, ggml, parakeet).
 #
 # The glibc version below is the version of the build system
 # (.github/workflows/release.yml). package-linux.sh stops when a binary needs

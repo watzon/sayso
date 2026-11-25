@@ -23,10 +23,14 @@ sha256sums_aarch64=('@SHA256_AARCH64@')
 
 package() {
   cd "sayso-$pkgver-linux-$CARCH"
-  # The app finds the engine next to itself, and the cleanup runtime with its
-  # llama.cpp libraries in llama/ next to itself.
+  # The app finds the engine and the libraries that the engine loads next to
+  # itself, and the cleanup runtime with its llama.cpp libraries in llama/ next
+  # to itself.
   install -Dm755 bin/sayso "$pkgdir/usr/lib/sayso/sayso"
   install -Dm755 bin/sayso-engine "$pkgdir/usr/lib/sayso/sayso-engine"
+  for lib in bin/*.so*; do
+    if [[ -e "$lib" ]]; then install -Dm755 "$lib" "$pkgdir/usr/lib/sayso/${lib#bin/}"; fi
+  done
   cp -a bin/llama "$pkgdir/usr/lib/sayso/llama"
   install -d "$pkgdir/usr/bin"
   ln -s /usr/lib/sayso/sayso "$pkgdir/usr/bin/sayso"
