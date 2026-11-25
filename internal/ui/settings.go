@@ -146,6 +146,10 @@ func (a *App) generalSection(c *mu.Context, p theme.Colors) {
 			}
 		})
 	})
+	a.group(c, p, i18n.T("settings.general.privacy"), func() {
+		a.toggleRow(c, p, "general.telemetry", i18n.T("settings.general.telemetry"), i18n.T("settings.general.telemetry_detail"),
+			&a.cfg.Telemetry.Enabled, a.saveConfig)
+	})
 	a.group(c, p, i18n.T("settings.general.about"), func() {
 		a.row(c, p, "Sayso", i18n.T("settings.general.version", "version", a.d.Version), func() {
 			uiText(c, i18n.TOS("settings.general.tagline", map[string]any{"os": osName()}), 13, 400, p.Graphite)

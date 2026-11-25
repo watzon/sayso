@@ -364,8 +364,8 @@ func (a *App) trailDot(c *mu.Context, p theme.Colors, i int) {
 	}
 }
 
-// onboardingFooter is the 76 px strip under a rule: the hint, then Back,
-// Skip and the primary button.
+// onboardingFooter is the 76 px strip under a rule: the hint (on the last
+// step, the telemetry switch), then Back, Skip and the primary button.
 func (a *App) onboardingFooter(c *mu.Context, p theme.Colors) {
 	f := a.footerFor()
 	last := a.onb.step == stepDone
@@ -373,7 +373,7 @@ func (a *App) onboardingFooter(c *mu.Context, p theme.Colors) {
 		if !last {
 			uiText(c, i18n.T("onboarding.footer.hint"), 13, 400, p.Graphite).Grow(1).Basis(0).MinWidth(0).SingleLine().Ellipsis("…")
 		} else {
-			mu.Spacer(c)
+			a.onbTelemetry(c, p)
 		}
 		mu.Row(c).Gap(8).AlignItems(mu.Center).Shrink(0).Children(func() {
 			if !last && a.onb.step > 0 {
@@ -387,6 +387,19 @@ func (a *App) onboardingFooter(c *mu.Context, p theme.Colors) {
 			if a.button(c, p, "onboarding.next", f.label, bopt{kind: btnPrimary, size: sizeLarge, trail: "arrow-right", disabled: !f.enabled}) && f.enabled {
 				a.onboardingNext()
 			}
+		})
+	})
+}
+
+// onbTelemetry is the switch of [telemetry] enabled, the one Settings ›
+// General shows too. Nothing is sent before onboarding ends (cmd/sayso).
+func (a *App) onbTelemetry(c *mu.Context, p theme.Colors) {
+	title := i18n.T("settings.general.telemetry")
+	mu.Row(c).Grow(1).Basis(0).MinWidth(0).Gap(12).AlignItems(mu.Center).Children(func() {
+		a.toggle(c, "onboarding.telemetry", title, &a.cfg.Telemetry.Enabled, a.saveConfig)
+		mu.Column(c).Gap(1).Grow(1).Basis(0).MinWidth(0).Children(func() {
+			uiText(c, title, 13, 600, p.Ink).FixedLineHeight(16).SingleLine().Ellipsis("…")
+			uiText(c, i18n.T("settings.general.telemetry_detail"), 12, 400, p.Graphite).FixedLineHeight(15).MaxLines(2).Ellipsis("…")
 		})
 	})
 }
