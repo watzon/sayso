@@ -56,12 +56,13 @@ func releasePayloadScript(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := regexp.MustCompile(`(?s)<<'PY'\n(.*?)\n\s*PY\n`).FindSubmatch(b)
+	text := strings.ReplaceAll(string(b), "\r\n", "\n")
+	m := regexp.MustCompile(`(?s)<<'PY'\n(.*?)\n\s*PY\n`).FindStringSubmatch(text)
 	if m == nil {
 		t.Fatal("release.yml has no payload script")
 	}
 	var lines []string
-	for _, l := range strings.Split(string(m[1]), "\n") {
+	for _, l := range strings.Split(m[1], "\n") {
 		lines = append(lines, strings.TrimPrefix(l, "          "))
 	}
 	return strings.Join(lines, "\n")

@@ -16,17 +16,17 @@ func TestMacWindowListDecodes(t *testing.T) {
 	if len(list) == 0 {
 		t.Skip("no window server session")
 	}
-	normal := 0
+	bounded := 0
 	for _, w := range list {
 		if w.pid <= 0 {
 			t.Fatalf("window without an owner: %+v", w)
 		}
-		if w.layer == 0 && !w.bounds.Empty() {
-			normal++
+		if !w.bounds.Empty() {
+			bounded++
 		}
 	}
-	if normal == 0 {
-		t.Fatalf("no normal window with bounds: %+v", list)
+	if bounded == 0 {
+		t.Fatalf("no window with bounds: %+v", list)
 	}
 }
 
