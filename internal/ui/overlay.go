@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"log"
 	"math"
 	"time"
 
@@ -143,6 +144,25 @@ func (a *App) OverlayClickThrough() bool { return a.state.Kind == dictation.Stat
 
 // SetPreviewBelow tells the pill which half of the display it is in.
 func (a *App) SetPreviewBelow(below bool) { a.ov.previewBelow = below }
+
+// pillDragger is a shell that moves the pill's window by a press of the
+// pill, and forgets where it was dropped (Desktop).
+type pillDragger interface {
+	DragPill(pressed bool) bool
+	ResetPill(now bool) error
+}
+
+// ResetPillPosition forgets where the pill was dropped: it goes back to
+// the bottom center when Sayso next starts.
+func (a *App) ResetPillPosition() error {
+	if s, ok := a.d.Shell.(pillDragger); ok {
+		return s.ResetPill(false)
+	}
+	if a.d.Paths.DataDir == "" {
+		return nil
+	}
+	return forgetPillSpots(a.d.Paths.StateFile())
+}
 
 // syncOverlay shows or hides the overlay window for the state.
 func (a *App) syncOverlay() {
@@ -392,7 +412,29 @@ func (a *App) pillFace(c *mu.Context, p theme.Colors, idle bool) {
 		}
 		a.pillContent(c, p, b, hover)
 	})
-	if clicked(c, b) {
+	dragged := false
+	if s, ok := a.d.Shell.(pillDragger); ok && a.cfg.Overlay.Style != config.OverlayNotch {
+		// Idle or recording, as in Sayso 0.16: a notice's pill only clicks.
+		moves := a.state.Kind == dictation.StateIdle || a.state.Kind == dictation.StateRecording
+		// The press lasts wherever the pointer goes, as the window may lag
+		// behind it.
+		btn, down := b.PressedButton()
+		pressed := down && btn == 0 && moves
+		dragged = s.DragPill(pressed)
+		if pressed {
+			// The window follows the pointer on the screen, which moves
+			// no pointer over the pill: each frame looks again.
+			c.AnimationFrame()
+		}
+		b.ContextMenu(func(m *mu.Menu) {
+			if m.Item(i18n.T("settings.overlay.reset_position")).Chosen() {
+				if err := s.ResetPill(true); err != nil {
+					log.Printf("overlay: reset the pill's place: %v", err)
+				}
+			}
+		})
+	}
+	if clicked(c, b) && !dragged {
 		switch a.state.Kind {
 		case dictation.StateShowing:
 			if a.d.Dictation != nil {

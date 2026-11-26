@@ -44,6 +44,8 @@ type shellLayer interface {
 	overlay() overlayWindow
 	// displays are the displays, the primary one first.
 	displays() []mygo.Display
+	// pointer is where the pointer is on the screen, in DIPs.
+	pointer() mygo.Point
 }
 
 // mygoLayer is the layer of the running app.
@@ -85,6 +87,8 @@ func (l mygoLayer) overlay() overlayWindow {
 }
 
 func (mygoLayer) displays() []mygo.Display { return mygo.Screen.Displays() }
+
+func (mygoLayer) pointer() mygo.Point { return mygo.Screen.CursorScreenPoint() }
 
 func (mygoLayer) showInDock() { mygo.App.SetActivationPolicy(mygo.ActivationPolicyRegular) }
 

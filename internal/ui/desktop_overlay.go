@@ -48,6 +48,9 @@ type overlayPlaced struct {
 	display int64
 	frame   mygo.Rectangle
 	key     overlayKey
+	// above: the card is in the top half of the display, at the top of
+	// the window, and the preview opens below it.
+	above bool
 }
 
 // focusState is the display the keyboard focus was last seen on.
@@ -181,6 +184,10 @@ func (d *Desktop) placeOverlay() {
 	}
 	w, h := d.overlaySize()
 	f := overlayFrame(disp, d.a.cfg.Overlay.Style, w, h)
+	above := f.Y < disp.Bounds.Y+disp.Bounds.Height/2
+	if spot, ok := d.pillSpots()[disp.ID]; ok && d.a.cfg.Overlay.Style != config.OverlayNotch {
+		f, above = pillSpotFrame(workArea(disp), spot, w, h)
+	}
 	key := d.overlayKey()
 	p := d.placed
 	if p.ok && p.display == disp.ID && p.frame == f && d.overlayOn(ov, disp.ID, w, h, displays) {
@@ -191,8 +198,8 @@ func (d *Desktop) placeOverlay() {
 		ov.SetSize(w, h)
 	}
 	ov.SetPosition(f.X, f.Y)
-	d.placed = overlayPlaced{ok: true, display: disp.ID, frame: f, key: key}
-	d.notePillHalf()
+	d.placed = overlayPlaced{ok: true, display: disp.ID, frame: f, key: key, above: above}
+	d.a.SetPreviewBelow(above)
 }
 
 // overlayOn reports whether the overlay window, w by h, is on the display id.
@@ -206,10 +213,14 @@ func (d *Desktop) overlayOn(ov overlayWindow, id int64, w, h int, displays []myg
 // preview to open toward the middle.
 func (d *Desktop) notePillHalf() {
 	ov := d.layer.overlay()
-	if ov == nil {
+	if ov == nil || d.pill.pressing {
 		return
 	}
 	x, y := ov.Position()
+	if p := d.placed; p.ok && x == p.frame.X && y == p.frame.Y {
+		d.a.SetPreviewBelow(p.above)
+		return
+	}
 	disp, ok := displayAt(mygo.Point{X: x, Y: y}, d.layer.displays())
 	if !ok {
 		return
