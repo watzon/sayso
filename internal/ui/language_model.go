@@ -22,11 +22,11 @@ type languageModelEngine interface {
 }
 
 func (e *EngineAdapter) languageModel(ctx context.Context) (engine.LanguageModelState, error) {
-	return e.c.LanguageModel(ctx)
+	return e.Client().LanguageModel(ctx)
 }
 
 func (e *EngineAdapter) generate(ctx context.Context, instructions, prompt string, timeout time.Duration, temperature *float64) (engine.Generated, error) {
-	return e.c.Generate(ctx, instructions, prompt, timeout, temperature)
+	return e.Client().Generate(ctx, instructions, prompt, timeout, temperature)
 }
 
 type engineLanguageModel struct{ e languageModelEngine }
