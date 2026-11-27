@@ -20,8 +20,32 @@ const (
 	approvalLook           = 50 * time.Millisecond
 )
 
-// hostFeatures are the optional parts of the Host API that this host serves.
-var hostFeatures = []string{}
+// alwaysFeatures are the optional parts of the Host API that every host of
+// this version serves (sdk/protocol/host-api.md, "Host features").
+var alwaysFeatures = []string{"dictation_done", "download_question", "enhance", "record_to", "silence_limit"}
+
+// engineFeatures are the engine features that hello passes on.
+var engineFeatures = []string{"vad", "diarization", "segments", "detected_language"}
+
+// features are the optional parts of the Host API that this host serves now.
+func (s *shared) features() []string {
+	out := slices.Clone(alwaysFeatures)
+	if s.services.Microphone() != nil {
+		out = append(out, "mic_capture")
+	}
+	if s.services.SystemAudio() != nil {
+		out = append(out, "system_capture", "echo_rule")
+	}
+	if s.engine != nil {
+		for _, f := range engineFeatures {
+			if slices.Contains(s.engine.Features(), f) {
+				out = append(out, f)
+			}
+		}
+	}
+	slices.Sort(out)
+	return out
+}
 
 // ApprovalQuestion asks the user about an app.
 type ApprovalQuestion struct {
@@ -281,7 +305,7 @@ func helloReply(s *shared, r *AppRecord, asked []Capability) HelloReply {
 			denied = append(denied, c)
 		}
 	}
-	return HelloReply{HostVersion: s.hostVersion, Protocol: Protocol, Features: slices.Clone(hostFeatures), Capabilities: r.Capabilities(), Denied: denied}
+	return HelloReply{HostVersion: s.hostVersion, Protocol: Protocol, Features: s.features(), Capabilities: r.Capabilities(), Denied: denied}
 }
 
 func notApproved() Reply {

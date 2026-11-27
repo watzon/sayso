@@ -15,10 +15,11 @@ import (
 	"github.com/watzon/sayso/internal/engine"
 	"github.com/watzon/sayso/internal/enhance"
 	"github.com/watzon/sayso/internal/paths"
+	"github.com/watzon/sayso/internal/update"
 )
 
 // HostVersion is the version that hello gives when HostConfig names none.
-var HostVersion = "0.15.0"
+var HostVersion = update.Version
 
 // EngineStart is how far the speech engine got.
 type EngineStart int
