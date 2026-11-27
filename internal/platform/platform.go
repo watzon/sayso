@@ -2,6 +2,7 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 )
@@ -32,6 +33,10 @@ func NormalizeDeviceID(id string) string {
 	}
 	return id
 }
+
+// ErrMicrophoneDenied is the error of AudioCapture.Start when the user or the
+// system refused the microphone.
+var ErrMicrophoneDenied = errors.New("microphone access is denied")
 
 // AudioChunk carries 16 kHz mono float32 PCM samples and an RMS level in [0, 1].
 type AudioChunk struct {
@@ -242,7 +247,10 @@ type Services struct {
 	Audio AudioCapture
 	// Meter is a second capture for the microphone test of onboarding, so
 	// the test never holds the capture a dictation needs; nil has no test.
-	Meter       AudioCapture
+	Meter AudioCapture
+	// LiveMic is a third capture for the live sessions of connected apps, so
+	// a session and a dictation never stop each other; nil has none.
+	LiveMic     AudioCapture
 	Hotkeys     HotkeyManager
 	Inserter    Inserter
 	Context     ContextProvider

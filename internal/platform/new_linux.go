@@ -10,6 +10,7 @@ func New() (*Services, error) {
 	svc := &Services{
 		Audio:       newLinuxAudio(),
 		Meter:       newLinuxAudio(),
+		LiveMic:     newLinuxAudio(),
 		Hotkeys:     newLinuxHotkeys(s),
 		Inserter:    ins,
 		Context:     &linuxContext{session: s},

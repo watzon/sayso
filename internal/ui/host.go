@@ -39,3 +39,19 @@ func (h *HostServices) AskDownload(q bridge.DownloadQuestion, withdrawn func() b
 func (h *HostServices) AskApproval(q bridge.ApprovalQuestion, withdrawn func() bool) (bool, bool) {
 	return h.App.AskApproval(q, withdrawn)
 }
+
+// Microphone is the microphone of live sessions, or nil where the app has no
+// capture for them.
+func (h *HostServices) Microphone() bridge.Microphone {
+	if h.App.d.Platform == nil || h.App.d.Platform.LiveMic == nil {
+		return nil
+	}
+	return &liveMic{capture: h.App.d.Platform.LiveMic, device: h.inputDevice}
+}
+
+func (h *HostServices) inputDevice() string {
+	if cfg := h.App.ControllerConfig(); cfg != nil && cfg.Audio.InputDevice != nil {
+		return *cfg.Audio.InputDevice
+	}
+	return ""
+}

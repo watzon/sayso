@@ -54,6 +54,9 @@ type propertyKey struct {
 
 var pkeyDeviceFriendlyName = propertyKey{mustGUID("{a45c254e-df1c-4efd-8020-67d146a850e0}"), 14}
 
+// eAccessDenied is E_ACCESSDENIED: the privacy settings refuse the device.
+const eAccessDenied = 0x80070005
+
 // Vtable slots, counted with IUnknown.
 const (
 	slotEnumAudioEndpoints      = 3
@@ -353,8 +356,11 @@ func capture(ctx context.Context, enum comObject, id string, queue chan<- []floa
 	}
 	defer dev.release()
 	var client comObject
-	if err := dev.hr("Activate", slotDeviceActivate, uintptr(unsafe.Pointer(&iidIAudioClient)), clsctxAll, 0, uintptr(unsafe.Pointer(&client))); err != nil {
-		return err
+	if r := uint32(dev.call(slotDeviceActivate, uintptr(unsafe.Pointer(&iidIAudioClient)), clsctxAll, 0, uintptr(unsafe.Pointer(&client)))); int32(r) < 0 {
+		if r == eAccessDenied {
+			return fmt.Errorf("the privacy settings of Windows block the microphone: %w", ErrMicrophoneDenied)
+		}
+		return fmt.Errorf("Activate: HRESULT %#x", r)
 	}
 	defer client.release()
 	var fmtPtr uintptr

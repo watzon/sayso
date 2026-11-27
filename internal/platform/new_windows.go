@@ -5,6 +5,7 @@ func New() (*Services, error) {
 	return &Services{
 		Audio:       &windowsAudio{},
 		Meter:       &windowsAudio{},
+		LiveMic:     &windowsAudio{},
 		Hotkeys:     newWindowsHotkeys(),
 		Inserter:    windowsInserter{},
 		Context:     windowsContext{},

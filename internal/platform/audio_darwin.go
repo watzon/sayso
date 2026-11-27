@@ -157,7 +157,7 @@ func (a *macAudio) Start(ctx context.Context, deviceID string, onChunk func(Audi
 	// A denied microphone gives silence instead of an error, so check first.
 	switch microphoneAuthorization() {
 	case micDenied, micRestricted:
-		return errors.New("audio: microphone access is denied")
+		return fmt.Errorf("audio: %w", ErrMicrophoneDenied)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
