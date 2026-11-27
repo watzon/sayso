@@ -1,0 +1,64 @@
+# ok without fields
+{"type":"ok","v":1,"id":"1"}
+# hello reply
+{"type":"ok","host_version":"0.17.2","protocol":1,"features":["dictation_done","download_question","enhance","mic_capture","record_to","silence_limit"],"capabilities":["models.read","transcribe.file"],"denied":["ai.enhance"],"v":1,"id":"h1"}
+# hello reply of an old host
+{"type":"ok","host_version":"0.17.2","protocol":1,"features":[],"capabilities":[],"denied":[],"v":1,"id":"h2"}
+# list_models reply
+{"type":"ok","models":[{"id":"parakeet-tdt-v3","name":"Parakeet TDT v3","roles":["final","streaming"],"state":"ready","languages":["en","de"],"timestamps":"word","size_bytes":670000000,"choice":["final"]},{"id":"silero-vad","name":"Silero VAD","roles":["vad"],"state":"not_downloaded","languages":[],"timestamps":"none","size_bytes":2300000}],"v":1,"id":"1"}
+# job reply
+{"type":"ok","job":1,"v":1,"id":"4"}
+# session reply
+{"type":"ok","session":1,"excludes":["sayso","app"],"v":1,"id":"7"}
+# session reply without excludes
+{"type":"ok","session":2,"excludes":[],"v":1,"id":"8"}
+# text reply of session_stop
+{"type":"ok","text":"Hello there. How are you?","v":1,"id":"10"}
+# enhance reply
+{"type":"ok","text":"The meeting is at three.","provider":"openai","model":"gpt-5-mini","v":1,"id":"11"}
+# subscribe reply
+{"type":"ok","events":["dictation_done"],"v":1,"id":"13"}
+# error with every field
+{"type":"error","code":"capability","message":"the user did not grant audio.mic","capability":"audio.mic","v":1,"id":"7"}
+# error with a reason
+{"type":"error","message":"the download failed","reason":"download_failed","v":1,"id":"3"}
+# error without code
+{"type":"error","message":"unknown request type translate","v":1,"id":"16"}
+# error without id
+{"type":"error","code":"bad_request","message":"the line is not JSON","v":1}
+# error not_approved
+{"type":"error","code":"not_approved","message":"not_approved","v":1,"id":"e"}
+# error capability
+{"type":"error","code":"capability","message":"capability","v":1,"id":"e"}
+# error busy
+{"type":"error","code":"busy","message":"busy","v":1,"id":"e"}
+# error declined
+{"type":"error","code":"declined","message":"declined","v":1,"id":"e"}
+# error model_not_downloaded
+{"type":"error","code":"model_not_downloaded","message":"model_not_downloaded","v":1,"id":"e"}
+# error wrong_role
+{"type":"error","code":"wrong_role","message":"wrong_role","v":1,"id":"e"}
+# error unsupported
+{"type":"error","code":"unsupported","message":"unsupported","v":1,"id":"e"}
+# error bad_request
+{"type":"error","code":"bad_request","message":"bad_request","v":1,"id":"e"}
+# error too_many_streams
+{"type":"error","code":"too_many_streams","message":"too_many_streams","v":1,"id":"e"}
+# error unknown_model
+{"type":"error","code":"unknown_model","message":"unknown_model","v":1,"id":"e"}
+# error model_retired
+{"type":"error","code":"model_retired","message":"model_retired","v":1,"id":"e"}
+# error unavailable
+{"type":"error","code":"unavailable","message":"unavailable","v":1,"id":"e"}
+# error refused
+{"type":"error","code":"refused","message":"refused","v":1,"id":"e"}
+# error timeout
+{"type":"error","code":"timeout","message":"timeout","v":1,"id":"e"}
+# error permission
+{"type":"error","code":"permission","message":"permission","v":1,"id":"e"}
+# error host_not_running
+{"type":"error","code":"host_not_running","message":"host_not_running","v":1,"id":"e"}
+# error connection_lost
+{"type":"error","code":"connection_lost","message":"connection_lost","v":1,"id":"e"}
+# error host_closing
+{"type":"error","code":"host_closing","message":"host_closing","v":1,"id":"e"}

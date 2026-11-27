@@ -1,0 +1,25 @@
+{
+  "socket": [
+    {"case": "the variable wins on Linux", "system": "linux", "env": {"SAYSO_HOST_SOCKET": "/x.sock", "XDG_RUNTIME_DIR": "/run/user/1000"}, "uid": 1000, "host": "/x.sock", "client": "/x.sock"},
+    {"case": "the variable wins on macOS", "system": "macos", "env": {"SAYSO_HOST_SOCKET": "/x.sock"}, "darwin_temp": "/var/folders/xy/T", "host": "/x.sock", "client": "/x.sock"},
+    {"case": "the variable wins on Windows", "system": "windows", "env": {"SAYSO_HOST_SOCKET": "\\\\.\\pipe\\sayso-test"}, "sid": "S-1-5-21-1-2-3-1001", "host": "\\\\.\\pipe\\sayso-test", "client": "\\\\.\\pipe\\sayso-test"},
+    {"case": "an empty variable is not set", "system": "linux", "env": {"SAYSO_HOST_SOCKET": "", "XDG_RUNTIME_DIR": "/run/user/1000"}, "uid": 1000, "host": "/run/user/1000/sayso/host.sock", "client": "/run/user/1000/sayso/host.sock"},
+    {"case": "Linux with a runtime folder", "system": "linux", "env": {"XDG_RUNTIME_DIR": "/run/user/1000"}, "uid": 1000, "host": "/run/user/1000/sayso/host.sock", "client": "/run/user/1000/sayso/host.sock"},
+    {"case": "Linux in a Flatpak", "system": "linux", "env": {"XDG_RUNTIME_DIR": "/run/user/1000", "FLATPAK_ID": "dev.sayso.Sayso"}, "uid": 1000, "host": "/run/user/1000/app/dev.sayso.Sayso/host.sock", "client": "/run/user/1000/sayso/host.sock"},
+    {"case": "Linux without a runtime folder", "system": "linux", "env": {}, "uid": 1000, "host": "/tmp/sayso-1000/host.sock", "client": "/tmp/sayso-1000/host.sock"},
+    {"case": "macOS", "system": "macos", "env": {}, "darwin_temp": "/var/folders/xy/abc/T", "uid": 501, "host": "/var/folders/xy/abc/T/sayso/host.sock", "client": "/var/folders/xy/abc/T/sayso/host.sock"},
+    {"case": "macOS without a temp folder", "system": "macos", "env": {}, "uid": 501, "host": "/tmp/sayso-501/host.sock", "client": "/tmp/sayso-501/host.sock"},
+    {"case": "another Unix system", "system": "other", "env": {"XDG_RUNTIME_DIR": "/run/user/7"}, "uid": 7, "host": "/tmp/sayso-7/host.sock", "client": "/tmp/sayso-7/host.sock"},
+    {"case": "another Unix system without a user id", "system": "other", "env": {}, "error": true},
+    {"case": "Windows", "system": "windows", "env": {}, "sid": "S-1-5-21-1-2-3-1001", "host": "\\\\.\\pipe\\sayso-host-S-1-5-21-1-2-3-1001", "client": "\\\\.\\pipe\\sayso-host-S-1-5-21-1-2-3-1001"},
+    {"case": "Windows without a SID", "system": "windows", "env": {}, "error": true}
+  ],
+  "data": [
+    {"case": "macOS", "goos": "darwin", "home": "/Users/a", "env": {}, "data": "/Users/a/Library/Application Support/Sayso", "models": "/Users/a/Library/Application Support/Sayso/models", "store": "/Users/a/Library/Application Support/Sayso/models/v1", "cleanup": "/Users/a/Library/Application Support/Sayso/models/cleanup"},
+    {"case": "macOS with XDG_DATA_HOME", "goos": "darwin", "home": "/Users/a", "env": {"XDG_DATA_HOME": "/Users/a/.data"}, "data": "/Users/a/.data/sayso", "models": "/Users/a/.data/sayso/models", "store": "/Users/a/.data/sayso/models/v1", "cleanup": "/Users/a/.data/sayso/models/cleanup"},
+    {"case": "Linux", "goos": "linux", "home": "/home/a", "env": {}, "data": "/home/a/.local/share/sayso", "models": "/home/a/.local/share/sayso/models", "store": "/home/a/.local/share/sayso/models/v1", "cleanup": "/home/a/.local/share/sayso/models/cleanup"},
+    {"case": "Linux with XDG_DATA_HOME", "goos": "linux", "home": "/home/a", "env": {"XDG_DATA_HOME": "/srv/data"}, "data": "/srv/data/sayso", "models": "/srv/data/sayso/models", "store": "/srv/data/sayso/models/v1", "cleanup": "/srv/data/sayso/models/cleanup"},
+    {"case": "Windows", "goos": "windows", "home": "C:/Users/a", "env": {"LOCALAPPDATA": "C:/Users/a/AppData/Local"}, "data": "C:/Users/a/AppData/Local/Sayso", "models": "C:/Users/a/AppData/Local/Sayso/models", "store": "C:/Users/a/AppData/Local/Sayso/models/v1", "cleanup": "C:/Users/a/AppData/Local/Sayso/models/cleanup"},
+    {"case": "Windows without LOCALAPPDATA", "goos": "windows", "home": "C:/Users/a", "env": {}, "data": "C:/Users/a/AppData/Local/Sayso", "models": "C:/Users/a/AppData/Local/Sayso/models", "store": "C:/Users/a/AppData/Local/Sayso/models/v1", "cleanup": "C:/Users/a/AppData/Local/Sayso/models/cleanup"}
+  ]
+}

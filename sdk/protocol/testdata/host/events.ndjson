@@ -1,0 +1,52 @@
+# model_state downloading
+{"type":"model_state","model":"parakeet-tdt-v3","state":"downloading","v":1,"id":"3"}
+# model_state ready
+{"type":"model_state","model":"parakeet-tdt-v3","state":"ready","load_ms":812,"v":1}
+# model_state downloaded with the preview
+{"type":"model_state","model":"parakeet-tdt-v3","state":"downloaded","preview":true,"v":1}
+# model_state failed
+{"type":"model_state","model":"parakeet-tdt-v3","state":"failed","message":"the download failed","reason":"download_failed","v":1,"id":"3"}
+# download_progress
+{"type":"download_progress","model":"parakeet-tdt-v3","fraction":0.5,"bytes_done":335000000,"bytes_total":670000000,"v":1,"id":"3"}
+# job_progress
+{"type":"job_progress","job":1,"fraction":0.25,"v":1}
+# job_progress at the end
+{"type":"job_progress","job":1,"fraction":1.0,"v":1}
+# segment of a job with words
+{"type":"segment","job":1,"start_ms":320,"end_ms":1180,"text":"Hello there.","words":[{"start_ms":320,"end_ms":640,"text":"Hello"},{"start_ms":700,"end_ms":1180,"text":"there."}],"v":1}
+# segment of a session
+{"type":"segment","session":2,"source":"system","start_ms":0,"end_ms":2400,"text":"How are you?","v":1}
+# speakers of a job
+{"type":"speakers","job":1,"turns":[{"start_ms":0,"end_ms":1200,"speaker":"1"},{"start_ms":1100,"end_ms":2400,"speaker":"2"}],"v":1}
+# speakers of a session
+{"type":"speakers","session":2,"source":"mic","turns":[],"v":1}
+# job_done
+{"type":"job_done","job":1,"text":"Hello there. How are you?","v":1}
+# job_failed with a code
+{"type":"job_failed","job":1,"message":"the model m is not on disk","code":"model_not_downloaded","v":1}
+# job_failed after cancel
+{"type":"job_failed","job":2,"message":"The job was cancelled.","v":1}
+# partial
+{"type":"partial","session":2,"source":"mic","committed":"Hello","tentative":" there","v":1}
+# partial without source
+{"type":"partial","session":2,"committed":"","tentative":"","v":1}
+# source_gap
+{"type":"source_gap","session":2,"source":"mic","ms":180,"v":1}
+# source_ended
+{"type":"source_ended","session":2,"source":"system","reason":"permission","v":1}
+# part_failed
+{"type":"part_failed","session":2,"source":"mic","start_ms":12000,"end_ms":18000,"message":"the final pass failed","code":"unavailable","v":1}
+# session_ended
+{"type":"session_ended","session":2,"text":"Hello there.","v":1}
+# session_ended with a code
+{"type":"session_ended","session":2,"text":"","code":"capability","v":1}
+# silence_limit
+{"type":"silence_limit","session":2,"silence_ms":30000,"v":1}
+# dictation_done
+{"type":"dictation_done","text":"The meeting is at three.","transcript":"um the meeting is at three","app":"Mail","site":null,"style":"email","time":"2026-11-27T22:10:04Z","v":1}
+# dictation_done with nulls left out
+{"type":"dictation_done","text":"Hi","transcript":"hi","time":"2026-11-27T22:10:04Z","v":1}
+# approval_waiting
+{"type":"approval_waiting","v":1,"id":"h1"}
+# host_closing
+{"type":"host_closing","v":1}

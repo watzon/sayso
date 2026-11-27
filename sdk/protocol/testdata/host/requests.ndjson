@@ -1,0 +1,36 @@
+# hello with everything
+{"type":"hello","sdk":"sayso-go/0.17.2","protocol":1,"features":[],"app":{"name":"Notetaker"},"capabilities":["models.read","models.download","transcribe.file","session.live","audio.mic","audio.system","ai.enhance","dictation.observe"],"v":1,"id":"h1"}
+# hello with the fields that it needs
+{"type":"hello","protocol":1,"features":[],"v":1,"id":"h2"}
+# list_models
+{"type":"list_models","v":1,"id":"1"}
+# list_models by role
+{"type":"list_models","role":"vad","v":1,"id":"2"}
+# download_model
+{"type":"download_model","model":"parakeet-tdt-v3","reason":"Notetaker transcribes your meetings.","v":1,"id":"3"}
+# transcribe_file with every option
+{"type":"transcribe_file","path":"/Users/a/meeting.m4a","model":"parakeet-tdt-v3","vad_model":"silero-vad","language":"en","diarize":true,"diarization_model":"pyannote-community-1","speakers":2,"v":1,"id":"4"}
+# transcribe_file with a path only
+{"type":"transcribe_file","path":"C:\\Users\\a\\meeting.wav","v":1,"id":"5"}
+# cancel_job
+{"type":"cancel_job","job":7,"v":1,"id":"6"}
+# session_start with every option
+{"type":"session_start","sources":["mic","system"],"model":"parakeet-tdt-v3","preview_model":"nemotron-streaming","vad_model":"silero-vad","language":"auto","diarize":true,"diarization_model":"pyannote-community-1","record_to":"/Users/a/rec","silence_limit_ms":30000,"v":1,"id":"7"}
+# session_start with the client source
+{"type":"session_start","sources":["client"],"v":1,"id":"8"}
+# session_audio without id
+{"type":"session_audio","session":3,"pcm":"AAABAP//","v":1}
+# session_audio with id
+{"type":"session_audio","session":3,"pcm":"AAABAP//","v":1,"id":"9"}
+# session_stop
+{"type":"session_stop","session":3,"v":1,"id":"10"}
+# enhance with a style
+{"type":"enhance","text":"um so the the meeting is at three","style":"Email","v":1,"id":"11"}
+# enhance with a prompt and a provider
+{"type":"enhance","text":"hello","prompt":"Translate to French.","provider":"openai","v":1,"id":"12"}
+# subscribe
+{"type":"subscribe","events":["dictation_done"],"v":1,"id":"13"}
+# subscribe to nothing
+{"type":"subscribe","events":[],"v":1,"id":"14"}
+# bye
+{"type":"bye","v":1,"id":"15"}

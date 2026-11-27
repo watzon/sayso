@@ -1,0 +1,30 @@
+# hello reply
+{"v":1,"type":"hello","id":"h1","version":"0.17.2","protocol":1,"features":["catalog","concurrent_streams","detected_language","diarization","keep_preview","language_model","prepare","segments","store_v1","unload","vad"]}
+# hello reply of an old engine
+{"v":1,"type":"hello","id":"h1","version":"0.9.0","protocol":1}
+# ok
+{"v":1,"type":"ok","id":"o1"}
+# ok of the catalog
+{"v":1,"type":"ok","id":"l2","models":[{"id":"fake-final","name":"Fake final","engine":{"kind":"fake"},"size_bytes":1024,"languages":["en"],"roles":["final"],"timestamps":"word","detects_language":true,"recommended":true}],"retired":[{"id":"fake-old","message":"use fake-final"}]}
+# final with segments and language
+{"v":1,"type":"final","id":"t1","text":"Hello there.","elapsed_ms":212,"segments":[{"start_ms":320,"end_ms":1180,"text":"Hello there.","words":[{"start_ms":320,"end_ms":640,"text":"Hello"},{"start_ms":700,"end_ms":1180,"text":"there."}]}],"language":"en"}
+# final without segments
+{"v":1,"type":"final","id":"t1","text":"","elapsed_ms":3}
+# stream_end ok
+{"v":1,"type":"ok","id":"s2","session":1099511627776,"text":"Hello there"}
+# vad ok
+{"v":1,"type":"ok","id":"v1","speech":[{"start_ms":300,"end_ms":1800},{"start_ms":2600,"end_ms":4000}]}
+# diarize ok
+{"v":1,"type":"ok","id":"z1","speakers":2,"turns":[{"start_ms":0,"end_ms":1000,"speaker":0},{"start_ms":900,"end_ms":2000,"speaker":1}]}
+# language_model available
+{"v":1,"type":"ok","id":"m1","available":true,"model":"fake-lm"}
+# language_model not available
+{"v":1,"type":"ok","id":"m1","available":false,"message":"Apple Intelligence is off","reason":"intelligence_off"}
+# generate ok
+{"v":1,"type":"ok","id":"g1","text":"Hi.","model":"fake-lm"}
+# error with code
+{"v":1,"type":"error","id":"s1","message":"no free stream","code":"too_many_streams"}
+# error with a reason
+{"v":1,"type":"error","id":"g1","message":"timed out","code":"timeout","reason":"timeout"}
+# error without id
+{"v":1,"type":"error","message":"the line is not a JSON object with a string type"}

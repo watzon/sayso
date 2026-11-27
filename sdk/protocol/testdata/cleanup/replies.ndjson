@@ -1,0 +1,24 @@
+# hello
+{"v":1,"id":"1","type":"hello","version":1,"llama_cpp":"b7100","backend":"metal","libraries":"found"}
+# loaded
+{"v":1,"id":"2","type":"loaded","model_id":"s1-mini","load_ms":180}
+# count
+{"v":1,"id":"3","type":"count","tokens":4}
+# completion end
+{"v":1,"id":"4","type":"completion","text":" Hello.","stop":"end","tokens_in":12,"tokens_out":3,"ms":72}
+# completion limit
+{"v":1,"id":"4","type":"completion","text":" Hel","stop":"limit","tokens_in":12,"tokens_out":1,"ms":10}
+# completion context
+{"v":1,"id":"4","type":"completion","text":"","stop":"context","tokens_in":2047,"tokens_out":0,"ms":1}
+# unloaded
+{"v":1,"id":"5","type":"unloaded"}
+# error bad_request
+{"v":1,"id":"6","type":"error","code":"bad_request","message":"bad request: missing field `model_id`"}
+# error not_loaded
+{"v":1,"id":"3","type":"error","code":"not_loaded","message":"no model is loaded"}
+# error wrong_model
+{"v":1,"id":"3","type":"error","code":"wrong_model","message":"s1-mini is loaded, not spokenly-cleanup-1"}
+# error load_failed
+{"v":1,"id":"2","type":"error","code":"load_failed","message":"no model file at /x"}
+# error decode_failed
+{"v":1,"id":"4","type":"error","code":"decode_failed","message":"panic: x"}

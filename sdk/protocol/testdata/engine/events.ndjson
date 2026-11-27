@@ -1,0 +1,22 @@
+# model_state downloading
+{"v":1,"type":"model_state","id":"d1","model":"fake-final","state":"downloading"}
+# model_state ready
+{"v":1,"type":"model_state","id":"o1","model":"fake-final","state":"ready","load_ms":40}
+# model_state downloaded with the preview
+{"v":1,"type":"model_state","model":"fake-stream","state":"downloaded","preview":true}
+# model_state failed
+{"v":1,"type":"model_state","id":"o1","model":"fake-final","state":"failed","message":"bad files","reason":"load_failed"}
+# download_progress
+{"v":1,"type":"download_progress","id":"d1","model":"fake-final","fraction":0.5,"bytes_done":512,"bytes_total":1024}
+# part_state
+{"v":1,"type":"part_state","id":"p1","model":"fake-final","part":"preview","state":"ready"}
+# partial
+{"v":1,"type":"partial","session":1099511627776,"committed":"Hello","tentative":"there"}
+# speech_start
+{"v":1,"type":"speech_start","session":1099511627777,"start_ms":300}
+# speech_end
+{"v":1,"type":"speech_end","session":1099511627777,"start_ms":300,"end_ms":1800}
+# log
+{"v":1,"type":"log","level":"info","message":"loaded"}
+# decode: an event type that this version does not know
+{"v":1,"type":"thermal_state","state":"serious"}

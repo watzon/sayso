@@ -1,0 +1,10 @@
+# hello
+{"v":1,"id":"1","type":"hello"}
+# load
+{"v":1,"id":"2","type":"load","model_id":"s1-mini","path":"/tmp/models/cleanup/s1-mini/s1-mini-Q4_K_M.gguf","n_ctx":2048}
+# count
+{"v":1,"id":"3","type":"count","model_id":"s1-mini","text":"um so hello"}
+# complete
+{"v":1,"id":"4","type":"complete","model_id":"s1-mini","prompt":"text: um hello\nout:","end":["\ntext:","\nout:"],"max_tokens":48}
+# unload
+{"v":1,"id":"5","type":"unload"}

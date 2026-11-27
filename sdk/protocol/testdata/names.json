@@ -1,0 +1,221 @@
+{
+  "cleanup": {
+    "error_codes": [
+      "bad_request",
+      "not_loaded",
+      "wrong_model",
+      "load_failed",
+      "decode_failed"
+    ],
+    "protocol": 1,
+    "reply_types": [
+      "hello",
+      "loaded",
+      "count",
+      "completion",
+      "unloaded",
+      "error"
+    ],
+    "request_types": [
+      "hello",
+      "load",
+      "count",
+      "complete",
+      "unload"
+    ],
+    "stops": [
+      "end",
+      "limit",
+      "context"
+    ]
+  },
+  "engine": {
+    "error_codes": [
+      "too_many_streams",
+      "unknown_model",
+      "model_retired",
+      "unavailable",
+      "refused",
+      "timeout"
+    ],
+    "event_types": [
+      "model_state",
+      "download_progress",
+      "part_state",
+      "partial",
+      "speech_start",
+      "speech_end",
+      "log"
+    ],
+    "features": [
+      "unload",
+      "keep_preview",
+      "prepare",
+      "language_model",
+      "concurrent_streams",
+      "segments",
+      "vad",
+      "diarization",
+      "catalog",
+      "detected_language",
+      "store_v1"
+    ],
+    "protocol": 1,
+    "reasons": [
+      "incomplete_download",
+      "download_failed",
+      "load_failed",
+      "no_gpu",
+      "format_changed",
+      "unsupported_cpu",
+      "device_not_eligible",
+      "intelligence_off",
+      "model_not_ready",
+      "needs_macos_26",
+      "unavailable",
+      "timeout",
+      "refused",
+      "failed"
+    ],
+    "reply_types": [
+      "hello",
+      "ok",
+      "final",
+      "error"
+    ],
+    "request_types": [
+      "hello",
+      "list_models",
+      "download",
+      "delete",
+      "load",
+      "unload",
+      "prepare",
+      "transcribe",
+      "stream_start",
+      "stream_audio",
+      "stream_end",
+      "vad",
+      "vad_start",
+      "diarize",
+      "language_model",
+      "generate",
+      "shutdown"
+    ]
+  },
+  "host": {
+    "capabilities": [
+      "models.read",
+      "models.download",
+      "transcribe.file",
+      "session.live",
+      "audio.mic",
+      "audio.system",
+      "ai.enhance",
+      "dictation.observe"
+    ],
+    "engine_features": [
+      "vad",
+      "diarization",
+      "segments",
+      "detected_language"
+    ],
+    "error_codes": [
+      "not_approved",
+      "capability",
+      "busy",
+      "declined",
+      "model_not_downloaded",
+      "wrong_role",
+      "unsupported",
+      "bad_request",
+      "too_many_streams",
+      "unknown_model",
+      "model_retired",
+      "unavailable",
+      "refused",
+      "timeout",
+      "permission",
+      "host_not_running",
+      "connection_lost",
+      "host_closing"
+    ],
+    "event_types": [
+      "model_state",
+      "download_progress",
+      "job_progress",
+      "segment",
+      "speakers",
+      "job_done",
+      "job_failed",
+      "partial",
+      "source_gap",
+      "source_ended",
+      "part_failed",
+      "session_ended",
+      "silence_limit",
+      "dictation_done",
+      "approval_waiting",
+      "host_closing"
+    ],
+    "features": [
+      "dictation_done",
+      "download_question",
+      "enhance",
+      "silence_limit",
+      "record_to",
+      "mic_capture",
+      "system_capture",
+      "echo_rule",
+      "vad",
+      "diarization",
+      "segments",
+      "detected_language"
+    ],
+    "model_states": [
+      "not_downloaded",
+      "downloading",
+      "downloaded",
+      "optimizing",
+      "ready",
+      "failed"
+    ],
+    "protocol": 1,
+    "request_types": [
+      "hello",
+      "list_models",
+      "download_model",
+      "transcribe_file",
+      "cancel_job",
+      "session_start",
+      "session_audio",
+      "session_stop",
+      "enhance",
+      "subscribe",
+      "bye"
+    ],
+    "roles": [
+      "final",
+      "streaming",
+      "vad",
+      "diarization"
+    ],
+    "source_ends": [
+      "permission",
+      "failed"
+    ],
+    "sources": [
+      "mic",
+      "system",
+      "client"
+    ],
+    "subscribe_events": [
+      "dictation_done"
+    ],
+    "timestamp_levels": [
+      "word",
+      "segment",
+      "none"
+    ]
+  }
+}

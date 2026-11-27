@@ -1,0 +1,36 @@
+# hello
+{"v":1,"type":"hello","id":"h1"}
+# list_models with models
+{"v":1,"type":"list_models","id":"l1","models":[{"id":"parakeet-tdt-v3","engine":{"kind":"sherpa","recipe":"parakeet_tdt"}},{"id":"fake-final"}]}
+# list_models of the catalog
+{"v":1,"type":"list_models","id":"l2"}
+# download
+{"v":1,"type":"download","id":"d1","model":"fake-final","engine":{"kind":"fake"},"size_bytes":1024}
+# delete
+{"v":1,"type":"delete","id":"d2","model":"fake-final"}
+# load
+{"v":1,"type":"load","id":"o1","model":"fake-final"}
+# unload with keep_preview
+{"v":1,"type":"unload","id":"u1","model":"fake-stream","keep_preview":true}
+# prepare
+{"v":1,"type":"prepare","id":"p1","model":"fake-final","preview":true,"vocabulary":["Sayso","Kubernetes"]}
+# transcribe with segments
+{"v":1,"type":"transcribe","id":"t1","model":"fake-final","path":"/tmp/a.wav","language":"auto","vocabulary":[],"segments":true}
+# stream_start
+{"v":1,"type":"stream_start","id":"s1","session":1099511627776,"model":"fake-stream","language":"en"}
+# stream_audio
+{"v":1,"type":"stream_audio","session":1099511627776,"pcm":"AAABAP//"}
+# stream_end
+{"v":1,"type":"stream_end","id":"s2","session":1099511627776}
+# vad
+{"v":1,"type":"vad","id":"v1","model":"fake-vad","path":"/tmp/a.wav"}
+# vad_start
+{"v":1,"type":"vad_start","id":"v2","session":1099511627777,"model":"fake-vad"}
+# diarize
+{"v":1,"type":"diarize","id":"z1","model":"fake-diar","path":"/tmp/a.wav","speakers":2}
+# language_model
+{"v":1,"type":"language_model","id":"m1"}
+# generate
+{"v":1,"type":"generate","id":"g1","instructions":"Fix the text.","prompt":"um hi","timeout_ms":5000,"temperature":0.2}
+# shutdown
+{"v":1,"type":"shutdown","id":"x1"}

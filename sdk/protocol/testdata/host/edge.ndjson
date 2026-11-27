@@ -1,0 +1,20 @@
+# a request type that this version does not know
+{"type":"translate","text":"hi","v":1,"id":"x1"}
+# an event type that this version does not know
+{"type":"meeting_summary","session":2,"text":"Short.","v":1}
+# a capability that this version does not know
+{"type":"hello","protocol":1,"features":["future"],"capabilities":["calendar.read"],"v":1,"id":"x2"}
+# an error code that this version does not know
+{"type":"error","code":"quota_exceeded","message":"later","v":1,"id":"x3"}
+# a role and a state that this version does not know
+{"type":"ok","models":[{"id":"m","name":"M","roles":["translate"],"state":"warming","languages":[],"timestamps":"char","size_bytes":0}],"v":1,"id":"x4"}
+# decode: a field that this version does not know
+{"type":"job_done","job":1,"text":"x","confidence":0.9,"v":1}
+# the largest id below 2^53
+{"type":"job_done","job":9007199254740991,"text":"","v":1}
+# a session id from the live range
+{"type":"partial","session":1099511627776,"committed":"","tentative":"","v":1}
+# decode: a numeric speaker
+{"type":"speakers","job":1,"turns":[{"start_ms":0,"end_ms":10,"speaker":3}],"v":1}
+# text with characters that JSON escapes
+{"type":"job_done","job":1,"text":"\"quote\" \\ tab\t new\n line é 日本 😀","v":1}
