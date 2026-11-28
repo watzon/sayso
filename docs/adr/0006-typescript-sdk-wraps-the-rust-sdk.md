@@ -1,8 +1,8 @@
 # The TypeScript SDK wraps the Rust SDK, and the engines ship as npm packages
 
-Status: accepted on 2026-11-08.
+Status: accepted on 2026-11-08. Replaced on 2026-11-27 by [ADR 0007](0007-sdks-in-go-typescript-rust-over-the-wire.md): the Rust crates went with the Go port of the app, and the TypeScript SDK is pure TypeScript.
 
-Apps in TypeScript need the same SDK as apps in Rust: the three modes, jobs, live sessions, capture, and the same end rules. Local mode needs native code in the process of the app (`sayso-speech` with VAD, diarization, the resampler, and the file decoder, and `sayso-capture` with cpal and the system audio tap), and the rules of the mode changes are already in `sayso-sdk` with their tests. So `@justsayso/sdk` (MIT) is a native Node addon (napi-rs) around `sayso-sdk`, with a thin TypeScript layer. The engines ship as their own npm packages (GPL-3.0-only), one for each platform, and the SDK does not depend on them. Design: [sdk-typescript.md](../sdk-typescript.md).
+Apps in TypeScript need the same SDK as apps in Rust: the three modes, jobs, live sessions, capture, and the same end rules. Local mode needs native code in the process of the app (`sayso-speech` with VAD, diarization, the resampler, and the file decoder, and `sayso-capture` with cpal and the system audio tap), and the rules of the mode changes are already in `sayso-sdk` with their tests. So `@justsayso/sdk` (MIT) is a native Node addon (napi-rs) around `sayso-sdk`, with a thin TypeScript layer. The engines ship as their own npm packages (GPL-3.0-only), one for each platform, and the SDK does not depend on them. Design: `docs/sdk-typescript.md`, removed in `011a3b95`.
 
 ## Considered options
 

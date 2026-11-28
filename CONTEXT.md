@@ -105,10 +105,41 @@ The answer of the user to the first connection of an app: **Allow** with the cap
 Sayso, when it serves connected apps (`internal/bridge`). It knows an app by the identity of its executable and the record of the app in `apps.toml`.
 
 **Host API**
-The protocol between the host and a connected app, over a local socket (a named pipe on Windows). It uses the message shapes of the engine protocol. The types are in `internal/bridge`.
+The protocol between the host and a connected app, over a local socket (a named pipe on Windows). It uses the message shapes of the engine protocol. The spec is `sdk/protocol/host-api.md` (MIT); the host side is in `internal/bridge`.
 
 **Capability**
 A permission that an app asks for in `hello` and the user grants in the approval question, for example `audio.mic`. The host refuses a request whose capability the user did not grant. `models.read` is always granted.
+
+**SDK**
+A library under `sdk/` (MIT) that an app uses for speech to text: the Go SDK (`sdk/go`), the TypeScript SDK (`@justsayso/sdk`, `sdk/typescript`), or the Rust SDK (`sayso-sdk`, `sdk/rust`). Each speaks the Host API, the engine protocol, and the cleanup protocol, and none links code of the app (`docs/sdk.md`).
+_Avoid_: client library, bindings.
+
+**Sayso mode**
+An SDK uses a running Sayso through the Host API. Sayso does the work with its engine and its models.
+
+**Local mode**
+An SDK starts the engine that the app ships and does the work in the process of the app, with the model store. Sayso does not have to be installed.
+
+**Mode change**
+In the mode Auto, the move of an SDK from Local mode to Sayso mode when Sayso starts, or back when it quits. It happens only while the app has no active work, and the app gets `mode_changed`.
+
+**Audio helper**
+The MIT program `sayso-audio` (`sdk/go/cmd/sayso-audio`) that captures the microphone and the system audio and decodes audio files for the TypeScript SDK, over NDJSON on stdio (`sdk/protocol/audio-helper.md`). It ships as `@justsayso/audio-<platform>`.
+
+**Job**
+The transcription of one audio file for an app, with an id from the SDK. It ends with one `job_done` or `job_failed`.
+
+**Live session**
+The transcription of live audio for an app, from one or more capture sources, with partials and segments. It ends with the reply of `stop_session` or with `session_ended`.
+
+**Capture source**
+Where the audio of a live session comes from: `mic`, `system` (the sound that the computer plays), or `client` (audio that the app sends).
+
+**Model store**
+The folder of one user with the files of local models, which Sayso and each engine in Local mode share (`<models folder>/v1`). An engine uses it when it has the feature `store_v1` (`docs/sdk.md`, "Model store").
+
+**Artifact**
+A folder of model files in the model store that never changes after it is written. Its name is a hash of its contents, and a manifest of each model names its artifacts.
 
 **Dictation language**
 The language the user speaks: a language code, or "auto" to let the model detect it. Each model gets the nearest value that it supports.

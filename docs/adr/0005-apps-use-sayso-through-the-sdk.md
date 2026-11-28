@@ -18,3 +18,4 @@ The extension system had a manifest, install, update, a Marketplace, and a revie
 - An app ships its own engine release file for local mode.
 - The features of the user (`enhance`, `dictation_done`, the download question) exist only when the app uses Sayso.
 - In local mode the app captures audio in its own process, so the system asks the user for permission for the app.
+- 2026-11-27: the app is Go, and so is the code of jobs and live sessions (`internal/bridge`, and its port in `sdk/go/speech`). The MIT crates of this ADR are now the three SDKs of ADR 0007. The host still has its own copy in `internal/bridge`; moving it onto `sdk/go/speech` is a later step.

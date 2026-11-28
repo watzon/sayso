@@ -323,6 +323,14 @@ Each engine has its own tests of this spec:
 - `swift test` in `native/macos/SaysoEngine` for the Swift engine.
 - The engine file check of a release (`engine-check.yml`) starts each packed engine and checks its `hello`.
 
+Any engine, also one that is not of Sayso, can be checked with the conformance check of the Go SDK (MIT, `sdk/go/conformance`):
+
+```
+cd sdk/go && go run ./cmd/sayso-engine-check --engine <program> [--levels core,model,store] [--model <id>] [--json]
+```
+
+The level `core` checks `hello`, its protocol and features, the errors (`unknown_type`, `missing_field`, `stream_not_open`), and `shutdown`, with no model. `model` downloads a model, and checks the catalog, the load, a transcription with segments, a stream, and the unload. `store` checks the layout of the store after that download, and a delete. The exit code is 1 when a check fails.
+
 A feature is in this spec only when each engine passes its tests, or each engine that does not pass leaves the feature out of `features`.
 
 ## Next
