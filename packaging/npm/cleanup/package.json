@@ -1,6 +1,6 @@
 {
   "name": "@justsayso/cleanup",
-  "version": "0.17.2",
+  "version": "0.18.0",
   "description": "The runtime of the local cleanup models of Sayso, for the Sayso SDKs. It installs the package of the platform; the SDK runs the program in it.",
   "license": "GPL-3.0-only",
   "repository": {
@@ -14,10 +14,10 @@
     "LICENSE"
   ],
   "optionalDependencies": {
-    "@justsayso/cleanup-darwin-arm64": "0.17.2",
-    "@justsayso/cleanup-linux-x64-gnu": "0.17.2",
-    "@justsayso/cleanup-linux-arm64-gnu": "0.17.2",
-    "@justsayso/cleanup-win32-x64-msvc": "0.17.2"
+    "@justsayso/cleanup-darwin-arm64": "0.18.0",
+    "@justsayso/cleanup-linux-x64-gnu": "0.18.0",
+    "@justsayso/cleanup-linux-arm64-gnu": "0.18.0",
+    "@justsayso/cleanup-win32-x64-msvc": "0.18.0"
   },
   "publishConfig": {
     "access": "public"

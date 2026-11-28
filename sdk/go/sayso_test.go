@@ -343,7 +343,7 @@ func TestTheModelStoreIsInTheModelsFolder(t *testing.T) {
 	if filepath.Dir(sayso.ModelStore()) != sayso.ModelsDir() || filepath.Base(sayso.ModelStore()) != "v1" {
 		t.Fatal(sayso.ModelStore())
 	}
-	if sayso.Version != "0.17.2" {
+	if sayso.Version != "0.18.0" {
 		t.Fatal(sayso.Version)
 	}
 }

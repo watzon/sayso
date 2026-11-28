@@ -1,6 +1,6 @@
 {
   "name": "@justsayso/sdk",
-  "version": "0.17.2",
+  "version": "0.18.0",
   "description": "Use the speech features of Sayso from your own app: with Sayso when it runs, and with the engine of the app when it does not.",
   "license": "MIT",
   "repository": {
@@ -38,8 +38,8 @@
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "@justsayso/cleanup": "0.17.2",
-    "@justsayso/engine": "0.17.2"
+    "@justsayso/cleanup": "0.18.0",
+    "@justsayso/engine": "0.18.0"
   },
   "peerDependenciesMeta": {
     "@justsayso/cleanup": {

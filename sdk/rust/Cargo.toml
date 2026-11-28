@@ -1,7 +1,7 @@
 [package]
 name = "sayso-sdk"
 description = "Use the speech features of Sayso from your own app: with Sayso when it runs, and with your own engine when it does not. Blocking calls, no async runtime."
-version = "0.17.2"
+version = "0.18.0"
 edition = "2024"
 rust-version = "1.91"
 license = "MIT"

@@ -20,6 +20,25 @@
 #   url = "https://…"
 
 [[release]]
+version = "0.18.0"
+title = "Go, TypeScript, and Rust SDKs, live Host API audio, and standalone cleanup runtime"
+
+[[release.item]]
+icon = "code"
+title = "MIT SDKs for Go, TypeScript, and Rust"
+text = "Build apps on Sayso's speech recognition and cleanup pipeline from Go, TypeScript, or Rust — connecting to your running Sayso app automatically or running the engine standalone."
+
+[[release.item]]
+icon = "audio"
+title = "Microphone and system audio in Host API live sessions"
+text = "Connected apps can now capture microphone and system audio in live Host API sessions, with native AAC and M4A audio decoding on macOS."
+
+[[release.item]]
+icon = "download"
+title = "Standalone cleanup runtime archives"
+text = "Each release now ships standalone sayso-cleanup archives for macOS, Windows, and Linux so external tools can run local text cleanup models without bundling the full app."
+
+[[release]]
 version = "0.17.2"
 title = "In-app updates, live download progress, and Windows polish"
 

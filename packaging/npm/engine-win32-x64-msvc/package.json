@@ -1,6 +1,6 @@
 {
   "name": "@justsayso/engine-win32-x64-msvc",
-  "version": "0.17.2",
+  "version": "0.18.0",
   "description": "The speech engine of Sayso, for Windows x64.",
   "license": "GPL-3.0-only",
   "repository": {

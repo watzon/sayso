@@ -1,6 +1,6 @@
 {
   "name": "@justsayso/engine-linux-arm64-gnu",
-  "version": "0.17.2",
+  "version": "0.18.0",
   "description": "The speech engine of Sayso, for Linux arm64 (glibc).",
   "license": "GPL-3.0-only",
   "repository": {
