@@ -156,7 +156,8 @@ gh secret set WINDOWS_CERTIFICATE_PASSWORD
    - `sayso-<version>-linux-aarch64.tar.gz`, `.deb`, `.rpm`, and `.flatpak`
    - `sayso-<version>-x86_64.AppImage` and `sayso-<version>-aarch64.AppImage`, each with its `.AppImage.zsync` file
    - the engine release files: `sayso-engine-<version>-macos-arm64.tar.gz`, `sayso-engine-<version>-macos-x86_64.tar.gz`, `sayso-engine-<version>-linux-x86_64.tar.gz`, `sayso-engine-<version>-linux-arm64.tar.gz`, and `sayso-engine-<version>-windows-x64.zip`
-   - a `.sha256` file for each of the nineteen
+   - the cleanup runtime files: `sayso-cleanup-<version>-macos-arm64.tar.gz`, `sayso-cleanup-<version>-linux-x86_64.tar.gz`, `sayso-cleanup-<version>-linux-arm64.tar.gz`, and `sayso-cleanup-<version>-windows-x64.zip`
+   - a `.sha256` file for each of the twenty-three
    - `latest.json`
 
    The tap `watzon/homebrew-tap` must also have a new commit, `sayso <version>`.
@@ -270,6 +271,24 @@ To make the Intel file on a Mac with Apple silicon, build the Intel engine and p
 SAYSO_SIGN_IDENTITY=- scripts/build-engine-x86_64.sh
 scripts/package-engine.sh --out /tmp/engine dist/engine-x86_64/SaysoEngine
 ```
+
+## The cleanup runtime files
+
+The SDKs run the local cleanup models with the cleanup runtime, so each release also has it as a file of its own: `sayso-cleanup-<version>-<platform>`, with `README.md`, the GPL `LICENSE`, and `licenses/` (llama.cpp, ggml, and libffi or libgomp or the LLVM OpenMP runtime). There is no Intel Mac file, because Sayso has no Intel app that holds the runtime.
+
+| File | Made by | From |
+|---|---|---|
+| `sayso-cleanup-<version>-macos-arm64.tar.gz` | `scripts/package-cleanup.sh --require-signed dist/Sayso.app`, in the **macOS** job | `Contents/MacOS/sayso-cleanup` and `Contents/Frameworks/llama/` of the signed and notarized app, as `bin/sayso-cleanup` and `Frameworks/llama/` |
+| `sayso-cleanup-<version>-windows-x64.zip` | `scripts/package-cleanup.ps1`, in the **Windows** job | the `llama\` folder of the app folder: `sayso-cleanup.exe`, the llama.cpp DLLs, `libffi-8.dll`, and the Visual C++ runtime |
+| `sayso-cleanup-<version>-linux-x86_64.tar.gz` and `-linux-arm64.tar.gz` | `scripts/package-cleanup.sh`, in the `build` job of `linux.yml` | `bin/llama/` of the Linux tarball. The runtime loads `libffi.so.8` from the system. |
+
+The layout is the one in which the runtime finds its libraries (`internal/llamalib`). Before it packs, each script runs `hello` on the packed copy with an empty cache folder and stops unless the reply says `"libraries":"found"`, because a runtime that does not find them downloads them, for up to 10 minutes. The job **Cleanup file check** (`cleanup-check.yml`) runs after the build jobs and before the `manifest` job: on `macos-latest`, `ubuntu-24.04`, `ubuntu-24.04-arm`, and `windows-latest` it unpacks each file, checks `"libraries":"found"` with empty home and cache folders, and loads and runs a tiny model from `scripts/tiny-gguf.py`. `gh workflow run ci.yml` runs the same check on unsigned files. On a Mac, from a build that you have:
+
+```sh
+scripts/package-cleanup.sh --out /tmp/cleanup dist/Sayso.app
+```
+
+`scripts/npm-packages` makes the folders of the GPL npm packages (`@justsayso/engine`, `@justsayso/cleanup`, and their platform packages) from the release files. Nothing publishes them yet.
 
 ## Build the Windows files on a PC
 
