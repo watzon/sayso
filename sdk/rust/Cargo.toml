@@ -88,5 +88,3 @@ required-features = ["local"]
 [[example]]
 name = "transcribe"
 required-features = ["local"]
-
-[workspace]

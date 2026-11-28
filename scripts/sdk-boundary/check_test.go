@@ -34,8 +34,6 @@ name = "sayso-sdk"
 version = "0.17.2"
 license = "MIT"
 
-[workspace]
-
 [dependencies]
 serde = "1"
 `
@@ -116,9 +114,11 @@ func TestTheCrateMustBeSaysoSdk(t *testing.T) {
 	expect(t, CheckRust(r), "rust", "sdk/rust/Cargo.toml", `name = "sayso-sdk"`)
 }
 
-func TestAWorkspaceWithMembersFails(t *testing.T) {
-	r := with(map[string]string{"sdk/rust/Cargo.toml": strings.Replace(goodCargo, "[workspace]\n", "[workspace]\nmembers = [\"node\"]\n", 1)})
-	expect(t, CheckRust(r), "rust", "sdk/rust/Cargo.toml", "no workspace members")
+func TestAWorkspaceFails(t *testing.T) {
+	for _, stanza := range []string{"[workspace]\n", "[workspace]\nmembers = [\"node\"]\n", "[workspace.dependencies]\nserde = \"1\"\n"} {
+		r := with(map[string]string{"sdk/rust/Cargo.toml": goodCargo + "\n" + stanza})
+		expect(t, CheckRust(r), "rust", "sdk/rust/Cargo.toml", "no [workspace]")
+	}
 }
 
 func TestANativeLibraryCrateTypeFails(t *testing.T) {

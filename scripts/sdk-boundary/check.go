@@ -126,7 +126,7 @@ type cargoManifest struct {
 	Lib *struct {
 		CrateType []string `toml:"crate-type"`
 	}
-	Workspace         map[string]any
+	HasWorkspace      bool `toml:"-"`
 	Dependencies      map[string]any
 	DevDependencies   map[string]any `toml:"dev-dependencies"`
 	BuildDependencies map[string]any `toml:"build-dependencies"`
@@ -144,6 +144,11 @@ func readCargo(repo Repo, name string) (*cargoManifest, error) {
 	if err := toml.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("not TOML: %v", err)
 	}
+	var top map[string]any
+	if err := toml.Unmarshal(data, &top); err != nil {
+		return nil, fmt.Errorf("not TOML: %v", err)
+	}
+	_, m.HasWorkspace = top["workspace"]
 	return &m, nil
 }
 
@@ -156,8 +161,8 @@ func checkCrate(repo Repo, name string) []Violation {
 	if m.Package == nil || m.Package.Name != rustCrateName {
 		out = append(out, Violation{"rust", name, "the crate must be [package] name = \"sayso-sdk\""})
 	}
-	if m.Workspace != nil && m.Workspace["members"] != nil {
-		out = append(out, Violation{"rust", name, "one crate: no workspace members"})
+	if m.HasWorkspace {
+		out = append(out, Violation{"rust", name, "one crate: no [workspace]"})
 	}
 	if m.Lib != nil {
 		for _, t := range m.Lib.CrateType {
