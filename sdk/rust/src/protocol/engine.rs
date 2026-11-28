@@ -22,6 +22,39 @@ use crate::protocol::{
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// The features that an engine lists in `hello.features`, in this version of the protocol.
+pub const FEATURES: &[&str] = &[
+    "unload",
+    "keep_preview",
+    "prepare",
+    "language_model",
+    "concurrent_streams",
+    "segments",
+    "vad",
+    "diarization",
+    "catalog",
+    "detected_language",
+    "store_v1",
+];
+
+/// The reason codes of a failed model or a failed request (`reason`).
+pub const REASONS: &[&str] = &[
+    "incomplete_download",
+    "download_failed",
+    "load_failed",
+    "no_gpu",
+    "format_changed",
+    "unsupported_cpu",
+    "device_not_eligible",
+    "intelligence_off",
+    "model_not_ready",
+    "needs_macos_26",
+    "unavailable",
+    "timeout",
+    "refused",
+    "failed",
+];
+
 /// A request to the engine. Each request with an `id` gets one reply.
 /// `StreamAudio` has no `id` and no reply.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -224,7 +257,7 @@ pub struct Hello {
     pub protocol: u32,
     /// The optional parts of the protocol that this engine has. An engine
     /// that sends none is older than the spec.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub features: Vec<String>,
 }
 

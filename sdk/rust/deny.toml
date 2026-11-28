@@ -1,0 +1,42 @@
+# Checked with `cargo deny check licenses bans sources`. The crate is MIT, so no dependency may
+# be GPL, LGPL, or AGPL. A dependency with an OR chooses the license that is on this list.
+
+[graph]
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
+all-features = true
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "CC0-1.0",
+    "Unlicense",
+    "MPL-2.0",
+    # Permissive licenses of two small dependencies: the Unicode data tables of the
+    # `unicode-ident` crate, and the Mozilla CA list in `webpki-roots` (the download of
+    # cleanup models and Deepgram use TLS).
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "0BSD",
+]
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

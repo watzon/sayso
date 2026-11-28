@@ -581,9 +581,12 @@ mod tests {
     fn finish_returns_after_the_last_frame_reached_on_frame() {
         let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let count = seen.clone();
+        // The first frame holds the worker back, so `finish` runs while the other 99 wait in
+        // the queue. A sleep for each frame would make the test depend on the load of the computer.
         let (worker, mut sink) = Worker::start(Box::new(move |_| {
-            std::thread::sleep(Duration::from_millis(2));
-            count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                std::thread::sleep(Duration::from_millis(100));
+            }
         }))
         .unwrap();
         for _ in 0..100 {

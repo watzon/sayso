@@ -6,6 +6,8 @@
 //! The calls block, and the events come on a channel, so you need no async runtime.
 //!
 //! ```no_run
+//! # #[cfg(feature = "local")]
+//! # fn example() -> Result<(), sayso_sdk::Error> {
 //! use sayso_sdk::protocol::{Capability, TranscribeFile};
 //! use sayso_sdk::{App, Engine, Event, Mode, Options, Speech};
 //!
@@ -28,6 +30,21 @@
 //!         _ => {}
 //!     }
 //! }
+//! # Ok(())
+//! # }
+//! # fn main() {}
+//! ```
+//!
+//! Without the feature `local`, only Sayso mode exists:
+//!
+//! ```no_run
+//! use sayso_sdk::protocol::{Capability, ModelState};
+//! use sayso_sdk::{App, Mode, Options, Speech};
+//!
+//! let options = Options::new(Mode::Sayso { start: false }, App::new("Notetaker")).capabilities([Capability::ModelsRead]);
+//! let speech = Speech::connect(options)?;
+//! let ready = speech.list_models(None)?.into_iter().filter(|m| m.state == ModelState::Ready).count();
+//! println!("{ready} models are loaded in Sayso");
 //! # Ok::<(), sayso_sdk::Error>(())
 //! ```
 //!
@@ -256,6 +273,9 @@ pub struct Options {
     pub timing: Timing,
     /// How [`Mode::Sayso`] with `start` starts Sayso. The default is [`client::start_sayso`].
     pub start: Arc<dyn Fn() -> io::Result<()> + Send + Sync>,
+    /// Called once when Sayso asks the user about this app and [`Speech::connect`] waits
+    /// for the answer. It runs on the thread of the connection: do not block in it.
+    pub on_approval_waiting: Option<Arc<dyn Fn() + Send + Sync>>,
     /// None: the microphone and the system audio of `sayso-capture`, in the process of the app.
     /// Sayso mode does not use this, because Sayso captures there.
     #[cfg(feature = "local")]
@@ -275,6 +295,7 @@ impl Options {
             socket: None,
             timing: Timing::default(),
             start: Arc::new(client::start_sayso),
+            on_approval_waiting: None,
             #[cfg(feature = "local")]
             capture: None,
         }
@@ -305,6 +326,11 @@ impl Options {
     #[cfg(feature = "local")]
     pub fn capture(mut self, capture: CaptureSources) -> Options {
         self.capture = Some(capture);
+        self
+    }
+
+    pub fn on_approval_waiting(mut self, callback: impl Fn() + Send + Sync + 'static) -> Options {
+        self.on_approval_waiting = Some(Arc::new(callback));
         self
     }
 
@@ -343,7 +369,9 @@ pub struct Features {
 pub enum Event {
     /// A message of the Host API, with the ids of the SDK: `job_progress`, `segment`,
     /// `speakers`, `job_done`, `job_failed`, `partial`, `source_gap`, `source_ended`,
-    /// `session_ended`, `model_state`, `download_progress`, or `dictation_done`.
+    /// `part_failed`, `silence_limit`, `session_ended`, `model_state`, `download_progress`,
+    /// or `dictation_done`. The app does not see `approval_waiting`: use
+    /// [`Options::on_approval_waiting`].
     Message(protocol::Event),
     /// The mode changed. No work of the app is active at this moment, except the work
     /// that the change ended just before this event.

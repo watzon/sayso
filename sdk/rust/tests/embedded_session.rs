@@ -1,5 +1,7 @@
 //! A live session through [`Speech`], with a fake engine and with the real engine.
 
+#![cfg(feature = "local")]
+
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
 use sayso_sdk::embedded::{

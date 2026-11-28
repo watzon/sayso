@@ -13,6 +13,8 @@
 //! `finds_a_quiet_tone`, so every frame is silent. Play a sound from another
 //! process during the test.
 
+#![cfg(feature = "capture")]
+
 use sayso_sdk::capture::mic::{FRAME_SAMPLES, TARGET_RATE};
 use sayso_sdk::capture::system::{self, End, Event, Exclude, Options};
 use std::io::Write;

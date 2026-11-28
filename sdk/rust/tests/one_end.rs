@@ -5,6 +5,8 @@
 //! The tests with the real host and the engines are in `sayso-host/tests/sdk_modes.rs`, because
 //! this crate cannot depend on GPL crates. The engine here does not exist, so a request that
 //! runs in local mode gets `unsupported`. That proves where the request went.
+
+#![cfg(feature = "local")]
 #![cfg(unix)]
 
 use crossbeam_channel::{Receiver, unbounded};

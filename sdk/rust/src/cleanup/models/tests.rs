@@ -345,15 +345,15 @@ fn spelling_comes_back_only_for_terms_that_were_sent_with_it() {
 
 #[test]
 fn spelling_takes_longer_terms_first_and_handles_unicode() {
-    let t = terms(&["Claude", "Claude Code", "Zoë"]);
+    let t = terms(&["Zephyr", "Zephyr Pro", "Zoë"]);
     assert_eq!(
-        restore_spelling("ask Claude Code and Zoë", "Ask claude code and zoë.", &t),
-        "Ask Claude Code and Zoë."
+        restore_spelling("ask Zephyr Pro and Zoë", "Ask zephyr pro and zoë.", &t),
+        "Ask Zephyr Pro and Zoë."
     );
     // A very casual answer still gets names back.
     assert_eq!(
-        restore_spelling("ask Claude", "ask claude", &t),
-        "ask Claude"
+        restore_spelling("ask Zephyr", "ask zephyr", &t),
+        "ask Zephyr"
     );
 }
 

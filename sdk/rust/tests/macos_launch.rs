@@ -1,7 +1,7 @@
 //! The line in the README makes the process tap functions of macOS 14.2 weak imports, so an
 //! app starts on 14.0 and 14.1. `build.rs` of this crate sets it for this test program. This
 //! reads the imports of the program, and it starts no capture.
-#![cfg(target_os = "macos")]
+#![cfg(all(target_os = "macos", feature = "capture"))]
 
 use sayso_sdk::protocol::{SessionReply, SessionStart};
 use sayso_sdk::{Error, Speech};

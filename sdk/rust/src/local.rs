@@ -256,6 +256,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "capture")]
     #[test]
     fn local_mode_names_this_process_app() {
         assert_eq!(real_system_audio().this_process, "app");

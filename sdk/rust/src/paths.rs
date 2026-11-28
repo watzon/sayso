@@ -1,16 +1,30 @@
-//! Where the model store is (`docs/sdk.md`, "Layout"). These are the rules of
-//! `sayso_core::paths`, which an MIT crate cannot use: `XDG_DATA_HOME/sayso` when
-//! the variable is set, else the data folder of the system. The test
-//! `sdk_paths` of `sayso-host` compares the two.
+//! Where Sayso keeps its data, its models, and the model store
+//! (`sdk/protocol/paths.md`, "Data and models folders"). Local mode uses the same folders as
+//! Sayso, so the two share the model files.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
 
 /// What the rules read from the system. A function, so tests do not touch the real system.
-pub(crate) type Env<'a> = &'a dyn Fn(&str) -> Option<OsString>;
+pub type Env<'a> = &'a dyn Fn(&str) -> Option<OsString>;
 
 fn system_env(key: &str) -> Option<OsString> {
     std::env::var_os(key).filter(|value| !value.is_empty())
+}
+
+/// The data folder of Sayso for this user.
+pub fn data_dir() -> PathBuf {
+    data_for(std::env::consts::OS, &system_env)
+}
+
+/// The models folder of Sayso: `<data>/models`. Engines get it as `SAYSO_MODELS_DIR`.
+pub fn models_dir() -> PathBuf {
+    models_for(std::env::consts::OS, &system_env)
+}
+
+/// The folder of the cleanup models: `<models>/cleanup`.
+pub fn cleanup_models_dir() -> PathBuf {
+    cleanup_for(std::env::consts::OS, &system_env)
 }
 
 /// The model store of this user: `<models folder of Sayso>/v1`. Local mode uses it also
@@ -42,16 +56,28 @@ fn system_data(os: &str, env: Env<'_>) -> PathBuf {
     }
 }
 
-pub(crate) fn store_for(os: &str, env: Env<'_>) -> PathBuf {
-    let data = match env("XDG_DATA_HOME") {
+/// `os` is a value of `std::env::consts::OS`.
+pub fn data_for(os: &str, env: Env<'_>) -> PathBuf {
+    match env("XDG_DATA_HOME") {
         Some(xdg) => PathBuf::from(xdg).join("sayso"),
         None => system_data(os, env).join(if matches!(os, "macos" | "windows") {
             "Sayso"
         } else {
             "sayso"
         }),
-    };
-    data.join("models").join("v1")
+    }
+}
+
+pub fn models_for(os: &str, env: Env<'_>) -> PathBuf {
+    data_for(os, env).join("models")
+}
+
+pub fn cleanup_for(os: &str, env: Env<'_>) -> PathBuf {
+    models_for(os, env).join("cleanup")
+}
+
+pub fn store_for(os: &str, env: Env<'_>) -> PathBuf {
+    models_for(os, env).join("v1")
 }
 
 #[cfg_attr(not(feature = "local"), allow(dead_code))]

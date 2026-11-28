@@ -354,7 +354,13 @@ impl Shared {
                 Incoming::Event {
                     event: protocol::Event::ApprovalWaiting,
                     ..
-                } => asking.store(true, Ordering::SeqCst),
+                } => {
+                    if !asking.swap(true, Ordering::SeqCst) {
+                        if let Some(callback) = &shared.options.on_approval_waiting {
+                            callback();
+                        }
+                    }
+                }
                 Incoming::Reply {
                     id: Some(id),
                     reply,

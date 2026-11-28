@@ -1,6 +1,7 @@
 //! The app learns why its engine did not start. The fake engine is a program that writes what
 //! the dynamic loader of Linux writes for a missing library, and ends with status 127.
 
+#![cfg(feature = "local")]
 #![cfg(unix)]
 
 use sayso_sdk::embedded::{EngineModels, ProgramEngine};

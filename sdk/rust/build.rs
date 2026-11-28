@@ -6,7 +6,9 @@
 
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+        && std::env::var_os("CARGO_FEATURE_CAPTURE").is_some()
+    {
         println!("cargo:rustc-link-arg-examples=-Wl,-weak_framework,CoreAudio");
         println!("cargo:rustc-link-arg-tests=-Wl,-weak_framework,CoreAudio");
     }

@@ -398,3 +398,94 @@ pub fn start_empty() -> Option<(sayso_sdk::engine::Engine, tempfile::TempDir)> {
 pub fn engine_program() -> PathBuf {
     PathBuf::from(std::env::var_os("SAYSO_ENGINE").expect("set SAYSO_ENGINE to the engine program"))
 }
+
+/// 16 kHz mono audio: 500 ms of silence, then a tone for each length in ms, each with 1 s of
+/// silence after it. The fake engine hears a word for each 300 ms of tone.
+pub fn speech(lengths: &[u32]) -> Vec<i16> {
+    let mut samples = vec![0i16; 8000];
+    for ms in lengths {
+        for i in 0..(*ms as usize * 16) {
+            samples.push(
+                (9000.0 * (2.0 * std::f64::consts::PI * 220.0 * i as f64 / 16000.0).sin()) as i16,
+            );
+        }
+        samples.extend(std::iter::repeat_n(0i16, 16000));
+    }
+    samples
+}
+
+/// `speech(lengths)` in a WAV file of `folder`.
+pub fn speech_wav(folder: &Path, name: &str, lengths: &[u32]) -> PathBuf {
+    let path = folder.join(name);
+    std::fs::write(&path, wav_bytes(16000, &speech(lengths))).unwrap();
+    path
+}
+
+/// Wait for the first event of `speech` that `pick` takes. The events seen on the way go to `seen`.
+pub fn until<T>(
+    speech: &sayso_sdk::Speech,
+    seen: &mut Vec<sayso_sdk::Event>,
+    mut pick: impl FnMut(&sayso_sdk::Event) -> Option<T>,
+) -> T {
+    let events = speech.events();
+    let deadline = Instant::now() + Duration::from_secs(25);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(left) {
+            Ok(event) => {
+                let found = pick(&event);
+                seen.push(event);
+                if let Some(found) = found {
+                    return found;
+                }
+            }
+            Err(e) => panic!("the event did not come ({e}); seen {seen:#?}"),
+        }
+    }
+}
+
+/// The type name of an event of the host, for messages.
+pub fn kind(event: &sayso_sdk::Event) -> &'static str {
+    match event {
+        sayso_sdk::Event::Message(message) => sayso_sdk::protocol::Kind::kind(message),
+        sayso_sdk::Event::ModeChanged { .. } => "mode_changed",
+        sayso_sdk::Event::Error(_) => "error",
+        sayso_sdk::Event::Disconnected { .. } => "disconnected",
+    }
+}
+
+pub const ALL_CAPABILITIES: [sayso_sdk::protocol::Capability; 7] = {
+    use sayso_sdk::protocol::Capability::*;
+    [
+        ModelsRead,
+        ModelsDownload,
+        TranscribeFile,
+        SessionLive,
+        AudioMic,
+        AiEnhance,
+        DictationObserve,
+    ]
+};
+
+/// `Mode::Sayso` on `socket` with every capability but the system audio.
+pub fn sayso_options(socket: &Path) -> sayso_sdk::Options {
+    sayso_sdk::Options::new(
+        sayso_sdk::Mode::Sayso { start: false },
+        sayso_sdk::App::new("Notes"),
+    )
+    .capabilities(ALL_CAPABILITIES)
+    .socket(socket)
+}
+
+/// Download the final model of the user and give its id.
+pub fn ready(speech: &sayso_sdk::Speech) -> String {
+    let models = speech
+        .list_models(Some(sayso_sdk::protocol::Role::Final))
+        .unwrap();
+    let model = models
+        .iter()
+        .find(|m| m.choice.contains(&sayso_sdk::protocol::Role::Final))
+        .unwrap_or_else(|| panic!("no final model of the user in {models:#?}"));
+    speech.download_model(&model.id, "tests").unwrap();
+    model.id.clone()
+}

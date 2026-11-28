@@ -10,6 +10,8 @@
 //! The test puts the files in a models folder of its own, as a finished
 //! download would, with links to the files in `SAYSO_CLEANUP_MODELS`.
 
+#![cfg(feature = "cleanup")]
+
 use sayso_sdk::cleanup::client::cleaner::RuntimeCleaner;
 use sayso_sdk::cleanup::client::download;
 use sayso_sdk::cleanup::client::runtime::Runtime;
