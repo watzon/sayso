@@ -355,10 +355,10 @@ impl Shared {
                     event: protocol::Event::ApprovalWaiting,
                     ..
                 } => {
-                    if !asking.swap(true, Ordering::SeqCst) {
-                        if let Some(callback) = &shared.options.on_approval_waiting {
-                            callback();
-                        }
+                    if !asking.swap(true, Ordering::SeqCst)
+                        && let Some(callback) = &shared.options.on_approval_waiting
+                    {
+                        callback();
                     }
                 }
                 Incoming::Reply {
@@ -1011,8 +1011,8 @@ impl Speech {
     ///
     /// - [`Mode::Sayso`] fails with `host_not_running` when Sayso does not run, and with
     ///   `not_approved` when the user refused the app.
-    /// - [`Mode::Local`] never talks to Sayso. It fails when the engine is not there.
-    /// - [`Mode::Auto`] uses Sayso when it can, else local mode.
+    /// - `Mode::Local` never talks to Sayso. It fails when the engine is not there.
+    /// - `Mode::Auto` uses Sayso when it can, else local mode.
     ///
     /// When Sayso asks the user about this app, this waits for the answer. A Sayso that
     /// does not answer in [`Timing::hello_limit`](crate::Timing::hello_limit) and does not say that it asks
@@ -1272,7 +1272,7 @@ impl Speech {
     ///
     /// With the source `system` in local mode, this can wait for the answer of the user to a
     /// question of macOS, so call it on a thread that can wait. While it waits, the session is
-    /// active work: other requests run, and [`Mode::Auto`] does not change mode.
+    /// active work: other requests run, and `Mode::Auto` does not change mode.
     pub fn start_session(
         &self,
         request: protocol::SessionStart,

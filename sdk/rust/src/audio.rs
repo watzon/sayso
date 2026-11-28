@@ -12,7 +12,7 @@
 //! 44.1 kHz to 16 kHz is 441/160). The distance of an output sample to the
 //! input samples repeats every `q` outputs, so the kernel weights, and their
 //! sum, are computed once for each of the `q` phases. Each output is then one
-//! dot product. A ratio with more than [`MAX_PHASES`] phases keeps the direct
+//! dot product. A ratio with more than `MAX_PHASES` phases keeps the direct
 //! path, which computes every weight again for every output.
 
 use std::f64::consts::PI;

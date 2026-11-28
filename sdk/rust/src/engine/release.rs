@@ -76,7 +76,7 @@ fn best_build(dir: &Path) -> PathBuf {
 /// this function takes the version that sorts last by name.
 ///
 /// On Windows the folder has a build of the engine for each instruction set
-/// (see [`BUILDS`]); this function returns the best one that this processor
+/// (see `BUILDS`); this function returns the best one that this processor
 /// runs.
 pub fn find_engine(folder: impl AsRef<Path>) -> io::Result<PathBuf> {
     let folder = folder.as_ref();

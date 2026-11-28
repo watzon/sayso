@@ -1,7 +1,7 @@
 //! The system audio (`docs/sdk.md`, "System audio"): the sound of other apps
 //! and calls, as 16 kHz mono frames of 20 ms on the capture clock.
 //!
-//! Each system has a [`Backend`], which opens a stream of the audio:
+//! Each system has a `Backend`, which opens a stream of the audio:
 //!
 //! - macOS 14.2 and later: a Core Audio process tap through an aggregate device.
 //! - Windows: WASAPI loopback of the default output device, with `cpal`.

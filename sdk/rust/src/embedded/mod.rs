@@ -206,7 +206,7 @@ impl Speech {
     }
 
     /// As [`Speech::connect`], and put a layer around the engine of the
-    /// sessions, for example [`deepgram::DeepgramFinal`].
+    /// sessions, for example `DeepgramFinal`.
     pub fn connect_with(
         options: Options,
         layer: impl FnOnce(Arc<dyn SpeechEngine>) -> Arc<dyn SpeechEngine>,

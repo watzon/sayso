@@ -57,7 +57,7 @@
 //! - The order and the contents of events can differ between modes
 //!   (`docs/sdk.md`, "What differs between modes").
 //! - The ids of jobs and sessions come from the SDK, and no id comes back after a change of mode.
-//! - [`Mode::Auto`] changes mode only when the app has no active work. A change never moves work.
+//! - `Mode::Auto` changes mode only when the app has no active work. A change never moves work.
 //! - The SDK never sends a request again by itself. After a lost connection, a request that
 //!   had no reply gets the code `connection_lost`.
 //! - [`Speech::start_session`] with the source `system` can wait for the answer of the user to a
