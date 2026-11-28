@@ -226,6 +226,7 @@ pub(crate) fn real_system_audio_usable() -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(any(unix, feature = "capture"))]
     use super::*;
 
     #[cfg(unix)]

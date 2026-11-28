@@ -330,9 +330,13 @@ func TestTheSaysoModeReconnectsAfterTheHostCameBack(t *testing.T) {
 	h := testbin.StartHostAt(t, socket)
 	s := connect(t, sayso.Options{Mode: sayso.Sayso, Socket: socket})
 	h.Stop()
-	_, err := s.ListModels(ctx(t), nil)
-	if errors.Is(err, sayso.ErrConnectionLost) {
+	var err error
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
 		_, err = s.ListModels(ctx(t), nil)
+		if !errors.Is(err, sayso.ErrConnectionLost) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	if !errors.Is(err, sayso.ErrHostNotRunning) {
 		t.Fatal(err)

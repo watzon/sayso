@@ -300,8 +300,9 @@ impl TestHost {
 
     /// Quit like Sayso: `host_closing`, then exit.
     pub fn close(&mut self) {
-        if self.stdin.is_some() {
-            self.send(serde_json::json!({"close": true}));
+        if let Some(stdin) = self.stdin.as_mut() {
+            let _ = writeln!(stdin, r#"{{"close": true}}"#);
+            let _ = stdin.flush();
         }
         self.wait_exit();
     }
