@@ -201,6 +201,8 @@ func CheckGo(repo Repo, deps []string) []Violation {
 		out = append(out, Violation{"go", mod, "no replace directive"})
 	}
 	for _, d := range deps {
+		d, _, _ = strings.Cut(d, " ")
+		d = strings.TrimSuffix(strings.TrimSuffix(d, ".test"), "_test")
 		if (d == appModule || strings.HasPrefix(d, appModule+"/")) && d != goModule && !strings.HasPrefix(d, goModule+"/") {
 			out = append(out, Violation{"go", "sdk/go", "imports the app package " + d})
 		}

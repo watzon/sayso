@@ -171,6 +171,11 @@ func TestAnImportOfTheAppFails(t *testing.T) {
 	if v := CheckGo(clean(), []string{"github.com/watzon/sayso/sdk/go", "github.com/watzon/sayso/sdk/go/client", "github.com/watzon/sayso-other/x"}); len(v) != 0 {
 		t.Fatal(v)
 	}
+	if v := CheckGo(clean(), []string{"github.com/watzon/sayso/sdk/go_test", "github.com/watzon/sayso/sdk/go.test", "github.com/watzon/sayso/sdk/go/client [github.com/watzon/sayso/sdk/go/client.test]"}); len(v) != 0 {
+		t.Fatal(v)
+	}
+	expect(t, CheckGo(clean(), []string{"github.com/watzon/sayso/internal/bridge [github.com/watzon/sayso/sdk/go.test]"}), "go", "sdk/go", "internal/bridge")
+	expect(t, CheckGo(clean(), []string{"github.com/watzon/sayso_test"}), "go", "sdk/go", "github.com/watzon/sayso")
 }
 
 func TestLicensesMustBeTheSameMIT(t *testing.T) {
