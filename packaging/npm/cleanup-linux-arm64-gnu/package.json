@@ -1,0 +1,25 @@
+{
+  "name": "@justsayso/cleanup-linux-arm64-gnu",
+  "version": "0.17.2",
+  "description": "The runtime of the local cleanup models of Sayso, for Linux arm64 (glibc).",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "packaging/npm/cleanup-linux-arm64-gnu"
+  },
+  "homepage": "https://github.com/watzon/sayso",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "preferUnplugged": true,
+  "publishConfig": {
+    "access": "public"
+  }
+}

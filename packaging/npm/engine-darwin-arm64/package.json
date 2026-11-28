@@ -1,0 +1,22 @@
+{
+  "name": "@justsayso/engine-darwin-arm64",
+  "version": "0.17.2",
+  "description": "The speech engine of Sayso, for macOS (Apple silicon).",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "packaging/npm/engine-darwin-arm64"
+  },
+  "homepage": "https://github.com/watzon/sayso",
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "preferUnplugged": true,
+  "publishConfig": {
+    "access": "public"
+  }
+}

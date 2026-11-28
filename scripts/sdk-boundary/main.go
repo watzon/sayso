@@ -41,6 +41,7 @@ func main() {
 	violations = append(violations, CheckGo(repo, deps)...)
 	violations = append(violations, CheckMIT(repo)...)
 	violations = append(violations, CheckVersions(repo)...)
+	violations = append(violations, CheckGPLPackages(repo)...)
 	if *base != "" {
 		commits, err := commitsSince(root, *base)
 		if err != nil {

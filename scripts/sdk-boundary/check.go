@@ -323,6 +323,91 @@ func CheckVersions(repo Repo) []Violation {
 	return out
 }
 
+// CheckGPLPackages: each npm package in packaging/npm is GPL-3.0-only and has
+// the version of the app, and an MIT package under sdk/ names one only as an
+// optional peer.
+func CheckGPLPackages(repo Repo) []Violation {
+	var app string
+	if data, err := repo.Read(versionFile["app"]); err == nil {
+		if m := goVersion.FindSubmatch(data); m != nil {
+			app = string(m[1])
+		}
+	}
+	type manifest struct {
+		Name, Version, License string
+		Dependencies           map[string]string
+		OptionalDependencies   map[string]string `json:"optionalDependencies"`
+		PeerDependencies       map[string]string `json:"peerDependencies"`
+		PeerDependenciesMeta   map[string]struct {
+			Optional bool
+		} `json:"peerDependenciesMeta"`
+	}
+	var out []Violation
+	gpl := map[string]bool{}
+	var mitManifests []string
+	for _, f := range repo.Files() {
+		if path.Base(f) != "package.json" || strings.Contains(f, "node_modules/") {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(f, "packaging/npm/"):
+			data, err := repo.Read(f)
+			var m manifest
+			if err == nil {
+				err = json.Unmarshal(data, &m)
+			}
+			if err != nil {
+				out = append(out, Violation{"gpl-npm", f, err.Error()})
+				continue
+			}
+			gpl[m.Name] = true
+			if m.License != "GPL-3.0-only" {
+				out = append(out, Violation{"gpl-npm", f, `"license" must be "GPL-3.0-only"`})
+			}
+			if m.Version != app {
+				out = append(out, Violation{"gpl-npm", f, fmt.Sprintf("version %q, but the app is %s", m.Version, app)})
+			}
+			for _, deps := range []map[string]string{m.Dependencies, m.OptionalDependencies} {
+				for _, dep := range sortedKeys(deps) {
+					if strings.HasPrefix(dep, "@justsayso/") && deps[dep] != app {
+						out = append(out, Violation{"gpl-npm", f, fmt.Sprintf("%s is %s, but the app is %s", dep, deps[dep], app)})
+					}
+				}
+			}
+		case strings.HasPrefix(f, "sdk/"):
+			mitManifests = append(mitManifests, f)
+		}
+	}
+	isGPL := func(name string) bool {
+		return gpl[name] || strings.HasPrefix(name, "@justsayso/engine") || strings.HasPrefix(name, "@justsayso/cleanup")
+	}
+	for _, f := range mitManifests {
+		data, err := repo.Read(f)
+		var m manifest
+		if err == nil {
+			err = json.Unmarshal(data, &m)
+		}
+		if err != nil {
+			out = append(out, Violation{"gpl-npm", f, err.Error()})
+			continue
+		}
+		for field, deps := range map[string]map[string]string{"dependencies": m.Dependencies, "optionalDependencies": m.OptionalDependencies} {
+			for _, dep := range sortedKeys(deps) {
+				if isGPL(dep) {
+					out = append(out, Violation{"gpl-npm", f, fmt.Sprintf("the GPL package %s is in %s; an MIT package may name it only as an optional peer", dep, field)})
+				}
+			}
+		}
+		for _, dep := range sortedKeys(m.PeerDependencies) {
+			if isGPL(dep) && !m.PeerDependenciesMeta[dep].Optional {
+				out = append(out, Violation{"gpl-npm", f, fmt.Sprintf("the GPL peer %s must be optional (peerDependenciesMeta)", dep)})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].String() < out[j].String() })
+	return out
+}
+
 var attribution = []*regexp.Regexp{
 	regexp.MustCompile(`(?im)^\s*co-authored-by:`),
 	regexp.MustCompile(`(?im)^\s*(assisted|generated|written|created|made)-(by|with):`),

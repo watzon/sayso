@@ -1,0 +1,25 @@
+{
+  "name": "@justsayso/engine-linux-x64-gnu",
+  "version": "0.17.2",
+  "description": "The speech engine of Sayso, for Linux x64 (glibc).",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "packaging/npm/engine-linux-x64-gnu"
+  },
+  "homepage": "https://github.com/watzon/sayso",
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "preferUnplugged": true,
+  "publishConfig": {
+    "access": "public"
+  }
+}

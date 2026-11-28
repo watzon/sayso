@@ -1,0 +1,26 @@
+{
+  "name": "@justsayso/engine",
+  "version": "0.17.2",
+  "description": "The speech engine of Sayso, for the Sayso SDKs. It installs the package of the platform; the SDK runs the program in it.",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "packaging/npm/engine"
+  },
+  "homepage": "https://github.com/watzon/sayso",
+  "files": [
+    "README.md",
+    "LICENSE"
+  ],
+  "optionalDependencies": {
+    "@justsayso/engine-darwin-arm64": "0.17.2",
+    "@justsayso/engine-darwin-x64": "0.17.2",
+    "@justsayso/engine-linux-x64-gnu": "0.17.2",
+    "@justsayso/engine-linux-arm64-gnu": "0.17.2",
+    "@justsayso/engine-win32-x64-msvc": "0.17.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

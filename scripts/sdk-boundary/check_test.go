@@ -55,7 +55,7 @@ func clean() memRepo {
 		"sdk/rust/build.rs":                 "fn main() {}\n",
 		"sdk/typescript/LICENSE":            mit,
 		"sdk/typescript/package.json":       `{"name":"@justsayso/sdk","version":"0.17.2","license":"MIT","optionalDependencies":{"@justsayso/audio-darwin-arm64":"0.17.2"}}`,
-		"packaging/npm/engine/package.json": `{"name":"@justsayso/engine","license":"GPL-3.0-only"}`,
+		"packaging/npm/engine/package.json": `{"name":"@justsayso/engine","version":"0.17.2","license":"GPL-3.0-only","optionalDependencies":{"@justsayso/engine-darwin-arm64":"0.17.2"}}`,
 	}
 }
 
@@ -77,6 +77,7 @@ func all(r memRepo, deps []string) []Violation {
 	out = append(out, CheckGo(r, deps)...)
 	out = append(out, CheckMIT(r)...)
 	out = append(out, CheckVersions(r)...)
+	out = append(out, CheckGPLPackages(r)...)
 	return out
 }
 
@@ -249,4 +250,24 @@ func (b brokenRepo) Read(name string) ([]byte, error) {
 		return nil, errors.New("unreadable")
 	}
 	return b.memRepo.Read(name)
+}
+
+func TestGPLPackagesMustSayGPLAndTheAppVersion(t *testing.T) {
+	expect(t, CheckGPLPackages(with(map[string]string{"packaging/npm/engine/package.json": `{"name":"@justsayso/engine","version":"0.17.2","license":"MIT"}`})), "gpl-npm", "packaging/npm/engine/package.json", "GPL-3.0-only")
+	expect(t, CheckGPLPackages(with(map[string]string{"packaging/npm/cleanup-darwin-arm64/package.json": `{"name":"@justsayso/cleanup-darwin-arm64","version":"0.17.1","license":"GPL-3.0-only"}`})), "gpl-npm", "packaging/npm/cleanup-darwin-arm64/package.json", "0.17.1")
+	expect(t, CheckGPLPackages(with(map[string]string{"packaging/npm/engine/package.json": `{"name":"@justsayso/engine","version":"0.17.2","license":"GPL-3.0-only","optionalDependencies":{"@justsayso/engine-darwin-arm64":"0.16.0"}}`})), "gpl-npm", "packaging/npm/engine/package.json", "0.16.0")
+	expect(t, CheckGPLPackages(with(map[string]string{"packaging/npm/engine/package.json": `{not json`})), "gpl-npm", "packaging/npm/engine/package.json", "")
+}
+
+func TestAnMITPackageNamesAGPLPackageOnlyAsAnOptionalPeer(t *testing.T) {
+	for _, field := range []string{"dependencies", "optionalDependencies"} {
+		pkg := `{"name":"@justsayso/sdk","version":"0.17.2","license":"MIT","` + field + `":{"@justsayso/cleanup":"0.17.2"}}`
+		expect(t, CheckGPLPackages(with(map[string]string{"sdk/typescript/package.json": pkg})), "gpl-npm", "sdk/typescript/package.json", field)
+	}
+	required := `{"name":"@justsayso/sdk","version":"0.17.2","license":"MIT","peerDependencies":{"@justsayso/engine":"0.17.2"}}`
+	expect(t, CheckGPLPackages(with(map[string]string{"sdk/typescript/package.json": required})), "gpl-npm", "sdk/typescript/package.json", "optional")
+	optional := `{"name":"@justsayso/sdk","version":"0.17.2","license":"MIT","peerDependencies":{"@justsayso/engine":"0.17.2"},"peerDependenciesMeta":{"@justsayso/engine":{"optional":true}}}`
+	if v := CheckGPLPackages(with(map[string]string{"sdk/typescript/package.json": optional})); len(v) != 0 {
+		t.Fatal("an optional peer is allowed:", v)
+	}
 }

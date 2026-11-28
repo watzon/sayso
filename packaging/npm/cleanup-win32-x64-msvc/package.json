@@ -1,0 +1,22 @@
+{
+  "name": "@justsayso/cleanup-win32-x64-msvc",
+  "version": "0.17.2",
+  "description": "The runtime of the local cleanup models of Sayso, for Windows x64.",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "packaging/npm/cleanup-win32-x64-msvc"
+  },
+  "homepage": "https://github.com/watzon/sayso",
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "preferUnplugged": true,
+  "publishConfig": {
+    "access": "public"
+  }
+}
