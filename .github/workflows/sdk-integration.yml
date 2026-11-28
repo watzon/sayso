@@ -8,11 +8,15 @@ name: SDK integration
 # and SAYSO_FAKE_CLEANUP. sayso-audio is built too, but not given to the suites:
 # with it, Local mode would open the microphone of the runner.
 # SAYSO_TEST_REQUIRE_FAKES=1 makes a missing program fail a test, never skip it.
+# Each suite writes the ids of the scenarios that passed to SAYSO_SCENARIO_REPORT,
+# and scripts/sdk-parity fails the job when one SDK did not pass a scenario of
+# sdk/conformance/scenarios.json that applies on this system.
 on:
   push:
     branches: [main]
     paths:
       - 'sdk/**'
+      - 'scripts/sdk-parity/**'
       - 'cmd/sayso-testhost/**'
       - 'internal/bridge/**'
       - 'internal/engine/**'
@@ -21,6 +25,7 @@ on:
   pull_request:
     paths:
       - 'sdk/**'
+      - 'scripts/sdk-parity/**'
       - 'cmd/sayso-testhost/**'
       - 'internal/bridge/**'
       - 'internal/engine/**'
@@ -77,6 +82,8 @@ jobs:
 
       - name: Go SDK
         working-directory: sdk/go
+        env:
+          SAYSO_SCENARIO_REPORT: ${{ runner.temp }}/scenarios-go.txt
         run: go test -count=1 ./...
 
       - uses: actions/setup-node@v4
@@ -86,6 +93,8 @@ jobs:
           cache-dependency-path: sdk/typescript/package-lock.json
       - name: TypeScript SDK, Node 22
         working-directory: sdk/typescript
+        env:
+          SAYSO_SCENARIO_REPORT: ${{ runner.temp }}/scenarios-typescript.txt
         run: npm ci && npm test
 
       - uses: actions/setup-node@v4
@@ -104,4 +113,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev
       - name: Rust SDK
         working-directory: sdk/rust
+        env:
+          SAYSO_SCENARIO_REPORT: ${{ runner.temp }}/scenarios-rust.txt
         run: cargo test
+
+      - name: The three SDKs pass the same scenarios
+        run: |
+          go test ./scripts/sdk-parity
+          go run ./scripts/sdk-parity \
+            -go "$RUNNER_TEMP/scenarios-go.txt" \
+            -typescript "$RUNNER_TEMP/scenarios-typescript.txt" \
+            -rust "$RUNNER_TEMP/scenarios-rust.txt"

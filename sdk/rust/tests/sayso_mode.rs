@@ -1,6 +1,6 @@
 //! Sayso mode against the real Host API of Sayso: `sayso-testhost` serves `internal/bridge` on a
 //! socket, with the fake engine behind it and WAV files for the microphone and the system audio
-//! (scenarios H, M, J, L, E, X of `sdk/conformance/scenarios.toml`).
+//! (scenarios H, M, J, L, E, X of `sdk/conformance/scenarios.json`).
 
 mod common;
 

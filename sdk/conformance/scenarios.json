@@ -1,0 +1,72 @@
+{
+  "about": "The scenarios that every SDK passes in its own tests. A test that passes a scenario writes its id to the file SAYSO_SCENARIO_REPORT names. scripts/sdk-parity compares the reports of the Go, TypeScript, and Rust suites with this list. na names an SDK (\"rust\") or an SDK on one system (\"rust/windows\") where the scenario does not apply, and why.",
+  "sdks": ["go", "typescript", "rust"],
+  "scenarios": [
+    {"id": "P01", "title": "The messages of the wire corpus decode and encode again, unknown names are kept, and the names match names.json"},
+    {"id": "P02", "title": "The socket and data folder rules give the paths of paths.json"},
+
+    {"id": "H01", "title": "hello is allowed, and the features come from the host"},
+    {"id": "H02", "title": "A denied app gets not_approved"},
+    {"id": "H03", "title": "An unanswered question makes hello wait, and the approval callback runs once"},
+    {"id": "H04", "title": "A capability that the app did not ask for is named in the capability error"},
+    {"id": "H05", "title": "A fifth waiting connection of one app is busy"},
+    {"id": "H06", "title": "The SDK refuses mic and system sources that the host says it lacks"},
+    {"id": "H07", "title": "A host with no features list gets each request and answers for itself", "na": {
+      "go/windows": "the fake old host listens on a Unix socket",
+      "typescript/windows": "the fake old host listens on a Unix socket",
+      "rust/windows": "the fake old host listens on a Unix socket"
+    }},
+    {"id": "H08", "title": "The host says its version and the protocol, and the SDK says its own version"},
+
+    {"id": "M01", "title": "list_models gives every model, or the models of one role"},
+    {"id": "M02", "title": "A download that the user allows downloads the model; an unknown model is unknown_model"},
+    {"id": "M03", "title": "A download that the user declines is declined"},
+
+    {"id": "J01", "title": "A job of a file has its events and one end"},
+    {"id": "J02", "title": "A job with diarization gives the speakers"},
+    {"id": "J03", "title": "cancel_job ends a running job with one job_failed"},
+    {"id": "J04", "title": "A job whose model is not on disk is model_not_downloaded"},
+
+    {"id": "L01", "title": "A live session of the client source in Sayso mode has partials and a final text"},
+    {"id": "L02", "title": "A live session of the microphone of the host gives segments of the source mic"},
+    {"id": "L03", "title": "With the microphone and the system audio, the echo rule drops the microphone segments that repeat the system audio"},
+    {"id": "L04", "title": "The silence limit gives one silence_limit event"},
+    {"id": "L05", "title": "record_to writes a WAV file for each source"},
+    {"id": "L06", "title": "A second live session while one runs is refused"},
+
+    {"id": "E01", "title": "enhance runs a style or a prompt, and an empty text is bad_request"},
+    {"id": "E02", "title": "subscribe gets dictation_done, and never an incognito one"},
+
+    {"id": "X01", "title": "A host that closes ends the open job, and the connection ends with host_closing"},
+    {"id": "X02", "title": "A killed host is connection_lost, with one end for each job"},
+    {"id": "X03", "title": "Sayso mode reconnects after the host came back"},
+
+    {"id": "A01", "title": "Auto starts in Local mode and follows Sayso once no work runs"},
+    {"id": "A02", "title": "Auto: a host killed while a job runs ends the job once, and Auto goes back to Local mode"},
+    {"id": "A03", "title": "Auto goes back to Local mode when Sayso quits"},
+    {"id": "A04", "title": "Sayso mode without Sayso is host_not_running"},
+
+    {"id": "S01", "title": "Sayso mode with start tries the launchers until one starts Sayso"},
+
+    {"id": "G01", "title": "Local mode lists the catalog, downloads a model, and transcribes a file"},
+    {"id": "G02", "title": "Local mode runs a live session of the client source"},
+    {"id": "G03", "title": "Local mode cuts a file where the voice stops for long, and transcribes each part"},
+    {"id": "G04", "title": "An engine that does not start gives an error with what it wrote on stderr", "na": {
+      "rust/windows": "the test starts the engine with a shell script"
+    }},
+    {"id": "G05", "title": "Finding the engine takes the last version folder and the best build for the processor"},
+
+    {"id": "C01", "title": "The cleanup catalog has the two pinned models, and renders the prompt of each"},
+    {"id": "C02", "title": "A cleanup model download checks the hash and writes ready.json last"},
+    {"id": "C03", "title": "The cleanup runtime says hello, loads, counts, completes, and unloads"},
+    {"id": "C04", "title": "A long text goes to the cleanup runtime in parts and comes back as one text"},
+
+    {"id": "AU01", "title": "On macOS, Local mode with the Go capture or sayso-audio offers no system audio: no audio.system, and a session of the source system is unsupported", "na": {
+      "rust": "the crate captures in its own process with no helper, and captures the system audio on macOS",
+      "go/linux": "the Go capture records the system audio on Linux",
+      "go/windows": "the Go capture records the system audio on Windows",
+      "typescript/linux": "sayso-audio captures the system audio on Linux",
+      "typescript/windows": "sayso-audio captures the system audio on Windows"
+    }}
+  ]
+}
