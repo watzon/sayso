@@ -39,7 +39,9 @@ concurrency:
 # attach them to the release. The engine release files
 # (sayso-engine-<version>-<os>-<arch>) come the same way: the artifacts are
 # release-engine-<os>-<arch>, and the engine-check job checks them on clean
-# machines before the manifest job runs.
+# machines before the manifest job runs. The cleanup runtime files
+# (sayso-cleanup-<version>-<os>-<arch>, artifacts release-cleanup-<os>-<arch>)
+# do the same with the cleanup-check job.
 jobs:
   macos:
     name: macOS (arm64)
@@ -155,6 +157,27 @@ jobs:
         with:
           name: release-engine-macos-arm64
           path: dist/sayso-engine-*-macos-arm64.tar.gz
+          if-no-files-found: error
+
+      # The cleanup runtime of the signed app with its llama.cpp libraries
+      # (Contents/MacOS/sayso-cleanup and Contents/Frameworks/llama), in the
+      # same relative layout, for the SDKs (@justsayso/cleanup). The script runs
+      # hello on the packed copy with an empty cache, so the file never makes
+      # the runtime download its libraries. --require-signed stops the job when
+      # a file has no Developer ID signature. No Intel file: Sayso has no Intel app.
+      - name: Make the cleanup release file
+        run: scripts/package-cleanup.sh --require-signed dist/Sayso.app
+
+      - name: Attach the cleanup release file to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" dist/sayso-cleanup-*-macos-arm64.tar.gz dist/sayso-cleanup-*-macos-arm64.tar.gz.sha256 --clobber
+
+      - name: Keep the cleanup release file for the check and the manifest job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-macos-arm64
+          path: dist/sayso-cleanup-*-macos-arm64.tar.gz
           if-no-files-found: error
 
       # The engine release file for Intel Macs. Sayso itself runs on Apple
@@ -335,6 +358,22 @@ jobs:
           path: dist/sayso-engine-*-windows-x64.zip
           if-no-files-found: error
 
+      # The llama\ folder of the app folder (sayso-cleanup.exe is signed there).
+      - name: Make the cleanup release file
+        run: scripts\package-cleanup.ps1
+
+      - name: Attach the cleanup release file to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$env:TAG" (Get-ChildItem dist\sayso-cleanup-*-windows-x64.zip, dist\sayso-cleanup-*-windows-x64.zip.sha256).FullName --clobber
+
+      - name: Keep the cleanup release file for the check and the manifest job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-windows-x64
+          path: dist/sayso-cleanup-*-windows-x64.zip
+          if-no-files-found: error
+
       - name: Delete the certificate
         if: always()
         run: Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:RUNNER_TEMP 'certificate.pfx')
@@ -349,12 +388,21 @@ jobs:
     with:
       ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
 
+  # Unpack each cleanup release file on a clean runner, check that the runtime
+  # finds its libraries in it, and load and run a tiny model (cleanup-check.yml).
+  cleanup-check:
+    name: Cleanup file check
+    needs: [macos, linux, windows]
+    uses: ./.github/workflows/cleanup-check.yml
+    with:
+      ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+
   # Sign the update manifest and make the release the latest release. This job
   # takes the files from the builds of this run, not from the release, so a
   # changed release file never gets a signature.
   manifest:
     name: Update manifest
-    needs: [macos, linux, windows, engine-check]
+    needs: [macos, linux, windows, engine-check, cleanup-check]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -415,6 +463,9 @@ jobs:
           # does not use them.
           packages += [f"sayso-engine-{version}-{platform}.tar.gz" for platform in ("macos-arm64", "macos-x86_64", "linux-x86_64", "linux-arm64")]
           packages.append(f"sayso-engine-{version}-windows-x64.zip")
+          # The cleanup runtime files, for the SDKs. The updater does not use them either.
+          packages += [f"sayso-cleanup-{version}-{platform}.tar.gz" for platform in ("macos-arm64", "linux-x86_64", "linux-arm64")]
+          packages.append(f"sayso-cleanup-{version}-windows-x64.zip")
           missing = [name for name in [*files.values(), *packages] if not os.path.isfile(os.path.join("dist", name))]
           if missing:
               sys.exit(f"::error::These release files are missing: {', '.join(missing)}")

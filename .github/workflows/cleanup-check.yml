@@ -1,0 +1,159 @@
+name: Cleanup file check
+
+# Check the cleanup runtime release files on runners that have no build tools.
+# Each job gets one file as an artifact (release-cleanup-<os>-<arch>), unpacks
+# it, and checks that the runtime finds its llama.cpp libraries in the file
+# with an empty cache (hello says "libraries":"found"). A runtime that does not
+# find them downloads them, and a user waits up to 10 minutes. Then the job
+# loads a tiny model (scripts/tiny-gguf.py) and runs a completion, which runs
+# the CPU or Metal kernels of the libraries. No job builds a runtime.
+#
+# The Release workflow calls this workflow after it makes the files. The CI
+# workflow calls it too (start it with: gh workflow run ci.yml).
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Commit or tag that made the files (it has the version)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-latest
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: windows-x64
+            runner: windows-latest
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      # The Linux runtime loads the system libffi (the packages of Sayso depend
+      # on libffi8). It is the only library that the file needs from the system.
+      - name: Install libffi (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libffi8
+
+      - name: Get the cleanup file
+        uses: actions/download-artifact@v4
+        with:
+          name: release-cleanup-${{ matrix.platform }}
+          path: cleanup-file
+
+      # The name of the file must be what the Release workflow attaches.
+      - name: Find the file
+        run: |
+          version=$(scripts/version.sh)
+          if [[ "$RUNNER_OS" == Windows ]]; then ext=zip; else ext=tar.gz; fi
+          file="cleanup-file/sayso-cleanup-$version-${{ matrix.platform }}.$ext"
+          ls -l cleanup-file
+          if [[ ! -f "$file" ]]; then
+            echo "::error::The artifact does not have $file."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "FILE=$file" >> "$GITHUB_ENV"
+
+      - name: Unpack the file
+        if: runner.os != 'Windows'
+        run: |
+          mkdir cleanup-unpacked
+          tar -xzf "$FILE" -C cleanup-unpacked
+
+      - name: Unpack the file (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory cleanup-unpacked | Out-Null
+          Expand-Archive -Path $env:FILE -DestinationPath cleanup-unpacked
+
+      - name: Check the files
+        run: |
+          dir="cleanup-unpacked/sayso-cleanup-$VERSION"
+          case "$RUNNER_OS" in
+            macOS) exe=bin/sayso-cleanup ;;
+            Linux) exe=sayso-cleanup ;;
+            Windows) exe=sayso-cleanup.exe ;;
+          esac
+          find "$dir" -type f | sort
+          for name in "$exe" README.md LICENSE licenses/llama.cpp.txt licenses/ggml.txt; do
+            if [[ ! -e "$dir/$name" ]]; then
+              echo "::error::The file does not have $name."
+              exit 1
+            fi
+          done
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            found=$(lipo -archs "$dir/$exe")
+            if [[ "$found" != arm64 ]]; then
+              echo "::error::The runtime has the architecture $found, and the file name says arm64."
+              exit 1
+            fi
+          fi
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            echo "EXE=$(cygpath -m "$PWD")/$dir/$exe" >> "$GITHUB_ENV"
+          else
+            echo "EXE=$PWD/$dir/$exe" >> "$GITHUB_ENV"
+          fi
+
+      - name: Make a tiny model
+        run: |
+          python=python3
+          [[ "$RUNNER_OS" == Windows ]] && python=python
+          "$python" -m venv "$RUNNER_TEMP/venv"
+          bin="$RUNNER_TEMP/venv/bin"
+          [[ "$RUNNER_OS" == Windows ]] && bin="$RUNNER_TEMP/venv/Scripts"
+          "$bin/pip" install --quiet gguf==0.19.0 numpy
+          "$bin/python" -I scripts/tiny-gguf.py "$RUNNER_TEMP/tiny.gguf"
+          model="$RUNNER_TEMP/tiny.gguf"
+          [[ "$RUNNER_OS" == Windows ]] && model=$(cygpath -m "$model")
+          echo "MODEL=$model" >> "$GITHUB_ENV"
+
+      # The runtime stops when stdin closes, so stdin stays open while it loads
+      # and completes. The home and cache folders are empty, so a runtime that
+      # does not find its libraries in the file cannot take them from a cache.
+      - name: Check hello, load, and a completion
+        run: |
+          home="$RUNNER_TEMP/cleanup-home"
+          mkdir -p "$home"
+          [[ "$RUNNER_OS" == Windows ]] && home=$(cygpath -m "$home")
+          requests() {
+            printf '%s\n' '{"v":1,"id":"1","type":"hello"}' \
+              '{"v":1,"id":"2","type":"load","model_id":"tiny","path":"'"$MODEL"'","n_ctx":512}' \
+              '{"v":1,"id":"3","type":"complete","model_id":"tiny","prompt":"the cat sat on the mat","end":[],"max_tokens":8}'
+          }
+          reply=$( (requests; sleep 20) | env -u SAYSO_LLAMA_LIB_DIR HOME="$home" XDG_CACHE_HOME="$home/cache" LOCALAPPDATA="$home" USERPROFILE="$home" "$EXE" )
+          echo "$reply"
+          hello=$(grep '"type":"hello"' <<< "$reply" || true)
+          if ! grep -q '"libraries":"found"' <<< "$hello"; then
+            echo "::error::The runtime does not find its llama.cpp libraries in the file."
+            exit 1
+          fi
+          if ! grep -q '"type":"loaded"' <<< "$reply"; then
+            echo "::error::The runtime did not load the tiny model."
+            exit 1
+          fi
+          if ! grep -q '"type":"completion"' <<< "$reply"; then
+            echo "::error::The runtime did not complete with the tiny model."
+            exit 1
+          fi

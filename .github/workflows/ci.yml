@@ -88,6 +88,14 @@ jobs:
           name: release-engine-macos-arm64
           path: dist/sayso-engine-*-macos-arm64.tar.gz
           if-no-files-found: error
+      - name: Make the cleanup release file
+        run: scripts/package-cleanup.sh dist/Sayso.app
+      - name: Keep the cleanup release file
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-macos-arm64
+          path: dist/sayso-cleanup-*-macos-arm64.tar.gz
+          if-no-files-found: error
 
   # The Intel engine is a cross-compile of the Swift engine alone. The job
   # needs no app bundle, and Sayso has no Intel app.
@@ -153,6 +161,14 @@ jobs:
           name: release-engine-windows-x64
           path: dist/sayso-engine-*-windows-x64.zip
           if-no-files-found: error
+      - name: Make the cleanup release file
+        run: scripts\package-cleanup.ps1
+      - name: Keep the cleanup release file
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-windows-x64
+          path: dist/sayso-cleanup-*-windows-x64.zip
+          if-no-files-found: error
 
   # The Linux files come from linux.yml (the Ubuntu 22.04 build of the release),
   # without the packages, which the check does not need.
@@ -169,5 +185,13 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     needs: [engine-file-macos, engine-file-macos-x86_64, engine-file-windows, engine-file-linux]
     uses: ./.github/workflows/engine-check.yml
+    with:
+      ref: ${{ github.sha }}
+
+  cleanup-check:
+    name: Cleanup file check
+    if: github.event_name == 'workflow_dispatch'
+    needs: [engine-file-macos, engine-file-windows, engine-file-linux]
+    uses: ./.github/workflows/cleanup-check.yml
     with:
       ref: ${{ github.sha }}

@@ -39,6 +39,7 @@ on:
       - 'scripts/tiny-gguf.py'
       - 'scripts/package-linux.sh'
       - 'scripts/package-engine.sh'
+      - 'scripts/package-cleanup.sh'
       - 'packaging/engine/**'
       - 'scripts/linux-deps.sh'
       - 'scripts/linux-vulkan-deps.sh'
@@ -153,6 +154,24 @@ jobs:
         with:
           name: release-engine-linux-${{ matrix.arch == 'aarch64' && 'arm64' || matrix.arch }}
           path: engine/*.tar.gz
+          if-no-files-found: error
+          overwrite: true
+
+      # The cleanup runtime of the tarball with its llama.cpp libraries, for the
+      # SDKs (@justsayso/cleanup). The script runs hello on the packed copy, which
+      # loads the system libffi, as a user's system does (the packages depend on
+      # libffi8). The Release workflow attaches it in the manifest job.
+      - name: Make the cleanup release file
+        shell: bash
+        run: |
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libffi8
+          scripts/package-cleanup.sh --out cleanup dist/sayso-*-linux-*/bin/llama
+
+      - name: Keep the cleanup release file
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-cleanup-linux-${{ matrix.arch == 'aarch64' && 'arm64' || matrix.arch }}
+          path: cleanup/*.tar.gz
           if-no-files-found: error
           overwrite: true
 
