@@ -14,6 +14,7 @@ require (
 	github.com/mewkiz/flac v1.0.14
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/watzon/sayso/mobile v0.0.0
+	github.com/watzon/sayso/sdk/go v0.0.0
 	golang.org/x/image v0.46.0
 	golang.org/x/sys v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -43,3 +44,5 @@ require (
 )
 
 replace github.com/watzon/sayso/mobile => ./mobile
+
+replace github.com/watzon/sayso/sdk/go => ./sdk/go
