@@ -16,13 +16,12 @@ import { Speech, type SpeechEvent, type SpeechOptions } from "../src/speech.js";
 import { VERSION } from "../src/version.js";
 import { TestHost, next, passed, program, removeTemps, sleep, socketPath, speech, speechWav, tempDir } from "./support.js";
 
-after(removeTemps);
-
 const ALL: Capability[] = ["models.read", "models.download", "transcribe.file", "session.live", "audio.mic", "audio.system", "ai.enhance", "dictation.observe"];
 
 const opened: { close(): Promise<void> }[] = [];
 after(async () => {
 	for (const o of opened.splice(0)) await o.close().catch(() => undefined);
+	await removeTemps();
 });
 
 async function connect(options: Partial<SpeechOptions> & { mode: SpeechOptions["mode"] }): Promise<Speech> {

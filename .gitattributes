@@ -8,3 +8,6 @@ internal/bridge/testdata/** text eol=lf
 internal/localengine/catalog/descriptors.json text eol=lf
 # Windows resources that go build links into Sayso.exe (scripts/winres).
 *.syso binary
+# Keep Go module files LF so `go mod tidy -diff` stays clean on Windows.
+go.mod text eol=lf
+go.sum text eol=lf

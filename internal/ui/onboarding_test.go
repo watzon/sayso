@@ -128,6 +128,9 @@ func TestModelStepWaitsForTheDownload(t *testing.T) {
 		t.Fatalf("footer %q", got)
 	}
 	press(t, tt, i18n.T("onboarding.footer.download"))
+	for deadline := time.Now().Add(2 * time.Second); e.eng.downloads() < 1 && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
 	if e.a.OnboardingStep() != stepModel || e.eng.downloads() != 1 {
 		t.Fatalf("step %d, downloads %d", e.a.OnboardingStep(), e.eng.downloads())
 	}

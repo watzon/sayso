@@ -11,13 +11,12 @@ import { encodeI16 } from "../src/protocol/codec.js";
 import type { Capability } from "../src/protocol/index.js";
 import { TestHost, next, program, removeTemps, sleep, socketPath, speech, speechWav, tempDir, passed } from "./support.js";
 
-after(removeTemps);
-
 const ALL: Capability[] = ["models.read", "models.download", "transcribe.file", "session.live", "audio.mic", "ai.enhance", "dictation.observe"];
 
 const opened: { close(): Promise<void> }[] = [];
 after(async () => {
 	for (const o of opened.splice(0)) await o.close().catch(() => undefined);
+	await removeTemps();
 });
 
 async function connect(options: Partial<SpeechOptions> & { mode: SpeechOptions["mode"] }, env?: Record<string, string>): Promise<Speech> {

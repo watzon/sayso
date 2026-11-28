@@ -1336,9 +1336,11 @@ func TestLiveAnEngineVadStartsTheSilenceClockAtTheEndOfTheSpeech(t *testing.T) {
 		t.Fatal("the clock starts at the end of the speech")
 	}
 	// The limit can end the source of the client during this audio, and then a send gets an error.
-	pcm := toPCM(silenceMs(1800))
+	pcm := toPCM(silenceMs(2500))
 	for i := 0; i < len(pcm); i += SampleRate * 160 / 1000 {
-		f.sessions.Audio(1, session, protocol.EncodeI16(pcm[i:min(i+SampleRate*160/1000, len(pcm))]))
+		if err := f.sessions.Audio(1, session, protocol.EncodeI16(pcm[i:min(i+SampleRate*160/1000, len(pcm))])); err != nil {
+			break
+		}
 	}
 	eventually(t, "the limit passes", func() bool { return sink.count("silence_limit") == 1 })
 	mustStop(t, f, 1, session)

@@ -25,9 +25,20 @@ export function tempDir(prefix = "sdkts"): string {
 	return dir;
 }
 
-export function removeTemps(): void {
-	for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
-	if (binDir) rmSync(binDir, { recursive: true, force: true });
+export async function removeTemps(): Promise<void> {
+	for (const h of Array.from(hosts)) await h.stop().catch(() => undefined);
+	const rm = (dir: string) => {
+		try {
+			rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+		} catch {
+			// Best effort on Windows where an exiting child or AV may hold a handle briefly.
+		}
+	};
+	for (const dir of temps.splice(0)) rm(dir);
+	if (binDir) {
+		rm(binDir);
+		binDir = undefined;
+	}
 }
 
 /** Build a Go test program once per process. An environment variable can name one that is built already. */
@@ -71,6 +82,8 @@ export function socketPath(): string {
 	return join(dir, "s", "host.sock");
 }
 
+const hosts = new Set<TestHost>();
+
 export class TestHost {
 	readonly socket: string;
 	readonly #child: ChildProcessWithoutNullStreams;
@@ -82,6 +95,8 @@ export class TestHost {
 	private constructor(socket: string, child: ChildProcessWithoutNullStreams) {
 		this.socket = socket;
 		this.#child = child;
+		hosts.add(this);
+		child.stdin.on("error", () => undefined);
 		createInterface({ input: child.stdout }).on("line", (line) => {
 			try {
 				this.#lines.push(JSON.parse(line) as Record<string, unknown>);
@@ -94,6 +109,7 @@ export class TestHost {
 		this.exited = new Promise((res) =>
 			child.on("exit", () => {
 				this.#exited = true;
+				hosts.delete(this);
 				for (const w of this.#waiters.splice(0)) w();
 				res();
 			}),
@@ -132,7 +148,11 @@ export class TestHost {
 
 	async stop(): Promise<void> {
 		if (this.#exited) return;
-		this.#child.stdin.write(`{"close":true}\n`);
+		try {
+			if (this.#child.stdin.writable) this.#child.stdin.write(`{"close":true}\n`);
+		} catch {
+			// Pipe already closed.
+		}
 		const t = setTimeout(() => this.#child.kill("SIGKILL"), 10_000);
 		await this.exited;
 		clearTimeout(t);
