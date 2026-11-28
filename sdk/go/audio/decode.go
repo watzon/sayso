@@ -1,6 +1,7 @@
 // Package audio reads audio files as 16 kHz mono 16-bit samples, writes
-// WAV files, resamples, and finds speech by its level. It is pure Go: WAV,
-// FLAC, and MP3.
+// WAV files, resamples, and finds speech by its level. WAV, FLAC, and MP3
+// are pure Go; AAC and M4A decode with ExtAudioFile of macOS, and give
+// ErrUnsupported elsewhere.
 package audio
 
 import (
@@ -22,7 +23,11 @@ const SampleRate = 16000
 
 const perMs = SampleRate / 1000
 
-const audioFormats = "The formats are WAV, FLAC, and MP3."
+var audioFormats = "The formats are WAV, FLAC, and MP3" + systemFormats + "."
+
+// ErrUnsupported is wrapped by the error of a format that this system or
+// build cannot decode.
+var ErrUnsupported = errors.New("this system cannot decode this format")
 
 // Audio is 16 kHz mono 16-bit samples.
 type Audio struct{ samples []int16 }
@@ -81,7 +86,11 @@ func ReadFile(path string) (*Audio, error) {
 	case isMP3(head):
 		err = readMP3(r, name, &m)
 	case len(head) >= 8 && string(head[4:8]) == "ftyp", len(head) >= 2 && head[0] == 0xFF && head[1]&0xF6 == 0xF0:
-		return nil, fmt.Errorf("cannot decode the audio in %s (AAC and M4A are not supported in this build). %s", name, audioFormats)
+		samples, err := readSystem(path)
+		if err != nil {
+			return nil, fmt.Errorf("cannot decode the audio in %s: %w. %s", name, err, audioFormats)
+		}
+		m.push(samples, 1, SampleRate)
 	default:
 		return nil, fmt.Errorf("%s is not an audio file that can be read. %s", name, audioFormats)
 	}
