@@ -8,6 +8,9 @@ The author check is `git log --format='%an <%ae>' -- <source paths> | sort | uni
 |---|---|---|---|
 | `go/protocol/protocol.go` | `internal/bridge/protocol.go` | `a5d6e5c5` | Chris Watson (3 commits) |
 | `go/protocol/paths.go`, `go/protocol/paths_*.go` | `internal/paths/socket.go`, `internal/paths/paths.go`, `internal/paths/socket_env_*.go`, `internal/paths/darwin_temp_darwin.go` | `a5d6e5c5` | Chris Watson |
+| `go/audio/decode.go`, `go/audio/dsp.go`, `go/audio/wav.go` | `internal/bridge/audio.go`, `internal/bridge/dsp.go`, `internal/bridge/live_wav.go` | `a5d6e5c5` | Chris Watson |
+| `go/cmd/sayso-fake-cleanup/main.go` | the request loop of `internal/cleanupd/cleanupd.go` | `a5d6e5c5` | Chris Watson |
+| `go/engine/engine.go`, `go/engine/requests.go`, `go/engine/hide_windows.go` | the message shapes of `internal/engine/client.go`, `internal/engine/protocol.go`, `internal/engine/hide_windows.go` | `a5d6e5c5` | Chris Watson |
 
 Files that are not in this table were written for the SDK.
 
