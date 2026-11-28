@@ -108,7 +108,8 @@ In local mode the permissions belong to your app, not to Sayso:
 
 ## Live sessions with the source `system`
 
-- `start_session` gives `excludes`: what the capture really leaves out. In local mode on macOS it is `["app"]`, and in Sayso mode `["sayso", "app"]`. It is empty on Windows and Linux, where the capture records the mix. So sound of your own app can be in the text there.
+- In local mode the crate captures the system audio itself, also on macOS (a Core Audio process tap). In Sayso mode Sayso captures it, and Sayso cannot capture it on macOS yet: its `hello` lists no `system_capture`, so `start_session` with `system` gives `unsupported` there and `Speech::features` says `system_audio: false` ([`docs/sdk.md`](../../docs/sdk.md#system-audio)).
+- `start_session` gives `excludes`: what the capture really leaves out. In local mode on macOS it is `["app"]`. It is empty on Windows and Linux, where the capture records the mix, in both modes. So sound of your own app can be in the text there.
 - The first `start_session` with `system` on macOS can wait until the user answers a question of the system (up to 120 s). Call it on a thread that can wait. Other calls of `Speech` go on while it waits.
 - A refused permission gives the code `permission`. `Speech::features` tells you `system_audio` without a question to the user.
 - `source_gap {session, source, ms}` says that a source lost audio, for example at a change of the output device. The session goes on.

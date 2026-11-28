@@ -20,7 +20,21 @@ await using speech = await Speech.connect({
 const { text } = await speech.transcribe({ path: "/abs/meeting.wav" });
 ```
 
-Local mode reads WAV itself. FLAC, MP3, M4A, and microphone and system capture come from the helper program `sayso-audio`, which the SDK finds with `SAYSO_AUDIO_HELPER` or the package `@justsayso/audio-<platform>`; the wire format is `sdk/protocol/audio-helper.md`.
+Local mode reads WAV itself. FLAC, MP3, AAC, and M4A files, and the capture of the microphone and the system audio, come from the helper program `sayso-audio` (wire format: `sdk/protocol/audio-helper.md`). The SDK takes the package `@justsayso/audio-<platform>` when it is installed, else the file that `SAYSO_AUDIO_HELPER` names. The packages are not published yet, so build the helper from this repository and name it:
+
+```sh
+cd sdk/go && CGO_ENABLED=0 go build ./cmd/sayso-audio
+export SAYSO_AUDIO_HELPER="$PWD/sayso-audio"
+```
+
+What the helper can do depends on the system:
+
+| | macOS | Windows | Linux |
+|---|---|---|---|
+| WAV, FLAC, MP3 | yes | yes | yes |
+| AAC, M4A | yes | `unsupported` | `unsupported` |
+| Microphone | yes | yes | yes |
+| System audio | `unsupported`: `features().systemAudio` is false and `audio.system` is not in `features().capabilities` | yes | yes (PulseAudio or PipeWire) |
 
 The other parts: `Client` (the plain Host API), `Engine` (the engine protocol over stdio), `Cleanup` and `RuntimeCleaner` (the cleanup runtime), `EmbeddedSpeech`, `Deepgram`, and the types of the protocols.
 
