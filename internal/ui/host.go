@@ -4,6 +4,7 @@ import (
 	"github.com/watzon/sayso/internal/bridge"
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/enhance"
+	"github.com/watzon/sayso/sdk/go/capture/system"
 )
 
 // HostServices is what the Host API (connected apps) gets from the app:
@@ -47,6 +48,15 @@ func (h *HostServices) Microphone() bridge.Microphone {
 		return nil
 	}
 	return &liveMic{capture: h.App.d.Platform.LiveMic, device: h.inputDevice}
+}
+
+// SystemAudio is the capture of the sound that the computer plays, or nil
+// where sdk/go/capture/system has no backend (macOS for now).
+func (h *HostServices) SystemAudio() bridge.SystemAudio {
+	if !system.Supported() {
+		return nil
+	}
+	return &liveSystem{open: openSystemAudio}
 }
 
 func (h *HostServices) inputDevice() string {

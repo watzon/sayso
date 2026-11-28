@@ -11,6 +11,8 @@ import (
 	"github.com/watzon/sayso/internal/bridge"
 	"github.com/watzon/sayso/internal/config"
 	"github.com/watzon/sayso/internal/platform"
+	"github.com/watzon/sayso/sdk/go/capture/mic"
+	"github.com/watzon/sayso/sdk/go/capture/system"
 )
 
 // oneCapture is a capture that runs one capture at a time, like the
@@ -161,5 +163,60 @@ func TestAMicrophoneErrorIsAnOpenError(t *testing.T) {
 		if !errors.As(err, &open) || open.Kind != c.kind || open.Message != c.err.Error() {
 			t.Fatalf("%v: got %#v", c.err, err)
 		}
+	}
+}
+
+type fakeSystemCapture struct {
+	excludes []string
+	stops    int
+}
+
+func (c *fakeSystemCapture) Excludes() []string { return c.excludes }
+func (c *fakeSystemCapture) Stop()              { c.stops++ }
+
+func TestLiveSystemPassesThePidTheClockAndTheExcludes(t *testing.T) {
+	c := &fakeSystemCapture{excludes: []string{"sayso"}}
+	var got system.Options
+	s := &liveSystem{open: func(o system.Options) (systemCapture, error) { got = o; return c, nil }}
+	pid := uint32(42)
+	f := &feedLog{}
+	stop, excludes, err := s.Open(&pid, f)
+	if err != nil || len(excludes) != 1 || excludes[0] != "sayso" || got.ExcludePID == nil || *got.ExcludePID != 42 {
+		t.Fatal(err, excludes, got.ExcludePID)
+	}
+	at := captureEpoch.Add(1500 * time.Millisecond)
+	got.OnChunk(system.Chunk{Samples: make([]float32, 320), Time: at})
+	if len(f.audio) != 1 || !f.audio[0].Timed || f.audio[0].Time != 1500*time.Millisecond {
+		t.Fatalf("%+v", f.audio)
+	}
+	stop()
+	stop()
+	if c.stops != 1 {
+		t.Fatal("stops", c.stops)
+	}
+}
+
+func TestLiveSystemMapsTheOpenErrors(t *testing.T) {
+	for _, c := range []struct {
+		err  error
+		kind bridge.OpenErrorKind
+	}{
+		{system.ErrUnsupported, bridge.OpenUnsupported},
+		{fmt.Errorf("loopback: %w", mic.ErrDenied), bridge.OpenPermission},
+		{errors.New("no output"), bridge.OpenFailed},
+	} {
+		s := &liveSystem{open: func(system.Options) (systemCapture, error) { return nil, c.err }}
+		_, _, err := s.Open(nil, &feedLog{})
+		var oe *bridge.OpenError
+		if !errors.As(err, &oe) || oe.Kind != c.kind {
+			t.Errorf("%v: %v", c.err, err)
+		}
+	}
+}
+
+func TestTheHostOffersSystemAudioOnlyWhereItCanCaptureIt(t *testing.T) {
+	h := &HostServices{}
+	if (h.SystemAudio() != nil) != system.Supported() {
+		t.Fatal("SystemAudio and system.Supported disagree")
 	}
 }
