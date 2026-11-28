@@ -74,6 +74,8 @@ func next[T sayso.Event](t *testing.T, s *sayso.Speech, seen *[]string) T {
 }
 
 func TestLocalModeTranscribesAFile(t *testing.T) {
+	testbin.Passed(t, "G01")
+	testbin.Passed(t, "J04")
 	s := connect(t, sayso.Options{Mode: sayso.Local})
 	if f := s.Features(); f.Mode != sayso.ModeLocal || f.Enhance || f.Subscribe || !slices.Contains(f.Engine, "segments") {
 		t.Fatalf("%+v", f)
@@ -114,6 +116,7 @@ func TestLocalModeTranscribesAFile(t *testing.T) {
 }
 
 func TestLocalModeDiarizes(t *testing.T) {
+	testbin.Passed(t, "J02")
 	s := connect(t, sayso.Options{Mode: sayso.Local})
 	for _, m := range []string{"fake-final", "fake-diar"} {
 		if err := s.DownloadModel(ctx(t), m, "tests", nil); err != nil {
@@ -133,6 +136,7 @@ func TestLocalModeDiarizes(t *testing.T) {
 }
 
 func TestLocalModeCancelsAJob(t *testing.T) {
+	testbin.Passed(t, "J03")
 	s := connect(t, sayso.Options{Mode: sayso.Local, Engine: sayso.EngineSpec{Program: testbin.Path(t, testbin.FakeEngine), Env: []string{`SAYSO_FAKE_SCRIPT={"delay_ms":{"transcribe":1500}}`}}})
 	if err := s.DownloadModel(ctx(t), "fake-final", "tests", nil); err != nil {
 		t.Fatal(err)
@@ -157,6 +161,7 @@ func TestLocalModeCancelsAJob(t *testing.T) {
 }
 
 func TestLocalModeRunsALiveSessionOfTheClient(t *testing.T) {
+	testbin.Passed(t, "G02")
 	s := connect(t, sayso.Options{Mode: sayso.Local, Capture: sayso.CaptureSources{Off: true}})
 	if err := s.DownloadModel(ctx(t), "fake-stream", "tests", nil); err != nil {
 		t.Fatal(err)
@@ -200,6 +205,7 @@ func TestLocalModeNeedsSaysoForEnhanceAndSubscribe(t *testing.T) {
 }
 
 func TestAnEngineThatDoesNotStartSaysWhy(t *testing.T) {
+	testbin.Passed(t, "G04")
 	_, err := sayso.Connect(ctx(t), sayso.Options{Mode: sayso.Local, ModelsDir: t.TempDir(), Engine: sayso.EngineSpec{Program: testbin.Path(t, testbin.FakeEngine), Env: []string{`SAYSO_FAKE_SCRIPT={"stderr":["cannot load libwhisper"],"exit_at_start":4}`}}})
 	var se *engine.StartError
 	if !errors.As(err, &se) || !strings.Contains(err.Error(), "cannot load libwhisper") {
@@ -211,6 +217,7 @@ func TestAnEngineThatDoesNotStartSaysWhy(t *testing.T) {
 }
 
 func TestSaysoModeWithoutSaysoIsHostNotRunning(t *testing.T) {
+	testbin.Passed(t, "A04")
 	_, err := sayso.Connect(ctx(t), sayso.Options{Mode: sayso.Sayso, Socket: testbin.SocketPath(t)})
 	if !errors.Is(err, sayso.ErrHostNotRunning) {
 		t.Fatal(err)
@@ -243,6 +250,7 @@ func TestSaysoModeUsesTheHost(t *testing.T) {
 }
 
 func TestADeniedAppIsNotApproved(t *testing.T) {
+	testbin.Passed(t, "H02")
 	h := testbin.StartHost(t, "--approve", "deny")
 	_, err := sayso.Connect(ctx(t), sayso.Options{Mode: sayso.Auto, Socket: h.Socket, Engine: sayso.FromProgram(testbin.Path(t, testbin.FakeEngine)), ModelsDir: t.TempDir()})
 	if !errors.Is(err, sayso.ErrNotApproved) {
@@ -251,6 +259,8 @@ func TestADeniedAppIsNotApproved(t *testing.T) {
 }
 
 func TestAutoFollowsSaysoWhileIdle(t *testing.T) {
+	testbin.Passed(t, "A01")
+	testbin.Passed(t, "A03")
 	socket := testbin.SocketPath(t)
 	s := connect(t, sayso.Options{Mode: sayso.Auto, Socket: socket})
 	if s.Mode() != sayso.ModeLocal {
@@ -290,6 +300,7 @@ func TestAutoFollowsSaysoWhileIdle(t *testing.T) {
 }
 
 func TestSaysoModeStartsSaysoWithALauncher(t *testing.T) {
+	testbin.Passed(t, "S01")
 	socket := testbin.SocketPath(t)
 	host := testbin.Path(t, testbin.TestHost)
 	fake := testbin.Path(t, testbin.FakeEngine)
@@ -314,6 +325,7 @@ func TestSaysoModeStartsSaysoWithALauncher(t *testing.T) {
 }
 
 func TestTheSaysoModeReconnectsAfterTheHostCameBack(t *testing.T) {
+	testbin.Passed(t, "X03")
 	socket := testbin.SocketPath(t)
 	h := testbin.StartHostAt(t, socket)
 	s := connect(t, sayso.Options{Mode: sayso.Sayso, Socket: socket})

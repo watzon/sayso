@@ -114,6 +114,7 @@ func TestNoHostIsHostNotRunning(t *testing.T) {
 }
 
 func TestTheHostAsksAndAllows(t *testing.T) {
+	testbin.Passed(t, "H01")
 	h := testbin.StartHost(t)
 	c := dial(t, h)
 	var waited atomic.Bool
@@ -140,6 +141,7 @@ func TestTheHostAsksAndAllows(t *testing.T) {
 }
 
 func TestADeniedAppIsNotApproved(t *testing.T) {
+	testbin.Passed(t, "H02")
 	h := testbin.StartHost(t, "--approve", "deny")
 	c := dial(t, h)
 	_, err := c.Hello(ctx(t), protocol.Hello{}, nil)
@@ -174,6 +176,7 @@ func TestAnUnansweredQuestionWaitsForTheAnswer(t *testing.T) {
 }
 
 func TestAMissingCapabilityIsNamed(t *testing.T) {
+	testbin.Passed(t, "H04")
 	h := testbin.StartHost(t)
 	c := dial(t, h)
 	hello(t, c, protocol.CapModelsRead)
@@ -186,6 +189,9 @@ func TestAMissingCapabilityIsNamed(t *testing.T) {
 }
 
 func TestModelsDownloadWithTheQuestion(t *testing.T) {
+	testbin.Passed(t, "M01")
+	testbin.Passed(t, "M02")
+	testbin.Passed(t, "M03")
 	h := testbin.StartHost(t, "--download", "wait")
 	c := dial(t, h)
 	hello(t, c, all...)
@@ -236,6 +242,7 @@ func TestModelsDownloadWithTheQuestion(t *testing.T) {
 }
 
 func TestAJobHasItsEventsAndOneEnd(t *testing.T) {
+	testbin.Passed(t, "J01")
 	h := testbin.StartHost(t)
 	c := dial(t, h)
 	hello(t, c, all...)
@@ -263,6 +270,7 @@ func TestAJobHasItsEventsAndOneEnd(t *testing.T) {
 }
 
 func TestCancelEndsAJob(t *testing.T) {
+	testbin.Passed(t, "J03")
 	h := testbin.StartHost(t)
 	c := dial(t, h)
 	hello(t, c, all...)
@@ -317,6 +325,7 @@ func TestALiveSessionOfTheClientSource(t *testing.T) {
 }
 
 func TestALiveSessionOfTheMicrophone(t *testing.T) {
+	testbin.Passed(t, "L02")
 	h := testbin.StartHost(t, "--mic-wav", testbin.SpeechWAV(t, 900, 900), "--speed", "4")
 	c := dial(t, h)
 	r := hello(t, c, all...)
@@ -340,6 +349,7 @@ func TestALiveSessionOfTheMicrophone(t *testing.T) {
 }
 
 func TestEnhanceRunsAStyle(t *testing.T) {
+	testbin.Passed(t, "E01")
 	h := testbin.StartHost(t)
 	c := dial(t, h)
 	hello(t, c, all...)
@@ -358,6 +368,7 @@ func TestEnhanceRunsAStyle(t *testing.T) {
 }
 
 func TestSubscribeGetsDictationDone(t *testing.T) {
+	testbin.Passed(t, "E02")
 	h := testbin.StartHost(t)
 	c := dial(t, h)
 	hello(t, c, all...)
@@ -395,6 +406,7 @@ func TestByeEndsTheConnection(t *testing.T) {
 }
 
 func TestHostClosingEndsTheOpenJob(t *testing.T) {
+	testbin.Passed(t, "X01")
 	h := testbin.StartHost(t)
 	c := dial(t, h)
 	hello(t, c, all...)
@@ -421,6 +433,7 @@ func TestHostClosingEndsTheOpenJob(t *testing.T) {
 }
 
 func TestAKilledHostIsConnectionLostWithOneEndPerJob(t *testing.T) {
+	testbin.Passed(t, "X02")
 	h := testbin.StartHost(t, "--speed", "0.5")
 	c := dial(t, h)
 	hello(t, c, all...)

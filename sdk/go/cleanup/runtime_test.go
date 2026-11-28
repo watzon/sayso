@@ -46,6 +46,7 @@ func readyModel(t *testing.T, id string) (string, *cleanup.ModelInfo) {
 }
 
 func TestTheRuntimeSaysHelloLoadsCountsCompletesAndUnloads(t *testing.T) {
+	testbin.Passed(t, "C03")
 	c := fakeRuntime(t, "")
 	dir, m := readyModel(t, "spokenly-cleanup-1")
 	path, _ := cleanup.ModelPath(dir, m)

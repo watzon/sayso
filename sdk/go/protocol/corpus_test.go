@@ -10,6 +10,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/watzon/sayso/sdk/go/internal/testbin"
 	"github.com/watzon/sayso/sdk/go/protocol/corpus"
 )
 
@@ -50,6 +51,7 @@ func reencode(t *testing.T, line string) (string, any) {
 }
 
 func TestTheHostCorpusRoundTrips(t *testing.T) {
+	testbin.Passed(t, "P01")
 	cases, err := corpus.Read("host", "")
 	if err != nil {
 		t.Fatal(err)
@@ -100,6 +102,7 @@ func TestEveryEventAndRequestTypeIsInTheCorpus(t *testing.T) {
 }
 
 func TestUnknownNamesAreKept(t *testing.T) {
+	testbin.Passed(t, "P01")
 	d, err := DecodeRequest(`{"type":"hello","protocol":1,"features":[],"capabilities":["calendar.read","models.read"],"v":1,"id":"x"}`)
 	if err != nil {
 		t.Fatal(err)
@@ -130,6 +133,7 @@ func TestUnknownNamesAreKept(t *testing.T) {
 }
 
 func TestTheNamesFileIsCurrent(t *testing.T) {
+	testbin.Passed(t, "P01")
 	path := filepath.Join(corpus.Dir(), "names.json")
 	want := NamesJSON()
 	if *update {
@@ -190,6 +194,7 @@ type pathsTable struct {
 }
 
 func TestThePathsTable(t *testing.T) {
+	testbin.Passed(t, "P02")
 	raw, err := os.ReadFile(filepath.Join(corpus.Dir(), "paths.json"))
 	if err != nil {
 		t.Fatal(err)

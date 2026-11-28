@@ -270,6 +270,7 @@ func TestACrashEndsTheRequestsAndTheEvents(t *testing.T) {
 }
 
 func TestTheEngineCorpusDecodes(t *testing.T) {
+	testbin.Passed(t, "P01")
 	cases, err := corpus.Read("engine", "")
 	if err != nil {
 		t.Fatal(err)
@@ -316,6 +317,7 @@ func touch(t *testing.T, path string) {
 }
 
 func TestFindTakesTheLastVersionFolder(t *testing.T) {
+	testbin.Passed(t, "G05")
 	dir := t.TempDir()
 	touch(t, filepath.Join(dir, "sayso-engine-0.11.0", engine.Program()))
 	touch(t, filepath.Join(dir, "sayso-engine-0.12.0", engine.Program()))
@@ -339,6 +341,7 @@ func TestFindTakesTheLastVersionFolder(t *testing.T) {
 }
 
 func TestFindTakesABuildThatThisProcessorRuns(t *testing.T) {
+	testbin.Passed(t, "G05")
 	dir := t.TempDir()
 	exe := ""
 	if runtime.GOOS == "windows" {

@@ -14,9 +14,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/watzon/sayso/sdk/go/internal/testbin"
 )
 
 func TestRender(t *testing.T) {
+	testbin.Passed(t, "C01")
 	s1, _ := Find("s1-mini")
 	sp, _ := Find("spokenly-cleanup-1")
 	p := Render(s1, "so um send the report by uh friday", Settings{}, "Slack", "", 10)
@@ -238,6 +241,7 @@ func testModel(content []byte) *ModelInfo {
 }
 
 func TestDownloadResumesAndVerifies(t *testing.T) {
+	testbin.Passed(t, "C02")
 	content := []byte(strings.Repeat("0123456789abcdef", 10000))
 	var mu sync.Mutex
 	var ranges []string
