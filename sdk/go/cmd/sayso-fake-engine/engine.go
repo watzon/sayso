@@ -377,6 +377,16 @@ func rolesOf(spec json.RawMessage) []role {
 	return []role{roleFinal, roleStreaming}
 }
 
+func rolesOfName(id string) []role {
+	switch {
+	case strings.Contains(id, "vad"):
+		return []role{roleVad}
+	case strings.Contains(id, "diar") || strings.Contains(id, "pyannote") || strings.Contains(id, "speaker"):
+		return []role{roleDiarization}
+	}
+	return []role{roleFinal, roleStreaming}
+}
+
 func findCatalog(id string) *catalogModel {
 	for i := range catalog {
 		if catalog[i].ID == id {
@@ -403,6 +413,8 @@ func (e *engine) modelFor(id string, spec json.RawMessage) (*model, error) {
 		}
 	case c != nil && e.has("catalog"):
 		m.spec, m.roles = c.Engine, c.Roles
+	case e.script.AcceptAny && retired[id] == "":
+		m.roles = rolesOfName(id)
 	case retired[id] != "" && e.has("catalog"):
 		return nil, &replyError{message: retired[id], code: "model_retired"}
 	case e.has("catalog"):

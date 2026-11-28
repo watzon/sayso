@@ -17,7 +17,10 @@
 //	 "fail": {"load": {"message": "...", "code": "...", "reason": "..."}},
 //	 "features": [],                  the features of hello
 //	 "version": "0.1.0",
-//	 "max_streams": 4}
+//	 "max_streams": 4,
+//	 "accept_any": true}                any id without an engine object runs,
+//	                                    with roles from its name (vad,
+//	                                    diar), as a stand-in for a real engine
 //
 // SAYSO_FAKE_TRANSCRIPTS is a JSON file {"<sha256 of the WAV file>": "text"}
 // with fixed transcripts.
@@ -66,6 +69,7 @@ type script struct {
 	Features    *[]string          `json:"features"`
 	Version     string             `json:"version"`
 	MaxStreams  int                `json:"max_streams"`
+	AcceptAny   bool               `json:"accept_any"`
 }
 
 func loadScript(text string) (script, error) {
