@@ -1,0 +1,108 @@
+name: SDK boundary
+
+# The rules between the MIT SDKs (sdk/) and the GPL app (scripts/sdk-boundary):
+# Rust only in sdk/rust and no native Node addon; sdk/go imports nothing of the
+# app and has no replace; the LICENSE files are the same MIT text and no file
+# under sdk/ has a GPL header; the versions agree; the GPL npm packages say so
+# and an MIT package names them only as optional peers; no commit of the branch
+# has an attribution trailer. Then a module outside the repository builds
+# against sdk/go, and the Go dependencies of the SDK have allowed licenses.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-boundary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  boundary:
+    name: Boundary rules
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Each rule has a test that plants a violation and expects it.
+      - name: Test the checker
+        run: go test ./scripts/sdk-boundary/... ./scripts/npm-packages/...
+
+      # A push to main checks only the attribution of the commits it adds.
+      - name: Check the tree
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: |
+          base="$BASE"
+          if [[ -z "$base" || "$base" == 0000000000000000000000000000000000000000 ]]; then base=HEAD~1; fi
+          go run ./scripts/sdk-boundary -base "$base"
+
+      # A user of the SDK has no checkout of the app: a module in another
+      # folder, with a replace to this checkout, must build on each system.
+      - name: Build a module outside the repository against sdk/go
+        run: |
+          consumer="$RUNNER_TEMP/consumer"
+          mkdir -p "$consumer"
+          cat > "$consumer/go.mod" <<EOF
+          module example.com/consumer
+
+          go $(sed -n 's/^go //p' sdk/go/go.mod)
+
+          require github.com/watzon/sayso/sdk/go v0.0.0
+
+          replace github.com/watzon/sayso/sdk/go => $PWD/sdk/go
+          EOF
+          cat > "$consumer/main.go" <<'EOF'
+          package main
+
+          import (
+          	"fmt"
+
+          	sayso "github.com/watzon/sayso/sdk/go"
+          	"github.com/watzon/sayso/sdk/go/capture/mic"
+          	"github.com/watzon/sayso/sdk/go/capture/system"
+          	"github.com/watzon/sayso/sdk/go/cleanup"
+          	"github.com/watzon/sayso/sdk/go/deepgram"
+          	"github.com/watzon/sayso/sdk/go/embedded"
+          	"github.com/watzon/sayso/sdk/go/permission"
+          	"github.com/watzon/sayso/sdk/go/speech"
+          )
+
+          var (
+          	_ = mic.Devices
+          	_ = system.Supported
+          	_ = permission.Microphone
+          	_ *deepgram.Final
+          	_ *embedded.CaptureMicrophone
+          	_ = speech.Log
+          )
+
+          func main() { fmt.Println(sayso.Version, len(cleanup.Catalog())) }
+          EOF
+          cd "$consumer"
+          go mod tidy
+          for os in darwin linux windows; do
+            GOOS=$os GOARCH=amd64 go build -o /dev/null . && echo "built for $os"
+          done
+          go run .
+          if go list -deps . | grep '^github.com/watzon/sayso' | grep -v '^github.com/watzon/sayso/sdk/go'; then
+            echo "::error::The consumer imports a package of the app."
+            exit 1
+          fi
+
+      - name: Check the licenses of the Go dependencies
+        working-directory: sdk/go
+        run: |
+          go install github.com/google/go-licenses@v1.6.0
+          "$(go env GOPATH)/bin/go-licenses" check ./... --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib,CC0-1.0,Unlicense,MPL-2.0

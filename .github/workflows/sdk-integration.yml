@@ -1,0 +1,107 @@
+name: SDK integration
+
+# The three SDKs against the same programs on each system: the test host
+# (cmd/sayso-testhost, the Host API of the app on WAV files, over a Unix socket
+# or a named pipe on Windows), the fake engine and the fake cleanup runtime
+# (sdk/go/cmd). The job builds them once, and the Go, the TypeScript (Node 22
+# and 24), and the Rust suites take them from SAYSO_TESTHOST, SAYSO_FAKE_ENGINE,
+# and SAYSO_FAKE_CLEANUP. sayso-audio is built too, but not given to the suites:
+# with it, Local mode would open the microphone of the runner.
+# SAYSO_TEST_REQUIRE_FAKES=1 makes a missing program fail a test, never skip it.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/**'
+      - 'cmd/sayso-testhost/**'
+      - 'internal/bridge/**'
+      - 'internal/engine/**'
+      - 'internal/cleanupd/**'
+      - '.github/workflows/sdk-integration.yml'
+  pull_request:
+    paths:
+      - 'sdk/**'
+      - 'cmd/sayso-testhost/**'
+      - 'internal/bridge/**'
+      - 'internal/engine/**'
+      - 'internal/cleanupd/**'
+      - '.github/workflows/sdk-integration.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  integration:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, ubuntu-24.04, windows-2025]
+    env:
+      CGO_ENABLED: '0'
+      SAYSO_TEST_REQUIRE_FAKES: '1'
+      CARGO_TERM_COLOR: always
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            sdk/go/go.sum
+
+      - name: Build the test host, the fakes, and sayso-audio
+        run: |
+          bin="$RUNNER_TEMP/sdk-bin"
+          exe=
+          [[ "$RUNNER_OS" == Windows ]] && exe=.exe
+          go build -o "$bin/sayso-testhost$exe" ./cmd/sayso-testhost
+          (cd sdk/go && go build -o "$bin/" ./cmd/sayso-fake-engine ./cmd/sayso-fake-cleanup ./cmd/sayso-audio)
+          ls -l "$bin"
+          [[ "$RUNNER_OS" == Windows ]] && bin=$(cygpath -m "$bin")
+          {
+            echo "SAYSO_TESTHOST=$bin/sayso-testhost$exe"
+            echo "SAYSO_FAKE_ENGINE=$bin/sayso-fake-engine$exe"
+            echo "SAYSO_FAKE_CLEANUP=$bin/sayso-fake-cleanup$exe"
+          } >> "$GITHUB_ENV"
+
+      - name: Go SDK
+        working-directory: sdk/go
+        run: go test -count=1 ./...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - name: TypeScript SDK, Node 22
+        working-directory: sdk/typescript
+        run: npm ci && npm test
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: TypeScript SDK, Node 24
+        working-directory: sdk/typescript
+        run: npm test
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk/rust
+      - name: Install ALSA (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev
+      - name: Rust SDK
+        working-directory: sdk/rust
+        run: cargo test

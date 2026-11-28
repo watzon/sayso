@@ -1,0 +1,135 @@
+name: SDK Rust
+
+# The Rust SDK (sdk/rust, the crate sayso-sdk, MIT): format, clippy with
+# warnings as errors, and the tests with the default features, with none, and
+# with each feature alone, on macOS, Linux, and Windows. Then the oldest Rust
+# that the crate allows (rust-version), the licenses and sources of the
+# dependencies (deny.toml), and the files that the crate would publish.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/rust/**'
+      - 'sdk/protocol/**'
+      - 'sdk/go/cmd/**'
+      - '.github/workflows/sdk-rust.yml'
+  pull_request:
+    paths:
+      - 'sdk/rust/**'
+      - 'sdk/protocol/**'
+      - 'sdk/go/cmd/**'
+      - '.github/workflows/sdk-rust.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-rust-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CGO_ENABLED: '0'
+
+jobs:
+  test:
+    name: ${{ matrix.features }}, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, ubuntu-24.04, windows-2025]
+        features: [default, none, local, capture, cleanup, deepgram]
+    env:
+      SAYSO_TEST_REQUIRE_FAKES: '1'
+    defaults:
+      run:
+        shell: bash
+        working-directory: sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: sdk/go/go.sum
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: sdk/rust
+          key: ${{ matrix.features }}
+      # cpal uses ALSA on Linux.
+      - name: Install ALSA (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev
+      - name: Format
+        if: matrix.features == 'default'
+        run: cargo fmt --check
+      - name: Features
+        run: |
+          case "${{ matrix.features }}" in
+            default) echo "FLAGS=" >> "$GITHUB_ENV" ;;
+            none) echo "FLAGS=--no-default-features" >> "$GITHUB_ENV" ;;
+            *) echo "FLAGS=--no-default-features --features ${{ matrix.features }}" >> "$GITHUB_ENV" ;;
+          esac
+      - name: Clippy
+        run: |
+          read -ra flags <<< "$FLAGS"
+          cargo clippy --all-targets "${flags[@]}" -- -D warnings
+      - name: Test
+        run: |
+          read -ra flags <<< "$FLAGS"
+          cargo test "${flags[@]}"
+
+  msrv:
+    name: Oldest Rust (rust-version)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read rust-version
+        run: echo "MSRV=$(sed -n 's/^rust-version = "\(.*\)"/\1/p' Cargo.toml)" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.MSRV }}
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libasound2-dev
+      - run: cargo check --all-features --lib
+
+  deny:
+    name: Licenses and sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: sdk/rust/Cargo.toml
+          command: check licenses bans sources
+
+  package:
+    name: Crate files
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Only files of the crate: no program, no library, and nothing outside sdk/rust.
+      - name: Check the files of the crate
+        run: |
+          cargo package --list --allow-dirty > files.txt
+          cat files.txt
+          bad=$(grep -vE '^(src/|tests/|examples/|build\.rs$|deny\.toml$|LICENSE$|README\.md$|Cargo\.toml(\.orig)?$|Cargo\.lock$|\.cargo_vcs_info\.json$)' files.txt || true)
+          if [[ -n "$bad" ]]; then
+            echo "::error::Files that do not belong in the crate: $bad"
+            exit 1
+          fi
+          grep -qx LICENSE files.txt || { echo "::error::The crate has no LICENSE."; exit 1; }

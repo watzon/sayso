@@ -1,0 +1,139 @@
+name: SDK TypeScript
+
+# The TypeScript SDK (sdk/typescript, @justsayso/sdk, MIT): strict types and
+# the tests on Node 22 and 24 on macOS, Linux, and Windows, and the file list
+# of the npm package. The tests start the fakes and the test host, which they
+# build with Go. Bun and Deno run a smoke test in jobs of their own; those jobs
+# may fail without failing the run until they are green twice, and they always
+# run and show their result.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/typescript/**'
+      - 'sdk/protocol/**'
+      - 'sdk/go/cmd/**'
+      - '.github/workflows/sdk-typescript.yml'
+  pull_request:
+    paths:
+      - 'sdk/typescript/**'
+      - 'sdk/protocol/**'
+      - 'sdk/go/cmd/**'
+      - '.github/workflows/sdk-typescript.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-typescript-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }}, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, ubuntu-24.04, windows-2025]
+        node: [22, 24]
+    env:
+      CGO_ENABLED: '0'
+      SAYSO_TEST_REQUIRE_FAKES: '1'
+    defaults:
+      run:
+        shell: bash
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: sdk/go/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: sdk/typescript/package-lock.json
+      - run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+
+  pack:
+    name: npm package files
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      # @justsayso/sdk is JavaScript, types, the README, and the LICENSE: no
+      # program, no native addon, and no code of the app.
+      - name: Check the files of the package
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e '
+            const [p] = JSON.parse(require("fs").readFileSync("pack.json", "utf8"));
+            const files = p.files.map((f) => f.path);
+            console.log(files.join("\n"));
+            const bad = files.filter((f) => !/^(dist\/.*\.(js|d\.ts|js\.map|d\.ts\.map)|README\.md|LICENSE|package\.json)$/.test(f));
+            if (bad.length) { console.error("::error::Files that do not belong in @justsayso/sdk: " + bad.join(", ")); process.exit(1); }
+            if (!files.includes("LICENSE")) { console.error("::error::The package has no LICENSE."); process.exit(1); }
+          '
+      - name: Check the licenses of the dependencies
+        run: |
+          npm ls --omit=dev --all --json > deps.json || true
+          node -e '
+            const tree = JSON.parse(require("fs").readFileSync("deps.json", "utf8"));
+            const names = [];
+            // An optional peer that is not installed (@justsayso/engine, @justsayso/cleanup) has no version.
+            (function walk(deps) { for (const [n, d] of Object.entries(deps || {})) { if (!d.version || d.missing) continue; names.push(n); walk(d.dependencies); } })(tree.dependencies);
+            const allowed = /^(MIT|ISC|Apache-2\.0|BSD-2-Clause|BSD-3-Clause|Zlib|CC0-1\.0|Unlicense|MPL-2\.0)$/;
+            const bad = [];
+            for (const n of names) {
+              const lic = require(require.resolve(n + "/package.json", { paths: [process.cwd()] })).license;
+              if (!allowed.test(String(lic))) bad.push(n + " (" + lic + ")");
+            }
+            console.log(names.length + " production dependencies");
+            if (bad.length) { console.error("::error::Licenses that are not allowed: " + bad.join(", ")); process.exit(1); }
+          '
+
+  smoke:
+    name: Smoke, ${{ matrix.runtime }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime: [bun, deno]
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci && npm run build
+      - if: matrix.runtime == 'bun'
+        uses: oven-sh/setup-bun@v2
+      - if: matrix.runtime == 'deno'
+        uses: denoland/setup-deno@v2
+      - name: Import the SDK
+        run: |
+          script='const m = await import("./dist/index.js"); const n = Object.keys(m).length; if (n === 0) throw new Error("no exports"); console.log(n + " exports");'
+          if [[ "${{ matrix.runtime }}" == bun ]]; then
+            bun -e "$script"
+          else
+            deno eval --allow-read --allow-env "$script"
+          fi

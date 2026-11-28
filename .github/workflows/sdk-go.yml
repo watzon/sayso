@@ -1,0 +1,88 @@
+name: SDK Go
+
+# The Go SDK (sdk/go, a module of its own, MIT) with CGO_ENABLED=0 on macOS,
+# Linux, and Windows, with the oldest Go that its go.mod allows and with the
+# toolchain of the repository. The root CI (ci.yml) never tests sdk/go, because
+# ./internal/... and ./cmd/... do not reach another module.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'sdk/go/**'
+      - 'sdk/protocol/**'
+      - '.github/workflows/sdk-go.yml'
+  pull_request:
+    paths:
+      - 'sdk/go/**'
+      - 'sdk/protocol/**'
+      - '.github/workflows/sdk-go.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-go-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Go ${{ matrix.go }}, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, ubuntu-24.04, windows-2025]
+        go: [module, repository]
+    env:
+      CGO_ENABLED: '0'
+      # The tests build cmd/sayso-testhost of the app, whose go.mod wants the
+      # toolchain of the repository; the SDK itself stays on the Go of the job.
+      GOTOOLCHAIN: auto
+    defaults:
+      run:
+        shell: bash
+        working-directory: sdk/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.go == 'module' && 'sdk/go/go.mod' || 'go.mod' }}
+          cache-dependency-path: sdk/go/go.sum
+      - name: Tidy
+        run: go mod tidy -diff
+      - name: Vet
+        run: |
+          for os in darwin linux windows; do
+            echo "== $os"
+            GOOS=$os go vet ./...
+          done
+      - name: Build every command
+        run: go build -o "$RUNNER_TEMP/bin/" ./cmd/...
+      # The tests build the fakes and the test host themselves; a missing one fails the run.
+      - name: Test
+        env:
+          SAYSO_TEST_REQUIRE_FAKES: '1'
+        run: go test -count=1 ./...
+
+  # The race detector of Go needs cgo on Linux and Windows, and not on macOS.
+  race:
+    name: Race detector, macOS
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      CGO_ENABLED: '0'
+    defaults:
+      run:
+        working-directory: sdk/go
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: sdk/go/go.sum
+      - name: Test with the race detector
+        env:
+          SAYSO_TEST_REQUIRE_FAKES: '1'
+        run: go test -race -count=1 ./...
