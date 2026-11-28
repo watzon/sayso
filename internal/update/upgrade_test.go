@@ -93,6 +93,10 @@ func TestTheReleaseManifestFitsTheRustApps(t *testing.T) {
 	for _, p := range []string{"macos-arm64", "macos-x86_64", "linux-x86_64", "linux-arm64"} {
 		names = append(names, "sayso-engine-0.17.0-"+p+".tar.gz")
 	}
+	for _, p := range []string{"macos-arm64", "linux-x86_64", "linux-arm64"} {
+		names = append(names, "sayso-cleanup-0.17.0-"+p+".tar.gz")
+	}
+	names = append(names, "sayso-cleanup-0.17.0-windows-x64.zip")
 	for _, n := range names {
 		if err := os.WriteFile(filepath.Join(dist, n), []byte(n), 0o644); err != nil {
 			t.Fatal(err)
