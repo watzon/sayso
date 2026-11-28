@@ -157,7 +157,7 @@ func TestLocalModeCancelsAJob(t *testing.T) {
 }
 
 func TestLocalModeRunsALiveSessionOfTheClient(t *testing.T) {
-	s := connect(t, sayso.Options{Mode: sayso.Local})
+	s := connect(t, sayso.Options{Mode: sayso.Local, Capture: sayso.CaptureSources{Off: true}})
 	if err := s.DownloadModel(ctx(t), "fake-stream", "tests", nil); err != nil {
 		t.Fatal(err)
 	}
