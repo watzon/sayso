@@ -196,14 +196,11 @@ func TestASecondLiveSessionWhileOneRunsIsRefused(t *testing.T) {
 	}
 }
 
-// drain adds the events that came before the last reply.
 func drain(c *client.Client, seen []protocol.Event) []protocol.Event {
-	for {
-		select {
-		case ev := <-c.Events():
-			seen = append(seen, ev)
-		default:
-			return seen
-		}
+	_ = c.Close()
+	for ev := range c.Events() {
+		seen = append(seen, ev)
 	}
+	return seen
 }
+

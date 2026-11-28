@@ -240,7 +240,10 @@ test("record_to writes a WAV file for each source", async () => {
 	await sleep(1500);
 	await s.stopSession(sess.session);
 	for (const name of ["mic.wav", "system.wav"]) {
-		const audio = decodeWav(readFileSync(join(folder, name)), name);
+		const raw = readFileSync(join(folder, name));
+		assert.equal(raw.subarray(0, 4).toString("ascii"), "RIFF", `${name} missing RIFF header`);
+		assert.equal(raw.subarray(8, 12).toString("ascii"), "WAVE", `${name} missing WAVE header`);
+		const audio = decodeWav(raw, name);
 		assert.ok(audio.samples.some((v) => v !== 0), `${name} has ${audio.samples.length} samples and no sound`);
 	}
 	passed("L05");
