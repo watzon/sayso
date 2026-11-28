@@ -138,6 +138,8 @@ type Options struct {
 	// of Sayso.
 	Engine    EngineSpec
 	ModelsDir string
+	// Capture is the capture of the sources mic and system in Local mode.
+	Capture CaptureSources
 }
 
 // Features are what the active mode can do.
@@ -550,8 +552,11 @@ func gateSession(f Features, o SessionOptions) error {
 		}
 	}
 	if f.Mode == ModeLocal {
-		if need[protocol.FeatureMicCapture] || need[protocol.FeatureSystemCapture] {
-			return protocol.Errorf(protocol.CodeUnsupported, "Local mode of this SDK captures no microphone or system audio yet; send the audio with the source client")
+		switch {
+		case need[protocol.FeatureMicCapture] && !f.MicCapture:
+			return protocol.Errorf(protocol.CodeUnsupported, "Local mode captures no microphone here; send the audio with the source client")
+		case need[protocol.FeatureSystemCapture] && !f.SystemCapture:
+			return protocol.Errorf(protocol.CodeUnsupported, "Local mode cannot capture the sound of this system")
 		}
 		return nil
 	}
