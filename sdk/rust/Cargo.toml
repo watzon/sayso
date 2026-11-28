@@ -1,0 +1,92 @@
+[package]
+name = "sayso-sdk"
+description = "Use the speech features of Sayso from your own app: with Sayso when it runs, and with your own engine when it does not. Blocking calls, no async runtime."
+version = "0.17.2"
+edition = "2024"
+rust-version = "1.91"
+license = "MIT"
+publish = true
+repository = "https://github.com/watzon/sayso"
+readme = "README.md"
+build = "build.rs"
+include = ["src/**", "tests/**", "examples/**", "build.rs", "deny.toml", "LICENSE", "README.md", "Cargo.toml"]
+
+[features]
+default = ["local", "capture", "cleanup", "deepgram"]
+local = ["dep:symphonia"]
+capture = [
+    "local",
+    "dep:cpal",
+    "dep:objc2",
+    "dep:objc2-core-audio",
+    "dep:objc2-core-audio-types",
+    "dep:objc2-av-foundation",
+    "dep:objc2-core-foundation",
+    "dep:objc2-foundation",
+    "dep:block2",
+    "dep:pulseaudio",
+    "dep:futures",
+]
+cleanup = ["dep:ureq", "dep:sha2", "dep:whatlang", "dep:regex"]
+deepgram = ["local", "dep:ureq"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+thiserror = "2"
+log = "0.4"
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+tempfile = "3"
+symphonia = { version = "0.5", default-features = false, features = ["wav", "pcm", "flac", "mp3", "aac", "isomp4"], optional = true }
+cpal = { version = "0.18.2", optional = true }
+ureq = { version = "3", optional = true }
+sha2 = { version = "0.11", optional = true }
+whatlang = { version = "0.18", optional = true }
+regex = { version = "1", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-core-audio = { version = "0.3.2", optional = true }
+objc2-core-audio-types = { version = "0.3.2", optional = true }
+objc2-av-foundation = { version = "0.3.2", optional = true }
+objc2-core-foundation = { version = "0.3.2", optional = true }
+objc2-foundation = { version = "0.3", optional = true }
+block2 = { version = "0.6", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+pulseaudio = { version = "0.3.2", optional = true }
+futures = { version = "0.3", default-features = false, features = ["executor"], optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tiny_http = "0.12"
+toml = "0.9"
+
+[[example]]
+name = "guide"
+required-features = ["local"]
+
+[[example]]
+name = "scribe"
+required-features = ["local"]
+
+[[example]]
+name = "transcribe"
+required-features = ["local"]
+
+[workspace]
