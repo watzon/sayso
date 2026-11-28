@@ -11,7 +11,7 @@ import { ECHO_LIMIT, EchoGate, echoWords, wordsEcho } from "../src/local/echo.js
 import { SilenceWatch } from "../src/local/silence.js";
 import { cleanupModelsDirOf, clientSocketPathFor, dataDirFor, hostSocketPathFor, modelStoreOf, modelsDirOf, parseWhoamiSid, type System } from "../src/paths.js";
 import { decodeI16, encodeI16, decodeF32, encodeF32 } from "../src/protocol/codec.js";
-import { CORPUS, PACKAGE_DIR, speech, tempDir } from "./support.js";
+import { CORPUS, PACKAGE_DIR, speech, tempDir, passed } from "./support.js";
 
 test("WAV: write, decode, and the header", () => {
 	const samples = Int16Array.from([0, 1, -1, 32767, -32768, 1234]);
@@ -160,6 +160,7 @@ test("paths follow paths.json", () => {
 	}
 	assert.equal(parseWhoamiSid('"PC\\\\user","S-1-5-21-1-2-3-1001"\r\n'), "S-1-5-21-1-2-3-1001");
 	assert.equal(parseWhoamiSid("garbage"), "");
+	passed("P02");
 });
 
 test("errors keep the code, capability, reason, and unknown codes", () => {
@@ -187,6 +188,7 @@ test("the cleanup catalog renders the prompt of the model", () => {
 	assert.equal(p.maxTokens, 45);
 	assert.deepEqual(check("hi", "end", " Hi.<|im_end|>"), { ok: true, text: "Hi." });
 	assert.equal(check("hi", "limit", " H").ok, false);
+	passed("C01");
 });
 
 test("restoreSpelling puts the spelling of the terms back", () => {

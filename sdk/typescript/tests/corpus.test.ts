@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { decodeHost, decodeRequest, encodeMessage } from "../src/protocol/codec.js";
 import { names } from "../src/protocol/names.js";
-import { CORPUS } from "./support.js";
+import { CORPUS, passed } from "./support.js";
 
 interface Case {
 	name: string;
@@ -45,6 +45,7 @@ test("host requests decode and encode again", () => {
 		if (d.kind !== "request") continue;
 		same(name, line, encodeMessage(d.id, d.body));
 	}
+	passed("P01");
 });
 
 test("host replies and events decode and encode again", () => {
@@ -69,6 +70,7 @@ test("host replies and events decode and encode again", () => {
 			if (!decodeOnly) same(name, line, encodeMessage(d.id, body));
 		}
 	}
+	passed("P01");
 });
 
 test("edge cases: unknown names are kept, large numbers stay exact, numeric speakers become strings", () => {
@@ -101,6 +103,7 @@ test("edge cases: unknown names are kept, large numbers stay exact, numeric spea
 		if (d.kind === "event" && "session" in d.event) assert.equal(d.event.session, 1099511627776);
 		if (d.kind === "event" && "text" in d.event && name.includes("escapes")) assert.equal(d.event.text, '"quote" \\ tab\t new\n line é 日本 😀');
 	}
+	passed("P01");
 });
 
 test("a request that lacks a field is refused", () => {
@@ -129,12 +132,14 @@ test("engine and cleanup corpus lines are JSON objects with a known type", () =>
 			}
 		}
 	}
+	passed("P01");
 });
 
 test("names.json matches the names of the SDK", () => {
 	const file = JSON.parse(readFileSync(join(CORPUS, "names.json"), "utf8")) as Record<string, Record<string, unknown>>;
 	const mine = JSON.parse(JSON.stringify(names())) as typeof file;
 	assert.deepEqual(mine, file);
+	passed("P01");
 });
 
 test("the corpus has every folder", () => {

@@ -91,7 +91,8 @@ export class CleanupError extends SaysoError {
 
 type PromptFormat = "s1_chat" | "key_value";
 
-interface CatalogEntry extends CleanupModel {
+/** @internal A model of the catalog with its pinned files. */
+export interface CatalogEntry extends CleanupModel {
 	repo: string;
 	revision: string;
 	file: string;
@@ -537,7 +538,10 @@ function fileLength(path: string): number {
 /** True when the model is in `modelsDir/cleanup/<id>` and complete: `ready.json` names the revision and the hash, and the file is there. */
 function isReady(modelsDir: string, id: string): boolean {
 	const m = entry(id);
-	if (!m) return false;
+	return m !== undefined && isReadyEntry(modelsDir, m);
+}
+
+function isReadyEntry(modelsDir: string, m: CatalogEntry): boolean {
 	const dir = modelDir(modelsDir, m);
 	try {
 		const ready = JSON.parse(readFileSync(join(dir, READY), "utf8")) as Record<string, unknown>;
@@ -671,8 +675,18 @@ async function sha256File(path: string): Promise<string> {
  * Download the model file and its license files to `<modelsDir>/cleanup/<id>`, and give the path of the model file. The signal
  * cancels it, with the code `declined`; the partial file stays for a later resume. The app asks its own user first.
  */
-async function download(modelsDir: string, id: string, options: { endpoint?: string; signal?: AbortSignal; onProgress?: (progress: CleanupProgress) => void } = {}): Promise<string> {
-	const m = requireEntry(id);
+async function download(modelsDir: string, id: string, options: DownloadOptions = {}): Promise<string> {
+	return downloadEntry(modelsDir, requireEntry(id), options);
+}
+
+interface DownloadOptions {
+	endpoint?: string;
+	signal?: AbortSignal;
+	onProgress?: (progress: CleanupProgress) => void;
+}
+
+/** @internal The download of `download`, for an entry that a test can give. */
+export async function downloadEntry(modelsDir: string, m: CatalogEntry, options: DownloadOptions = {}): Promise<string> {
 	checkNames(m);
 	const dir = modelDir(modelsDir, m);
 	if (active.has(dir)) throw new SaysoError({ code: "busy", message: "This model is already downloading or being deleted." });
@@ -680,7 +694,7 @@ async function download(modelsDir: string, id: string, options: { endpoint?: str
 	try {
 		const path = join(dir, m.file);
 		const size = m.sizeBytes;
-		if (isReady(modelsDir, id)) {
+		if (isReadyEntry(modelsDir, m)) {
 			options.onProgress?.({ bytesDone: size, bytesTotal: size });
 			return path;
 		}

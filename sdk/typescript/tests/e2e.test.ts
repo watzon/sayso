@@ -9,7 +9,7 @@ import { EngineStartError, SaysoError } from "../src/errors.js";
 import { Speech, type SpeechEvent, type SpeechOptions } from "../src/speech.js";
 import { encodeI16 } from "../src/protocol/codec.js";
 import type { Capability } from "../src/protocol/index.js";
-import { TestHost, next, program, removeTemps, sleep, socketPath, speech, speechWav, tempDir } from "./support.js";
+import { TestHost, next, program, removeTemps, sleep, socketPath, speech, speechWav, tempDir, passed } from "./support.js";
 
 after(removeTemps);
 
@@ -59,6 +59,8 @@ test("Local mode transcribes a file", async () => {
 	const t = await s.transcribe({ path });
 	assert.equal(t.text, "alpha bravo charlie delta echo");
 	assert.equal(t.segments.length, 2);
+	passed("G01");
+	passed("J04");
 });
 
 test("Local mode diarizes", async () => {
@@ -71,6 +73,7 @@ test("Local mode diarizes", async () => {
 	const turns = sp.turns as { speaker: string }[];
 	assert.deepEqual(turns.map((t) => t.speaker), ["1", "2"]);
 	await next(it, message("job_done"));
+	passed("J02");
 });
 
 test("Local mode cancels a job", async () => {
@@ -88,6 +91,7 @@ test("Local mode cancels a job", async () => {
 	});
 	await sleep(100);
 	assert.equal(extra, false);
+	passed("J03");
 });
 
 test("Local mode runs a live session of the client, and records it", async () => {
@@ -106,6 +110,7 @@ test("Local mode runs a live session of the client, and records it", async () =>
 	const text = await s.stopSession(sess.session);
 	assert.equal(text, "alpha bravo charlie");
 	assert.ok(existsSync(join(rec, "client.wav")));
+	passed("G02");
 });
 
 test("Local mode needs Sayso for enhance and subscribe", async () => {
@@ -120,10 +125,12 @@ test("an engine that does not start says why", async () => {
 		(e: unknown) => e instanceof EngineStartError && e.message.includes("cannot load libwhisper"),
 	);
 	await assert.rejects(Speech.connect({ mode: "local", app: { name: "n" } }), (e: SaysoError) => e.code === "unsupported");
+	passed("G04");
 });
 
 test("Sayso mode without Sayso is host_not_running", async () => {
 	await assert.rejects(Speech.connect({ mode: "sayso", app: { name: "n" }, socket: socketPath() }), (e: SaysoError) => e.code === "host_not_running");
+	passed("A04");
 });
 
 test("Sayso mode uses the host", async () => {
@@ -141,12 +148,14 @@ test("Sayso mode uses the host", async () => {
 	h.send({ dictation_done: { text: "Hi.", transcript: "hi" } });
 	const d = await next(it, message("dictation_done"));
 	assert.equal(d.text, "Hi.");
+	passed("H01");
 });
 
 test("a denied app is not approved", async () => {
 	const h = await TestHost.start(undefined, "--approve", "deny");
 	after(() => h.stop());
 	await assert.rejects(Speech.connect({ mode: "auto", app: { name: "n" }, socket: h.socket, engine: Engine.fromProgram(program("sayso-fake-engine")), modelsDir: tempDir("m") }), (e: SaysoError) => e.code === "not_approved");
+	passed("H02");
 });
 
 test("Sayso mode runs the whole lifecycle through the Client", async () => {
@@ -185,6 +194,7 @@ test("Sayso mode runs the whole lifecycle through the Client", async () => {
 	assert.ok(gone.code === "host_closing" || gone.code === "connection_lost");
 	await assert.rejects(c.request("list_models", {}), (e: SaysoError) => e.code === "host_closing" || e.code === "connection_lost");
 	void waiting;
+	passed("J01");
 });
 
 test("a capability that the app did not ask for is refused", async () => {
@@ -194,6 +204,7 @@ test("a capability that the app did not ask for is refused", async () => {
 	opened.push(c);
 	await assert.rejects(c.request("transcribe_file", { path: speechWav(300) }), (e: SaysoError) => e.code === "capability" && e.capability === "transcribe.file");
 	await c.request("bye", {}).catch(() => undefined);
+	passed("H04");
 });
 
 test("a killed host is connection_lost", async () => {
@@ -234,6 +245,8 @@ test("Auto follows Sayso while idle, and never starts it", async () => {
 	});
 	assert.equal(back.mode, "local");
 	assert.equal(s.mode(), "local");
+	passed("A01");
+	passed("A03");
 });
 
 test("Sayso mode starts Sayso with a launcher", async () => {
@@ -249,6 +262,7 @@ test("Sayso mode starts Sayso with a launcher", async () => {
 	assert.equal(s.mode(), "sayso");
 	assert.ok(started);
 	for (const h of hosts) await h.stop();
+	passed("S01");
 });
 
 test("the Sayso mode reconnects after the host came back", async () => {
@@ -261,6 +275,7 @@ test("the Sayso mode reconnects after the host came back", async () => {
 	after(() => h2.stop());
 	await s.reconnect();
 	assert.ok((await s.listModels()).length > 0);
+	passed("X03");
 });
 
 test("the cleanup client talks to the fake runtime", async () => {
@@ -279,6 +294,7 @@ test("the cleanup client talks to the fake runtime", async () => {
 		assert.equal(cut.stop, "limit");
 		await c.unload();
 		await assert.rejects(c.count("s1-mini", "x"), (e: Error) => e.name !== "");
+		passed("C03");
 	} finally {
 		await c.close();
 	}
