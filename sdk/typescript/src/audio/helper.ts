@@ -39,6 +39,11 @@ export function findAudioHelper(): string | undefined {
 	return named !== undefined && named !== "" && isFile(named) ? named : undefined;
 }
 
+/** True where `sayso-audio capture --source system` can work: it captures the system audio on Windows and Linux only. */
+export function helperCapturesSystem(platform: NodeJS.Platform = process.platform): boolean {
+	return platform === "win32" || platform === "linux";
+}
+
 /** The helper, or the error `unsupported` that says how to get it. */
 export function requireAudioHelper(what: string): string {
 	const helper = findAudioHelper();

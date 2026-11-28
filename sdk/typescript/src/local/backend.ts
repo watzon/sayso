@@ -2,7 +2,7 @@
 
 import { isAbsolute } from "node:path";
 import { helperSource, type AudioSource } from "../capture.js";
-import { findAudioHelper } from "../audio/helper.js";
+import { findAudioHelper, helperCapturesSystem } from "../audio/helper.js";
 import { i16ToFloats } from "../audio/wav.js";
 import { Engine, type EngineProcess } from "../engine.js";
 import { SaysoError } from "../errors.js";
@@ -58,7 +58,7 @@ export class LocalBackend {
 		this.speech = new EngineSpeech(process, { ...(options.keepModelMs === undefined ? {} : { keepModelMs: options.keepModelMs }) });
 		const helper = findAudioHelper() !== undefined;
 		this.microphone = options.capture?.microphone ?? (helper ? helperSource("mic") : undefined);
-		this.systemAudio = options.capture?.systemAudio ?? (helper ? helperSource("system") : undefined);
+		this.systemAudio = options.capture?.systemAudio ?? (helper && helperCapturesSystem() ? helperSource("system") : undefined);
 		const runner = new JobRunner(this.speech, { hold: (models) => this.speech.hold(models) });
 		this.#queue = new JobQueue(runner, this.#gate);
 		this.#live = new LiveSessions({

@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
@@ -31,8 +31,9 @@ export function removeTemps(): void {
 }
 
 /** Build a Go test program once per process. An environment variable can name one that is built already. */
-export function program(name: "sayso-fake-engine" | "sayso-fake-cleanup" | "sayso-testhost"): string {
-	const named = process.env[envOf[name]!];
+export function program(name: "sayso-fake-engine" | "sayso-fake-cleanup" | "sayso-testhost" | "sayso-audio"): string {
+	const variable = envOf[name];
+	const named = variable === undefined ? undefined : process.env[variable];
 	if (named) return named;
 	const have = built.get(name);
 	if (have) return have;
@@ -155,3 +156,9 @@ export async function next<T, R>(it: AsyncIterator<T>, pick: (event: T) => R | u
 }
 
 export const sleep = (ms: number) => new Promise<void>((res) => setTimeout(res, ms));
+
+/** Write the id of a scenario of sdk/conformance/scenarios.json that passed to `SAYSO_SCENARIO_REPORT`, when it is set. */
+export function passed(id: string): void {
+	const report = process.env.SAYSO_SCENARIO_REPORT;
+	if (report) appendFileSync(report, `${id}\n`);
+}
