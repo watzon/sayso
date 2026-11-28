@@ -3,6 +3,7 @@ module github.com/watzon/sayso/sdk/go
 go 1.26.0
 
 require (
+	github.com/Microsoft/go-winio v0.6.4
 	github.com/ebitengine/purego v0.11.3
 	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/mewkiz/flac v1.0.14
