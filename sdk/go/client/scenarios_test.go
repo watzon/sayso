@@ -8,6 +8,8 @@ import (
 	"time"
 
 	sayso "github.com/watzon/sayso/sdk/go"
+	"github.com/watzon/sayso/sdk/go/audio"
+	"github.com/watzon/sayso/sdk/go/client"
 	"github.com/watzon/sayso/sdk/go/internal/testbin"
 	"github.com/watzon/sayso/sdk/go/protocol"
 )
@@ -105,14 +107,7 @@ func TestTheEchoRuleDropsTheMicrophoneSegmentsThatRepeatTheSystemAudio(t *testin
 	if _, err := c.SessionStop(ctx(t), s.Session); err != nil {
 		t.Fatal(err)
 	}
-	for drained := false; !drained; {
-		select {
-		case ev := <-c.Events():
-			seen = append(seen, ev)
-		default:
-			drained = true
-		}
-	}
+	seen = drain(c, seen)
 	for _, ev := range seen {
 		if seg, ok := ev.(*protocol.SegmentEvent); ok && seg.Source != nil && *seg.Source == protocol.SourceMic {
 			t.Fatalf("the microphone heard the system audio, and the echo rule kept it: %v", kinds(seen))
@@ -135,19 +130,25 @@ func TestTheSilenceLimitGivesOneEvent(t *testing.T) {
 	if e := until[*protocol.SilenceLimit](t, c, &seen); e.Session != s.Session || e.SilenceMs != 1000 {
 		t.Fatalf("%+v", e)
 	}
+	time.Sleep(500 * time.Millisecond)
 	if _, err := c.SessionStop(ctx(t), s.Session); err != nil {
 		t.Fatal(err)
 	}
-	for _, ev := range seen[:len(seen)-1] {
+	seen = drain(c, seen)
+	count := 0
+	for _, ev := range seen {
 		if ev.Kind() == "silence_limit" {
-			t.Fatal("two silence_limit events", kinds(seen))
+			count++
 		}
+	}
+	if count != 1 {
+		t.Fatalf("%d silence_limit events: %v", count, kinds(seen))
 	}
 }
 
 func TestRecordToWritesAWAVFileForEachSource(t *testing.T) {
 	testbin.Passed(t, "L05")
-	h := testbin.StartHost(t, "--mic-wav", testbin.SpeechWAV(t, 600), "--speed", "8")
+	h := testbin.StartHost(t, "--mic-wav", testbin.SpeechWAV(t, 600), "--system-wav", testbin.SpeechWAV(t, 900), "--speed", "8")
 	c := dial(t, h)
 	hello(t, c, all...)
 	ready(t, c)
@@ -155,7 +156,7 @@ func TestRecordToWritesAWAVFileForEachSource(t *testing.T) {
 	if err := os.Mkdir(folder, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	s, err := c.SessionStart(ctx(t), protocol.SessionStart{Sources: []protocol.Source{protocol.SourceMic}, RecordTo: &folder})
+	s, err := c.SessionStart(ctx(t), protocol.SessionStart{Sources: []protocol.Source{protocol.SourceMic, protocol.SourceSystem}, RecordTo: &folder})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,10 +164,15 @@ func TestRecordToWritesAWAVFileForEachSource(t *testing.T) {
 	if _, err := c.SessionStop(ctx(t), s.Session); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(folder, "mic.wav"))
-	if err != nil || info.Size() <= 44 {
-		entries, _ := os.ReadDir(folder)
-		t.Fatal(err, entries)
+	for _, name := range []string{"mic.wav", "system.wav"} {
+		a, err := audio.ReadFile(filepath.Join(folder, name))
+		if err != nil {
+			entries, _ := os.ReadDir(folder)
+			t.Fatal(err, entries)
+		}
+		if !slices.ContainsFunc(a.Samples(), func(v int16) bool { return v != 0 }) {
+			t.Fatalf("%s has %d samples and no sound", name, len(a.Samples()))
+		}
 	}
 }
 
@@ -187,5 +193,17 @@ func TestASecondLiveSessionWhileOneRunsIsRefused(t *testing.T) {
 	}
 	if _, err := c.SessionStop(ctx(t), first.Session); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// drain adds the events that came before the last reply.
+func drain(c *client.Client, seen []protocol.Event) []protocol.Event {
+	for {
+		select {
+		case ev := <-c.Events():
+			seen = append(seen, ev)
+		default:
+			return seen
+		}
 	}
 }

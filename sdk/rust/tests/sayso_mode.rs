@@ -569,7 +569,14 @@ fn the_silence_limit_stops_the_audio_once() {
         _ => None,
     });
     assert_eq!(limit, 1000);
+    std::thread::sleep(Duration::from_millis(500));
     speech.stop_session(session.session).unwrap();
+    seen.extend(speech.events().try_iter());
+    let limits = seen
+        .iter()
+        .filter(|e| matches!(e, Event::Message(Host::SilenceLimit { .. })))
+        .count();
+    assert_eq!(limits, 1, "{:?}", seen.iter().map(kind).collect::<Vec<_>>());
     passed("L04");
 }
 
@@ -577,38 +584,78 @@ fn the_silence_limit_stops_the_audio_once() {
 fn record_to_writes_a_wav_file_for_each_source() {
     let socket = SocketPath::new();
     let dir = tempfile::tempdir().unwrap();
-    let wav = speech_wav(dir.path(), "mic.wav", &[600]);
+    let mic = speech_wav(dir.path(), "mic.wav", &[600]);
+    let system = speech_wav(dir.path(), "system.wav", &[900]);
     let Some(_host) = TestHost::start(
         &socket.path,
-        &["--mic-wav", wav.to_str().unwrap(), "--speed", "8"],
+        &[
+            "--mic-wav",
+            mic.to_str().unwrap(),
+            "--system-wav",
+            system.to_str().unwrap(),
+            "--speed",
+            "8",
+        ],
     ) else {
         return;
     };
-    let speech = connect(&socket);
+    let options = sayso_options(&socket.path).capabilities([
+        Capability::SessionLive,
+        Capability::AudioMic,
+        Capability::AudioSystem,
+        Capability::ModelsRead,
+        Capability::ModelsDownload,
+    ]);
+    let speech = Speech::connect(options).unwrap();
     ready(&speech);
     let folder = dir.path().join("rec");
     std::fs::create_dir(&folder).unwrap();
     let session = speech
         .start_session(SessionStart {
-            sources: vec![Source::Mic],
+            sources: vec![Source::Mic, Source::System],
             record_to: Some(folder.clone()),
             ..Default::default()
         })
         .unwrap();
     std::thread::sleep(Duration::from_millis(1500));
     speech.stop_session(session.session).unwrap();
-    let files: Vec<_> = std::fs::read_dir(&folder)
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .collect();
-    assert!(
-        files
-            .iter()
-            .any(|f| f.extension().is_some_and(|e| e == "wav")
-                && std::fs::metadata(f).unwrap().len() > 44),
-        "{files:?}"
-    );
+    for name in ["mic.wav", "system.wav"] {
+        let samples = wav_samples(&folder.join(name));
+        assert!(
+            samples.iter().any(|&v| v != 0),
+            "{name} has {} samples and no sound",
+            samples.len()
+        );
+    }
     passed("L05");
+}
+
+/// The samples of a 16-bit PCM WAV file, after a check of its RIFF, fmt, and data chunks.
+fn wav_samples(path: &std::path::Path) -> Vec<i16> {
+    let b = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let u16_at = |at: usize| u16::from_le_bytes([b[at], b[at + 1]]);
+    let u32_at = |at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
+    assert!(
+        b.len() > 12 && &b[0..4] == b"RIFF" && &b[8..12] == b"WAVE",
+        "{} has no RIFF header",
+        path.display()
+    );
+    let (mut at, mut pcm16, mut data) = (12, false, None);
+    while at + 8 <= b.len() {
+        let size = u32_at(at + 4);
+        let body = at + 8;
+        match &b[at..at + 4] {
+            b"fmt " => pcm16 = u16_at(body) == 1 && u16_at(body + 14) == 16,
+            b"data" => data = Some(&b[body..(body + size).min(b.len())]),
+            _ => {}
+        }
+        at = body + size + size % 2;
+    }
+    assert!(pcm16, "{} is not 16-bit PCM", path.display());
+    let data = data.unwrap_or_else(|| panic!("{} has no data chunk", path.display()));
+    data.chunks_exact(2)
+        .map(|c| i16::from_le_bytes([c[0], c[1]]))
+        .collect()
 }
 
 #[test]

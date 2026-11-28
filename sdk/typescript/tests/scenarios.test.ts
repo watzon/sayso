@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createServer, type Server } from "node:net";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
-import { encodeWav } from "../src/audio/wav.js";
+import { decodeWav, encodeWav } from "../src/audio/wav.js";
 import { Client } from "../src/client.js";
 import { RuntimeCleaner, downloadEntry, modelFiles, type CatalogEntry } from "../src/cleanup.js";
 import { Engine, engineProgramName, findEngine } from "../src/engine.js";
@@ -224,21 +224,25 @@ test("the silence limit gives one event", async () => {
 	const sess = await s.startSession({ sources: ["mic"], silence_limit_ms: 1000 });
 	const limit = await next(it, message("silence_limit", (m) => m.session === sess.session));
 	assert.equal(limit.silence_ms, 1000);
+	await sleep(500);
 	await s.stopSession(sess.session);
 	assert.equal(seen.filter((e) => e.kind === "message" && e.message.type === "silence_limit").length, 1);
 	passed("L04");
 });
 
 test("record_to writes a WAV file for each source", async () => {
-	const h = await host("--mic-wav", speechWav(600), "--speed", "8");
+	const h = await host("--mic-wav", speechWav(600), "--system-wav", speechWav(900), "--speed", "8");
 	const s = await connect({ mode: "sayso", socket: h.socket });
 	await ready(s);
 	const folder = join(tempDir("rec"), "rec");
 	mkdirSync(folder);
-	const sess = await s.startSession({ sources: ["mic"], record_to: folder });
+	const sess = await s.startSession({ sources: ["mic", "system"], record_to: folder });
 	await sleep(1500);
 	await s.stopSession(sess.session);
-	assert.ok(statSync(join(folder, "mic.wav")).size > 44);
+	for (const name of ["mic.wav", "system.wav"]) {
+		const audio = decodeWav(readFileSync(join(folder, name)), name);
+		assert.ok(audio.samples.some((v) => v !== 0), `${name} has ${audio.samples.length} samples and no sound`);
+	}
 	passed("L05");
 });
 

@@ -146,7 +146,8 @@ pub fn passed(id: &str) {
             .append(true)
             .open(report)
             .unwrap();
-        writeln!(file, "{id}").unwrap();
+        // One write per line: parallel tests append to the same file.
+        file.write_all(format!("{id}\n").as_bytes()).unwrap();
     }
 }
 
