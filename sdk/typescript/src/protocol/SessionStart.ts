@@ -1,0 +1,15 @@
+import type { Source } from "./Source.js";
+
+/**
+ * Start a live session.
+ */
+export type SessionStart = { sources: Array<Source>, model?: string, preview_model?: string, vad_model?: string, language?: string, diarize?: boolean, diarization_model?: string, 
+/**
+ * A folder for one WAV file of each source.
+ */
+record_to?: string, 
+/**
+ * Stop the audio of the session after this long with no speech in any
+ * source. The event `silence_limit` says when that happens.
+ */
+silence_limit_ms?: number, };

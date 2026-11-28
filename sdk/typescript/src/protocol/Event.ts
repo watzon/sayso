@@ -1,0 +1,27 @@
+import type { DictationDone } from "./DictationDone.js";
+import type { DownloadProgress } from "./DownloadProgress.js";
+import type { ErrorCode } from "./ErrorCode.js";
+import type { ModelStateEvent } from "./ModelStateEvent.js";
+import type { PartialEvent } from "./PartialEvent.js";
+import type { SegmentEvent } from "./SegmentEvent.js";
+import type { Source } from "./Source.js";
+import type { SourceEndReason } from "./SourceEndReason.js";
+import type { SpeakersEvent } from "./SpeakersEvent.js";
+
+export type Event = { "type": "model_state" } & ModelStateEvent | { "type": "download_progress" } & DownloadProgress | { "type": "job_progress", job: number, 
+/**
+ * From 0 to 1. A job that waits in the queue sends 0.
+ */
+fraction: number, } | { "type": "segment" } & SegmentEvent | { "type": "speakers" } & SpeakersEvent | { "type": "job_done", job: number, text: string, } | { "type": "job_failed", job: number, message: string, code?: ErrorCode, } | { "type": "partial" } & PartialEvent | { "type": "source_gap", session: number, source: Source, ms: number, } | { "type": "source_ended", session: number, source: Source, reason: SourceEndReason, } | { "type": "part_failed", session: number, source: Source, 
+/**
+ * The time of the part, from the start of the session.
+ */
+start_ms: number, end_ms: number, message: string, code?: ErrorCode, } | { "type": "session_ended", session: number, 
+/**
+ * The text of all segments in the order of time.
+ */
+text: string, code?: ErrorCode, } | { "type": "silence_limit", session: number, 
+/**
+ * The limit of the session.
+ */
+silence_ms: number, } | { "type": "dictation_done" } & DictationDone | { "type": "approval_waiting" } | { "type": "host_closing" };

@@ -1,0 +1,15 @@
+import type { Capability } from "./Capability.js";
+import type { ErrorCode } from "./ErrorCode.js";
+
+/**
+ * An `error` reply. `message` is English, for people.
+ */
+export type ErrorReply = { code?: ErrorCode, message: string, 
+/**
+ * The capability that the user did not grant, with the code `capability`.
+ */
+capability?: Capability, 
+/**
+ * A reason code of the engine protocol.
+ */
+reason?: string, };

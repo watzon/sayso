@@ -1,0 +1,15 @@
+import type { ModelState } from "./ModelState.js";
+
+export type ModelStateEvent = { model: string, state: ModelState, 
+/**
+ * The time of the load, with the state `ready`.
+ */
+load_ms?: number, 
+/**
+ * Only the live preview part is in memory, with the state `downloaded`.
+ */
+preview?: boolean, 
+/**
+ * Why, in English, with the state `failed`.
+ */
+message?: string, reason?: string, };

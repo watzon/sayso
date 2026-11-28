@@ -1,0 +1,19 @@
+import type { Diarize } from "./Diarize.js";
+import type { Download } from "./Download.js";
+import type { Generate } from "./Generate.js";
+import type { ListModels } from "./ListModels.js";
+import type { ModelRef } from "./ModelRef.js";
+import type { Prepare } from "./Prepare.js";
+import type { StreamAudio } from "./StreamAudio.js";
+import type { StreamEnd } from "./StreamEnd.js";
+import type { StreamStart } from "./StreamStart.js";
+import type { Transcribe } from "./Transcribe.js";
+import type { Unload } from "./Unload.js";
+import type { Vad } from "./Vad.js";
+import type { VadStart } from "./VadStart.js";
+
+/**
+ * A request to the engine. Each request with an `id` gets one reply.
+ * `StreamAudio` has no `id` and no reply.
+ */
+export type Request = { "type": "hello" } | { "type": "list_models" } & ListModels | { "type": "download" } & Download | { "type": "delete" } & ModelRef | { "type": "load" } & ModelRef | { "type": "unload" } & Unload | { "type": "prepare" } & Prepare | { "type": "transcribe" } & Transcribe | { "type": "stream_start" } & StreamStart | { "type": "stream_audio" } & StreamAudio | { "type": "stream_end" } & StreamEnd | { "type": "vad" } & Vad | { "type": "vad_start" } & VadStart | { "type": "diarize" } & Diarize | { "type": "language_model" } | { "type": "generate" } & Generate | { "type": "shutdown" };

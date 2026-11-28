@@ -1,0 +1,60 @@
+{
+  "name": "@justsayso/sdk",
+  "version": "0.17.2",
+  "description": "Use the speech features of Sayso from your own app: with Sayso when it runs, and with the engine of the app when it does not.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/watzon/sayso.git",
+    "directory": "sdk/typescript"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "pretest": "tsc -p tsconfig.test.json",
+    "test": "node --test --test-concurrency=1 --test-timeout=120000 \"dist-test/tests/*.test.js\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "^5.9.3"
+  },
+  "peerDependencies": {
+    "@justsayso/cleanup": "0.17.2",
+    "@justsayso/engine": "0.17.2"
+  },
+  "peerDependenciesMeta": {
+    "@justsayso/cleanup": {
+      "optional": true
+    },
+    "@justsayso/engine": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "speech-to-text",
+    "transcription",
+    "dictation",
+    "sayso",
+    "whisper",
+    "parakeet"
+  ]
+}

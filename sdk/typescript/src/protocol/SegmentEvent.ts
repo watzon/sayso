@@ -1,0 +1,7 @@
+import type { Source } from "./Source.js";
+import type { Word } from "./Word.js";
+
+/**
+ * A segment of a job or of one source of a live session.
+ */
+export type SegmentEvent = { job?: number, session?: number, source?: Source, start_ms: number, end_ms: number, text: string, words?: Array<Word>, };

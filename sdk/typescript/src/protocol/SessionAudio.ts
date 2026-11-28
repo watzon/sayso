@@ -1,0 +1,9 @@
+
+/**
+ * Audio for the source `client`. It has no `id` and gets no reply.
+ */
+export type SessionAudio = { session: number, 
+/**
+ * Base64 of 16 kHz mono little-endian 16-bit PCM (see [`crate::pcm`]).
+ */
+pcm: string, };

@@ -1,0 +1,5 @@
+
+/**
+ * The `code` of an `error`: a stable code that a client can act on.
+ */
+export type ErrorCode = "not_approved" | "capability" | "busy" | "declined" | "model_not_downloaded" | "wrong_role" | "unsupported" | "bad_request" | "too_many_streams" | "unknown_model" | "model_retired" | "unavailable" | "refused" | "timeout" | "permission" | "host_not_running" | "connection_lost" | "host_closing" | (string & {});

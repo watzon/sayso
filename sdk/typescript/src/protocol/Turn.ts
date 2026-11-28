@@ -1,0 +1,9 @@
+
+/**
+ * A turn of one speaker, from diarization.
+ *
+ * In the Host API a speaker is a label such as `"1"`, unique in one source
+ * of one job or live session. The engine protocol sends an integer from 0;
+ * this type reads both and writes a string.
+ */
+export type Turn = { start_ms: number, end_ms: number, speaker: string, };

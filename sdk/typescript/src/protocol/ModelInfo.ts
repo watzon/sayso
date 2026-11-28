@@ -1,0 +1,16 @@
+import type { ModelState } from "./ModelState.js";
+import type { Role } from "./Role.js";
+import type { TimestampLevel } from "./TimestampLevel.js";
+
+/**
+ * A model in the reply to `list_models`.
+ */
+export type ModelInfo = { id: string, name: string, roles: Array<Role>, state: ModelState, 
+/**
+ * Language codes such as `en`. Empty when the model has no list.
+ */
+languages: Array<string>, timestamps: TimestampLevel, size_bytes: number, 
+/**
+ * The roles for which the user chose this model.
+ */
+choice?: Array<Role>, };

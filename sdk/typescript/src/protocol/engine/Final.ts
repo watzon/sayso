@@ -1,0 +1,15 @@
+import type { Segment } from "../Segment.js";
+
+/**
+ * The reply to `transcribe`.
+ */
+export type Final = { text: string, elapsed_ms: number, 
+/**
+ * With `segments: true` and the feature `segments`.
+ */
+segments?: Array<Segment>, 
+/**
+ * The language that the model found, such as `de` (feature
+ * `detected_language`). Only when the request had `language` `auto`.
+ */
+language?: string, };

@@ -1,0 +1,7 @@
+import type { Source } from "./Source.js";
+import type { Turn } from "./Turn.js";
+
+/**
+ * The speakers of a job, or of one source of a live session.
+ */
+export type SpeakersEvent = { job?: number, session?: number, source?: Source, turns: Array<Turn>, };
